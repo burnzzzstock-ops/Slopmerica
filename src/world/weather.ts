@@ -111,7 +111,7 @@ const CLIMATE: Record<MapId, Record<Season, Table>> = {
 /** Grass color multipliers through the year (day 0 = Mar 20). */
 const GRASS: Record<MapId, [number, number, number, number][]> = {
   // green by the Mar 20 start, ochre in fall, dormant tan through the winter
-  appalachia: [[0, 0.95, 1.0, 0.8], [40, 1, 1.08, 0.9], [120, 1, 1, 1], [200, 1.06, 0.95, 0.78], [255, 1.18, 0.88, 0.64], [285, 1.42, 0.9, 0.66], [330, 1.4, 0.9, 0.66], [352, 1.15, 0.95, 0.74], [365, 0.95, 1.0, 0.8]],
+  appalachia: [[0, 0.95, 1.0, 0.8], [40, 1, 1.08, 0.9], [120, 1, 1, 1], [200, 1.06, 0.95, 0.78], [255, 1.45, 0.95, 0.95], [285, 2.0, 1.0, 1.6], [330, 2.0, 1.0, 1.6], [352, 1.35, 0.98, 1.05], [365, 0.95, 1.0, 0.8]],
   // the gold base goes emerald with the winter rains, holds through spring, then cures back to gold
   norcal: [[0, 0.55, 1.1, 0.6], [45, 0.62, 1.08, 0.66], [80, 0.85, 1.02, 0.85], [110, 1, 1, 1], [240, 1, 0.98, 0.95], [270, 0.8, 1.04, 0.76], [300, 0.58, 1.1, 0.62], [365, 0.55, 1.1, 0.6]],
   florida: [[0, 1, 1.02, 0.98], [150, 1, 1.04, 1], [280, 0.97, 0.96, 0.9], [340, 0.96, 0.95, 0.9], [365, 1, 1.02, 0.98]],

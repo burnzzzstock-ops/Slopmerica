@@ -28,39 +28,83 @@ export function createFoliageAtlas(renderer: THREE.WebGLRenderer): THREE.DataTex
     const v = Math.max(0, Math.min(255, base + (rnd() - 0.5) * spread));
     return `rgb(${v * 0.96},${v},${v * 0.9})`;
   };
-  // broadleaf clusters: many small leaves, brighter on top, sparse at the rim
-  const cluster = (x: number, y: number, w: number, h: number, leaves: number, seed: number) => {
-    const rr = mulberry32(seed);
-    const cx = x + w / 2, cy = y + h / 2;
-    // twigs
-    ctx.strokeStyle = 'rgb(70,58,46)';
-    for (let k = 0; k < 14; k++) {
-      ctx.lineWidth = 1 + rr() * 2;
-      ctx.beginPath();
-      ctx.moveTo(cx, cy + h * 0.35);
-      const a = rr() * Math.PI * 2;
-      ctx.lineTo(cx + Math.cos(a) * w * 0.38 * rr(), cy + Math.sin(a) * h * 0.38 * rr());
-      ctx.stroke();
+  // broadleaf clusters: twig sprays radiating from the base, each carrying real
+  // leaf shapes (pointed ovate with a midrib, or lobed maple), lighter toward the
+  // top and tip, denser at the center so the card has a natural ragged outline
+  const leafPath = (s: number, lobed: boolean) => {
+    ctx.beginPath();
+    if (!lobed) {
+      ctx.moveTo(0, 0);
+      ctx.bezierCurveTo(s * 0.55, -s * 0.18, s * 0.72, -s * 0.9, 0, -s * 1.5);
+      ctx.bezierCurveTo(-s * 0.72, -s * 0.9, -s * 0.55, -s * 0.18, 0, 0);
+    } else {
+      // five-lobed maple-ish outline
+      const pts = 15;
+      for (let i = 0; i <= pts; i++) {
+        const a = -Math.PI / 2 + ((i / pts) * 2 - 1) * Math.PI * 0.95;
+        const lobe = 0.62 + 0.38 * Math.pow(Math.abs(Math.cos(((i / pts) * 5) * Math.PI)), 0.6);
+        const r = s * 1.05 * lobe;
+        const px = Math.cos(a) * r, py = Math.sin(a) * r - s * 0.45;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
     }
-    for (let k = 0; k < leaves; k++) {
-      const a = rr() * Math.PI * 2;
-      const rad = Math.sqrt(rr());
-      const lx = cx + Math.cos(a) * rad * w * 0.47, ly = cy + Math.sin(a) * rad * h * 0.47;
-      const top = 1 - (ly - y) / h; // brighter higher up
-      const base = 120 + top * 95 - rad * 25;
-      ctx.fillStyle = shade(base, 55);
-      ctx.save();
-      ctx.translate(lx, ly);
-      ctx.rotate(rr() * Math.PI * 2);
+  };
+  const cluster = (x: number, y: number, w: number, h: number, leaves: number, seed: number, lobed = false) => {
+    const rr = mulberry32(seed);
+    const cx = x + w / 2, by = y + h * 0.78;
+    const sprays = Math.round(leaves / 26);
+    for (let sp = 0; sp < sprays; sp++) {
+      // twig from near the base out toward a point in the crown
+      const ang = -Math.PI / 2 + (rr() - 0.5) * 2.6;
+      const len = (0.25 + Math.sqrt(rr()) * 0.5) * Math.min(w, h);
+      const ex = cx + Math.cos(ang) * len * 0.9, ey = by + Math.sin(ang) * len;
+      const mx = (cx + ex) / 2 + (rr() - 0.5) * 30, my = (by + ey) / 2 + (rr() - 0.5) * 30;
+      ctx.strokeStyle = 'rgb(74,62,50)';
+      ctx.lineWidth = 1.2 + rr() * 1.6;
       ctx.beginPath();
-      const s = 4 + rr() * 5;
-      ctx.ellipse(0, 0, s, s * 0.55, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
+      ctx.moveTo(cx + (rr() - 0.5) * 20, by);
+      ctx.quadraticCurveTo(mx, my, ex, ey);
+      ctx.stroke();
+      const n = 16 + Math.floor(rr() * 20);
+      const sprayTone = (rr() - 0.5) * 30;
+      for (let k = 0; k < n; k++) {
+        const t = 0.35 + (k / n) * 0.7;
+        // point on the quadratic twig
+        const it = 1 - t;
+        const tx = it * it * cx + 2 * it * t * mx + t * t * ex, ty = it * it * by + 2 * it * t * my + t * t * ey;
+        const side = k % 2 ? 1 : -1;
+        const la = ang + side * (0.5 + rr() * 0.7) + (rr() - 0.5) * 0.4;
+        const sz = (lobed ? 7 : 6) + rr() * (lobed ? 7 : 6);
+        const lx = tx + Math.cos(la) * sz * 0.4, ly = ty + Math.sin(la) * sz * 0.4;
+        if (lx < x + 4 || lx > x + w - 4 || ly < y + 4 || ly > y + h - 4) continue;
+        const top = 1 - (ly - y) / h;
+        const rim = Math.hypot((lx - cx) / (w / 2), (ly - (y + h / 2)) / (h / 2));
+        const base = 105 + top * 90 - rim * 22 + sprayTone;
+        ctx.save();
+        ctx.translate(lx, ly);
+        ctx.rotate(la + Math.PI / 2);
+        const g = ctx.createLinearGradient(0, 0, 0, -sz * 1.5);
+        const v0 = Math.max(0, Math.min(255, base - 22 + (rr() - 0.5) * 30)), v1 = Math.max(0, Math.min(255, base + 18 + (rr() - 0.5) * 30));
+        g.addColorStop(0, `rgb(${v0 * 0.95},${v0},${v0 * 0.88})`);
+        g.addColorStop(1, `rgb(${v1 * 0.97},${v1},${v1 * 0.9})`);
+        ctx.fillStyle = g;
+        leafPath(sz, lobed);
+        ctx.fill();
+        // midrib + a darker edge on the shadow side
+        ctx.strokeStyle = `rgba(40,45,30,${0.25 + rr() * 0.2})`;
+        ctx.lineWidth = 0.7;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(0, -sz * (lobed ? 1.2 : 1.35));
+        ctx.stroke();
+        ctx.restore();
+      }
     }
   };
   cluster(4, 4, 504, 504, 2600, 3);
-  cluster(516, 4, 504, 504, 2300, 7);
+  cluster(516, 4, 504, 504, 2100, 7, true);
   // conifer branch: a fan of needles from the left edge
   {
     const x = 4, y = 516, w = 504, h = 248;

@@ -1,6 +1,7 @@
 // Save / load to localStorage (per browser). Autosaves every 30s and when the
 // tab is hidden. The world is regenerated from its seed; only edits are saved.
 import type { Game } from '../game';
+import { EXT } from '../ext/registry';
 import type { MapId } from '../world/maps';
 import type { Mode } from './sim';
 
@@ -24,6 +25,8 @@ export interface SaveData {
   zones: ReturnType<Game['zones']['serialize']>;
   buildings: ReturnType<Game['buildings']['serialize']>;
   communes: [number, string, number, number, number][];
+  /** extension system state keyed by system id */
+  ext?: Record<string, unknown>;
 }
 
 export function snapshot(g: Game): SaveData {
@@ -32,6 +35,7 @@ export function snapshot(g: Game): SaveData {
     money: g.sim.money === Infinity ? null : g.sim.money, tax: g.sim.taxRate, loans: g.sim.loans, pop: g.sim.population,
     nature: g.sim.naturePct, sprawl: g.sim.sprawlPct, roads: g.net.serialize(), zones: g.zones.serialize(), buildings: g.buildings.serialize(),
     communes: g.communes.list.map((c) => [c.id, c.state === 'leaving' ? 'gone' : c.state, c.stubborn, c.suitDays, c.suitOdds]),
+    ext: Object.fromEntries(EXT.systems.filter((s) => s.save).map((s) => [s.id, s.save!(g)])),
   };
 }
 
@@ -82,6 +86,7 @@ export function applySave(g: Game, d: SaveData) {
   g.buildings.restore(d.buildings);
   g.hour = d.hour;
   g.sim.restoreState(d.day, d.money, d.tax, d.loans, d.pop, d.nature, d.sprawl);
+  for (const s of EXT.systems) if (s.load && d.ext && s.id in d.ext) s.load(g, d.ext[s.id]);
 }
 
 export function autosave(g: Game) {

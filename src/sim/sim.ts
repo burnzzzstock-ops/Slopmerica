@@ -4,7 +4,7 @@ import { MAX_LEVEL, ZONE_TYPES, type GameTime, type ZoneType } from '../contract
 import { Emitter } from '../core/events';
 import { clamp } from '../core/math';
 import { Rng } from '../core/rng';
-import type { Bld, Buildings } from './buildings';
+import { isZoned, type Bld, type Buildings } from './buildings';
 import type { RoadNetwork } from '../roads/network';
 import type { Zoning, ZCell } from '../zones/zoning';
 import type { Terrain } from '../world/terrain';
@@ -42,11 +42,34 @@ export const UNLOCKS: { pop: number; what: string; zone?: ZoneType; road?: strin
   { pop: 2500, what: 'Katy Stroad (8 lanes)', road: 'stroad8' },
 ];
 
+export type DemandKey = 'res' | 'com' | 'ind' | 'off';
+export type DemandWhy = Record<DemandKey, string[]>;
+
+/**
+ * Extension points into the simulation. Systems outside sim.ts (services,
+ * districts, policies) push functions here instead of editing the sim.
+ */
+export interface SimHooks {
+  /** additive land value for a zoned building (services +, pollution -) */
+  landValue: ((b: Bld) => number)[];
+  /** highest level a building may reach right now and why (null = no cap) */
+  levelCap: ((b: Bld) => { max: number; why: string } | null)[];
+  /** why a building can't take new residents / workers right now (null = fine) */
+  vacancy: ((b: Bld) => string | null)[];
+  /** tax multiplier for one building (policies, districts); 1 = none */
+  taxMul: ((b: Bld) => number)[];
+  /** adjust demand in place and explain the change */
+  demand: ((d: Record<DemandKey, number>, why: DemandWhy) => void)[];
+  /** weekly budget lines: call add(label, amount, kind); amount > 0 is an expense, < 0 income */
+  weekly: ((add: (label: string, amount: number, kind: keyof Ledger) => void) => void)[];
+}
+
 type Events = {
   milestone: { kind: 'population' | 'nature' | 'sprawl' | 'unlock' | 'maxLevel'; value: number; label: string };
   lowMoney: number;
   bankrupt: number;
   week: Ledger;
+  day: number;
   ending: void;
 };
 
@@ -86,6 +109,11 @@ export class Sim {
   weatherDemandMul = 1;
   /** gameplay hooks provided by the game */
   communePenalty: (x: number, z: number) => number = () => 0;
+  hooks: SimHooks = { landValue: [], levelCap: [], vacancy: [], taxMul: [], demand: [], weekly: [] };
+  /** why each demand bar is where it is (for the UI) */
+  demandWhy: DemandWhy = { res: [], com: [], ind: [], off: [] };
+  /** flat per-capita services cost; the services system zeroes it and bills real facilities */
+  serviceCostPerCapita = 0.55;
 
   constructor(public mode: Mode, private b: Buildings, private zones: Zoning, private net: RoadNetwork, private terrain: Terrain, private trees: Trees) {
     this.money = mode === 'sandbox' ? Infinity : mode === 'speedrun' ? 150000 : mode === 'hippie' ? 70000 : 90000;
@@ -164,14 +192,15 @@ export class Sim {
     const cap = { comLow: 0, comHigh: 0, industry: 0, office: 0 };
     for (const bld of this.b.list.values()) {
       if (bld.state !== 'active' && bld.occ === 0) continue;
+      if (bld.abandoned !== undefined) continue;
       if (bld.zone === 'resLow' || bld.zone === 'resHigh') {
         // move-ins / move-outs
-        if (bld.occ < bld.cap && this.demand.res > -30) bld.occ = Math.min(bld.cap, bld.occ + Math.max(1, Math.ceil(bld.cap * 0.18)));
+        if (bld.occ < bld.cap && this.demand.res > -30 && !this.vacancyBlock(bld)) bld.occ = Math.min(bld.cap, bld.occ + Math.max(1, Math.ceil(bld.cap * 0.18)));
         else if (this.demand.res < -60 && bld.occ > 0 && this.rng.chance(0.2)) bld.occ--;
         this.population += bld.occ;
         if (bld.zone === 'resHigh') resHighPop += bld.occ;
-      } else if (bld.zone !== 'landmark' && bld.state === 'active') {
-        cap[bld.zone] += bld.cap;
+      } else if (isZoned(bld) && bld.state === 'active' && !this.vacancyBlock(bld)) {
+        cap[bld.zone as keyof typeof cap] += bld.cap;
       }
     }
     this.jobsCap = cap;
@@ -181,7 +210,7 @@ export class Sim {
     const commuters = Math.round(Math.max(0, jobs - this.workers) * 0.35);
     this.jobsFilled = Math.min(jobs, this.workers + commuters);
     const fill = jobs ? this.jobsFilled / jobs : 0;
-    for (const bld of this.b.list.values()) if (bld.zone !== 'resLow' && bld.zone !== 'resHigh' && bld.zone !== 'landmark') bld.occ = bld.state === 'active' ? Math.round(bld.cap * fill) : 0;
+    for (const bld of this.b.list.values()) if (isZoned(bld) && bld.zone !== 'resLow' && bld.zone !== 'resHigh') bld.occ = bld.state === 'active' && bld.abandoned === undefined && !this.vacancyBlock(bld) ? Math.round(bld.cap * fill) : 0;
     this.unemployment = this.workers ? Math.max(0, this.workers - jobs) / this.workers : 0;
 
     // ---- demand: the real-ish urban economics (jobs-housing balance, retail per capita, goods chain)
@@ -197,12 +226,20 @@ export class Sim {
     const officeNeed = resHighPop * 0.25 + P * 0.03 + 4;
     let off = (100 * (officeNeed - cap.office)) / Math.max(20, officeNeed) - taxHit;
     const wm = this.weatherDemandMul;
-    this.demand = {
-      res: clamp(res * (res > 0 ? wm : 1), -100, 100),
-      com: clamp(com * (com > 0 ? wm : 1), -100, 100),
-      ind: clamp(ind * (ind > 0 ? wm : 1), -100, 100),
-      off: clamp(off * (off > 0 ? wm : 1), -100, 100),
-    };
+    const why: DemandWhy = { res: [], com: [], ind: [], off: [] };
+    const gap = jobs * 0.95 - W;
+    why.res.push(gap >= 0 ? `${Math.round(gap)} more jobs than workers` : `${Math.round(-gap)} more workers than jobs`);
+    if (boom) why.res.push(`small-town boom +${boom}`);
+    why.com.push(comCap < retailNeed ? `shoppers want ${Math.round(retailNeed - comCap)} more shop jobs` : `${Math.round(comCap - retailNeed)} too many shop jobs for ${P} people`);
+    why.ind.push(cap.industry < goodsNeed ? `shops need goods: ${Math.round(goodsNeed - cap.industry)} factory jobs short` : 'enough factories for the shops');
+    if (this.unemployment > 0.05) why.ind.push(`${Math.round(this.unemployment * 100)}% unemployed want work`);
+    why.off.push(cap.office < officeNeed ? `${Math.round(officeNeed - cap.office)} office jobs wanted` : 'offices saturated');
+    if (Math.abs(taxHit) > 2) for (const k of ['res', 'com', 'ind', 'off'] as const) why[k].push(`taxes ${taxHit > 0 ? '−' : '+'}${Math.round(Math.abs(taxHit))}`);
+    if (wm !== 1) for (const k of ['res', 'com', 'ind', 'off'] as const) why[k].push(`weather ×${wm.toFixed(2)}`);
+    const dm = { res: res * (res > 0 ? wm : 1), com: com * (com > 0 ? wm : 1), ind: ind * (ind > 0 ? wm : 1), off: off * (off > 0 ? wm : 1) };
+    for (const h of this.hooks.demand) h(dm, why);
+    this.demand = { res: clamp(dm.res, -100, 100), com: clamp(dm.com, -100, 100), ind: clamp(dm.ind, -100, 100), off: clamp(dm.off, -100, 100) };
+    this.demandWhy = why;
 
     // ---- growth
     const catDemand = (z: ZoneType) => {
@@ -233,6 +270,7 @@ export class Sim {
     if (d % 5 === 0) this.updateSprawl();
     this.naturePct = this.trees.naturePct;
     this.checkMilestones();
+    this.events.emit('day', d);
     if (d % 7 === 0) this.weekly();
     if (d % 2 === 0) this.history.push({ day: d, pop: this.population, money: this.money === Infinity ? 0 : this.money, nature: this.naturePct, sprawl: this.sprawlPct });
     if (this.history.length > 800) this.history.splice(0, this.history.length - 800);
@@ -240,13 +278,14 @@ export class Sim {
 
   private landValueAndLevels(days: number) {
     for (const bld of this.b.list.values()) {
-      if (bld.zone === 'landmark') continue;
+      if (!isZoned(bld)) continue;
       const near = this.b.near(bld.x, bld.z, 140);
       let lv = 18;
       let ind = 0, com = 0, slop = 0, dense = 0, lm = 0;
       for (const o of near) {
         if (o === bld) continue;
         if (o.zone === 'landmark') { lm++; continue; }
+        if (o.zone === 'service') continue;
         dense++;
         if (o.zone === 'industry') ind++;
         if (o.zone === 'comLow' || o.zone === 'comHigh') com++;
@@ -264,9 +303,10 @@ export class Sim {
       for (const [dx, dz] of [[60, 0], [-60, 0], [0, 60], [0, -60]]) if (this.terrain.h(bld.x + dx, bld.z + dz) < WATER) { lv += 8; break; }
       lv += Math.min(12, this.trees.countIn(bld.x, bld.z, 70) * 0.3);
       lv -= this.communePenalty(bld.x, bld.z);
+      for (const h of this.hooks.landValue) lv += h(bld);
       bld.lv = clamp(lv, 0, 100);
-      if (bld.state !== 'active') continue;
-      const max = MAX_LEVEL[bld.zone];
+      if (bld.state !== 'active' || bld.abandoned !== undefined) continue;
+      const max = this.levelCap(bld).max;
       const target = clamp(1 + Math.floor(bld.lv / 18), 1, max);
       const fullEnough = bld.cap === 0 || bld.occ >= bld.cap * 0.7;
       if (target > bld.level && fullEnough) {
@@ -274,6 +314,38 @@ export class Sim {
         if (bld.levelProgress >= 1) this.b.levelUp(bld);
       }
     }
+  }
+
+  /** First vacancy block reason from the hooks (no power, no water, ...). */
+  vacancyBlock(b: Bld): string | null {
+    for (const h of this.hooks.vacancy) { const r = h(b); if (r) return r; }
+    return null;
+  }
+
+  /** The level a building may reach right now, and what caps it. */
+  levelCap(b: Bld): { max: number; why: string } {
+    let best = { max: isZoned(b) ? MAX_LEVEL[b.zone] : 1, why: '' };
+    for (const h of this.hooks.levelCap) { const r = h(b); if (r && r.max < best.max) best = r; }
+    return best;
+  }
+
+  /**
+   * The binding constraint: the one thing currently stopping this building's
+   * next good outcome (filling up, or leveling up). For the inspector.
+   */
+  bindingConstraint(b: Bld): string | null {
+    if (!isZoned(b)) return null;
+    if (b.abandoned !== undefined) return `Abandoned: ${this.vacancyBlock(b) ?? 'nobody wants to live here'}`;
+    if (b.state !== 'active') return null;
+    const block = this.vacancyBlock(b);
+    if (block) return block;
+    const isRes = b.zone === 'resLow' || b.zone === 'resHigh';
+    if (b.occ < b.cap * 0.7) return isRes ? (this.demand.res <= -30 ? 'Nobody is moving here (low residential demand)' : 'Filling up') : 'Not enough workers';
+    const cap = this.levelCap(b);
+    if (b.level >= cap.max) return b.level >= MAX_LEVEL[b.zone] ? null : cap.why;
+    const need = (b.level) * 18;
+    if (b.lv < need) return `Land value ${Math.round(b.lv)} of ${need} needed for level ${b.level + 1}`;
+    return null;
   }
 
   private updateSprawl() {
@@ -315,7 +387,7 @@ export class Sim {
   }
 
   private onBuildingComplete(bld: Bld) {
-    if (bld.zone === 'landmark' || bld.level > 1) return;
+    if (!isZoned(bld) || bld.level > 1) return;
     const perCell = { resLow: 110, resHigh: 130, comLow: 190, comHigh: 210, industry: 160, office: 240 }[bld.zone];
     this.earn(Math.round(perCell * bld.w * bld.d), 'impact');
   }
@@ -325,7 +397,9 @@ export class Sim {
     let res = 0, com = 0, ind = 0, off = 0;
     for (const bld of this.b.list.values()) {
       if (bld.state !== 'active' && bld.occ === 0) continue;
-      const lm = 1 + (bld.level - 1) * 0.3;
+      if (!isZoned(bld) || bld.abandoned !== undefined) continue;
+      let lm = 1 + (bld.level - 1) * 0.3;
+      for (const h of this.hooks.taxMul) lm *= h(bld);
       if (bld.zone === 'resLow' || bld.zone === 'resHigh') res += bld.occ * 0.9 * lm;
       else if (bld.zone === 'comLow' || bld.zone === 'comHigh') com += bld.occ * 1.2 * lm;
       else if (bld.zone === 'industry') ind += bld.occ * 1.0 * lm;
@@ -336,7 +410,8 @@ export class Sim {
     this.earn(Math.round(ind * t), 'indTax');
     this.earn(Math.round(off * t), 'offTax');
     this.spend(Math.round(this.net.upkeep()), 'Road upkeep', 'roads');
-    this.spend(Math.round(this.population * 0.55), 'Services', 'services');
+    if (this.serviceCostPerCapita > 0) this.spend(Math.round(this.population * this.serviceCostPerCapita), 'Services', 'services');
+    for (const h of this.hooks.weekly) h((label, amount, kind) => { if (amount > 0) this.spend(Math.round(amount), label, kind); else if (amount < 0) this.earn(Math.round(-amount), kind); });
     for (const L of this.loans) {
       if (L.weeksLeft <= 0) continue;
       L.weeksLeft--;

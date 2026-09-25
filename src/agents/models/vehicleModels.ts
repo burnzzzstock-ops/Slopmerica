@@ -159,11 +159,12 @@ function triCount(g: THREE.BufferGeometry): number {
   return (g.index?.count ?? g.getAttribute('position').count) / 3;
 }
 
-const TILE_COLS = 4, TILE_ROWS = 3;
+const TILE_COLS = 4, TILE_ROWS = 4;
 const DECAL_TILE: Record<string, number> = {
   sheriff: 0, ambulance: 1, slop: 2, peace: 3,
   plate: 4, grille: 5, stroad: 6, propane: 7,
   fire: 8, tow: 9, bus: 10, stripe: 11,
+  transit: 12, trash: 13,
 };
 
 let atlas: THREE.Texture | undefined;
@@ -178,13 +179,14 @@ export function vehicleDecalAtlas(): THREE.Texture {
     return atlas;
   }
   const canvas = document.createElement('canvas');
-  canvas.width = 1024; canvas.height = 768;
+  canvas.width = 1024; canvas.height = 1024;
   const ctx = canvas.getContext('2d')!;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const labels = [
     ['SHERIFF', '#ddd7c9', '#17191b'], ['AMBULANCE', '#f4f1e8', '#b21f2d'], ['SLOP', '#111315', '#c6f432'], ['☮', '#e9dfbd', '#e16b5a'],
     ['69-SLOP', '#f1eee2', '#17202a'], ['▦▦▦▦', '#17191b', '#aeb4b8'], ['MY OTHER CAR IS A STROAD', '#eee9dd', '#17191b'], ['I ♥ PROPANE', '#eee9dd', '#b22d26'],
     ['ENGINE 69', '#b31e27', '#f1c95d'], ['SLOP TOW', '#efbd35', '#17191b'], ['FREE LOVE / $8 GAS', '#36a99b', '#f6e9c6'], ['///', '#f3efe7', '#bd2530'],
+    ['SLOP TRANSIT', '#c6f432', '#111315'], ['WE TAKE IT ALL', '#2f6b3a', '#f2eee2'],
   ];
   labels.forEach(([text, bg, fg], i) => {
     const x = (i % TILE_COLS) * 256, y = Math.floor(i / TILE_COLS) * 256;
@@ -515,6 +517,60 @@ function addTow(s: VehicleDimensions, shell: THREE.BufferGeometry[], details: Ta
   return r;
 }
 
+function addCityBus(s: VehicleDimensions, shell: THREE.BufferGeometry[], details: TaggedPart[], lights: TaggedPart[]): number {
+  const r = 0.5;
+  shell.push(loft([
+    { z: -s.length * 0.5, bottom: 0.36, top: s.height - 0.08, half: s.width * 0.47, roof: s.width * 0.41 },
+    { z: s.length * 0.46, bottom: 0.36, top: s.height - 0.04, half: s.width * 0.48, roof: s.width * 0.42 },
+    { z: s.length * 0.5, bottom: 0.36, top: s.height - 0.32, half: s.width * 0.46, roof: s.width * 0.39 },
+  ]));
+  const side = s.width * 0.476;
+  // continuous window band, split by pillars
+  for (const x of [-side, side]) {
+    details.push({ geometry: box(0.03, 0.86, s.length * 0.8, x, 2.06, -s.length * 0.05), color: 0x1d2a33, zone: 1 });
+    for (let z = -s.length * 0.42; z < s.length * 0.36; z += 1.55) details.push({ geometry: box(0.04, 0.9, 0.09, x + Math.sign(x) * 0.012, 2.06, z), color: 0xdfe2dc, zone: 3 });
+    details.push({ geometry: sideDecal(x + Math.sign(x) * 0.01, 0.72, 1.46, -s.length * 0.36, s.length * 0.1, 'transit'), color: 0xffffff, zone: 4 });
+  }
+  // front: big windshield, destination sign, door
+  details.push({ geometry: box(s.width * 0.86, 1.42, 0.04, 0, 1.98, s.length * 0.5 + 0.01), color: 0x223540, zone: 1 });
+  details.push({ geometry: box(0.035, 2.25, 1.15, side + 0.01, 1.5, s.length * 0.37), color: 0x24343d, zone: 1 });
+  details.push({ geometry: box(0.035, 2.25, 1.15, side + 0.01, 1.5, -s.length * 0.06), color: 0x24343d, zone: 1 });
+  details.push({ geometry: box(s.width * 0.62, 0.34, 1.9, 0, s.height + 0.12, -s.length * 0.12), color: 0xd4d8d4, zone: 2 });
+  details.push({ geometry: box(s.width * 0.9, 0.08, s.length * 0.98, 0, 0.42, 0), color: 0xc6f432, zone: 3 });
+  addWheels(details, s.width, r, 0.36, [-s.length * 0.27, s.length * 0.31]);
+  addBumpers(details, s.width, s.length, r + 0.04, false);
+  addLights(lights, s.width, s.length, r + 0.32);
+  lights.push({ geometry: box(s.width * 0.62, 0.24, 0.04, 0, s.height - 0.42, s.length * 0.5 + 0.025), color: 0xffb640, signal: 1 });
+  return r;
+}
+
+function addGarbageTruck(s: VehicleDimensions, shell: THREE.BufferGeometry[], details: TaggedPart[], lights: TaggedPart[]): number {
+  const r = 0.52;
+  const cabFront = s.length * 0.47, cabRear = s.length * 0.22;
+  shell.push(loft([
+    { z: cabRear, bottom: r * 0.65, top: r + 0.6, half: s.width * 0.43, roof: s.width * 0.37 },
+    { z: cabRear + 0.2, bottom: r * 0.65, top: 2.75, half: s.width * 0.45, roof: s.width * 0.38 },
+    { z: cabFront - 0.28, bottom: r * 0.65, top: 2.75, half: s.width * 0.45, roof: s.width * 0.38 },
+    { z: cabFront, bottom: r * 0.65, top: r + 0.75, half: s.width * 0.42, roof: s.width * 0.35 },
+  ]));
+  const bodyL = s.length * 0.6, bodyZ = -s.length * 0.14;
+  details.push({ geometry: box(s.width * 0.95, s.height - 0.8, bodyL, 0, (s.height + 0.55) * 0.5, bodyZ), color: 0x2f6b3a, zone: 3 });
+  // rib stiffeners along the body
+  for (let z = bodyZ - bodyL * 0.45; z < bodyZ + bodyL * 0.5; z += bodyL / 5) for (const x of [-s.width * 0.48, s.width * 0.48]) details.push({ geometry: box(0.05, s.height - 0.95, 0.12, x, (s.height + 0.55) * 0.5, z), color: 0x265a31, zone: 3 });
+  // rear hopper, tilted
+  details.push({ geometry: box(s.width * 0.9, 1.9, 1.25, 0, 1.75, -s.length * 0.47, -0.3), color: 0x3a4145, zone: 2 });
+  details.push({ geometry: box(s.width * 0.7, 0.5, 0.2, 0, 0.95, -s.length * 0.5), color: 0x111315, zone: 0 });
+  // side arm (automated lifter)
+  details.push({ geometry: box(0.14, 1.3, 0.14, s.width * 0.52, 1.35, cabRear - 0.4, 0, 0, 0.35), color: 0x9ba2a7, zone: 2 });
+  details.push({ geometry: quad([-s.width * 0.33, 1.5, cabFront + 0.01], [s.width * 0.33, 1.5, cabFront + 0.01], [s.width * 0.3, 2.5, cabFront - 0.22], [-s.width * 0.3, 2.5, cabFront - 0.22]), color: 0x263b47, zone: 1 });
+  for (const x of [-s.width * 0.476, s.width * 0.476]) details.push({ geometry: sideDecal(x, 1.35, 2.5, bodyZ - bodyL * 0.3, bodyZ + bodyL * 0.3, 'trash'), color: 0xffffff, zone: 4 });
+  addWheels(details, s.width, r, 0.38, [-s.length * 0.34, -s.length * 0.24, s.length * 0.33]);
+  addBumpers(details, s.width, s.length, r + 0.05, false);
+  addLights(lights, s.width, s.length, r + 0.33);
+  lights.push({ geometry: box(0.28, 0.16, 0.28, 0, 2.86, cabRear + 0.35), color: 0xffa51a, signal: 1 });
+  return r;
+}
+
 function makeFar(kind: VehicleKind, s: VehicleDimensions, wheelRadius: number): VehicleLodGeometry {
   const shell = loft([
     { z: -s.length * 0.48, bottom: wheelRadius * 0.55, top: Math.min(s.height * 0.58, wheelRadius + 0.58), half: s.width * 0.45, roof: s.width * 0.38 },
@@ -526,7 +582,8 @@ function makeFar(kind: VehicleKind, s: VehicleDimensions, wheelRadius: number): 
   const cabL = kind === 'pickup' || kind === 'liftedTruck' || kind === 'towTruck' ? s.length * 0.34 : s.length * 0.55;
   details.push({ geometry: box(s.width * 0.7, Math.max(0.3, cabH * 0.33), cabL, 0, Math.min(s.height - 0.3, cabH * 0.75), s.length * 0.08), color: 0x263b47, zone: 1 });
   for (const z of [-s.length * 0.3, s.length * 0.3]) for (const x of [-s.width * 0.47, s.width * 0.47]) details.push({ geometry: cyl(wheelRadius, Math.min(0.25, s.width * 0.15), x, wheelRadius, z, Math.PI / 2, 6), color: 0x141719, zone: 0 });
-  if (kind === 'semi' || kind === 'boxTruck' || kind === 'ambulance') details.push({ geometry: box(s.width * 0.91, s.height * 0.64, s.length * 0.57, 0, s.height * 0.53, -s.length * 0.18), color: kind === 'ambulance' ? 0xe7e5dd : 0xd4d7d7, zone: 3 });
+  if (kind === 'semi' || kind === 'boxTruck' || kind === 'ambulance' || kind === 'garbageTruck') details.push({ geometry: box(s.width * 0.91, s.height * 0.64, s.length * 0.57, 0, s.height * 0.53, -s.length * 0.18), color: kind === 'ambulance' ? 0xe7e5dd : kind === 'garbageTruck' ? 0x2f6b3a : 0xd4d7d7, zone: 3 });
+  if (kind === 'cityBus') details.push({ geometry: box(s.width * 0.93, 0.8, s.length * 0.8, 0, 2.06, -s.length * 0.05), color: 0x1d2a33, zone: 1 });
   return { shell, detail: mergeTagged(details, 'detail') };
 }
 
@@ -551,6 +608,8 @@ export function buildVehicleModel(kind: VehicleKind, s: VehicleDimensions): Vehi
     case 'vwBus': case 'slopVan': wheelRadius = addVanSpecial(kind, s, shell, details, lights); break;
     case 'motorcycle': wheelRadius = addMotorcycle(s, shell, details, lights); break;
     case 'towTruck': wheelRadius = addTow(s, shell, details, lights); break;
+    case 'cityBus': wheelRadius = addCityBus(s, shell, details, lights); break;
+    case 'garbageTruck': wheelRadius = addGarbageTruck(s, shell, details, lights); break;
   }
   const near: VehicleLodGeometry = {
     shell: mergeShell(shell),

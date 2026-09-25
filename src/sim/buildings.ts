@@ -16,8 +16,12 @@ import type { RoadNetwork } from '../roads/network';
 
 export interface Bld {
   id: number;
-  zone: ZoneType | 'landmark';
+  zone: ZoneType | 'landmark' | 'service';
   landmark?: LandmarkId;
+  /** service building kind (zone === 'service'), a key of CUSTOM_BUILDINGS */
+  kind?: string;
+  /** days spent abandoned (unset = occupied normally) */
+  abandoned?: number;
   level: number;
   w: number;
   d: number;
@@ -47,6 +51,21 @@ export interface Bld {
 }
 
 const VARIANTS = 6;
+
+/** A zoned (growable) building, not a landmark or city service. */
+export const isZoned = (b: Bld): b is Bld & { zone: ZoneType } => b.zone !== 'landmark' && b.zone !== 'service';
+
+/** Player-placed non-zoned buildings (power plants, schools, ...). Systems register their kinds here. */
+export interface CustomBuildingDef {
+  label: string;
+  /** footprint in 8 m cells */
+  w: number;
+  d: number;
+  buildDays: number;
+  model(): BuildingModel;
+  paint?: Paint;
+}
+export const CUSTOM_BUILDINGS = new Map<string, CustomBuildingDef>();
 
 /** Residents (res zones) or jobs (others) per building. */
 export function capacityFor(zone: ZoneType, level: number, cells: number): number {
@@ -259,16 +278,62 @@ export class Buildings {
     return b;
   }
 
+  /** Place a registered custom building (see CUSTOM_BUILDINGS) facing yaw. */
+  placeCustom(kind: string, x: number, z: number, yaw: number): Bld | null {
+    const def = CUSTOM_BUILDINGS.get(kind);
+    if (!def) return null;
+    const key = `custom|${kind}`;
+    let e = this.geoIds.get(key);
+    if (!e) { const model = def.model(); this.geoIds.set(key, (e = { id: this.addGeometry(model.geometry), model })); }
+    const y = this.terrain.h(x, z);
+    const pick = this.net.pickSeg(x, z, (Math.max(def.w, def.d) * CELL) / 2 + 40);
+    const b: Bld = {
+      id: this.nextId++, zone: 'service', kind, level: 1, w: def.w, d: def.d, x, z, y, yaw,
+      hw: (def.w * CELL) / 2, hd: (def.d * CELL) / 2, cells: [], seg: pick?.seg.id ?? 0, label: def.label, model: e.model,
+      state: 'building', progress: 0, buildDays: def.buildDays, cap: 0, occ: 0, lv: 30, levelProgress: 0, born: this.day, inst: -1, buildInst: -1, buildH: 1, emitT: 0,
+    };
+    this.list.set(b.id, b);
+    this.hash.insert(b, x - b.hw - b.hd, z - b.hw - b.hd, x + b.hw + b.hd, z + b.hw + b.hd);
+    this.terrain.flattenLot(this.corners(b), y, def.paint ?? Paint.Paved);
+    this.trees.cut(x - b.hw - b.hd - 4, z - b.hw - b.hd - 4, x + b.hw + b.hd + 4, z + b.hw + b.hd + 4, (tx, tz) => this.contains(b, tx, tz, 2));
+    for (const c of this.zones.cellsNear(x, z, b.hw + b.hd + 6)) if (this.contains(b, c.x, c.z, 3)) c.bld = b.id;
+    this.placeInstance(b, e.id);
+    this.zones.markOverlayDirty();
+    return b;
+  }
+
+  /** Normal (untinted) instance color: abandoned buildings look dead. */
+  baseTint(b: Bld, out: THREE.Color): THREE.Color {
+    return b.abandoned !== undefined ? out.setRGB(0.42, 0.4, 0.38) : out.setRGB(1, 1, 1);
+  }
+
+  setAbandoned(b: Bld, on: boolean) {
+    if (on === (b.abandoned !== undefined)) return;
+    if (on) { b.abandoned = 0; b.occ = 0; } else delete b.abandoned;
+    if (b.inst >= 0) this.mesh.setColorAt(b.inst, this.baseTint(b, new THREE.Color()));
+  }
+
   // ------------------------------------------------------------------ save / load
   serialize() {
     return [...this.list.values()].map((b) => [
-      b.zone, b.landmark ?? '', b.level, b.w, b.d, +b.x.toFixed(2), +b.z.toFixed(2), +b.y.toFixed(2), +b.yaw.toFixed(4), b.brand ?? '', b.occ, b.state === 'active' ? 1 : +b.progress.toFixed(2), b.seg, +b.levelProgress.toFixed(2),
+      b.zone, b.landmark ?? b.kind ?? '', b.level, b.w, b.d, +b.x.toFixed(2), +b.z.toFixed(2), +b.y.toFixed(2), +b.yaw.toFixed(4), b.brand ?? '', b.occ, b.state === 'active' ? 1 : +b.progress.toFixed(2), b.seg, +b.levelProgress.toFixed(2),
     ] as const);
   }
 
   restore(rows: ReturnType<Buildings['serialize']>) {
     for (const r of rows) {
       const [zone, landmark, level, w, d, x, z, y, yaw, brand, occ, prog, seg, lp] = r;
+      if (zone === 'service') {
+        const b = this.placeCustom(landmark, x, z, yaw);
+        if (!b) continue;
+        b.progress = Math.min(1, prog);
+        if (b.progress >= 1) {
+          b.state = 'active';
+          if (b.buildInst >= 0) { this.mesh.deleteInstance(b.buildInst); b.buildInst = -1; }
+        }
+        this.writeMatrix(b, b.state === 'active' ? 1 : easeGrow(b.progress));
+        continue;
+      }
       if (zone === 'landmark') {
         const b = this.placeLandmark(landmark as LandmarkId, x, z, yaw);
         b.state = 'active';
@@ -388,7 +453,7 @@ export class Buildings {
 
   /** Swap a building to a new level (same lot). */
   levelUp(b: Bld) {
-    if (b.zone === 'landmark') return;
+    if (!isZoned(b)) return;
     const max = MAX_LEVEL[b.zone];
     if (b.level >= max) return;
     b.level++;
@@ -429,7 +494,7 @@ export class Buildings {
   counts() {
     let active = 0, building = 0, maxed = 0;
     for (const b of this.list.values()) {
-      if (b.zone === 'landmark') continue;
+      if (!isZoned(b)) continue;
       if (b.state === 'active') active++;
       else building++;
       if (b.level >= MAX_LEVEL[b.zone]) maxed++;

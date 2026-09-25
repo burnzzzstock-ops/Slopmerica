@@ -18,10 +18,12 @@ import { RoadRenderer } from './roads/roadMesh';
 import { ROAD_TYPES, RoadTypeId } from './roads/roadTypes';
 import { Zoning } from './zones/zoning';
 import { Buildings, Bld } from './sim/buildings';
-import { Sim, Mode, SPEEDS } from './sim/sim';
+import { Sim, Mode, SPEEDS, DAY_SECONDS } from './sim/sim';
 import { Traffic, Car } from './agents/traffic';
 import { Pedestrians, Ped } from './agents/pedestrians';
 import { Communes, Commune } from './agents/communes';
+import { EXT } from './ext/registry';
+import './ext/index';
 import { AmbientLife } from './agents/ambient';
 import { Tools } from './tools/tools';
 import { setBuildingNight, loadArt, landmarkFootprint } from './buildings/generator';
@@ -189,6 +191,7 @@ export class Game {
     this.sim.communePenalty = (x, z) => this.communes.penalty(x, z);
 
     this.traffic = new Traffic(this.scene, this.net, this.buildings, this.q.maxCars);
+    this.traffic.groundAt = (x, z) => this.terrain.h(x, z);
     this.roads.setSignalStateProvider((nodeId, segId) => {
       const s = this.traffic.signalState(nodeId);
       if (!s) return 'green';
@@ -211,6 +214,10 @@ export class Game {
     this.onFrame.push(dt => ambientLife.update(dt, this.camera, this.env.night, this.weather));
 
     this.wireEvents();
+    // extension systems (transit, services, ...): init before a save restores their data
+    for (const s of EXT.systems) s.init?.(this);
+    this.sim.events.on('day', (d) => { for (const s of EXT.systems) s.daily?.(this, d); });
+    this.sim.events.on('week', () => { for (const s of EXT.systems) s.weekly?.(this); });
     if (opts.restore) applySave(this, opts.restore);
     else this.seedRoad(start);
     lap('rest');
@@ -580,7 +587,9 @@ export class Game {
         const deviceCeiling: Quality['name'] = IS_TOUCH || !caps.isWebGL2 || caps.maxTextureSize < 8192 ? 'medium' : 'ultra';
         let chosen: Quality['name'] = avg > 34 ? 'low' : avg > 24 ? 'medium' : avg > 16 ? 'high' : 'ultra';
         if (deviceCeiling === 'medium' && (chosen === 'high' || chosen === 'ultra')) chosen = IS_TOUCH ? 'low' : 'medium';
-        if (saveQuality(chosen, true) && chosen !== this.q.name) location.reload();
+        // Apply live (no reload mid-city); asset budgets pick it up next launch.
+        if (chosen !== this.q.name) this.requestQuality(chosen);
+        saveQuality(chosen, true);
       }
     }
     this.resolutionCooldown -= intervalMs / 1000;
@@ -692,6 +701,10 @@ export class Game {
     this.particles.night = this.env.night;
     this.particles.wind.copy(this.weather.wind);
     this.particles.update(dt, this.camera);
+    {
+      const simDays = (dt * spd) / DAY_SECONDS;
+      for (const s of EXT.systems) s.frame?.(this, dt, simDays);
+    }
     for (const f of this.onFrame) f(dt);
     this.terrain.flush();
 

@@ -108,7 +108,9 @@ export type VehicleKind =
   | 'vwBus'
   | 'slopVan'
   | 'motorcycle'
-  | 'towTruck';
+  | 'towTruck'
+  | 'cityBus'
+  | 'garbageTruck';
 
 // ------------------------------------------------------------------ people
 export type PersonAction =

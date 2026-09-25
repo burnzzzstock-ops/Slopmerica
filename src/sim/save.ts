@@ -80,6 +80,7 @@ export function applySave(g: Game, d: SaveData) {
     } else c.state = state as typeof c.state;
   }
   g.syncBlockers();
+  for (const s of EXT.systems) if (s.preload && d.ext && s.id in d.ext) s.preload(g, d.ext[s.id]);
   g.net.restore(d.roads);
   g.zones.update();
   g.zones.restore(d.zones);

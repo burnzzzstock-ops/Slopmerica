@@ -24,6 +24,7 @@ import { Fields } from './pollution';
 import { ProblemIcons, type Problem } from './serviceIcons';
 import type { FeedContext, FeedEventKind, VehicleKind, ZoneType } from '../contracts';
 import type { DemandKey } from './sim';
+import { POLICY } from './policyEffects';
 
 type ZB = Bld & { zone: ZoneType };
 
@@ -117,11 +118,12 @@ function useOf(b: ZB, u: Util): number {
     per = isRes(b) ? 0.25 : b.zone === 'industry' ? 1.0 : b.zone === 'office' ? 0.25 : 0.3;
     if (u === 'sewage') per *= 0.9;
   }
-  return n * per * LVL(b);
+  const pol = u === 'power' ? POLICY.powerDemandMul(b) : POLICY.waterDemandMul(b);
+  return n * per * LVL(b) * pol;
 }
 function trashOf(b: ZB): number {
   const per = isRes(b) ? 0.0025 : b.zone === 'industry' ? 0.012 : b.zone === 'office' ? 0.003 : 0.006;
-  return Math.max(b.occ, b.cap * 0.3) * per * LVL(b);
+  return Math.max(b.occ, b.cap * 0.3) * per * LVL(b) * POLICY.garbageMul(b);
 }
 function peopleOf(b: Bld): number {
   return isZoned(b) ? Math.max(b.occ, b.cap * 0.3) : 0;
@@ -554,7 +556,7 @@ function wellbeing(g: Game, zoned: ZB[]) {
     const dens = { resLow: 0.5, resHigh: 1.1, comLow: 0.9, comHigh: 1.3, industry: 0.8, office: 0.6 }[b.zone];
     const poor = b.lv < 25 ? 1.5 : b.lv < 45 ? 1.1 : 0.8;
     const pol = bs.cov.police;
-    bs.crime += 0.9 * dens * poor * (1 + unemp * 3) * (1 - 0.85 * pol) - (0.25 + 2.2 * pol);
+    bs.crime += 0.9 * dens * poor * (1 + unemp * 3) * (1 - 0.85 * pol) * POLICY.crimeMul(b) - (0.25 + 2.2 * pol);
     if (b.abandoned !== undefined) bs.crime += 0.8;
     bs.crime = Math.max(0, Math.min(100, bs.crime));
     if (bs.crime > 70 && pol > 0.2 && Math.random() < 0.08) {
@@ -572,7 +574,7 @@ function wellbeing(g: Game, zoned: ZB[]) {
       if (st) dispatchFrom(g, st, b, 'on a call', b.label);
     }
     // education drifts toward what the local schools can provide
-    const eTarget = Math.min(1, 0.15 + 0.5 * bs.cov.school + 0.4 * bs.cov.college);
+    const eTarget = Math.min(1, (0.15 + 0.5 * bs.cov.school + 0.4 * bs.cov.college) * POLICY.educationMul(b));
     bs.edu += (eTarget - bs.edu) * 0.04;
     // sick people move out
     if (isRes(b) && bs.sick > 0.2 && b.occ > 0 && Math.random() < bs.sick) b.occ--;
@@ -607,7 +609,7 @@ function fires(g: Game, zoned: ZB[]) {
     }
     const zm = b.zone === 'industry' ? 2.5 : b.zone === 'comHigh' ? 1.3 : b.zone === 'resHigh' ? 1.2 : 1;
     const trash = trashDaysOf(b, bs) > TRASH_BAD ? 1.8 : 1;
-    const p = 0.00005 * zm * (1 + 0.15 * (b.level - 1)) * trash * (bs.pw ? 1 : 1.4) * wx * (1 - 0.6 * bs.cov.fire) * (b.abandoned !== undefined ? 3 : 1);
+    const p = 0.00005 * zm * (1 + 0.15 * (b.level - 1)) * trash * (bs.pw ? 1 : 1.4) * wx * (1 - 0.6 * bs.cov.fire) * (b.abandoned !== undefined ? 3 : 1) * POLICY.fireRiskMul(b);
     if (Math.random() < p) igniteBuilding(g, b);
   }
 }

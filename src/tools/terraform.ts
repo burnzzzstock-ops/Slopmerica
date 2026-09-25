@@ -140,7 +140,8 @@ registerSystem({
   save() {
     return Array.from(edits, ([id, e]) => [id, Math.round(e.delta * 100) / 100, e.paint, e.day]);
   },
-  load(g, data) {
+  // Runs before roads/buildings restore, so they grade onto the edited ground.
+  preload(g, data) {
     edits.clear();
     if (!Array.isArray(data)) return;
     const batch: { id: number; height: number; paint?: Paint }[] = [];

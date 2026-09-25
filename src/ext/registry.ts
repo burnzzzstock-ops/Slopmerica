@@ -63,6 +63,8 @@ export interface ExtSystem {
   weekly?(g: Game): void;
   /** JSON-serializable state for saves */
   save?(g: Game): unknown;
+  /** restore before roads and buildings are rebuilt (e.g. terrain edits they sit on) */
+  preload?(g: Game, data: unknown): void;
   load?(g: Game, data: unknown): void;
 }
 

@@ -111,12 +111,33 @@ varying vec3 vWPos;
 float th(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
 float tn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
   return mix(mix(th(i),th(i+vec2(1,0)),f.x), mix(th(i+vec2(0,1)),th(i+vec2(1,1)),f.x), f.y); }
-vec4 detailAt(vec2 uv, vec4 w) {
+// Anti-tiling: blend two copies of a layer, the second rotated and offset,
+// with a low-frequency noise mask, so no grid of repeats shows up.
+vec4 tileFree(vec2 uv, float layer) {
+  float m = smoothstep(0.35, 0.65, tn(uv * 0.13 + layer * 3.1));
+  const mat2 R = mat2(0.8, -0.6, 0.6, 0.8);
+  vec4 a = texture(tDetail, vec3(uv, layer));
+  vec4 b = texture(tDetail, vec3(R * uv + vec2(0.37, 0.71), layer));
+  return mix(a, b, m);
+}
+// Rock on steep ground: project from the side (triplanar on x/z) instead of
+// from above, so cliffs get real strata instead of vertical smears.
+vec4 rockAt(vec3 p, vec3 n, float scale) {
+  vec3 bw = pow(abs(n), vec3(4.0));
+  bw /= max(1e-4, bw.x + bw.y + bw.z);
   vec4 d = vec4(0.0);
-  if (w.x > 0.01) d += w.x * texture(tDetail, vec3(uv, 0.0));
-  if (w.y > 0.01) d += w.y * texture(tDetail, vec3(uv, 1.0));
-  if (w.z > 0.01) d += w.z * texture(tDetail, vec3(uv * 0.6, 2.0));
-  if (w.w > 0.01) d += w.w * texture(tDetail, vec3(uv, 3.0));
+  if (bw.y > 0.02) d += bw.y * tileFree(p.xz * scale * 0.6, 2.0);
+  if (bw.x > 0.02) d += bw.x * texture(tDetail, vec3(p.zy * scale * 0.6 * vec2(1.0, 1.6), 2.0));
+  if (bw.z > 0.02) d += bw.z * texture(tDetail, vec3(p.xy * scale * 0.6 * vec2(1.0, 1.6), 2.0));
+  return d;
+}
+vec3 gWN;
+vec4 detailAt(vec2 uv, vec4 w, float scale) {
+  vec4 d = vec4(0.0);
+  if (w.x > 0.01) d += w.x * tileFree(uv, 0.0);
+  if (w.y > 0.01) d += w.y * tileFree(uv, 1.0);
+  if (w.z > 0.01) d += w.z * rockAt(vWPos, gWN, scale);
+  if (w.w > 0.01) d += w.w * tileFree(uv, 3.0);
   return d;
 }
 float gDetailH;
@@ -136,9 +157,21 @@ float gSnow;`,
   float dist = length(vWPos - cameraPosition);
   float fadeNear = 1.0 - smoothstep(140.0, 700.0, dist);
   float fadeMid = 1.0 - smoothstep(600.0, 2600.0, dist);
-  vec4 a = detailAt(vWPos.xz * 0.23, w);
-  vec4 b = detailAt(vWPos.xz * 0.041 + 0.37, w);
+  gWN = normalize((vec4(vNormal, 0.0) * viewMatrix).xyz);
+  // steep faces are rock regardless of the painted weights
+  float cliff = smoothstep(0.78, 0.55, gWN.y);
+  w = mix(w, vec4(0.0, 0.08, 0.92, 0.0), cliff);
+  vec4 a = detailAt(vWPos.xz * 0.23, w, 0.23);
+  vec4 b = detailAt(vWPos.xz * 0.041 + 0.37, w, 0.041);
+  // cliff rock: darker, with moss/lichen streaks where it's less steep and damp
+  float moss = smoothstep(0.35, 0.75, tn(vWPos.xz * 0.09 + vWPos.y * 0.05)) * smoothstep(0.3, 0.68, gWN.y);
+  float band = tn(vec2(vWPos.y * 0.35, vWPos.x * 0.01 + vWPos.z * 0.01)); // sedimentary banding
+  // (linear albedo: real rock is darker than it looks)
+  vec3 rockCol = mix(vec3(0.075, 0.07, 0.062), vec3(0.15, 0.135, 0.115), band);
+  rockCol = mix(rockCol, vec3(0.045, 0.075, 0.025), moss * 0.7);
+  diffuseColor.rgb = mix(diffuseColor.rgb, rockCol, cliff * 0.9);
   vec3 det = mix(b.rgb, a.rgb, 0.6) * 2.0;
+  det = mix(det, pow(max(det, vec3(0.0)), vec3(1.6)) * 1.25, cliff);
   diffuseColor.rgb *= mix(mix(vec3(1.0), b.rgb * 2.0, 0.55 * fadeMid), det, fadeNear * 0.9);
   gDetailH = mix(b.a, a.a, 0.65) * fadeNear;
   float macro = tn(vWPos.xz * 0.004) * 0.6 + tn(vWPos.xz * 0.017) * 0.4;
@@ -146,7 +179,7 @@ float gSnow;`,
   // seasons: grass browns in winter, NorCal hills green up in the rainy season
   diffuseColor.rgb *= mix(vec3(1.0), uGrassTint, w.x);
   // snow settles on flat-ish ground above the snow line, patchy at the edges
-  vec3 wN = normalize((vec4(vNormal, 0.0) * viewMatrix).xyz);
+  vec3 wN = gWN;
   float patchy = tn(vWPos.xz * 0.05) * 0.5 + macro * 0.5;
   gSnow = uSnow * smoothstep(0.5, 0.82, wN.y) * smoothstep(uSnowLine - 30.0, uSnowLine + 60.0, vWPos.y)
         * smoothstep(0.15, 0.6, vWPos.y) * smoothstep(0.0, 0.35, uSnow * 1.2 - (1.0 - patchy) * 0.6);

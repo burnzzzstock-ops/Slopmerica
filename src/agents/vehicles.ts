@@ -1,14 +1,9 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { VehicleKind } from '../contracts';
+import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from '../world/atmos';
+import { buildVehicleModel, vehicleDecalAtlas, type VehicleLodGeometry } from './models/vehicleModels';
 
-export interface VehicleSpec {
-  length: number; // meters
-  width: number;
-  height: number;
-  maxSpeed: number; // m/s
-  label: string;
-}
+export interface VehicleSpec { length: number; width: number; height: number; maxSpeed: number; label: string }
 
 export const VEHICLE_SPECS: Record<VehicleKind, VehicleSpec> = {
   sedan: { length: 4.6, width: 1.8, height: 1.4, maxSpeed: 38, label: 'Sedan' },
@@ -32,13 +27,12 @@ export const VEHICLE_SPECS: Record<VehicleKind, VehicleSpec> = {
 
 const KINDS = Object.keys(VEHICLE_SPECS) as VehicleKind[];
 
-/** Traffic mix for normal civilian trips. */
 export function randomVehicleKind(rnd: () => number): VehicleKind {
   const r = rnd();
   if (r < 0.28) return 'pickup';
   if (r < 0.46) return 'sedan';
   if (r < 0.62) return 'suv';
-  if (r < 0.7) return 'liftedTruck';
+  if (r < 0.70) return 'liftedTruck';
   if (r < 0.78) return 'minivan';
   if (r < 0.84) return 'hatchback';
   if (r < 0.88) return 'cyberslop';
@@ -48,560 +42,403 @@ export function randomVehicleKind(rnd: () => number): VehicleKind {
   return 'slopVan';
 }
 
-type PartStyle =
-  | 'body' | 'dark' | 'glass' | 'chrome' | 'cream' | 'lime' | 'red' | 'yellow' | 'teal' | 'slopLogo'
-  | 'headlight' | 'brake' | 'redBeacon' | 'blueBeacon';
-type ModelParts = Partial<Record<PartStyle, THREE.BufferGeometry[]>>;
+const nightUniform = { value: 0 };
+const timeUniform = { value: 0 };
 
-interface KindBatch {
-  meshes: THREE.InstancedMesh[];
-  body: THREE.InstancedMesh;
-  pickMesh: THREE.InstancedMesh;
-  headlight?: THREE.InstancedMesh;
-  brake?: THREE.InstancedMesh;
-  redBeacon?: THREE.InstancedMesh;
-  blueBeacon?: THREE.InstancedMesh;
-  free: number[];
-  used: number;
-  handleByInstance: Int32Array;
-  braking: Uint8Array;
-  emergency: boolean;
+function physicalMaterial(shell: boolean): THREE.MeshPhysicalMaterial | THREE.MeshStandardMaterial {
+  const material = shell
+    ? new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.34, metalness: 0.22, clearcoat: 0.72, clearcoatRoughness: 0.17 })
+    : new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.58, metalness: 0.12 });
+  material.onBeforeCompile = (shader) => {
+    bindAtmos(shader);
+    if (!shell) shader.uniforms.tVehicleAtlas = { value: vehicleDecalAtlas() };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+attribute float iDirt, iDamage;
+${shell ? '' : 'attribute float iWheelSpin, iSteer; attribute float zone, wheel; attribute vec3 wheelCenter; varying float vVehZone; varying vec2 vVehUv;'}
+varying float vVehDirt, vVehDamage, vVehLocalY;
+varying vec3 vVehWorld, vVehWorldNormal;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+${shell ? '' : `vVehZone = zone;
+vVehUv = uv;
+if (wheel > 0.5) {
+  transformed -= wheelCenter;
+  float ws = sin(iWheelSpin), wc = cos(iWheelSpin);
+  transformed.yz = mat2(wc, -ws, ws, wc) * transformed.yz;
+  if (wheel < 1.5) {
+    float ss = sin(iSteer), sc = cos(iSteer);
+    transformed.xz = mat2(sc, ss, -ss, sc) * transformed.xz;
+  }
+  transformed += wheelCenter;
+}`}
+vVehDirt = iDirt;
+vVehDamage = iDamage;
+vVehLocalY = transformed.y;`)
+      .replace('#include <project_vertex>', `#include <project_vertex>
+{
+  vec4 vwp = vec4(transformed, 1.0);
+  vec3 vwn = normal;
+#ifdef USE_INSTANCING
+  vwp = instanceMatrix * vwp;
+  vwn = mat3(instanceMatrix) * vwn;
+#endif
+  vVehWorld = (modelMatrix * vwp).xyz;
+  vVehWorldNormal = normalize(mat3(modelMatrix) * vwn);
+}`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+uniform float uSnow, uSnowLine, uWet;
+${shell ? '' : 'uniform sampler2D tVehicleAtlas; varying float vVehZone; varying vec2 vVehUv;'}
+varying float vVehDirt, vVehDamage, vVehLocalY;
+varying vec3 vVehWorld, vVehWorldNormal;
+${CLOUD_GLSL}
+float vehicleHash(vec3 p) { return fract(sin(dot(p, vec3(17.13, 71.7, 39.4))) * 43758.54); }`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+{
+${shell ? '' : `  if (vVehZone > 3.5) {
+    vec4 decal = texture2D(tVehicleAtlas, vVehUv);
+    if (decal.a < 0.08) discard;
+    diffuseColor.rgb = decal.rgb;
+  }
+  if (vVehZone > 0.5 && vVehZone < 1.5) diffuseColor.rgb *= vec3(0.66, 0.78, 0.85);`}
+  float lowerGrime = 1.0 - smoothstep(0.28, 1.2, vVehLocalY);
+  float grime = vVehDirt * lowerGrime * (0.12 + vehicleHash(vVehWorld * 2.7) * 0.11);
+  diffuseColor.rgb *= 1.0 - grime;
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.34, 0.25, 0.20), vVehDamage * (0.18 + vehicleHash(vVehWorld * 5.0) * 0.18));
+  float top = smoothstep(0.62, 0.9, normalize(vVehWorldNormal).y);
+  float snow = uSnow * top * smoothstep(uSnowLine - 30.0, uSnowLine + 60.0, vVehWorld.y);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.89, 0.92), snow * 0.82);
+}`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+roughnessFactor = mix(roughnessFactor, ${shell ? '0.12' : '0.28'}, uWet * 0.78);
+${shell ? '' : 'roughnessFactor = mix(roughnessFactor, 0.08, step(0.5, vVehZone) * (1.0 - step(1.5, vVehZone)));'}`)
+      .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
+${shell ? '' : 'metalnessFactor = mix(metalnessFactor, 0.72, step(1.5, vVehZone) * (1.0 - step(2.5, vVehZone)));'}`)
+      .replace('#include <lights_fragment_end>', cloudShadowChunk('vVehWorld'));
+  };
+  material.customProgramCacheKey = () => shell ? 'aa-vehicle-shell-v3' : 'aa-vehicle-detail-v3';
+  return material;
 }
 
-interface Slot { kind: VehicleKind; instance: number }
+function lightMaterial(): THREE.MeshBasicMaterial {
+  const material = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, toneMapped: false, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uVehicleNight = nightUniform;
+    shader.uniforms.uVehicleTime = timeUniform;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+attribute float signal, fade, iBrake, iSeed;
+varying float vSignal, vFade, vBrake, vSeed;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+vSignal = signal; vFade = fade; vBrake = iBrake; vSeed = iSeed;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+uniform float uVehicleNight, uVehicleTime;
+varying float vSignal, vFade, vBrake, vSeed;`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+{
+  float power = 1.0;
+  if (vSignal < 1.5) power = 0.22 + uVehicleNight * 3.7;
+  else if (vSignal < 2.5) power = 0.28 + uVehicleNight * 0.55 + vBrake * 4.2;
+  else if (vSignal < 4.5) {
+    float side = step(3.5, vSignal);
+    float flash = step(0.15, sin(uVehicleTime * 19.0 + vSeed * 13.0 + side * 3.14159));
+    power = 0.12 + flash * 4.6;
+  } else {
+    power = uVehicleNight * 0.34;
+    diffuseColor.a *= vFade * uVehicleNight * 0.58;
+  }
+  diffuseColor.rgb *= power;
+}`);
+  };
+  material.customProgramCacheKey = () => 'aa-vehicle-lights-v3';
+  return material;
+}
 
-const MATERIALS: Record<PartStyle, THREE.Material> = {
-  body: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.46, metalness: 0.22 }),
-  dark: new THREE.MeshStandardMaterial({ color: 0x17191b, roughness: 0.72, metalness: 0.08 }),
-  glass: new THREE.MeshStandardMaterial({ color: 0x8aa9b7, roughness: 0.18, metalness: 0.38 }),
-  chrome: new THREE.MeshStandardMaterial({ color: 0xb9bec0, roughness: 0.24, metalness: 0.82 }),
-  cream: new THREE.MeshStandardMaterial({ color: 0xefe6cf, roughness: 0.58, metalness: 0.05 }),
-  lime: new THREE.MeshStandardMaterial({ color: 0xc6f432, roughness: 0.5, metalness: 0.05 }),
-  red: new THREE.MeshStandardMaterial({ color: 0xb3202a, roughness: 0.55, metalness: 0.05 }),
-  yellow: new THREE.MeshStandardMaterial({ color: 0xf1c743, roughness: 0.55, metalness: 0.05 }),
-  teal: new THREE.MeshStandardMaterial({ color: 0x35b9a6, roughness: 0.55, metalness: 0.05 }),
-  slopLogo: makeSlopLogoMaterial(),
-  headlight: new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
-  brake: new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
-  redBeacon: new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
-  blueBeacon: new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
-};
-const LIGHT_STYLES = new Set<PartStyle>(['headlight', 'brake', 'redBeacon', 'blueBeacon']);
+const SHELL_MATERIAL = physicalMaterial(true);
+const DETAIL_MATERIAL = physicalMaterial(false);
+const LIGHT_MATERIAL = lightMaterial();
 const PICK_MATERIAL = new THREE.MeshBasicMaterial();
 
-function makeSlopLogoMaterial(): THREE.MeshStandardMaterial {
-  if (typeof document === 'undefined') {
-    return new THREE.MeshStandardMaterial({ color: 0xefe6cf, roughness: 0.6, side: THREE.DoubleSide });
+interface InstanceAttrs {
+  dirt: THREE.InstancedBufferAttribute;
+  damage: THREE.InstancedBufferAttribute;
+  spin?: THREE.InstancedBufferAttribute;
+  steer?: THREE.InstancedBufferAttribute;
+  brake?: THREE.InstancedBufferAttribute;
+  seed?: THREE.InstancedBufferAttribute;
+}
+interface LodBatch {
+  shell: THREE.InstancedMesh; detail: THREE.InstancedMesh; lights?: THREE.InstancedMesh;
+  meshes: THREE.InstancedMesh[]; shellAttrs: InstanceAttrs; detailAttrs: InstanceAttrs; lightAttrs?: InstanceAttrs;
+  sourceByRender: Int32Array; revisionByRender: Uint32Array; lastBrake: Uint8Array;
+  staticDirtyStart: number; staticDirtyEnd: number; brakeDirtyStart: number; brakeDirtyEnd: number;
+}
+interface KindBatch {
+  near: LodBatch; far: LodBatch; pickMesh: THREE.InstancedMesh; free: number[]; used: number;
+  active: Uint8Array; initialized: Uint8Array; handleByInstance: Int32Array;
+  matrices: Float32Array; colors: Float32Array; previousX: Float32Array; previousZ: Float32Array; previousYaw: Float32Array;
+  spin: Float32Array; steer: Float32Array; braking: Uint8Array; damaged: Uint8Array; dirt: Float32Array; lod: Int8Array;
+  revision: Uint32Array;
+  wheelRadius: number; nearTriangles: number; farTriangles: number;
+}
+interface Slot { kind: VehicleKind; instance: number }
+
+function instancedAttribute(capacity: number): THREE.InstancedBufferAttribute {
+  return new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(THREE.DynamicDrawUsage);
+}
+function attachAttrs(geometry: THREE.BufferGeometry, capacity: number, detail = false, light = false): InstanceAttrs {
+  const attrs: InstanceAttrs = { dirt: instancedAttribute(capacity), damage: instancedAttribute(capacity) };
+  geometry.setAttribute('iDirt', attrs.dirt); geometry.setAttribute('iDamage', attrs.damage);
+  if (detail) {
+    attrs.spin = instancedAttribute(capacity); attrs.steer = instancedAttribute(capacity);
+    geometry.setAttribute('iWheelSpin', attrs.spin); geometry.setAttribute('iSteer', attrs.steer);
   }
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 192;
-  const ctx = canvas.getContext('2d')!;
-  const draw = () => {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#111111';
-    ctx.beginPath();
-    ctx.roundRect(4, 4, 504, 184, 30);
-    ctx.fill();
-    ctx.fillStyle = '#efe6cf';
-    ctx.font = '112px Yellowtail, cursive';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('Slop', 246, 87);
-    ctx.strokeStyle = '#c6f432';
-    ctx.lineWidth = 13;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(96, 146);
-    ctx.bezierCurveTo(196, 168, 350, 161, 448, 124);
-    ctx.stroke();
+  if (light) {
+    attrs.brake = instancedAttribute(capacity); attrs.seed = instancedAttribute(capacity);
+    geometry.setAttribute('iBrake', attrs.brake); geometry.setAttribute('iSeed', attrs.seed);
+  }
+  return attrs;
+}
+function makeLod(kind: VehicleKind, label: 'near' | 'far', geometry: VehicleLodGeometry, capacity: number): LodBatch {
+  const shellAttrs = attachAttrs(geometry.shell, capacity);
+  const detailAttrs = attachAttrs(geometry.detail, capacity, label === 'near');
+  const shell = new THREE.InstancedMesh(geometry.shell, SHELL_MATERIAL, capacity);
+  const detail = new THREE.InstancedMesh(geometry.detail, DETAIL_MATERIAL, capacity);
+  const meshes: THREE.InstancedMesh[] = [shell, detail];
+  let lights: THREE.InstancedMesh | undefined;
+  let lightAttrs: InstanceAttrs | undefined;
+  if (geometry.lights && geometry.lights.getAttribute('position').count > 0) {
+    lightAttrs = attachAttrs(geometry.lights, capacity, false, true);
+    lights = new THREE.InstancedMesh(geometry.lights, LIGHT_MATERIAL, capacity); meshes.push(lights);
+  }
+  for (const mesh of meshes) {
+    mesh.name = `vehicle-${kind}-${label}-${mesh === shell ? 'paint' : mesh === detail ? 'detail' : 'lights'}`;
+    mesh.count = 0; mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.frustumCulled = false;
+    mesh.castShadow = mesh !== lights && label === 'near'; mesh.receiveShadow = mesh !== lights;
+  }
+  return {
+    shell, detail, lights, meshes, shellAttrs, detailAttrs, lightAttrs,
+    sourceByRender: new Int32Array(capacity).fill(-1), revisionByRender: new Uint32Array(capacity), lastBrake: new Uint8Array(capacity),
+    staticDirtyStart: capacity, staticDirtyEnd: 0, brakeDirtyStart: capacity, brakeDirtyEnd: 0,
   };
-  draw();
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 4;
-  void document.fonts?.load('112px Yellowtail').then(() => {
-    draw();
-    texture.needsUpdate = true;
-  }).catch(() => { /* The cursive fallback remains readable offline. */ });
-  return new THREE.MeshStandardMaterial({
-    map: texture,
-    transparent: true,
-    alphaTest: 0.08,
-    roughness: 0.58,
-    metalness: 0.02,
-    side: THREE.DoubleSide,
-  });
 }
+type UploadRange = { start: number; count: number };
+const UPLOAD_RANGES = new WeakMap<THREE.BufferAttribute, UploadRange>();
 
-function put(parts: ModelParts, style: PartStyle, geometry: THREE.BufferGeometry): void {
-  (parts[style] ??= []).push(geometry);
-}
-
-function box(w: number, h: number, l: number, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0): THREE.BufferGeometry {
-  const g = new THREE.BoxGeometry(w, h, l);
-  g.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(rx, ry, rz)));
-  g.translate(x, y, z);
-  return g;
-}
-
-function cylinder(r: number, depth: number, x: number, y: number, z: number, rz = 0, segments = 10): THREE.BufferGeometry {
-  const g = new THREE.CylinderGeometry(r, r, depth, segments, 1, false);
-  if (rz) g.rotateZ(rz);
-  g.translate(x, y, z);
-  return g;
-}
-
-function addWheels(p: ModelParts, width: number, axles: readonly number[], radius: number, tireWidth: number): void {
-  for (const z of axles) {
-    for (const x of [-width / 2 + tireWidth * 0.12, width / 2 - tireWidth * 0.12]) {
-      put(p, 'dark', cylinder(radius, tireWidth, x, radius, z, Math.PI / 2));
-      put(p, 'chrome', cylinder(radius * 0.42, tireWidth + 0.012, x, radius, z, Math.PI / 2, 8));
-    }
+/** Reuses Three's update-range object instead of allocating in the frame loop. */
+function markAttributeRange(attribute: THREE.BufferAttribute | THREE.InstancedBufferAttribute | undefined, start: number, end: number, itemSize = 1): void {
+  if (!attribute || end <= start) return;
+  let range = UPLOAD_RANGES.get(attribute);
+  if (!range) {
+    range = { start: 0, count: 0 };
+    UPLOAD_RANGES.set(attribute, range);
   }
+  range.start = start * itemSize;
+  range.count = (end - start) * itemSize;
+  attribute.updateRanges.length = 0;
+  attribute.updateRanges.push(range);
+  attribute.needsUpdate = true;
+}
+function markAttribute(attribute: THREE.BufferAttribute | THREE.InstancedBufferAttribute | undefined, count: number): void {
+  markAttributeRange(attribute, 0, count);
+}
+function markLod(lod: LodBatch, count: number): void {
+  for (const mesh of lod.meshes) { mesh.count = count; markAttribute(mesh.instanceMatrix, count * 16); }
+  markAttributeRange(lod.shell.instanceColor ?? undefined, lod.staticDirtyStart, lod.staticDirtyEnd, 3);
+  markAttributeRange(lod.shellAttrs.dirt, lod.staticDirtyStart, lod.staticDirtyEnd); markAttributeRange(lod.shellAttrs.damage, lod.staticDirtyStart, lod.staticDirtyEnd);
+  markAttributeRange(lod.detailAttrs.dirt, lod.staticDirtyStart, lod.staticDirtyEnd); markAttributeRange(lod.detailAttrs.damage, lod.staticDirtyStart, lod.staticDirtyEnd);
+  markAttribute(lod.detailAttrs.spin, count); markAttribute(lod.detailAttrs.steer, count);
+  markAttributeRange(lod.lightAttrs?.seed, lod.staticDirtyStart, lod.staticDirtyEnd);
+  markAttributeRange(lod.lightAttrs?.brake, lod.brakeDirtyStart, lod.brakeDirtyEnd);
+  lod.staticDirtyStart = lod.sourceByRender.length; lod.staticDirtyEnd = 0;
+  lod.brakeDirtyStart = lod.sourceByRender.length; lod.brakeDirtyEnd = 0;
 }
 
-function addBumpers(p: ModelParts, width: number, length: number, y: number, chrome = false): void {
-  const style: PartStyle = chrome ? 'chrome' : 'dark';
-  put(p, style, box(width * 0.96, 0.14, 0.18, 0, y, length / 2 - 0.06));
-  put(p, style, box(width * 0.96, 0.14, 0.18, 0, y, -length / 2 + 0.06));
-}
-
-function addLights(p: ModelParts, width: number, length: number, y: number): void {
-  for (const x of [-width * 0.31, width * 0.31]) {
-    put(p, 'headlight', box(width * 0.18, 0.14, 0.055, x, y, length / 2 + 0.008));
-    put(p, 'brake', box(width * 0.17, 0.14, 0.055, x, y, -length / 2 - 0.008));
-  }
-}
-
-function addCarWindows(p: ModelParts, width: number, cabinLength: number, y: number, z: number): void {
-  put(p, 'glass', box(width * 0.77, 0.48, 0.045, 0, y, z + cabinLength * 0.46, -0.14));
-  put(p, 'glass', box(width * 0.77, 0.43, 0.045, 0, y - 0.02, z - cabinLength * 0.46, 0.1));
-  for (const x of [-width * 0.405, width * 0.405]) put(p, 'glass', box(0.035, 0.38, cabinLength * 0.72, x, y - 0.02, z));
-}
-
-function addLightbar(p: ModelParts, width: number, y: number, z: number): void {
-  put(p, 'dark', box(width * 0.62, 0.055, 0.22, 0, y - 0.055, z));
-  put(p, 'redBeacon', box(width * 0.27, 0.11, 0.18, -width * 0.16, y, z));
-  put(p, 'blueBeacon', box(width * 0.27, 0.11, 0.18, width * 0.16, y, z));
-}
-
-function basicCar(kind: 'sedan' | 'hatchback' | 'suv' | 'minivan' | 'police'): ModelParts {
-  const s = VEHICLE_SPECS[kind];
-  const p: ModelParts = {};
-  const wheelR = kind === 'suv' || kind === 'minivan' ? 0.39 : 0.35;
-  const bodyY = wheelR + 0.27;
-  const bodyH = kind === 'suv' ? 0.63 : kind === 'minivan' ? 0.7 : 0.52;
-  const cabinH = Math.max(0.52, s.height - (bodyY + bodyH * 0.4));
-  const cabinLength = kind === 'hatchback' ? s.length * 0.58 : kind === 'minivan' ? s.length * 0.68 : s.length * 0.52;
-  const cabinZ = kind === 'hatchback' ? -s.length * 0.05 : kind === 'minivan' ? -s.length * 0.03 : -s.length * 0.05;
-  put(p, 'body', box(s.width * 0.94, bodyH, s.length * 0.9, 0, bodyY, 0));
-  put(p, 'body', box(s.width * 0.81, cabinH, cabinLength, 0, bodyY + bodyH * 0.48 + cabinH * 0.48, cabinZ));
-  addCarWindows(p, s.width, cabinLength, bodyY + bodyH * 0.5 + cabinH * 0.55, cabinZ);
-  addWheels(p, s.width, [-s.length * 0.31, s.length * 0.31], wheelR, 0.28);
-  addBumpers(p, s.width, s.length * 0.92, bodyY - 0.06, kind === 'sedan');
-  addLights(p, s.width, s.length * 0.91, bodyY + 0.08);
-  return p;
-}
-
-function pickup(lifted: boolean): ModelParts {
-  const s = VEHICLE_SPECS[lifted ? 'liftedTruck' : 'pickup'];
-  const p: ModelParts = {};
-  const wheelR = lifted ? 0.62 : 0.43;
-  const bodyY = wheelR + (lifted ? 0.35 : 0.25);
-  put(p, 'body', box(s.width * 0.94, 0.58, s.length * 0.91, 0, bodyY, 0));
-  put(p, 'body', box(s.width * 0.84, lifted ? 0.88 : 0.72, s.length * 0.4, 0, bodyY + 0.62, s.length * 0.18));
-  for (const x of [-s.width * 0.42, s.width * 0.42]) put(p, 'body', box(0.1, 0.45, s.length * 0.38, x, bodyY + 0.4, -s.length * 0.25));
-  put(p, 'body', box(s.width * 0.84, 0.45, 0.1, 0, bodyY + 0.4, -s.length * 0.44));
-  addCarWindows(p, s.width, s.length * 0.37, bodyY + (lifted ? 0.93 : 0.79), s.length * 0.18);
-  addWheels(p, s.width, [-s.length * 0.31, s.length * 0.29], wheelR, lifted ? 0.4 : 0.32);
-  addBumpers(p, s.width, s.length * 0.94, bodyY - 0.05, true);
-  addLights(p, s.width, s.length * 0.93, bodyY + 0.08);
-  if (lifted) {
-    put(p, 'chrome', cylinder(0.035, 2.15, s.width * 0.29, bodyY + 1.28, -s.length * 0.34));
-    put(p, 'red', box(0.72, 0.5, 0.035, -0.02, bodyY + 2.08, -s.length * 0.34));
-    put(p, 'cream', box(0.72, 0.07, 0.04, -0.02, bodyY + 2.08, -s.length * 0.365));
-    put(p, 'teal', box(0.27, 0.22, 0.045, -0.245, bodyY + 2.21, -s.length * 0.37));
-  }
-  return p;
-}
-
-function cyberslop(): ModelParts {
-  const s = VEHICLE_SPECS.cyberslop;
-  const p: ModelParts = {};
-  const profile: Array<[number, number]> = [[0.42, -s.length * 0.47], [1.62, -s.length * 0.29], [1.26, s.length * 0.43], [0.42, s.length * 0.48]];
-  const positions: number[] = [];
-  const halfW = s.width * 0.46;
-  for (let i = 1; i < profile.length - 1; i++) for (const x of [-halfW, halfW]) {
-    positions.push(x, profile[0][0], profile[0][1], x, profile[i][0], profile[i][1], x, profile[i + 1][0], profile[i + 1][1]);
-  }
-  for (let i = 0; i < profile.length; i++) {
-    const j = (i + 1) % profile.length;
-    positions.push(-halfW, profile[i][0], profile[i][1], halfW, profile[i][0], profile[i][1], halfW, profile[j][0], profile[j][1], -halfW, profile[i][0], profile[i][1], halfW, profile[j][0], profile[j][1], -halfW, profile[j][0], profile[j][1]);
-  }
-  const wedge = new THREE.BufferGeometry();
-  wedge.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  wedge.computeVertexNormals();
-  put(p, 'body', wedge);
-  put(p, 'glass', box(s.width * 0.78, 0.52, 0.04, 0, 1.3, s.length * 0.18, -0.48));
-  addWheels(p, s.width, [-s.length * 0.31, s.length * 0.31], 0.43, 0.31);
-  addBumpers(p, s.width, s.length * 0.98, 0.48, true);
-  addLights(p, s.width, s.length * 0.965, 0.68);
-  return p;
-}
-
-function semi(): ModelParts {
-  const s = VEHICLE_SPECS.semi;
-  const p: ModelParts = {};
-  put(p, 'cream', box(s.width * 0.96, 3.25, 10.3, 0, 2.05, -2.68));
-  put(p, 'body', box(s.width * 0.94, 1.4, 4.45, 0, 1.14, 5.45));
-  put(p, 'body', box(s.width * 0.9, 2.72, 2.25, 0, 2.05, 4.62));
-  put(p, 'glass', box(s.width * 0.7, 0.62, 0.05, 0, 2.66, 5.77, -0.12));
-  for (const x of [-s.width * 0.43, s.width * 0.43]) put(p, 'glass', box(0.035, 0.58, 1.0, x, 2.61, 4.72));
-  addWheels(p, s.width, [-6.15, -5.1, 3.92, 5.66], 0.52, 0.38);
-  addBumpers(p, s.width, s.length * 0.98, 0.65, true);
-  addLights(p, s.width, s.length * 0.98, 0.88);
-  return p;
-}
-
-function makeBoxTruck(kind: 'boxTruck' | 'ambulance'): ModelParts {
-  const s = VEHICLE_SPECS[kind];
-  const p: ModelParts = {};
-  const emergency = kind === 'ambulance';
-  put(p, emergency ? 'cream' : 'body', box(s.width * 0.96, s.height - 0.62, s.length * 0.62, 0, (s.height + 0.38) / 2, -s.length * 0.16));
-  put(p, 'body', box(s.width * 0.9, 0.82, s.length * 0.34, 0, 0.86, s.length * 0.3));
-  put(p, 'body', box(s.width * 0.86, 1.48, s.length * 0.22, 0, 1.62, s.length * 0.23));
-  put(p, 'glass', box(s.width * 0.67, 0.47, 0.045, 0, 1.86, s.length * 0.35, -0.08));
-  for (const x of [-s.width * 0.4, s.width * 0.4]) put(p, 'glass', box(0.035, 0.43, s.length * 0.62, x, 1.82, s.length * 0.07));
-  if (emergency) {
-    put(p, 'red', box(s.width * 0.99, 0.17, s.length * 0.52, 0, 1.63, -s.length * 0.15));
-    addLightbar(p, s.width, s.height + 0.07, -s.length * 0.22);
-  }
-  addWheels(p, s.width, [-s.length * 0.31, s.length * 0.3], 0.47, 0.34);
-  addBumpers(p, s.width, s.length * 0.97, 0.52, true);
-  addLights(p, s.width, s.length * 0.965, 0.76);
-  return p;
-}
-
-function police(): ModelParts {
-  const p = basicCar('police');
-  const s = VEHICLE_SPECS.police;
-  put(p, 'cream', box(s.width * 0.955, 0.2, s.length * 0.54, 0, 0.77, -0.05));
-  put(p, 'dark', box(s.width * 0.97, 0.16, s.length * 0.12, 0, 0.78, -0.15));
-  addLightbar(p, s.width, s.height + 0.08, -0.18);
-  return p;
-}
-
-function firetruck(): ModelParts {
-  const s = VEHICLE_SPECS.firetruck;
-  const p: ModelParts = {};
-  put(p, 'red', box(s.width * 0.96, 1.25, s.length * 0.91, 0, 1.05, 0));
-  put(p, 'body', box(s.width * 0.9, 1.45, s.length * 0.27, 0, 2.18, s.length * 0.29));
-  put(p, 'cream', box(s.width * 0.82, 0.86, s.length * 0.45, 0, 1.91, -s.length * 0.19));
-  put(p, 'glass', box(s.width * 0.69, 0.48, 0.05, 0, 2.38, s.length * 0.435, -0.06));
-  put(p, 'chrome', box(0.18, 0.16, s.length * 0.58, 0, 2.83, -s.length * 0.11, 0, 0, -0.03));
-  for (let z = -2.6; z < 1.3; z += 0.58) put(p, 'chrome', box(s.width * 0.72, 0.07, 0.09, 0, 2.88, z));
-  addLightbar(p, s.width, 3.02, s.length * 0.31);
-  addWheels(p, s.width, [-s.length * 0.31, s.length * 0.31], 0.53, 0.37);
-  addBumpers(p, s.width, s.length * 0.95, 0.62, true);
-  addLights(p, s.width, s.length * 0.94, 0.86);
-  return p;
-}
-
-function golfCart(): ModelParts {
-  const s = VEHICLE_SPECS.golfCart;
-  const p: ModelParts = {};
-  put(p, 'body', box(s.width * 0.88, 0.3, s.length * 0.8, 0, 0.48, 0));
-  put(p, 'cream', box(s.width * 0.9, 0.09, s.length * 0.76, 0, s.height, 0));
-  put(p, 'cream', box(s.width * 0.72, 0.38, 0.24, 0, 0.91, -0.28));
-  for (const x of [-s.width * 0.37, s.width * 0.37]) for (const z of [-s.length * 0.29, s.length * 0.29]) put(p, 'dark', box(0.045, 1.12, 0.045, x, 1.21, z));
-  addWheels(p, s.width, [-s.length * 0.3, s.length * 0.3], 0.27, 0.2);
-  addBumpers(p, s.width, s.length * 0.84, 0.38);
-  addLights(p, s.width, s.length * 0.82, 0.56);
-  return p;
-}
-
-function vwBus(): ModelParts {
-  const s = VEHICLE_SPECS.vwBus;
-  const p: ModelParts = {};
-  put(p, 'body', box(s.width * 0.94, 1.46, s.length * 0.9, 0, 1.12, 0));
-  put(p, 'cream', box(s.width * 0.945, 0.58, s.length * 0.9, 0, 1.62, 0));
-  put(p, 'teal', box(s.width * 0.955, 0.18, s.length * 0.91, 0, 0.91, 0));
-  put(p, 'yellow', box(s.width * 0.965, 0.14, s.length * 0.56, 0, 0.69, -0.18));
-  put(p, 'glass', box(s.width * 0.68, 0.52, 0.045, 0, 1.58, s.length * 0.455));
-  put(p, 'glass', box(s.width * 0.68, 0.48, 0.045, 0, 1.56, -s.length * 0.455));
-  for (const x of [-s.width * 0.475, s.width * 0.475]) {
-    for (const z of [-1.18, -0.38, 0.42, 1.22]) put(p, 'glass', box(0.035, 0.43, 0.61, x, 1.55, z));
-    put(p, 'red', cylinder(0.16, 0.025, x, 1.03, -0.3, Math.PI / 2, 8));
-    put(p, 'lime', cylinder(0.07, 0.03, x, 1.03, -0.3, Math.PI / 2, 8));
-  }
-  addWheels(p, s.width, [-s.length * 0.3, s.length * 0.3], 0.35, 0.27);
-  addBumpers(p, s.width, s.length * 0.93, 0.44, true);
-  addLights(p, s.width, s.length * 0.92, 0.7);
-  return p;
-}
-
-function slopVan(): ModelParts {
-  const s = VEHICLE_SPECS.slopVan;
-  const p: ModelParts = {};
-  put(p, 'body', box(s.width * 0.95, 1.75, s.length * 0.9, 0, 1.26, -0.12));
-  put(p, 'body', box(s.width * 0.9, 0.75, s.length * 0.24, 0, 0.8, s.length * 0.35));
-  put(p, 'glass', box(s.width * 0.69, 0.5, 0.045, 0, 1.72, s.length * 0.456, -0.08));
-  for (const x of [-s.width * 0.48, s.width * 0.48]) {
-    put(p, 'glass', box(0.035, 0.48, 0.78, x, 1.7, s.length * 0.27));
-    const logo = new THREE.PlaneGeometry(2.45, 0.92);
-    logo.rotateY(x > 0 ? Math.PI / 2 : -Math.PI / 2);
-    logo.translate(x + Math.sign(x) * 0.012, 1.35, -0.44);
-    put(p, 'slopLogo', logo);
-  }
-  addWheels(p, s.width, [-s.length * 0.31, s.length * 0.31], 0.43, 0.32);
-  addBumpers(p, s.width, s.length * 0.94, 0.5, true);
-  addLights(p, s.width, s.length * 0.93, 0.76);
-  return p;
-}
-
-function motorcycle(): ModelParts {
-  const s = VEHICLE_SPECS.motorcycle;
-  const p: ModelParts = {};
-  addWheels(p, s.width, [-s.length * 0.38, s.length * 0.38], 0.36, 0.12);
-  put(p, 'body', box(0.32, 0.35, 0.92, 0, 0.57, 0.04, -0.16));
-  put(p, 'dark', box(0.35, 0.12, 0.68, 0, 0.83, -0.18));
-  put(p, 'chrome', box(0.05, 0.9, 0.05, 0, 0.78, 0.62, -0.35));
-  put(p, 'chrome', box(0.72, 0.05, 0.05, 0, 1.14, 0.66));
-  put(p, 'headlight', cylinder(0.13, 0.08, 0, 0.83, s.length * 0.47, Math.PI / 2, 8));
-  put(p, 'brake', box(0.19, 0.12, 0.05, 0, 0.65, -s.length * 0.48));
-  return p;
-}
-
-function towTruck(): ModelParts {
-  const s = VEHICLE_SPECS.towTruck;
-  const p: ModelParts = {};
-  put(p, 'body', box(s.width * 0.95, 0.88, s.length * 0.88, 0, 0.9, 0));
-  put(p, 'body', box(s.width * 0.88, 1.55, s.length * 0.3, 0, 1.65, s.length * 0.28));
-  put(p, 'dark', box(s.width * 0.82, 0.13, s.length * 0.49, 0, 1.36, -s.length * 0.22, -0.08));
-  put(p, 'yellow', box(0.17, 0.17, s.length * 0.55, 0, 2.0, -s.length * 0.12, -0.43));
-  put(p, 'yellow', box(s.width * 0.68, 0.14, 0.14, 0, 1.67, -s.length * 0.4));
-  put(p, 'chrome', cylinder(0.055, 0.72, 0, 1.31, -s.length * 0.45));
-  put(p, 'glass', box(s.width * 0.67, 0.49, 0.045, 0, 1.94, s.length * 0.435, -0.08));
-  addLightbar(p, s.width, 2.49, s.length * 0.2);
-  addWheels(p, s.width, [-s.length * 0.31, s.length * 0.31], 0.48, 0.35);
-  addBumpers(p, s.width, s.length * 0.93, 0.56, true);
-  addLights(p, s.width, s.length * 0.92, 0.8);
-  return p;
-}
-
-function makeModel(kind: VehicleKind): ModelParts {
-  switch (kind) {
-    case 'sedan': case 'hatchback': case 'suv': case 'minivan': return basicCar(kind);
-    case 'pickup': return pickup(false);
-    case 'liftedTruck': return pickup(true);
-    case 'cyberslop': return cyberslop();
-    case 'semi': return semi();
-    case 'boxTruck': return makeBoxTruck(kind);
-    case 'police': return police();
-    case 'ambulance': return makeBoxTruck(kind);
-    case 'firetruck': return firetruck();
-    case 'golfCart': return golfCart();
-    case 'vwBus': return vwBus();
-    case 'slopVan': return slopVan();
-    case 'motorcycle': return motorcycle();
-    case 'towTruck': return towTruck();
-  }
-}
-
-function merged(gs: THREE.BufferGeometry[]): THREE.BufferGeometry {
-  if (gs.length === 1) return gs[0];
-  const g = mergeGeometries(gs, false);
-  if (!g) throw new Error('Could not merge vehicle geometry');
-  for (const source of gs) source.dispose();
-  return g;
+export interface VehicleRenderStats {
+  active: number; drawCallsPerNearKind: 3; drawCallsPerFarKind: 2;
+  kinds: Record<string, { nearTriangles: number; farTriangles: number }>;
 }
 
 export class VehicleRenderer {
   readonly object = new THREE.Group();
-  private batches = new Map<VehicleKind, KindBatch>();
-  private slots: Array<Slot | undefined> = [];
-  private freeHandles: number[] = [];
+  private readonly batches = new Map<VehicleKind, KindBatch>();
+  private readonly slots: Array<Slot | undefined> = [];
+  private readonly freeHandles: number[] = [];
   private readonly matrix = new THREE.Matrix4();
   private readonly euler = new THREE.Euler();
   private readonly quaternion = new THREE.Quaternion();
-  private readonly hidden = new THREE.Matrix4().makeScale(0, 0, 0);
   private readonly color = new THREE.Color();
-  private readonly perKind: number;
   private readonly maxTotal: number;
+  private readonly perKind: number;
   private activeTotal = 0;
-  private night = 0;
-  private flashPhase = -1;
+  private cameraValid = false; private cameraX = 0; private cameraY = 0; private cameraZ = 0;
+  private lodNear = 180; private lodCull = 1500;
 
   constructor(scene: THREE.Scene, maxTotal: number) {
     this.maxTotal = Math.max(0, Math.floor(maxTotal));
     this.perKind = Math.max(16, Math.ceil(this.maxTotal / 3));
+    this.object.name = 'aa-vehicles';
     for (const kind of KINDS) {
-      const model = makeModel(kind);
-      const meshes: THREE.InstancedMesh[] = [];
-      const batch = {
-        meshes, free: [], used: 0,
-        handleByInstance: new Int32Array(this.perKind).fill(-1),
-        braking: new Uint8Array(this.perKind),
-        emergency: kind === 'police' || kind === 'ambulance',
-      } as unknown as KindBatch;
-      let body: THREE.InstancedMesh | undefined;
-      for (const style of Object.keys(model) as PartStyle[]) {
-        const sources = model[style];
-        if (!sources?.length) continue;
-        const mesh = new THREE.InstancedMesh(merged(sources), MATERIALS[style], this.perKind);
-        mesh.name = `vehicle-${kind}-${style}`;
-        mesh.count = 0;
-        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-        mesh.frustumCulled = false;
-        mesh.castShadow = !LIGHT_STYLES.has(style);
-        mesh.receiveShadow = style === 'body' || style === 'cream' || style === 'red';
-        for (let i = 0; i < this.perKind; i++) mesh.setMatrixAt(i, this.hidden);
-        if (style === 'body') body = mesh;
-        else if (style === 'headlight') batch.headlight = mesh;
-        else if (style === 'brake') batch.brake = mesh;
-        else if (style === 'redBeacon') batch.redBeacon = mesh;
-        else if (style === 'blueBeacon') batch.blueBeacon = mesh;
-        meshes.push(mesh);
-        this.object.add(mesh);
-      }
-      if (!body) throw new Error(`Vehicle ${kind} has no paintable body`);
-      batch.body = body;
-      // A non-rendered full-envelope instance makes trailers and ambulance boxes
-      // selectable too. Raycaster still tests invisible objects when called directly.
+      const model = buildVehicleModel(kind, VEHICLE_SPECS[kind]);
+      const near = makeLod(kind, 'near', model.near, this.perKind);
+      const far = makeLod(kind, 'far', model.far, this.perKind);
+      for (const mesh of near.meshes) this.object.add(mesh);
+      for (const mesh of far.meshes) this.object.add(mesh);
       const spec = VEHICLE_SPECS[kind];
       const pickGeometry = new THREE.BoxGeometry(spec.width, spec.height, spec.length);
-      pickGeometry.translate(0, spec.height / 2, 0);
+      pickGeometry.translate(0, spec.height * 0.5, 0);
       const pickMesh = new THREE.InstancedMesh(pickGeometry, PICK_MATERIAL, this.perKind);
-      pickMesh.name = `vehicle-${kind}-pick`;
-      pickMesh.count = 0;
-      pickMesh.visible = false;
-      pickMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      for (let i = 0; i < this.perKind; i++) pickMesh.setMatrixAt(i, this.hidden);
-      meshes.push(pickMesh);
-      this.object.add(pickMesh);
-      batch.pickMesh = pickMesh;
-      this.batches.set(kind, batch);
+      pickMesh.name = `vehicle-${kind}-pick`; pickMesh.visible = false; pickMesh.count = 0;
+      pickMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.object.add(pickMesh);
+      this.batches.set(kind, {
+        near, far, pickMesh, free: [], used: 0, active: new Uint8Array(this.perKind), initialized: new Uint8Array(this.perKind),
+        handleByInstance: new Int32Array(this.perKind).fill(-1), matrices: new Float32Array(this.perKind * 16), colors: new Float32Array(this.perKind * 3),
+        previousX: new Float32Array(this.perKind), previousZ: new Float32Array(this.perKind), previousYaw: new Float32Array(this.perKind),
+        spin: new Float32Array(this.perKind), steer: new Float32Array(this.perKind), braking: new Uint8Array(this.perKind), damaged: new Uint8Array(this.perKind),
+        dirt: new Float32Array(this.perKind), lod: new Int8Array(this.perKind), revision: new Uint32Array(this.perKind), wheelRadius: model.wheelRadius,
+        nearTriangles: model.nearTriangles, farTriangles: model.farTriangles,
+      });
+      const captureCamera = (_renderer: THREE.WebGLRenderer, _scene: THREE.Scene, camera: THREE.Camera) => {
+        this.cameraX = camera.matrixWorld.elements[12]; this.cameraY = camera.matrixWorld.elements[13]; this.cameraZ = camera.matrixWorld.elements[14];
+        this.cameraValid = true;
+      };
+      for (const mesh of [...near.meshes, ...far.meshes]) mesh.onBeforeRender = captureCamera;
     }
+    if (this.maxTotal <= 600) { this.lodNear = 112; this.lodCull = 930; }
     scene.add(this.object);
   }
 
-  /** Returns a handle, or -1 if the pool for that kind is full. Model faces +Z. */
   add(kind: VehicleKind, color: number): number {
     if (this.activeTotal >= this.maxTotal) return -1;
     const batch = this.batches.get(kind)!;
-    const reused = batch.free.length > 0;
-    const instance = reused ? batch.free.pop()! : batch.used < this.perKind ? batch.used++ : -1;
+    const instance = batch.free.length ? batch.free.pop()! : batch.used < this.perKind ? batch.used++ : -1;
     if (instance < 0) return -1;
-    if (!reused) for (const mesh of batch.meshes) mesh.count = batch.used;
-    const handle = this.freeHandles.length > 0 ? this.freeHandles.pop()! : this.slots.length;
-    this.slots[handle] = { kind, instance };
-    batch.handleByInstance[instance] = handle;
-    batch.braking[instance] = 0;
-    batch.body.setColorAt(instance, this.color.setHex(color));
-    this.updateLights(batch, instance, performance.now() * 0.001);
-    this.activeTotal++;
-    return handle;
+    const handle = this.freeHandles.length ? this.freeHandles.pop()! : this.slots.length;
+    this.slots[handle] = { kind, instance }; batch.active[instance] = 1; batch.initialized[instance] = 0;
+    batch.handleByInstance[instance] = handle; batch.braking[instance] = 0; batch.damaged[instance] = 0;
+    batch.spin[instance] = 0; batch.steer[instance] = 0;
+    batch.revision[instance]++;
+    batch.dirt[instance] = 0.1 + (((handle * 1103515245 + 12345) >>> 8) & 255) / 255 * 0.72;
+    this.color.setHex(color);
+    batch.colors[instance * 3] = this.color.r; batch.colors[instance * 3 + 1] = this.color.g; batch.colors[instance * 3 + 2] = this.color.b;
+    batch.pickMesh.count = batch.used; this.activeTotal++; return handle;
   }
 
   remove(handle: number): void {
-    const slot = this.slots[handle];
-    if (!slot) return;
+    const slot = this.slots[handle]; if (!slot) return;
     const batch = this.batches.get(slot.kind)!;
-    for (const mesh of batch.meshes) mesh.setMatrixAt(slot.instance, this.hidden);
-    batch.handleByInstance[slot.instance] = -1;
-    batch.braking[slot.instance] = 0;
-    batch.free.push(slot.instance);
-    this.slots[handle] = undefined;
-    this.freeHandles.push(handle);
-    this.activeTotal--;
+    batch.active[slot.instance] = 0; batch.initialized[slot.instance] = 0; batch.handleByInstance[slot.instance] = -1; batch.free.push(slot.instance);
+    this.matrix.makeScale(0, 0, 0); batch.pickMesh.setMatrixAt(slot.instance, this.matrix);
+    markAttribute(batch.pickMesh.instanceMatrix, (slot.instance + 1) * 16);
+    this.slots[handle] = undefined; this.freeHandles.push(handle); this.activeTotal--;
   }
 
-  /** yaw: rotation about +Y (0 = facing +Z). pitch/roll for hills and crashes. */
   set(handle: number, x: number, y: number, z: number, yaw: number, pitch = 0, roll = 0): void {
-    const slot = this.slots[handle];
-    if (!slot) return;
-    this.euler.set(pitch, yaw, roll, 'YXZ');
-    this.quaternion.setFromEuler(this.euler);
+    const slot = this.slots[handle]; if (!slot) return;
+    const batch = this.batches.get(slot.kind)!; const i = slot.instance;
+    if (batch.initialized[i]) {
+      const dx = x - batch.previousX[i], dz = z - batch.previousZ[i], distance = Math.hypot(dx, dz);
+      if (distance < 30) batch.spin[i] = (batch.spin[i] + distance / Math.max(0.18, batch.wheelRadius)) % (Math.PI * 2);
+      let dyaw = yaw - batch.previousYaw[i]; dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
+      const target = distance > 0.015 ? THREE.MathUtils.clamp(dyaw * 4.5, -0.48, 0.48) : 0;
+      batch.steer[i] += (target - batch.steer[i]) * 0.42;
+    } else batch.initialized[i] = 1;
+    batch.previousX[i] = x; batch.previousZ[i] = z; batch.previousYaw[i] = yaw;
+    this.euler.set(pitch, yaw, roll, 'YXZ'); this.quaternion.setFromEuler(this.euler);
     this.matrix.makeRotationFromQuaternion(this.quaternion).setPosition(x, y, z);
-    for (const mesh of this.batches.get(slot.kind)!.meshes) mesh.setMatrixAt(slot.instance, this.matrix);
+    this.matrix.toArray(batch.matrices, i * 16); batch.pickMesh.setMatrixAt(i, this.matrix);
   }
 
   setBraking(handle: number, on: boolean): void {
+    const slot = this.slots[handle]; if (slot) this.batches.get(slot.kind)!.braking[slot.instance] = on ? 1 : 0;
+  }
+  setDamaged(handle: number, on: boolean): void {
     const slot = this.slots[handle];
-    if (!slot) return;
-    const batch = this.batches.get(slot.kind)!;
-    const value = on ? 1 : 0;
-    if (batch.braking[slot.instance] === value) return;
-    batch.braking[slot.instance] = value;
-    this.updateLights(batch, slot.instance, performance.now() * 0.001);
-    if (batch.brake?.instanceColor) batch.brake.instanceColor.needsUpdate = true;
-  }
-
-  /** `night` is 0 in daylight and 1 at full night. */
-  setNight(night: number): void {
-    this.night = THREE.MathUtils.clamp(night, 0, 1);
-    const now = performance.now() * 0.001;
-    for (const batch of this.batches.values()) this.updateBatchLights(batch, now, false);
-  }
-
-  private updateLights(batch: KindBatch, instance: number, now: number): void {
-    if (batch.headlight) {
-      const intensity = 0.22 + this.night * 1.9;
-      batch.headlight.setColorAt(instance, this.color.setRGB(intensity, intensity * 0.9, intensity * 0.66));
-    }
-    if (batch.brake) {
-      const intensity = batch.braking[instance] ? 2.4 : 0.22 + this.night * 0.45;
-      batch.brake.setColorAt(instance, this.color.setRGB(intensity, 0.012, 0.006));
-    }
-    if (batch.emergency) {
-      const phase = Math.floor(now * 3.2) & 1;
-      if (batch.redBeacon) batch.redBeacon.setColorAt(instance, this.color.setRGB(phase === 0 ? 2.8 : 0.12, 0.006, 0.004));
-      if (batch.blueBeacon) batch.blueBeacon.setColorAt(instance, this.color.setRGB(0.004, 0.04, phase === 1 ? 2.8 : 0.12));
-    } else {
-      if (batch.redBeacon) batch.redBeacon.setColorAt(instance, this.color.setRGB(0.75, 0.01, 0.006));
-      if (batch.blueBeacon) batch.blueBeacon.setColorAt(instance, this.color.setRGB(0.006, 0.04, 0.75));
+    if (slot) {
+      const batch = this.batches.get(slot.kind)!;
+      const value = on ? 1 : 0;
+      if (batch.damaged[slot.instance] !== value) { batch.damaged[slot.instance] = value; batch.revision[slot.instance]++; }
     }
   }
+  setNight(night: number): void { nightUniform.value = THREE.MathUtils.clamp(night, 0, 1); }
 
-  private updateBatchLights(batch: KindBatch, now: number, emergencyOnly: boolean): void {
-    if (emergencyOnly && !batch.emergency) return;
-    for (let instance = 0; instance < batch.used; instance++) {
-      if (batch.handleByInstance[instance] >= 0) this.updateLights(batch, instance, now);
+  /** Stores camera state; flush() performs the allocation-free near/far instance pack. */
+  updateLod(camera: THREE.Camera, quality: 'high' | 'low' | number = 'high'): void {
+    this.cameraX = camera.matrixWorld.elements[12]; this.cameraY = camera.matrixWorld.elements[13]; this.cameraZ = camera.matrixWorld.elements[14];
+    const scale = typeof quality === 'number' ? Math.max(0.45, quality) : quality === 'low' ? 0.62 : 1;
+    this.lodNear = 180 * scale; this.lodCull = 1500 * scale; this.cameraValid = true;
+  }
+
+  private pack(batch: KindBatch, source: number, lod: LodBatch, target: number): void {
+    this.matrix.fromArray(batch.matrices, source * 16); for (const mesh of lod.meshes) mesh.setMatrixAt(target, this.matrix);
+    const staticChanged = lod.sourceByRender[target] !== source || lod.revisionByRender[target] !== batch.revision[source];
+    if (staticChanged) {
+      lod.sourceByRender[target] = source; lod.revisionByRender[target] = batch.revision[source];
+      this.color.setRGB(batch.colors[source * 3], batch.colors[source * 3 + 1], batch.colors[source * 3 + 2], THREE.LinearSRGBColorSpace);
+      lod.shell.setColorAt(target, this.color);
+      const dirt = batch.dirt[source], damage = batch.damaged[source];
+      lod.shellAttrs.dirt.setX(target, dirt); lod.shellAttrs.damage.setX(target, damage);
+      lod.detailAttrs.dirt.setX(target, dirt); lod.detailAttrs.damage.setX(target, damage);
+      lod.lightAttrs?.seed?.setX(target, (source * 0.61803398875) % 1);
+      lod.staticDirtyStart = Math.min(lod.staticDirtyStart, target); lod.staticDirtyEnd = Math.max(lod.staticDirtyEnd, target + 1);
     }
-    if (!emergencyOnly) {
-      if (batch.headlight?.instanceColor) batch.headlight.instanceColor.needsUpdate = true;
-      if (batch.brake?.instanceColor) batch.brake.instanceColor.needsUpdate = true;
+    lod.detailAttrs.spin?.setX(target, batch.spin[source]); lod.detailAttrs.steer?.setX(target, batch.steer[source]);
+    const brake = batch.braking[source];
+    if (staticChanged || lod.lastBrake[target] !== brake) {
+      lod.lastBrake[target] = brake; lod.lightAttrs?.brake?.setX(target, brake);
+      lod.brakeDirtyStart = Math.min(lod.brakeDirtyStart, target); lod.brakeDirtyEnd = Math.max(lod.brakeDirtyEnd, target + 1);
     }
-    if (batch.redBeacon?.instanceColor) batch.redBeacon.instanceColor.needsUpdate = true;
-    if (batch.blueBeacon?.instanceColor) batch.blueBeacon.instanceColor.needsUpdate = true;
   }
 
   flush(): void {
-    const now = performance.now() * 0.001;
-    const phase = Math.floor(now * 3.2) & 1;
-    if (phase !== this.flashPhase) {
-      this.flashPhase = phase;
-      for (const batch of this.batches.values()) this.updateBatchLights(batch, now, true);
-    }
-    for (const batch of this.batches.values()) for (const mesh of batch.meshes) {
-      mesh.instanceMatrix.needsUpdate = true;
-      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    timeUniform.value = performance.now() * 0.001;
+    const near2 = this.lodNear * this.lodNear, far2 = this.lodCull * this.lodCull;
+    // Keep one far vehicle as a camera-capture sentinel when every real instance
+    // is beyond the cull radius. At >1.5 km it is sub-pixel, but onBeforeRender
+    // still sees the new camera so the fleet can re-enter on the following frame.
+    let sentinelClaimed = false;
+    for (const batch of this.batches.values()) {
+      let nearCount = 0, farCount = 0;
+      for (let i = 0; i < batch.used; i++) {
+        if (!batch.active[i] || !batch.initialized[i]) continue;
+        let nextLod = 0;
+        if (this.cameraValid) {
+          const o = i * 16, dx = batch.matrices[o + 12] - this.cameraX, dy = batch.matrices[o + 13] - this.cameraY, dz = batch.matrices[o + 14] - this.cameraZ;
+          const d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 > far2) nextLod = 2;
+          else nextLod = d2 > near2 * (batch.lod[i] === 1 ? 0.84 : 1) ? 1 : 0;
+        }
+        batch.lod[i] = nextLod;
+        if (nextLod === 0) this.pack(batch, i, batch.near, nearCount++);
+        else if (nextLod === 1 || !sentinelClaimed) {
+          this.pack(batch, i, batch.far, farCount++);
+          if (nextLod === 2) sentinelClaimed = true;
+        }
+      }
+      markLod(batch.near, nearCount); markLod(batch.far, farCount); markAttribute(batch.pickMesh.instanceMatrix, batch.used * 16);
     }
   }
 
   pick(ray: THREE.Raycaster): number | null {
-    let nearestHandle: number | null = null;
-    let nearestDistance = Infinity;
+    let nearestHandle: number | null = null, nearestDistance = Infinity;
     for (const batch of this.batches.values()) {
       const hit = ray.intersectObject(batch.pickMesh, false)[0];
       if (!hit || hit.instanceId === undefined || hit.distance >= nearestDistance) continue;
       const handle = batch.handleByInstance[hit.instanceId];
-      if (handle >= 0) {
-        nearestHandle = handle;
-        nearestDistance = hit.distance;
-      }
+      if (handle >= 0) { nearestHandle = handle; nearestDistance = hit.distance; }
     }
     return nearestHandle;
+  }
+
+  stats(): VehicleRenderStats {
+    const kinds: Record<string, { nearTriangles: number; farTriangles: number }> = {};
+    for (const [kind, batch] of this.batches) kinds[kind] = { nearTriangles: batch.nearTriangles, farTriangles: batch.farTriangles };
+    return { active: this.activeTotal, drawCallsPerNearKind: 3, drawCallsPerFarKind: 2, kinds };
+  }
+
+  dispose(): void {
+    this.object.removeFromParent();
+    for (const batch of this.batches.values()) for (const mesh of [...batch.near.meshes, ...batch.far.meshes, batch.pickMesh]) mesh.geometry.dispose();
   }
 }

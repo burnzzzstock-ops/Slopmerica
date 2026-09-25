@@ -22,6 +22,7 @@ import { Sim, Mode, SPEEDS } from './sim/sim';
 import { Traffic, Car } from './agents/traffic';
 import { Pedestrians, Ped } from './agents/pedestrians';
 import { Communes, Commune } from './agents/communes';
+import { AmbientLife } from './agents/ambient';
 import { Tools } from './tools/tools';
 import { setBuildingNight, loadArt, landmarkFootprint } from './buildings/generator';
 import { lineCubic, V2 } from './core/math';
@@ -202,6 +203,11 @@ export class Game {
 
     this.rts = new RTSCamera(this.camera, this.renderer.domElement, this.terrain, this.tools as PointerHandlers);
     this.rts.setView(start.x, start.z, IS_TOUCH ? 900 : 800, start.yaw, 0.72, true);
+
+    // --- ambient life (codex) ---
+    const ambientLife = new AmbientLife(this.scene, this.terrain, opts.map, this.q);
+    ambientLife.setRoadNetwork(this.net);
+    this.onFrame.push(dt => ambientLife.update(dt, this.camera, this.env.night, this.weather));
 
     this.wireEvents();
     if (opts.restore) applySave(this, opts.restore);
@@ -710,8 +716,12 @@ export class Game {
     });
     if (render) {
       this.renderer.info.reset();
-      wu.uReflOn.value = this.water.reflection?.render(this.renderer, this.scene, this.camera, [this.water.mesh]) ? 1 : 0;
+      wu.uReflOn.value = this.water.reflection?.shouldRender(this.camera) ? 1 : 0;
       this.post.render(n);
+      // A mirror pass before the main pass can bind a shadow sampler before
+      // three.js has created its shadow texture. Reuse the previous reflection
+      // for this frame and refresh it after the main scene has rendered.
+      this.water.reflection?.render(this.renderer, this.scene, this.camera, [this.water.mesh]);
       this.perf.calls = this.renderer.info.render.calls;
       this.perf.triangles = this.renderer.info.render.triangles;
     }

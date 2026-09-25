@@ -623,6 +623,7 @@ export class Traffic {
       if (c.crashed > 0) R.set(c.h, x, y, z, yaw + c.crashYaw, pitch, c.crashRoll);
       else R.set(c.h, x, y, z, yaw, pitch, 0);
       R.setBraking(c.h, c.v < 3);
+      R.setDamaged(c.h, c.crashed > 0); // AA vehicle shader darkens crumpled cars until cleanup.
     }
     R.flush();
   }

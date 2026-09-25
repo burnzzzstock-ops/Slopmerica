@@ -191,12 +191,14 @@ export class Communes {
   }
 
   /** Animate: flicker fires; leaving communes sink and fade. */
-  update(dt: number, night: number, time: number) {
+  update(dt: number, night: number, time: number, camera: THREE.Vector3) {
     for (const c of this.list) {
       if (c.state === 'gone') continue;
       const flicker = 0.88 + Math.sin(time * 13 + c.id) * 0.09 + Math.sin(time * 23.7 + c.id * 4) * 0.035;
       c.fire.intensity = night * 25 * flicker;
-      c.fire.visible = night > 0.05;
+      // Distant campfires remain visible through emissive geometry; their point
+      // lights need only shade the nearby ground and props.
+      c.fire.visible = night > 0.05 && Math.abs(c.x - camera.x) < 420 && Math.abs(c.z - camera.z) < 420;
       if (c.flameMesh) {
         c.flameMesh.scale.set(1 + Math.sin(time * 9 + c.id) * 0.028, 0.94 + flicker * 0.07, 1 + Math.cos(time * 7.1 + c.id) * 0.025);
         c.flameMesh.rotation.y = Math.sin(time * 3.7 + c.id) * 0.045;

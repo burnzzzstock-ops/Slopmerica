@@ -94,12 +94,16 @@ export class StreetDetails {
   readonly group = new THREE.Group();
   private meshes: THREE.Object3D[] = [];
   private signalBulbs?: THREE.InstancedMesh;
+  private pedestrianBulbs?: THREE.InstancedMesh;
   private signalPlacements: SignalPlacement[] = [];
   private signalProvider?: SignalStateProvider;
   private signalColors = new Uint8Array(0);
   private readonly signalRed = new THREE.Color(0xff2b19);
   private readonly signalGreen = new THREE.Color(0x45ff4f);
   private readonly signalAmber = new THREE.Color(0xffb52a);
+  private readonly signalRedDim = new THREE.Color(0x230a08);
+  private readonly signalAmberDim = new THREE.Color(0x251807);
+  private readonly signalGreenDim = new THREE.Color(0x09200b);
 
   private readonly darkMetal = new THREE.MeshStandardMaterial({ color: 0x44484b, roughness: 0.62, metalness: 0.38 });
   private readonly galvanized = new THREE.MeshStandardMaterial({ color: 0x8d9290, roughness: 0.52, metalness: 0.48 });
@@ -123,8 +127,11 @@ export class StreetDetails {
   private readonly signPostGeo = new THREE.CylinderGeometry(0.045, 0.055, 2.3, 5).translate(0, 1.15, 0);
   private readonly stopSignGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.055, 8).rotateX(Math.PI / 2).translate(0, 2.35, 0);
   private readonly signalPoleGeo: THREE.BufferGeometry;
-  private readonly signalHeadGeo = new THREE.BoxGeometry(0.38, 0.92, 0.34).translate(0, 3.55, -0.96);
-  private readonly signalBulbGeo = new THREE.SphereGeometry(0.13, 6, 4).translate(0, 3.55, -1.15);
+  private readonly signalArmGeo = new THREE.BoxGeometry(1, 0.12, 0.12).translate(-0.5, 4.18, 0);
+  private readonly signalHeadGeo = new THREE.BoxGeometry(0.46, 1.18, 0.36).translate(0, 3.77, 0);
+  private readonly signalBulbGeo = new THREE.SphereGeometry(0.17, 8, 6).translate(0, 0, -0.21);
+  private readonly pedestrianHeadGeo = new THREE.BoxGeometry(0.46, 0.5, 0.22).translate(0, 2.75, 0);
+  private readonly pedestrianBulbGeo = new THREE.CircleGeometry(0.13, 8).translate(0, 2.75, -0.12);
   private readonly hydrantGeo: THREE.BufferGeometry;
   private readonly mailboxGeo: THREE.BufferGeometry;
   private readonly shelterGeo: THREE.BufferGeometry;
@@ -136,9 +143,9 @@ export class StreetDetails {
     const cap = new THREE.BoxGeometry(0.2, 0.2, 0.2).translate(0, 7.5, 0);
     this.utilityPoleGeo = mergeSimple([pole, cap]);
 
-    const signalPole = new THREE.CylinderGeometry(0.07, 0.1, 3.5, 6).translate(0, 1.75, 0);
-    const signalArm = new THREE.BoxGeometry(0.1, 0.1, 1.05).translate(0, 3.35, -0.48);
-    this.signalPoleGeo = mergeSimple([signalPole, signalArm]);
+    const signalPole = new THREE.CylinderGeometry(0.09, 0.12, 4.25, 6).translate(0, 2.125, 0);
+    this.signalPoleGeo = signalPole.toNonIndexed();
+    signalPole.dispose();
 
     const hydrantBody = new THREE.CylinderGeometry(0.15, 0.19, 0.62, 7).translate(0, 0.31, 0);
     const hydrantTop = new THREE.SphereGeometry(0.18, 7, 4).translate(0, 0.63, 0);
@@ -182,6 +189,7 @@ export class StreetDetails {
     }
     this.meshes.length = 0;
     this.signalBulbs = undefined;
+    this.pedestrianBulbs = undefined;
     this.signalPlacements.length = 0;
 
     const utilityPoles: Placement[] = [];
@@ -195,7 +203,11 @@ export class StreetDetails {
     const signPosts: Placement[] = [];
     const stopSigns: Placement[] = [];
     const signalPoles: Placement[] = [];
+    const signalArms: Placement[] = [];
     const signalHeads: Placement[] = [];
+    const signalBulbPlacements: Placement[] = [];
+    const pedestrianHeads: Placement[] = [];
+    const pedestrianPlacements: Placement[] = [];
     const hydrants: Placement[] = [];
     const mailboxes: Placement[] = [];
     const shelters: Placement[] = [];
@@ -341,10 +353,17 @@ export class StreetDetails {
         const z = f.p.z + r.z * off * approachSide;
         const yaw = yawAt(f) + (atA ? Math.PI : 0);
         if (signalized) {
+          const armLength = Math.max(2.6, ch * 0.78 + 0.45);
           const p: SignalPlacement = { x, y: f.y, z, yaw, nodeId: node.id, segId: seg.id };
           signalPoles.push(p);
-          signalHeads.push(p);
-          this.signalPlacements.push(p);
+          signalArms.push({ ...p, sx: armLength });
+          const head = { ...p, x: x - Math.cos(yaw) * armLength, z: z + Math.sin(yaw) * armLength };
+          signalHeads.push(head);
+          this.signalPlacements.push(head);
+          for (const height of [4.16, 3.77, 3.38]) signalBulbPlacements.push({ ...head, y: head.y + height });
+          const walk = { ...p, yaw: yaw + Math.PI / 2 };
+          pedestrianHeads.push(walk);
+          pedestrianPlacements.push(walk);
         } else {
           const p = { x, y: f.y, z, yaw };
           signPosts.push(p);
@@ -392,8 +411,11 @@ export class StreetDetails {
     this.addInstances(this.signPostGeo, this.galvanized, signPosts, true);
     this.addInstances(this.stopSignGeo, this.red, stopSigns, true);
     this.addInstances(this.signalPoleGeo, this.darkMetal, signalPoles, true);
+    this.addInstances(this.signalArmGeo, this.darkMetal, signalArms, true);
     this.addInstances(this.signalHeadGeo, this.signalDark, signalHeads, true);
-    this.signalBulbs = this.addInstances(this.signalBulbGeo, this.signalLight, this.signalPlacements, false);
+    this.signalBulbs = this.addInstances(this.signalBulbGeo, this.signalLight, signalBulbPlacements, false);
+    this.addInstances(this.pedestrianHeadGeo, this.signalDark, pedestrianHeads, true);
+    this.pedestrianBulbs = this.addInstances(this.pedestrianBulbGeo, this.signalLight, pedestrianPlacements, false);
     this.addInstances(this.hydrantGeo, this.yellow, hydrants, true);
     this.addInstances(this.mailboxGeo, this.galvanized, mailboxes, true);
     this.addInstances(this.shelterGeo, this.darkMetal, shelters, true);
@@ -423,10 +445,14 @@ export class StreetDetails {
       const state = supplied === true || supplied === 'green' ? 1 : supplied === false || supplied === 'red' ? 0 : 2;
       if (this.signalColors[i] === state) continue;
       this.signalColors[i] = state;
-      bulbs.setColorAt(i, state === 1 ? this.signalGreen : state === 0 ? this.signalRed : this.signalAmber);
+      bulbs.setColorAt(i * 3, state === 0 ? this.signalRed : this.signalRedDim);
+      bulbs.setColorAt(i * 3 + 1, state === 2 ? this.signalAmber : this.signalAmberDim);
+      bulbs.setColorAt(i * 3 + 2, state === 1 ? this.signalGreen : this.signalGreenDim);
+      this.pedestrianBulbs?.setColorAt(i, state === 0 ? this.signalGreen : this.signalRed);
       changed = true;
     }
     if (changed && bulbs.instanceColor) bulbs.instanceColor.needsUpdate = true;
+    if (changed && this.pedestrianBulbs?.instanceColor) this.pedestrianBulbs.instanceColor.needsUpdate = true;
   }
 
   private makeAdTexture() {

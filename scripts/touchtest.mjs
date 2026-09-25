@@ -1,11 +1,12 @@
 // Simulated phone: drag-to-draw a road with one finger, then Done, then Undo.
 import { chromium } from 'playwright-core';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await chromium.launch({ executablePath: process.env.CHROME || (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'), args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
 const page = await ctx.newPage();
 page.on('pageerror', (e) => console.log('pageerror', e.message));
-await page.goto('http://127.0.0.1:5173/#skip&map=appalachia&mode=sandbox', { waitUntil: 'load' });
-await page.waitForTimeout(8000);
+await page.addInitScript(() => { try { localStorage.setItem('slopmerica.quality', 'low'); } catch { /* private */ } });
+await page.goto(`http://127.0.0.1:${process.env.PORT || '5173'}/#skip&map=appalachia&mode=sandbox`, { waitUntil: 'load' });
+await page.waitForFunction(() => window.__game && window.__dbg, null, { timeout: 180000 });
 const cdp = await ctx.newCDPSession(page);
 const touch = async (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] });
 const segs = () => page.evaluate(() => window.__game.net.segs.size);

@@ -72,7 +72,37 @@ interface MaskCache {
   communes: Map<number, Commune[]>;
 }
 
+interface RefillJob {
+  cx: number;
+  cz: number;
+  season: Season;
+  patchX: number;
+  patchZ: number;
+  stamp: number;
+  masks: MaskCache;
+  roads: RSeg[];
+  zones: ZCell[];
+  buildings: Bld[];
+  communes: Commune[];
+  roadI: number;
+  zoneI: number;
+  buildingI: number;
+  communeI: number;
+  gx: number;
+  gx0: number;
+  gx1: number;
+  gz: number;
+  gz1: number;
+  r2: number;
+  counts: number[];
+  total: number;
+  cpuMs: number;
+}
+
 const MASK_CELL = 48;
+// Leave headroom for source queries and the final typed-array commit so the
+// whole update remains around one millisecond on slower browser JS engines.
+const REFILL_SLICE_MS = 0.55;
 const maskKey = (x: number, z: number) => x * 16384 + z;
 
 function bucket<T>(map: Map<number, T[]>, item: T, minX: number, minZ: number, maxX: number, maxZ: number) {
@@ -249,9 +279,13 @@ export class GroundDetail {
   visibleInstances = 0;
   /** CPU time spent on the latest placement refill, for the debug cast. */
   lastRefillMs = 0;
+  /** Sum of all slices used by the last fully committed patch. */
+  lastRefillTotalMs = 0;
 
   private meshes: THREE.InstancedMesh[] = [];
   private materials: THREE.MeshStandardMaterial[] = [];
+  private scratchMatrices: Float32Array[] = [];
+  private scratchColors: Float32Array[] = [];
   private uniforms = {
     uTime: { value: 0 },
     uWind: { value: new THREE.Vector2() },
@@ -272,7 +306,7 @@ export class GroundDetail {
   private lastStamp = -1;
   private roadRevision = 0;
   private dirty = true;
-  private nextRebuild = 0;
+  private refill: RefillJob | null = null;
   private unsub: (() => void)[] = [];
 
   constructor(private terrain: Terrain, map: MapData, q: Quality, private sources: GroundDetailSources) {
@@ -288,6 +322,8 @@ export class GroundDetail {
     this.uniforms.uSnowLine.value = this.profile.snowLine;
 
     for (let kind = 0; kind < 3; kind++) {
+      this.scratchMatrices.push(new Float32Array(this.maxInstances * 16));
+      this.scratchColors.push(new Float32Array(this.maxInstances * 3));
       const flex = kind === 0 || (map.def.id === 'florida' && kind === 1);
       const mat = this.makeMaterial(kind, flex);
       const mesh = new THREE.InstancedMesh(makeGroundGeometry(map.def.id, kind), mat, this.maxInstances);
@@ -362,66 +398,131 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.92, 0.96), gdSnow * 0.88);`
     const patchZ = Math.floor(focus.z / (this.spacing * 2));
     const communeStamp = this.sources.communes.list.reduce((n, c) => n + (c.state === 'gone' ? 0 : c.id * 17), 0);
     const stamp = this.terrain.surfaceVersion * 31 + this.sources.zones.version * 17 + this.sources.buildings.list.size * 7 + communeStamp + this.roadRevision;
-    if (patchX !== this.lastPatchX || patchZ !== this.lastPatchZ || weather.season !== this.lastSeason || stamp !== this.lastStamp) this.dirty = true;
-    if (!this.dirty || time < this.nextRebuild) return;
-    this.lastPatchX = patchX;
-    this.lastPatchZ = patchZ;
-    this.lastSeason = weather.season;
-    this.lastStamp = stamp;
-    this.nextRebuild = time + 0.18;
-    this.dirty = false;
-    const refillStart = performance.now();
-    this.rebuild(focus.x, focus.z, weather.season);
-    this.lastRefillMs = performance.now() - refillStart;
+    const committedChanged = patchX !== this.lastPatchX || patchZ !== this.lastPatchZ || weather.season !== this.lastSeason || stamp !== this.lastStamp;
+    const pendingChanged = !!this.refill && (patchX !== this.refill.patchX || patchZ !== this.refill.patchZ || weather.season !== this.refill.season || stamp !== this.refill.stamp);
+    if (this.refill && (this.dirty || pendingChanged)) this.refill = null;
+    const sliceStart = performance.now();
+    if (!this.refill && (this.dirty || committedChanged)) {
+      this.refill = this.startRefill(focus.x, focus.z, patchX, patchZ, weather.season, stamp);
+      this.dirty = false;
+    }
+    const job = this.refill;
+    if (!job) { this.lastRefillMs = 0; return; }
+
+    const done = this.advanceRefill(job, sliceStart + REFILL_SLICE_MS);
+    if (done) this.commitRefill(job);
+    this.lastRefillMs = performance.now() - sliceStart;
+    job.cpuMs += this.lastRefillMs;
+    if (done) {
+      this.lastRefillTotalMs = job.cpuMs;
+      this.refill = null;
+    }
   }
 
-  private rebuild(cx: number, cz: number, season: Season) {
-    const counts = [0, 0, 0];
-    const r2 = this.radius * this.radius;
-    const masks = this.buildMaskCache(cx, cz);
+  private startRefill(cx: number, cz: number, patchX: number, patchZ: number, season: Season, stamp: number): RefillJob {
     const gx0 = Math.floor((cx - this.radius) / this.spacing);
     const gx1 = Math.ceil((cx + this.radius) / this.spacing);
     const gz0 = Math.floor((cz - this.radius) / this.spacing);
     const gz1 = Math.ceil((cz + this.radius) / this.spacing);
-    let total = 0;
+    const pad = this.radius + 170;
+    return {
+      cx, cz, season, patchX, patchZ, stamp,
+      masks: { roads: new Map(), zones: new Map(), buildings: new Map(), communes: new Map() },
+      roads: this.sources.roads.segsNear(cx - pad, cz - pad, cx + pad, cz + pad),
+      zones: this.sources.zones.cellsNear(cx, cz, this.radius + 14),
+      buildings: this.sources.buildings.near(cx, cz, pad),
+      communes: this.sources.communes.list,
+      roadI: 0, zoneI: 0, buildingI: 0, communeI: 0,
+      gx: gx0, gx0, gx1, gz: gz0, gz1, r2: this.radius * this.radius,
+      counts: [0, 0, 0], total: 0, cpuMs: 0,
+    };
+  }
 
-    outer: for (let gz = gz0; gz <= gz1; gz++) for (let gx = gx0; gx <= gx1; gx++) {
+  private advanceRefill(job: RefillJob, deadline: number): boolean {
+    if (performance.now() >= deadline) return false;
+    while (job.roadI < job.roads.length) {
+      const seg = job.roads[job.roadI++];
+      const r = ROAD_TYPES[seg.type].width / 2 + 4.5;
+      bucket(job.masks.roads, seg, seg.minX - r, seg.minZ - r, seg.maxX + r, seg.maxZ + r);
+      if (performance.now() >= deadline) return false;
+    }
+    while (job.zoneI < job.zones.length) {
+      const c = job.zones[job.zoneI++];
+      if (c.valid && (c.zone !== null || c.bld !== 0)) bucket(job.masks.zones, c, c.x - 7, c.z - 7, c.x + 7, c.z + 7);
+      if (performance.now() >= deadline) return false;
+    }
+    while (job.buildingI < job.buildings.length) {
+      const b = job.buildings[job.buildingI++];
+      const r = Math.hypot(b.hw, b.hd) + 3;
+      bucket(job.masks.buildings, b, b.x - r, b.z - r, b.x + r, b.z + r);
+      if (performance.now() >= deadline) return false;
+    }
+    const pad = this.radius + 170;
+    while (job.communeI < job.communes.length) {
+      const c = job.communes[job.communeI++];
+      if (c.state !== 'gone' && Math.abs(c.x - job.cx) <= pad + c.r && Math.abs(c.z - job.cz) <= pad + c.r) {
+        const r = c.r + 5;
+        bucket(job.masks.communes, c, c.x - r, c.z - r, c.x + r, c.z + r);
+      }
+      if (performance.now() >= deadline) return false;
+    }
+
+    let checked = 0;
+    while (job.gz <= job.gz1 && job.total < this.maxInstances) {
+      const gx = job.gx, gz = job.gz;
+      if (++job.gx > job.gx1) { job.gx = job.gx0; job.gz++; }
       const x = (gx + 0.12 + hash2(gx, gz, 31) * 0.76) * this.spacing;
       const z = (gz + 0.12 + hash2(gx, gz, 47) * 0.76) * this.spacing;
-      if ((x - cx) ** 2 + (z - cz) ** 2 > r2 || !this.terrain.inBounds(x, z, 3)) continue;
-      const y = this.terrain.h(x, z);
-      if (y < WATER + 0.12 || this.terrain.slope(x, z) > 0.62 || this.terrain.paintAt(x, z) !== Paint.None) continue;
-      const cover = this.terrain.coverAt(x, z);
-      const density = this.densityAt(this.terrain.map.def.id, season, y, cover);
-      if (hash2(gx, gz, 71) > density || this.masked(x, z, masks)) continue;
-      const kind = this.kindAt(this.terrain.map.def.id, season, x, z, y, cover, hash2(gx, gz, 89));
-      const slot = counts[kind]++;
-      if (slot >= this.maxInstances) { counts[kind]--; continue; }
-
-      const mesh = this.meshes[kind];
-      const e = mesh.instanceMatrix.array as Float32Array;
-      const o = slot * 16;
-      const rnd = hash2(gx, gz, 103);
-      const yaw = hash2(gx, gz, 107) * Math.PI * 2;
-      const base = 0.72 + rnd * 0.62;
-      const solid = kind > 0;
-      const sx = base * (solid ? 0.82 : 1);
-      const sy = base * (solid ? 0.82 : 1);
-      const c = Math.cos(yaw), s = Math.sin(yaw);
-      e[o] = c * sx; e[o + 1] = 0; e[o + 2] = -s * sx; e[o + 3] = 0;
-      e[o + 4] = 0; e[o + 5] = sy; e[o + 6] = 0; e[o + 7] = 0;
-      e[o + 8] = s * sx; e[o + 9] = 0; e[o + 10] = c * sx; e[o + 11] = 0;
-      e[o + 12] = x; e[o + 13] = y - 0.04; e[o + 14] = z; e[o + 15] = 1;
-
-      tmpColor.setHex(this.profile.colors[season][kind]);
-      tmpColor.offsetHSL((hash2(gx, gz, 113) - 0.5) * 0.035, (rnd - 0.5) * 0.08, (rnd - 0.5) * 0.14);
-      const ca = mesh.instanceColor!.array as Float32Array;
-      ca[slot * 3] = tmpColor.r; ca[slot * 3 + 1] = tmpColor.g; ca[slot * 3 + 2] = tmpColor.b;
-      total++;
-      if (total >= this.maxInstances) break outer;
+      this.placeCandidate(job, gx, gz, x, z);
+      if ((++checked & 1) === 0 && performance.now() >= deadline) return false;
     }
-    this.visibleInstances = total;
-    for (let i = 0; i < this.meshes.length; i++) this.commit(this.meshes[i], counts[i]);
+    return true;
+  }
+
+  private placeCandidate(job: RefillJob, gx: number, gz: number, x: number, z: number) {
+    if ((x - job.cx) ** 2 + (z - job.cz) ** 2 > job.r2 || !this.terrain.inBounds(x, z, 3)) return;
+    const y = this.terrain.h(x, z);
+    if (y < WATER + 0.12 || this.terrain.slope(x, z) > 0.62 || this.terrain.paintAt(x, z) !== Paint.None) return;
+    const cover = this.terrain.coverAt(x, z);
+    const density = this.densityAt(this.terrain.map.def.id, job.season, y, cover);
+    if (hash2(gx, gz, 71) > density || this.masked(x, z, job.masks)) return;
+    const kind = this.kindAt(this.terrain.map.def.id, job.season, x, z, y, cover, hash2(gx, gz, 89));
+    const slot = job.counts[kind]++;
+    if (slot >= this.maxInstances) { job.counts[kind]--; return; }
+
+    const e = this.scratchMatrices[kind];
+    const o = slot * 16;
+    const rnd = hash2(gx, gz, 103);
+    const yaw = hash2(gx, gz, 107) * Math.PI * 2;
+    const base = 0.72 + rnd * 0.62;
+    const solid = kind > 0;
+    const sx = base * (solid ? 0.82 : 1);
+    const sy = base * (solid ? 0.82 : 1);
+    const c = Math.cos(yaw), s = Math.sin(yaw);
+    e[o] = c * sx; e[o + 1] = 0; e[o + 2] = -s * sx; e[o + 3] = 0;
+    e[o + 4] = 0; e[o + 5] = sy; e[o + 6] = 0; e[o + 7] = 0;
+    e[o + 8] = s * sx; e[o + 9] = 0; e[o + 10] = c * sx; e[o + 11] = 0;
+    e[o + 12] = x; e[o + 13] = y - 0.04; e[o + 14] = z; e[o + 15] = 1;
+
+    tmpColor.setHex(this.profile.colors[job.season][kind]);
+    tmpColor.offsetHSL((hash2(gx, gz, 113) - 0.5) * 0.035, (rnd - 0.5) * 0.08, (rnd - 0.5) * 0.14);
+    const ca = this.scratchColors[kind];
+    ca[slot * 3] = tmpColor.r; ca[slot * 3 + 1] = tmpColor.g; ca[slot * 3 + 2] = tmpColor.b;
+    job.total++;
+  }
+
+  private commitRefill(job: RefillJob) {
+    for (let i = 0; i < this.meshes.length; i++) {
+      const count = job.counts[i];
+      (this.meshes[i].instanceMatrix.array as Float32Array).set(this.scratchMatrices[i].subarray(0, count * 16), 0);
+      this.meshes[i].instanceColor!.array.set(this.scratchColors[i].subarray(0, count * 3), 0);
+      this.commit(this.meshes[i], count);
+    }
+    this.visibleInstances = job.total;
+    this.lastPatchX = job.patchX;
+    this.lastPatchZ = job.patchZ;
+    this.lastSeason = job.season;
+    this.lastStamp = job.stamp;
   }
 
   private densityAt(map: MapId, season: Season, h: number, cover: number): number {
@@ -450,29 +551,6 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.92, 0.96), gdSnow * 0.88);`
     const beach = this.terrain.map.sand?.(x, z) ?? 0;
     if (beach > 0.2 && h < 2.5 && r > 0.62) return 2;
     return h < 4.5 && cover > 0.52 && r > 0.76 ? 1 : 0;
-  }
-
-  /** Gather dynamic blockers once per patch; the candidate loop does no queries or allocations. */
-  private buildMaskCache(cx: number, cz: number): MaskCache {
-    const masks: MaskCache = { roads: new Map(), zones: new Map(), buildings: new Map(), communes: new Map() };
-    const pad = this.radius + 170;
-    for (const seg of this.sources.roads.segsNear(cx - pad, cz - pad, cx + pad, cz + pad)) {
-      const r = ROAD_TYPES[seg.type].width / 2 + 4.5;
-      bucket(masks.roads, seg, seg.minX - r, seg.minZ - r, seg.maxX + r, seg.maxZ + r);
-    }
-    for (const c of this.sources.zones.cellsNear(cx, cz, this.radius + 14)) {
-      if (c.valid && (c.zone !== null || c.bld !== 0)) bucket(masks.zones, c, c.x - 7, c.z - 7, c.x + 7, c.z + 7);
-    }
-    for (const b of this.sources.buildings.near(cx, cz, pad)) {
-      const r = Math.hypot(b.hw, b.hd) + 3;
-      bucket(masks.buildings, b, b.x - r, b.z - r, b.x + r, b.z + r);
-    }
-    for (const c of this.sources.communes.list) {
-      if (c.state === 'gone' || Math.abs(c.x - cx) > pad + c.r || Math.abs(c.z - cz) > pad + c.r) continue;
-      const r = c.r + 5;
-      bucket(masks.communes, c, c.x - r, c.z - r, c.x + r, c.z + r);
-    }
-    return masks;
   }
 
   private masked(x: number, z: number, masks: MaskCache): boolean {

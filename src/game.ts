@@ -149,7 +149,7 @@ export class Game {
     this.terrain = new Terrain(this.map, this.renderer, this.q);
     this.scene.add(this.terrain.group);
     lap('terrain');
-    this.water = createWater(this.terrain, this.map.def.water, this.q.name === 'high', opts.map);
+    this.water = createWater(this.terrain, this.map.def.water, this.q.name === 'high' || this.q.name === 'ultra', opts.map);
     this.scene.add(this.water.mesh);
     this.trees = new Trees(this.terrain, this.map, this.q, this.renderer);
     this.scene.add(this.trees.group);
@@ -537,7 +537,7 @@ export class Game {
     return this.pendingQuality !== null;
   }
 
-  private setRenderScale(scale: number, presetRatio = this.q.pixelRatio) {
+  private setRenderScale(scale: number, presetRatio = QUALITY[this.pendingQuality ?? this.q.name].pixelRatio) {
     this.dynamicScale = THREE.MathUtils.clamp(scale, 0.6, 1);
     this.perf.resolution = this.dynamicScale;
     const pr = Math.min(window.devicePixelRatio || 1, presetRatio) * this.dynamicScale;
@@ -576,8 +576,8 @@ export class Game {
     this.resolutionCooldown -= intervalMs / 1000;
     if (this.resolutionCooldown <= 0 && this.perfSamples > 80 && this.perf.frameMs > 0) {
       const ms = this.perf.frameMs;
-      if (ms > 20.5 && this.dynamicScale > 0.61) {
-        this.setRenderScale(this.dynamicScale - (ms > 27 ? 0.12 : 0.07));
+      if (ms > 18.5 && this.dynamicScale > 0.61) {
+        this.setRenderScale(this.dynamicScale - (ms > 25 ? 0.12 : 0.07));
         this.resolutionCooldown = 3;
       } else if (ms < 15.2 && this.perf.renderMs < 15.2 && this.dynamicScale < 0.99) {
         this.setRenderScale(this.dynamicScale + 0.04);
@@ -645,7 +645,7 @@ export class Game {
     this.traffic.update(dt, spd, this.hour, this.sim.population, jobs, this.rts.target);
     this.peds.population = this.sim.population;
     this.peds.update(dt, spd, this.rts.target, this.rts.distance, this.time);
-    this.communes.update(dt, this.env.night, this.time);
+    this.communes.update(dt, this.env.night, this.time, this.camera.position);
     this.emitT -= dt;
     if (this.emitT <= 0 && spd > 0) {
       this.emitT = 0.6;
@@ -710,7 +710,7 @@ export class Game {
     });
     if (render) {
       this.renderer.info.reset();
-      this.water.reflection?.render(this.renderer, this.scene, this.camera, [this.water.mesh]);
+      wu.uReflOn.value = this.water.reflection?.render(this.renderer, this.scene, this.camera, [this.water.mesh]) ? 1 : 0;
       this.post.render(n);
       this.perf.calls = this.renderer.info.render.calls;
       this.perf.triangles = this.renderer.info.render.triangles;

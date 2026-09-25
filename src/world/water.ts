@@ -1,7 +1,7 @@
 // One big water plane at y = WATER. The terrain height texture gives depth, so
 // shallows glow turquoise, deep water goes navy and shorelines get foam.
 import * as THREE from 'three';
-import { HALF, HM_N, WATER, WORLD } from '../config';
+import { HALF, HM_N, HM_STEP, WATER, WORLD } from '../config';
 import type { Terrain } from './terrain';
 
 /**
@@ -14,19 +14,47 @@ export class WaterReflection {
   readonly texMat = new THREE.Matrix4();
   private cam = new THREE.PerspectiveCamera();
   private clip = [new THREE.Plane(new THREE.Vector3(0, 1, 0), -WATER + 0.25)];
+  private frustum = new THREE.Frustum();
+  private viewProjection = new THREE.Matrix4();
+  private waterBounds: THREE.Box3[] = [];
+  private waterBoundsBuilt = false;
   private v = new THREE.Vector3();
   private t = new THREE.Vector3();
   private size = new THREE.Vector2();
   private bias = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
   enabled = true;
 
-  constructor(private scale = 0.5) {
+  constructor(private scale = 0.5, terrain?: Terrain) {
     this.rt = new THREE.WebGLRenderTarget(16, 16, { type: THREE.HalfFloatType, samples: 0 });
     this.rt.texture.generateMipmaps = false;
+    if (terrain) this.buildWaterBounds(terrain);
   }
 
-  render(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, hide: THREE.Object3D[]) {
-    if (!this.enabled) return;
+  /**
+   * Whether planar reflections can affect a visible water fragment. The shader
+   * has fully faded the reflection to its sky fallback at 750 m, so water
+   * beyond this range does not justify another scene render.
+   */
+  shouldRender(camera: THREE.PerspectiveCamera, terrain?: Terrain): boolean {
+    if (!this.enabled) return false;
+    if (!this.waterBoundsBuilt && terrain) this.buildWaterBounds(terrain);
+    // No terrain means an older/direct caller cannot safely be culled.
+    if (!this.waterBoundsBuilt) return true;
+    if (!this.waterBounds.length) return false;
+    this.viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    this.frustum.setFromProjectionMatrix(this.viewProjection);
+    for (const box of this.waterBounds) {
+      const distance = box.distanceToPoint(camera.position);
+      // Keep nearby water warm through quick camera turns; otherwise require it
+      // to intersect the view before paying for the mirrored scene render.
+      if (distance <= 160 || (distance <= 750 && this.frustum.intersectsBox(box))) return true;
+    }
+    return false;
+  }
+
+  /** Returns true when the reflection target was refreshed this frame. */
+  render(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, hide: THREE.Object3D[]): boolean {
+    if (!this.shouldRender(camera)) return false;
     renderer.getDrawingBufferSize(this.size);
     const w = Math.max(64, Math.min(1400, Math.floor(this.size.x * this.scale))), h = Math.max(64, Math.floor((w * this.size.y) / Math.max(1, this.size.x)));
     if (this.rt.width !== w || this.rt.height !== h) this.rt.setSize(w, h);
@@ -58,6 +86,32 @@ export class WaterReflection {
     renderer.clippingPlanes = prevClip;
     renderer.shadowMap.autoUpdate = prevShadow;
     hide.forEach((o, i) => (o.visible = vis[i]));
+    return true;
+  }
+
+  private buildWaterBounds(terrain: Terrain) {
+    // 128 m tiles keep narrow rivers discoverable without making the per-frame
+    // visibility test expensive. Padding avoids toggling at shore/frustum edges.
+    const tileCells = 32;
+    const tileSize = tileCells * HM_STEP;
+    for (let j0 = 0; j0 < HM_N - 1; j0 += tileCells) {
+      for (let i0 = 0; i0 < HM_N - 1; i0 += tileCells) {
+        const i1 = Math.min(HM_N - 1, i0 + tileCells);
+        const j1 = Math.min(HM_N - 1, j0 + tileCells);
+        let hasWater = false;
+        for (let j = j0; j <= j1 && !hasWater; j++)
+          for (let i = i0; i <= i1; i++)
+            if (terrain.heights[j * HM_N + i] <= WATER + 0.02) { hasWater = true; break; }
+        if (!hasWater) continue;
+        const x = i0 * HM_STEP - HALF;
+        const z = j0 * HM_STEP - HALF;
+        this.waterBounds.push(new THREE.Box3(
+          new THREE.Vector3(x - 24, WATER - 1, z - 24),
+          new THREE.Vector3(Math.min(HALF, x + tileSize) + 24, WATER + 1, Math.min(HALF, z + tileSize) + 24),
+        ));
+      }
+    }
+    this.waterBoundsBuilt = true;
   }
 }
 
@@ -159,7 +213,7 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
       uReflOn: { value: 0 },
     },
   ]);
-  const reflection = reflect ? new WaterReflection(0.5) : undefined;
+  const reflection = reflect ? new WaterReflection(0.5, terrain) : undefined;
   uniforms.uInland.value = inlandMask(terrain, mapId !== 'appalachia');
   if (reflection) {
     uniforms.uRefl.value = reflection.rt.texture;
@@ -255,7 +309,7 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
           float inView = step(0.0, ruv.x) * step(ruv.x, 1.0) * step(0.0, ruv.y) * step(ruv.y, 1.0);
           vec3 tex = texture2D(uRefl, clamp(ruv, 0.001, 0.999)).rgb;
           // the mirror sees above the fog, so fade it into the sky tint far away
-          inView *= 1.0 - smoothstep(900.0, 3500.0, camD);
+          inView *= 1.0 - smoothstep(500.0, 750.0, camD);
           // real water isn't a perfect mirror: a little darker and tinted by the water body
           tex *= mix(vec3(0.82), uShallow * 1.4, 0.12);
           refl = mix(skyR, tex, inView);

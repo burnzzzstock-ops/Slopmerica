@@ -9,8 +9,11 @@ const modes = (process.env.MODES || 'day,night,rain,snow').split(',');
 const distances = (process.env.DISTS || '15,40,150').split(',').map(Number);
 const out = process.env.OUT || 'shots/communes';
 const chrome = process.env.CHROME || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+const swiftshader = process.env.SWIFTSHADER !== '0';
 await mkdir(out, { recursive: true });
-const browser = await chromium.launch({ executablePath: chrome, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-sandbox'] });
+const browser = await chromium.launch({ executablePath: chrome, args: swiftshader
+  ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-sandbox']
+  : ['--use-angle=d3d11', '--enable-gpu-rasterization', '--ignore-gpu-blocklist', '--disable-software-rasterizer', '--no-sandbox'] });
 const errors = [];
 for (const map of maps) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });

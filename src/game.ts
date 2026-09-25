@@ -241,7 +241,10 @@ export class Game {
     this.traffic.onCrash = (cars, seg, drunk) => {
       this.feed.push(drunk ? 'drunkCrash' : 'crash', { road: seg?.name });
       const c = cars[0];
-      if (c && this.near(c.x, c.z, 450)) this.audio.play('crash', 0.8);
+      if (c && this.near(c.x, c.z, 450)) {
+        this.audio.play('crash', 0.8);
+        this.floatText(drunk ? '💥🍺 DUI' : '💥 WRECK', new THREE.Vector3(c.x, c.y + 2, c.z), '#ff8a3a');
+      }
     };
     this.traffic.onJam = (seg) => this.feed.push('trafficJam', { road: seg.name });
     this.traffic.onEmit = (kind, x, y, z, n) => this.particles.emit(kind, x, y, z, { count: n, spread: kind === 'cigarette' ? 0.2 : 1.5 });
@@ -436,6 +439,7 @@ export class Game {
   }
 
   private dayTick = 0;
+  private emitT = 0;
   frame(dt: number, render = true) {
     this.time += dt;
     const spd = SPEEDS[this.sim.speed];
@@ -463,6 +467,22 @@ export class Game {
     this.peds.population = this.sim.population;
     this.peds.update(dt, spd, this.rts.target, this.rts.distance, this.time);
     this.communes.update(dt, this.env.night, this.time);
+    this.emitT -= dt;
+    if (this.emitT <= 0 && spd > 0) {
+      this.emitT = 0.6;
+      const tgt = this.rts.target;
+      if (this.rts.distance < 900) {
+        for (const b of this.buildings.near(tgt.x, tgt.z, 450)) {
+          if (b.state !== 'active' || !b.model.emitters.length) continue;
+          const c = Math.cos(b.yaw), s = Math.sin(b.yaw);
+          for (const em of b.model.emitters) {
+            if (Math.random() > 0.5) continue;
+            const [lx, ly, lz] = em.pos;
+            this.particles.emit(em.kind === 'cigarette' ? 'cigarette' : em.kind === 'fire' ? 'fire' : em.kind === 'steam' ? 'steam' : em.kind === 'sparkle' ? 'confetti' : 'smoke', b.x + lx * c + lz * s, b.y + ly, b.z - lx * s + lz * c, { count: em.kind === 'cigarette' ? 1 : 3, spread: 0.6 });
+          }
+        }
+      }
+    }
     this.tools.update();
     this.overlays.update(dt);
     this.particles.update(dt, this.camera);

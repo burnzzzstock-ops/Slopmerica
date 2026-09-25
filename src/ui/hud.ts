@@ -74,6 +74,29 @@ export class Hud implements UiSink {
       this.tip.style.transform = `translate(${e.clientX + 16}px, ${e.clientY + 18}px)`;
     });
     setTimeout(() => game.feed.push('gameStart'), 1500);
+    if (!game.opts.restore) setTimeout(() => this.onboarding(), 900);
+  }
+
+  private onboarding() {
+    let seen = false;
+    try { seen = localStorage.getItem('slopmerica.onboarded') === '1'; } catch { /* private mode */ }
+    if (seen) return;
+    const el = this.mk('div', 'onboard');
+    el.innerHTML = `
+      <div class="ob-kicker">A MESSAGE FROM CHAD, ECONOMIC DEVELOPMENT</div>
+      <h3>Welcome, Commissioner.</h3>
+      <ol>
+        <li><b>Roads</b>: draw one off <em>Old County Road</em>. Click to start, click to end. Stroads are the American way.</li>
+        <li><b>Zoning</b>: paint green (homes), blue (shops) and yellow (industry) along it. Watch the R C I O bars.</li>
+        <li><b>▶▶▶</b>: let the slop grow. Widen jammed roads with <b>One More Lane</b>. Hippies can be paid off or sued.</li>
+      </ol>
+      <p>Goal: pave every inch and max every building. Tokyo × Delhi or bust.</p>
+      <button id="ob-go">Let's pave</button>`;
+    el.querySelector('#ob-go')!.addEventListener('click', () => {
+      try { localStorage.setItem('slopmerica.onboarded', '1'); } catch { /* ignore */ }
+      el.remove();
+      this.onTool('roads');
+    });
   }
 
   private mk(tag: string, cls: string, parent: HTMLElement = this.root) {

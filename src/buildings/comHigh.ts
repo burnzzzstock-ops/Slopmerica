@@ -6,29 +6,11 @@ import { M, S, Mat, rgb, WHITE } from './mesh';
 import { GenCtx, lotPad, parkingLot, car, tree, wallSign, sideSign, poleSign, dumpster, hvac, flagpole, patch, mats, fence, lampPost, monumentSign, emit } from './props';
 import { FAC, FLOOR, WALL, ROOF, block, roofJunk, neonBlade, capFloors } from './blocks';
 import { hexNum, signTile as sign, store } from './comLow';
+import { pickArch } from './archetypes';
 
 function chooseArch(g: GenCtx): Archetype {
-  const { rng, spec } = g;
-  const b = brandById(spec.brand);
-  const valid: Archetype[] = ['bigBox', 'mall', 'flagship', 'hotel', 'neonTower'];
-  if (b?.arch?.length) {
-    const ok = b.arch.filter((a) => valid.includes(a));
-    if (ok.length) return rng.pick(ok);
-  }
-  const L = spec.level;
-  const small = spec.widthCells <= 1 || spec.depthCells <= 1;
-  if (small) return L >= 4 ? 'neonTower' : L === 3 ? 'flagship' : 'bigBox';
-  const w: Record<Archetype, number>[] = [
-    {} as Record<Archetype, number>,
-    { bigBox: 6, mall: 0.5, flagship: 0.5 } as Record<Archetype, number>,
-    { bigBox: 3, mall: 3, flagship: 1 } as Record<Archetype, number>,
-    { flagship: 4, mall: 1, hotel: 1.5, bigBox: 0.5 } as Record<Archetype, number>,
-    { hotel: 2, neonTower: 2.5, flagship: 1 } as Record<Archetype, number>,
-    { neonTower: 5, hotel: 1 } as Record<Archetype, number>,
-  ];
-  const table = w[L] ?? w[1];
-  const opts = valid.filter((a) => (table[a] ?? 0) > 0);
-  return rng.weighted(opts, (a) => table[a]);
+  const { spec } = g;
+  return pickArch(g.rng, 'comHigh', spec.level, spec.widthCells, spec.depthCells, spec.brand);
 }
 
 function pickBrand(g: GenCtx, arch: Archetype): Brand {

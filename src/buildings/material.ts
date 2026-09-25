@@ -10,7 +10,7 @@ let night = 0;
 function glow(n: number) {
   // windows come on through dusk, full at night
   const t = THREE.MathUtils.smoothstep(n, 0.12, 0.85);
-  return t * 1.65;
+  return t * 1.45; // tuned against the game's bloom: bright, not blown out
 }
 
 export function buildingMaterial(): THREE.MeshStandardMaterial {

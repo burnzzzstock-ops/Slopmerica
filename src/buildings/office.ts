@@ -5,6 +5,7 @@ import { M, S, Mat, rgb, WHITE } from './mesh';
 import { GenCtx, lotPad, parkingLot, car, tree, shrub, wallSign, poleSign, dish, patch, mats, lampPost, monumentSign, hvac } from './props';
 import { FAC, FLOOR, WALL, ROOF, block, roofJunk, capFloors } from './blocks';
 import { signTile as sign } from './comLow';
+import { pickArch } from './archetypes';
 
 function pickBrand(g: GenCtx, arch: Archetype): Brand {
   const given = brandById(g.spec.brand);
@@ -173,12 +174,7 @@ function tower(g: GenCtx, b: Brand, mega: boolean) {
 export function genOffice(g: GenCtx) {
   const L = g.spec.level;
   const given = brandById(g.spec.brand);
-  let arch: Archetype = L <= 1 ? 'contentFarm' : L === 2 ? 'glassOffice' : L === 3 ? 'campus' : 'officeTower';
-  if (given?.arch?.length && !given.arch.includes(arch)) {
-    const ok = given.arch.filter((a) => ['contentFarm', 'glassOffice', 'campus', 'officeTower'].includes(a));
-    if (ok.length) arch = ok[0];
-  }
-  if (arch === 'campus' && (g.W < 16 || g.D < 16)) arch = 'glassOffice';
+  const arch = pickArch(g.rng, 'office', L, g.spec.widthCells, g.spec.depthCells, g.spec.brand);
   let b = pickBrand(g, arch);
   // L5 megatowers are mostly SLOP HQ on big lots
   if (L >= 5 && !given && g.W >= 16 && g.rng.chance(0.55)) b = brandById('slopHQ')!;

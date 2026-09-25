@@ -5,27 +5,11 @@ import { M, S, Mat, rgb, WHITE } from './mesh';
 import { GenCtx, lotPad, car, wallSign, sideSign, poleSign, dumpster, hvac, fence, patch, mats, lampPost, monumentSign, inLot } from './props';
 import { FAC, WALL, ROOF, block, roofJunk } from './blocks';
 import { hexNum, signTile as sign } from './comLow';
+import { pickArch } from './archetypes';
 
 function chooseArch(g: GenCtx): Archetype {
-  const { rng, spec } = g;
-  const b = brandById(spec.brand);
-  const valid: Archetype[] = ['shed', 'warehouse', 'factory', 'propaneDepot', 'datacenter', 'brewery'];
-  if (b?.arch?.length) {
-    const ok = b.arch.filter((a) => valid.includes(a));
-    if (ok.length) return rng.pick(ok);
-  }
-  const L = spec.level;
-  const table: Partial<Record<Archetype, number>>[] = [
-    {},
-    { shed: 1 },
-    { warehouse: 4, shed: 1 },
-    { factory: 3, brewery: 1, warehouse: 1 },
-    { propaneDepot: 3, factory: 1.5 },
-    { datacenter: 4, propaneDepot: 0.5 },
-  ];
-  const t = table[L] ?? table[1];
-  const opts = valid.filter((a) => (t[a] ?? 0) > 0);
-  return rng.weighted(opts, (a) => t[a] ?? 0);
+  const { spec } = g;
+  return pickArch(g.rng, 'industry', spec.level, spec.widthCells, spec.depthCells, spec.brand);
 }
 
 function pickBrand(g: GenCtx, arch: Archetype): Brand {

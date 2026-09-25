@@ -17,6 +17,7 @@ import { genIndustry } from './industry';
 import { genOffice } from './office';
 import { buildLandmark, LANDMARK_FOOTPRINT, setLandmarkMap } from './landmarks';
 import { buildBillboard } from './billboard';
+import { brandFits } from './archetypes';
 
 export { buildingMaterial, setBuildingNight } from './material';
 
@@ -92,11 +93,14 @@ export function generateBuilding(spec: LotSpec): BuildingModel {
   const w = Math.max(1, Math.min(4, Math.round(spec.widthCells || 1)));
   const d = Math.max(1, Math.min(4, Math.round(spec.depthCells || 1)));
   const variant = mix(spec.seed | 0) % VARIANTS;
-  const key = `${zone}|${level}|${w}x${d}|${variant}|${spec.brand ?? ''}`;
+  // The level picks the building; a requested brand is kept only if it has a
+  // building that fits here (otherwise the generator picks one and reports it in model.brand).
+  const brand = spec.brand && brandFits(zone, level, w, d, spec.brand) ? spec.brand : undefined;
+  const key = `${zone}|${level}|${w}x${d}|${variant}|${brand ?? ''}`;
   const hit = cacheGet(key);
   if (hit) return copy(hit);
-  const norm: LotSpec = { ...spec, zone, level, widthCells: w, depthCells: d };
-  return copy(run(key, mix(zone, level, w, d, variant, spec.brand ?? ''), norm, w * CELL, d * CELL, GEN[zone]));
+  const norm: LotSpec = { ...spec, zone, level, widthCells: w, depthCells: d, brand };
+  return copy(run(key, mix(zone, level, w, d, variant, brand ?? ''), norm, w * CELL, d * CELL, GEN[zone]));
 }
 
 export function landmarkFootprint(id: LandmarkId): { widthCells: number; depthCells: number } {

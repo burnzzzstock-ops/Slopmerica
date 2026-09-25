@@ -9,42 +9,16 @@ import {
   vending, flagpole, tubeMan, picnicTable, smoker, lampPost, patch, mats, monumentSign, hvac, fence,
 } from './props';
 import { FAC, WALL, ROOF } from './blocks';
-
-type Pick = { arch: Archetype; w: number };
+import { pickArch } from './archetypes';
 
 function chooseArch(g: GenCtx): Archetype {
-  const { rng, spec, W, D } = g;
-  const b = brandById(spec.brand);
-  if (b?.arch?.length) {
-    const ok = b.arch.filter((a) => ['gas', 'fastFood', 'shop', 'strip', 'diner', 'bar', 'coffee', 'carLot', 'restaurant'].includes(a));
-    if (ok.length) return rng.pick(ok);
-  }
-  const L = spec.level, cw = spec.widthCells;
-  const deep = D >= 16 ? 1 : 0; // drive-thrus and sit-downs need a real lot
-  const opts: Pick[] = [];
-  const add = (arch: Archetype, w: number) => w > 0 && opts.push({ arch, w });
-  if (cw <= 1) {
-    add('shop', 5);
-    add('coffee', 2);
-    add('bar', L <= 3 ? 2 : 1);
-    add('gas', L === 1 ? 1 : 0.5);
-  } else {
-    add('shop', [0, 5, 2, 1, 0.5, 0.3][L]);
-    add('gas', [0, 1.5, 4, 2.5, 2, 3][L]);
-    add('fastFood', [0, 0.5, 4, 3, 2, 2][L] * deep);
-    add('diner', [0, 0.5, 1.5, 1, 1, 0.5][L] * deep);
-    add('bar', [0, 2, 1, 1, 1, 0.5][L]);
-    add('coffee', [0, 0.5, 1, 1, 1, 1][L] * deep);
-    add('restaurant', [0, 0, 0.5, 2, 3, 2][L] * (D >= 24 ? 1 : 0));
-    add('carLot', [0, 1, 0.5, 0.5, 1.5, 1][L] * (D >= 16 ? 1 : 0));
-    add('strip', [0, 0.5, 1, 4, 4, 3.5][L] * (cw >= 3 ? 1 : cw === 2 ? 0.25 : 0));
-  }
-  return rng.weighted(opts, (o) => o.w).arch;
+  const { spec } = g;
+  return pickArch(g.rng, 'comLow', spec.level, spec.widthCells, spec.depthCells, spec.brand);
 }
 
 function pickBrand(g: GenCtx, arch: Archetype): Brand {
   const given = brandById(g.spec.brand);
-  if (given && (given.arch ?? []).includes(arch)) return given;
+  if (given && (given.arch ?? []).includes(arch)) return given; // generator already checked the level fit
   let pool = brandsFor('comLow', arch, g.spec.level);
   if (!pool.length) pool = BRANDS.filter((b) => (b.arch ?? []).includes(arch));
   if (!pool.length) pool = [brandById('dollarColonel')!];
@@ -396,7 +370,7 @@ function carLot(g: GenCtx, b: Brand) {
   // inventory in tight rows
   const kinds = cyber ? ['cyber'] : b.id === 'coalRollin' ? ['lifted', 'pickup'] : ['sedan', 'suv', 'pickup', 'van', 'lifted'];
   let stock = 0;
-  for (let z = z1 + 3; z < D / 2 - 2 && stock < 30; z += 5.8) for (let cx = -W / 2 + 2; cx < W / 2 - 1.5 && stock < 30; cx += 2.6) {
+  for (let z = z1 + 3; z < D / 2 - 2 && stock < 26; z += 5.8) for (let cx = -W / 2 + 2; cx < W / 2 - 1.5 && stock < 26; cx += 2.6) {
     if (cx < x + ow / 2 + 1 && z < z1 + 1) continue;
     car(g, cx, z, Math.PI, rng.pick(kinds as ('cyber' | 'lifted' | 'pickup' | 'sedan' | 'suv' | 'van')[]), rng.pick([0xe8e8e6, 0x1a1a1c, 0xa9adb1, 0xc0392b, 0x2980b9]));
     stock++;

@@ -196,15 +196,16 @@ void main() {
 
   // Milky Way (the stars themselves are Points)
   if (uStars > 0.002) {
-    vec3 gN = normalize(vec3(-0.42, 0.55, 0.72));
-    vec3 gCore = normalize(vec3(0.62, 0.34, 0.71));
-    float gd = dot(dir, gN);
-    float band = exp(-gd * gd * 26.0);
-    float core = pow(max(dot(dir, gCore), 0.0), 5.0);
-    float cl = sn3(dir * 6.0) * 0.5 + sn3(dir * 14.0) * 0.3 + sn3(dir * 31.0) * 0.2;
-    float dust = smoothstep(0.42, 0.72, sn3(dir * 8.0 + 4.0) * 0.6 + sn3(dir * 19.0) * 0.4) * exp(-gd * gd * 160.0);
-    vec3 mwc = mix(vec3(0.45, 0.55, 0.85), vec3(1.0, 0.82, 0.62), core);
-    col += mwc * band * (0.2 + 0.8 * cl * cl) * (1.0 + core * 2.5) * (1.0 - dust * 0.9) * uStars * 0.6 * smoothstep(0.0, 0.25, y);
+    // galactic plane arches ~75 deg up; the bright core sits low, like a summer night
+    vec3 gN = normalize(vec3(-0.549, 0.249, 0.798));
+    vec3 gCore = normalize(vec3(0.834, 0.222, 0.505));
+    float gd = dot(dir, gN); // sine of galactic latitude
+    float bulge = pow(max(dot(dir, gCore), 0.0), 6.0);
+    float band = exp(-gd * gd * (34.0 - bulge * 18.0)); // thickens toward the core, never a round blob
+    float cl = sn3(dir * 9.0) * 0.55 + sn3(dir * 23.0) * 0.3 + sn3(dir * 57.0) * 0.15; // clumpy star clouds
+    float rift = smoothstep(0.5, 0.75, sn3(dir * 13.0 + 4.0) * 0.7 + sn3(dir * 31.0) * 0.3) * exp(-gd * gd * 260.0); // dark dust lane
+    vec3 mwc = mix(vec3(0.55, 0.62, 0.85), vec3(1.0, 0.86, 0.68), bulge);
+    col += mwc * band * (0.25 + 0.75 * cl * cl) * (1.0 + bulge * 1.5) * (1.0 - rift * 0.85) * uStars * 0.065 * smoothstep(0.0, 0.25, y);
   }
 
   // moon with a proper phase terminator
@@ -226,7 +227,9 @@ void main() {
       col = mix(col, mc, smoothstep(1.0, 0.9, r2));
     }
   }
-  col += vec3(0.55, 0.65, 0.9) * (pow(max(md, 0.0), 900.0) * 0.35 + pow(max(md, 0.0), 40.0) * 0.03) * uMoonBright;
+  // halo follows the lit fraction, so a new moon doesn't glow
+  float mIllum = 0.5 - 0.5 * cos(uMoonPhase * 6.2831853);
+  col += vec3(0.55, 0.65, 0.9) * (pow(max(md, 0.0), 900.0) * 0.35 + pow(max(md, 0.0), 40.0) * 0.03) * uMoonBright * (0.04 + 0.96 * mIllum);
 
   // sun disc
   float disc = smoothstep(cos(uSunSize), cos(uSunSize * 0.8), sd);

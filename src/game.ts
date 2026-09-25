@@ -189,6 +189,7 @@ export class Game {
     this.sim.communePenalty = (x, z) => this.communes.penalty(x, z);
 
     this.traffic = new Traffic(this.scene, this.net, this.buildings, this.q.maxCars);
+    this.traffic.groundAt = (x, z) => this.terrain.h(x, z);
     this.roads.setSignalStateProvider((nodeId, segId) => {
       const s = this.traffic.signalState(nodeId);
       if (!s) return 'green';

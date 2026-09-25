@@ -1,5 +1,6 @@
 // Info views: traffic congestion ribbons and land-value building tint.
 import * as THREE from 'three';
+import type { ExtView } from '../ext/registry';
 import { lerp } from '../core/math';
 import { ROAD_TYPES } from '../roads/roadTypes';
 import type { Game } from '../game';
@@ -12,6 +13,8 @@ const C_BAD = new THREE.Color(0xff3b3b);
 
 export class Overlays {
   mode: ViewMode = 'none';
+  /** active extension info view (exclusive with the core modes) */
+  ext: ExtView | null = null;
   private traffic: THREE.Mesh;
   private t = 0;
 
@@ -23,19 +26,34 @@ export class Overlays {
     game.scene.add(this.traffic);
   }
 
+  setExt(v: ExtView | null) {
+    if (this.ext && this.ext !== v) this.ext.disable(this.game);
+    if (v) this.set('none');
+    this.ext = v;
+    v?.enable(this.game);
+  }
+
   set(mode: ViewMode) {
+    if (mode !== 'none' && this.ext) { this.ext.disable(this.game); this.ext = null; }
     if (this.mode === 'landValue' && mode !== 'landValue') this.resetBuildingColors();
     this.mode = mode;
     this.traffic.visible = mode === 'traffic';
     this.t = 0;
   }
 
-  private resetBuildingColors() {
+  /** Tint every building (null = no tint). For info views. */
+  tintBuildings(colorFor: (b: import('../sim/buildings').Bld) => THREE.Color | null) {
+    const white = new THREE.Color(1, 1, 1);
+    for (const b of this.game.buildings.list.values()) if (b.inst >= 0) this.game.buildings.mesh.setColorAt(b.inst, colorFor(b) ?? white);
+  }
+
+  resetBuildingColors() {
     const white = new THREE.Color(1, 1, 1);
     for (const b of this.game.buildings.list.values()) if (b.inst >= 0) this.game.buildings.mesh.setColorAt(b.inst, white);
   }
 
   update(dt: number) {
+    if (this.ext) { this.ext.update?.(this.game, dt); return; }
     if (this.mode === 'none') return;
     this.t -= dt;
     if (this.t > 0) return;

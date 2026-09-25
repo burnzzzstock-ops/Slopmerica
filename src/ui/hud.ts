@@ -1,6 +1,7 @@
 // In-game HUD: top bar (money, pop, date, speed, RCIO demand, nature/sprawl),
 // bottom toolbar with sub-panels, the X feed, inspector, budget, toasts.
 import * as THREE from 'three';
+import { EXT } from '../ext/registry';
 import type { LandmarkId, ZoneType } from '../contracts';
 import { ZONE_TYPES } from '../contracts';
 import type { Game, Selection, UiSink } from '../game';
@@ -35,7 +36,7 @@ const LANDMARKS: { id: LandmarkId; name: string; icon: string }[] = [
 
 const ZONE_ICON: Record<ZoneType, string> = { resLow: '🏡', resHigh: '🏢', comLow: '🛒', comHigh: '🏬', industry: '🏭', office: '💻' };
 
-type PanelId = 'roads' | 'zones' | 'landmarks' | 'views' | 'budget' | 'communes' | 'help' | null;
+type PanelId = 'roads' | 'zones' | 'landmarks' | 'views' | 'budget' | 'communes' | 'help' | `ext:${string}` | null;
 
 export class Hud implements UiSink {
   root: HTMLElement;
@@ -194,8 +195,13 @@ export class Hud implements UiSink {
       ['feed', '𝕏', 'Feed'],
       ['help', '⚙️', 'Settings'],
     ];
+    // extension panels slot in by `order` (core buttons sit at 10, 20, 30, ...)
+    const withOrder = items.map((it, i) => ({ it, o: (i + 1) * 10 }));
+    for (const ep of EXT.panels) withOrder.push({ it: [`ext:${ep.id}`, ep.icon, ep.label], o: ep.order ?? 65 });
+    withOrder.sort((a, b) => a.o - b.o);
+    const all = withOrder.map((x) => x.it);
     this.bar.innerHTML =
-      items.map(([id, icon, label]) => `<button class="tbtn" data-t="${id}" title="${label}"><span class="ti">${icon}</span><span class="tl">${label}</span>${id === 'feed' ? '<i id="feed-badge" class="badge" hidden></i>' : ''}</button>`).join('') +
+      all.map(([id, icon, label]) => `<button class="tbtn" data-t="${id}" title="${label}"><span class="ti">${icon}</span><span class="tl">${label}</span>${id === 'feed' ? '<i id="feed-badge" class="badge" hidden></i>' : ''}</button>`).join('') +
       `<a class="tbtn merch" href="${MERCH_URL}" target="_blank" rel="noopener" title="Real Slop merch"><span class="ti slop-mini">Slop</span><span class="tl">Merch</span></a>`;
     this.bar.querySelectorAll<HTMLButtonElement>('button.tbtn').forEach((b) => b.addEventListener('click', () => this.onTool(b.dataset.t!)));
   }
@@ -219,6 +225,11 @@ export class Hud implements UiSink {
   }
 
   private openPanel(p: PanelId) {
+    if (this.panel && this.panel !== p && this.panel.startsWith('ext:')) {
+      const old = EXT.panels.find((x) => `ext:${x.id}` === this.panel);
+      old?.close?.(this.game);
+      if (this.game.tools.active === 'ext') this.game.tools.set('inspect');
+    }
     this.panel = p;
     this.sub.hidden = !p;
     if (!p) { if (this.game.tools.active === 'road' || this.game.tools.active === 'zone' || this.game.tools.active === 'dezone') this.game.tools.set('inspect'); this.syncToolbar(); return; }
@@ -229,6 +240,12 @@ export class Hud implements UiSink {
   private renderPanel() {
     const g = this.game, t = g.tools;
     const p = this.panel;
+    if (p && p.startsWith('ext:')) {
+      const ep = EXT.panels.find((x) => `ext:${x.id}` === p);
+      this.sub.innerHTML = '';
+      ep?.render(this.sub, g, () => this.renderPanel());
+      return;
+    }
     if (p === 'roads') {
       this.sub.innerHTML = `
         <div class="sp-title">Roads <small>${IS_TOUCH ? 'Drag to draw. Two fingers move the map. Tap Done to stop.' : 'Click start, click end, keep going. Right-click or Esc stops.'}</small></div>
@@ -267,11 +284,18 @@ export class Hud implements UiSink {
     } else if (p === 'views') {
       const mode = g.overlays.mode;
       const views: [ViewMode, string, string][] = [['none', '🌎', 'Normal'], ['traffic', '🚦', 'Traffic'], ['landValue', '💲', 'Land Value']];
+      const ev = g.overlays.ext;
       this.sub.innerHTML = `
         <div class="sp-title">Info Views</div>
-        <div class="sp-row">${views.map(([v, i, l]) => `<button class="chip ${mode === v ? 'on' : ''}" data-view="${v}">${i} ${l}</button>`).join('')}</div>
+        <div class="sp-row">${views.map(([v, i, l]) => `<button class="chip ${mode === v && !ev ? 'on' : ''}" data-view="${v}">${i} ${l}</button>`).join('')}${EXT.views.map((v) => `<button class="chip ${ev === v ? 'on' : ''}" data-extview="${v.id}">${v.icon} ${esc(v.label)}</button>`).join('')}</div>
+        ${ev?.legend ? `<div class="sp-legend">${ev.legend(g)}</div>` : ''}
         <div class="sp-row">${['clear', 'rain', 'storm', 'snow', 'fog', 'heatwave'].map((w) => `<button class="chip" data-wx="${w}">${w}</button>`).join('')}</div>`;
       this.sub.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => b.addEventListener('click', () => { g.overlays.set(b.dataset.view as ViewMode); this.renderPanel(); }));
+      this.sub.querySelectorAll<HTMLButtonElement>('[data-extview]').forEach((b) => b.addEventListener('click', () => {
+        const v = EXT.views.find((x) => x.id === b.dataset.extview);
+        g.overlays.setExt(g.overlays.ext === v ? null : v ?? null);
+        this.renderPanel();
+      }));
       this.sub.querySelectorAll<HTMLButtonElement>('[data-wx]').forEach((b) => b.addEventListener('click', () => g.weather.force(b.dataset.wx as never, 4)));
     } else if (p === 'budget') {
       const s = g.sim, L = s.lastWeek;
@@ -450,6 +474,10 @@ export class Hud implements UiSink {
           <div><span>Upkeep</span><b>${money(s.length * t.upkeepPerM)}/wk+</b></div>
         </div>
         <div class="in-actions">${t.next ? `<button id="in-lane">➕ ONE MORE LANE</button>` : '<button disabled>MAX LANES</button>'}<button class="danger" id="in-bulldoze">💣 Bulldoze</button></div>`;
+    }
+    for (const f of EXT.inspector) {
+      const extra = f(sel, g);
+      if (extra) html += extra;
     }
     this.inspector.innerHTML = `<button class="in-close" id="in-close" aria-label="Close">×</button>${html}`;
     this.inspector.querySelector('#in-close')?.addEventListener('click', () => g.select(null));

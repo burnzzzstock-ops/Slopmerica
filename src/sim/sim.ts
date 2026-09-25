@@ -47,6 +47,7 @@ type Events = {
   lowMoney: number;
   bankrupt: number;
   week: Ledger;
+  day: number;
   ending: void;
 };
 
@@ -233,6 +234,7 @@ export class Sim {
     if (d % 5 === 0) this.updateSprawl();
     this.naturePct = this.trees.naturePct;
     this.checkMilestones();
+    this.events.emit('day', d);
     if (d % 7 === 0) this.weekly();
     if (d % 2 === 0) this.history.push({ day: d, pop: this.population, money: this.money === Infinity ? 0 : this.money, nature: this.naturePct, sprawl: this.sprawlPct });
     if (this.history.length > 800) this.history.splice(0, this.history.length - 800);

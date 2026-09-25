@@ -8,8 +8,9 @@ import { ROAD_TYPES, RoadTypeId } from '../roads/roadTypes';
 import type { LandmarkId, ZoneType } from '../contracts';
 import { landmarkFootprint } from '../buildings/generator';
 import type { Game } from '../game';
+import { EXT, type ExtTool } from '../ext/registry';
 
-export type ToolId = 'inspect' | 'road' | 'upgrade' | 'bulldoze' | 'zone' | 'dezone' | 'landmark';
+export type ToolId = 'inspect' | 'road' | 'upgrade' | 'bulldoze' | 'zone' | 'dezone' | 'landmark' | 'ext';
 export type RoadMode = 'straight' | 'curve' | 'freeform';
 
 export interface ToolTip {
@@ -26,11 +27,27 @@ export class Tools implements PointerHandlers {
   landmark: LandmarkId = 'slopCannon';
   tip: ToolTip | null = null;
   onChange?: () => void;
+  /** id of the registered extension tool when active === 'ext' */
+  extTool: string | null = null;
+  private get ext(): ExtTool | undefined {
+    return this.active === 'ext' && this.extTool ? EXT.tools.get(this.extTool) : undefined;
+  }
+
+  /** Activate a registered extension tool (see src/ext/registry.ts). */
+  setExt(id: string) {
+    this.set('ext');
+    this.extTool = id;
+    this.onChange?.();
+  }
 
   private start: Snap | null = null;
   private control: V2 | null = null;
   private lastDir: V2 | null = null;
   private hover: THREE.Vector3 | null = null;
+  /** last terrain point under the cursor (for extension tools) */
+  get hoverPoint() {
+    return this.hover;
+  }
   private painting = false;
 
   private preview: THREE.Mesh;
@@ -65,6 +82,7 @@ export class Tools implements PointerHandlers {
 
   set(tool: ToolId) {
     this.cancel();
+    if (tool !== 'ext') this.extTool = null;
     this.active = tool;
     this.game.zones?.setOverlay(tool === 'zone' || tool === 'dezone');
     this.onChange?.();
@@ -75,10 +93,12 @@ export class Tools implements PointerHandlers {
   }
 
   toolCapturesDrag(): boolean {
+    if (this.active === 'ext') return !!this.ext?.capturesDrag;
     return this.active === 'zone' || this.active === 'dezone' || this.active === 'bulldoze' || this.active === 'road' || this.active === 'landmark';
   }
 
   touchLift(): number {
+    if (this.active === 'ext') return this.ext?.touchLift ?? 0;
     return this.active === 'road' || this.active === 'landmark' ? 64 : 0;
   }
 
@@ -93,6 +113,7 @@ export class Tools implements PointerHandlers {
   private startedThisTouch = false;
 
   cancel() {
+    this.ext?.cancel?.(this.game);
     this.start = null;
     this.control = null;
     this.lastDir = null;
@@ -107,6 +128,7 @@ export class Tools implements PointerHandlers {
     if (!p) return;
     if (e.button === 2) { this.cancel(); return; }
     this.hover = p;
+    if (this.active === 'ext') { this.ext?.down?.(this.game, p, e); return; }
     if (this.active === 'road' && e.pointerType !== 'mouse') {
       this.startedThisTouch = false;
       if (!this.start) {
@@ -133,6 +155,7 @@ export class Tools implements PointerHandlers {
 
   move(p: THREE.Vector3 | null, _e: PointerEvent, dragging: boolean) {
     this.hover = p;
+    if (this.active === 'ext') { this.ext?.move?.(this.game, p, _e, dragging); return; }
     if (!p) return;
     if ((this.active === 'zone' || this.active === 'dezone') && this.painting && dragging) this.paint(p);
     if (this.active === 'bulldoze' && this.painting && dragging) this.bulldozeAt(p);
@@ -141,6 +164,7 @@ export class Tools implements PointerHandlers {
   up(p: THREE.Vector3 | null, e: PointerEvent, wasDrag: boolean) {
     const wasPainting = this.painting;
     this.painting = false;
+    if (this.active === 'ext') { if (e.button !== 2) this.ext?.up?.(this.game, p, e, wasDrag); return; }
     if (!p) return;
     if (e.button === 2) return;
     switch (this.active) {
@@ -295,6 +319,7 @@ export class Tools implements PointerHandlers {
     this.marker.visible = false;
     this.highlight.visible = false;
     this.brushRing.visible = false;
+    if (this.active === 'ext') { this.tip = this.ext?.tip?.(this.game) ?? null; return; }
     if (!hov) return;
     if (this.active === 'road') {
       const s = this.start ? this.snapEnd(hov) : net.snap(hov.x, hov.z, this.snapR());

@@ -1361,3 +1361,21 @@ a {
 [hidden] {
   display: none !important;
 }
+
+.sp-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+  opacity: 0.9;
+  padding: 2px 4px 4px;
+}
+.sp-legend i {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  margin-right: 4px;
+  vertical-align: -2px;
+}

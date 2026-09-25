@@ -213,7 +213,7 @@ void main() {
     float cl = sn3(dir * 6.0) * 0.5 + sn3(dir * 14.0) * 0.3 + sn3(dir * 31.0) * 0.2;
     float dust = smoothstep(0.42, 0.72, sn3(dir * 8.0 + 4.0) * 0.6 + sn3(dir * 19.0) * 0.4) * exp(-gd * gd * 160.0);
     vec3 mwc = mix(vec3(0.45, 0.55, 0.85), vec3(1.0, 0.82, 0.62), core);
-    col += mwc * band * (0.2 + 0.8 * cl * cl) * (1.0 + core * 2.5) * (1.0 - dust * 0.9) * uStars * 0.32 * smoothstep(0.0, 0.25, y);
+    col += mwc * band * (0.2 + 0.8 * cl * cl) * (1.0 + core * 2.5) * (1.0 - dust * 0.9) * uStars * 0.6 * smoothstep(0.0, 0.25, y);
   }
 
   // moon with a proper phase terminator
@@ -556,7 +556,7 @@ export class Environment {
     const useSun = elev > -3.5;
     // with the moon down, a faint high "starlight" key keeps the valley readable
     const moonKey = moonUp > 0.25;
-    const nightKey = Math.max(moonI, 0.2 * THREE.MathUtils.smoothstep(-elev, 3, 9) * (1 - wx.overcast * 0.6));
+    const nightKey = Math.max(moonI, 0.28 * THREE.MathUtils.smoothstep(-elev, 3, 9) * (1 - wx.overcast * 0.6));
     if (useSun) this.lightDir.copy(this.sunDir);
     else if (moonKey) this.lightDir.copy(this.moonDirection);
     else this.lightDir.set(-0.35, 0.85, 0.4).normalize();
@@ -579,7 +579,7 @@ export class Environment {
       this.sun.intensity = sunI;
     } else {
       this.sun.color.copy(C_MOON);
-      this.sun.intensity = moonKey ? nightKey : Math.min(nightKey, 0.2);
+      this.sun.intensity = moonKey ? nightKey : Math.min(nightKey, 0.28);
     }
 
     // ---- ambient
@@ -595,7 +595,8 @@ export class Environment {
       hemiI += wx.flash * 3.5;
     }
     this.hemi.intensity = hemiI;
-    this.lightLevel = THREE.MathUtils.clamp(0.14 + daylight * 0.86 * (1 - wx.overcast * 0.35 - wx.storm * 0.4) + wx.flash * 0.8 + moonI * 0.3, 0, 1.6);
+    // what the unlit shaders (water body, rain, puddles of particles) should be lit by
+    this.lightLevel = THREE.MathUtils.clamp(0.1 + sunI * 0.28 + moonI * 0.3 + (hemiI - 0.62) * 0.6 + wx.flash * 0.8, 0.06, 1.6);
 
     // ---- fog: matches the horizon so the far world melts into the sky
     this.fog.color.copy(this.horizon);

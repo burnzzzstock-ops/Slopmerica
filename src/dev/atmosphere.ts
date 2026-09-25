@@ -168,13 +168,28 @@ class Lab {
     return this.step(n);
   }
 
+  /** Freeze the render loop (scripts use it to hold a lightning frame for a screenshot). */
+  paused = false;
+
   start() {
     const loop = () => {
       requestAnimationFrame(loop);
       this.clock.update();
-      this.frame(Math.min(0.1, this.clock.getDelta()));
+      if (!this.paused) this.frame(Math.min(0.1, this.clock.getDelta()));
     };
     loop();
+  }
+
+  /** Step until the next lightning strike with a bolt, then freeze on it. */
+  catchLightning(maxFrames = 3000) {
+    this.paused = true;
+    let hit = false;
+    const prev = this.weather.onLightning;
+    this.weather.onLightning = (_x, _z, _d, bolt) => (hit = bolt);
+    for (let i = 0; i < maxFrames && !hit; i++) this.frame(1 / 60);
+    this.step(2);
+    this.weather.onLightning = prev;
+    return hit;
   }
 
   frame(dt: number) {

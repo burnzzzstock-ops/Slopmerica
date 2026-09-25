@@ -135,7 +135,7 @@ if (uMapKind < 0.5) {
   gc = mix(gc, gc * vec3(1.12, 1.0, 0.75), uGolden * (1.0 - goldArea) * veg * 0.35);
 } else {
   // Gator Gulch: inland flats are sawgrass marsh (not beach), a little browner in winter
-  float marshFlat = natural * step(vWPos.z, 240.0) * smoothstep(0.02, 0.18, vWPos.y) * (1.0 - smoothstep(0.7, 0.95, vWPos.y));
+  float marshFlat = natural * smoothstep(265.0, 215.0, vWPos.z) * smoothstep(0.02, 0.18, vWPos.y) * (1.0 - smoothstep(0.7, 0.95, vWPos.y));
   float sandy = (1.0 - smoothstep(0.25, 0.45, gsat)) * smoothstep(0.25, 0.45, glum);
   float sn = tn(vWPos.xz * 0.06) * 0.6 + tn(vWPos.xz * 0.31) * 0.4;
   vec3 saw = mix(vec3(0.13, 0.17, 0.05), vec3(0.24, 0.24, 0.08), sn);

@@ -171,8 +171,8 @@ void main() {
   vec3 wp = vec3(uCenter.x + o.x, 0.0, uCenter.z + o.y);
   wp.xz = uCenter.xz + mod(wp.xz - uCenter.xz + uRadius, uRadius * 2.0) - uRadius;
   float g = texture2D(uHeight, clamp((wp.xz + ${HALF.toFixed(1)}) / ${WORLD.toFixed(1)}, 0.0, 1.0)).r;
-  wp.y = max(g, ${WATER.toFixed(1)}) + 0.6 + aSeed.z * 2.6 + sin(uTime * 0.7 + aSeed.x * 50.0) * 0.4;
-  float blink = pow(max(0.0, sin(uTime * (0.9 + aSeed.y) + aSeed.x * 80.0)), 12.0);
+  wp.y = max(g, ${WATER.toFixed(1)}) + 0.8 + aSeed.z * 4.0 + sin(uTime * 0.7 + aSeed.x * 50.0) * 0.4;
+  float blink = pow(max(0.0, sin(uTime * (0.9 + aSeed.y) + aSeed.x * 80.0)), 6.0);
   vA = blink * (1.0 - smoothstep(0.6, 1.0, length(o) / uRadius)) * step(${WATER.toFixed(1)} + 0.2, g);
   vec3 toCam = normalize(cameraPosition - wp);
   vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), toCam));
@@ -289,8 +289,8 @@ export class WeatherSystem {
   intensity = 1;
   /** Called when season or weather kind changes (for the feed / UI). */
   onChange?: (kind: WeatherKind, season: Season) => void;
-  /** Called on every lightning strike (world position of the ground strike). */
-  onLightning?: (x: number, z: number, dist: number) => void;
+  /** Called on every lightning strike: ground position, distance from the camera, and whether a bolt is drawn (vs a cloud flash). */
+  onLightning?: (x: number, z: number, dist: number, bolt: boolean) => void;
 
   /** Current ground conditions (read-only for callers). */
   groundSnow = 0;
@@ -322,7 +322,6 @@ export class WeatherSystem {
   private rng = Math.random;
   private fx: WeatherEffects = FX(1, 1, 1, 1, 1);
   private snowLo = 0;
-  private snowHi = 100;
   private snowPeak = 100;
 
   // lightning
@@ -357,7 +356,6 @@ export class WeatherSystem {
   private v2 = new THREE.Vector2();
   private v3 = new THREE.Vector3();
   private v3b = new THREE.Vector3();
-  private col = new THREE.Color();
 
   constructor(private ctx: AtmosphereContext) {
     const low = ctx.quality.name === 'low';
@@ -379,10 +377,14 @@ export class WeatherSystem {
       });
     }
 
-    // lightning fill light (kept in the scene at 0 so strikes never trigger a recompile)
+    // lightning fill light (kept in the scene at 0 so strikes never trigger a recompile).
+    // Low quality skips it: one less light in every shader on phones; the flash still
+    // comes through the sky, hemisphere light and water.
     this.flashLight = new THREE.DirectionalLight(0xc8d6ff, 0);
-    ctx.scene.add(this.flashLight);
-    ctx.scene.add(this.flashLight.target);
+    if (!low) {
+      ctx.scene.add(this.flashLight);
+      ctx.scene.add(this.flashLight.target);
+    }
 
     const heightTex = ctx.terrain.heightTex;
     const mk = (defines: Record<string, string>, color: number, opacity: number) =>
@@ -422,7 +424,7 @@ export class WeatherSystem {
       blending: THREE.AdditiveBlending,
     });
     this.flyU = flyMat.uniforms;
-    this.flies = this.addFx(new THREE.Mesh(quadGeometry(low ? 140 : 420, 37), flyMat), 7);
+    this.flies = this.addFx(new THREE.Mesh(quadGeometry(low ? 200 : 700, 37), flyMat), 7);
 
     const flakeGeo = new THREE.BufferGeometry();
     flakeGeo.setAttribute('corner', new THREE.BufferAttribute(new Float32Array([-1, 0, 1, 0, 1, 1, -1, 1]), 2));
@@ -497,7 +499,6 @@ export class WeatherSystem {
     const id = this.ctx.mapId;
     this.snowPeak = pct(0.999) + 10;
     this.snowLo = id === 'norcal' ? pct(0.8) : pct(0.02) - 6;
-    this.snowHi = id === 'norcal' ? pct(0.985) : pct(0.9);
   }
 
   // ---------------------------------------------------------------- state machine
@@ -594,15 +595,19 @@ export class WeatherSystem {
     }
     sampleSeason(ctx.mapId, this.visDay, this.look);
     applySeasonUniforms(this.look);
+    this.temperature = temperatureC(ctx.mapId, this.visDay, env.hour) - this.vis.precip * 2 + this.vis.heat * 7 - this.vis.snow * 3;
     const s = seasonOf(doy);
     if (s !== this.season) {
       this.season = s;
       if (this.started) this.onChange?.(this.kind, s);
     }
-    if (!this.started && this.pendingNotify) this.onChange?.(this.kind, s);
+    if (!this.started) {
+      // the constructor had to guess the season; re-roll the first spell with the real one
+      if (!this.forced) this.pickNext(true);
+      if (this.pendingNotify) this.onChange?.(this.kind, s);
+    }
     this.started = true;
     this.pendingNotify = false;
-    this.temperature = temperatureC(ctx.mapId, this.visDay, env.hour) - this.vis.precip * 2 + this.vis.heat * 7 - this.vis.snow * 3;
 
     // ---- spells advance with game days
     if (Number.isNaN(this.lastDay) || time.day < this.lastDay || time.day - this.lastDay > 30) this.lastDay = time.day;
@@ -828,7 +833,7 @@ export class WeatherSystem {
     const d = Math.hypot(gx - cam.x, gz - cam.z);
     this.thunderAt = this.realTime + Math.min(3.2, 0.25 + d / 340 * 0.55);
     this.thunderVol = THREE.MathUtils.clamp(1.25 - d / 1600, 0.25, 1) * (this.strikeHasBolt ? 1 : 0.6);
-    this.onLightning?.(gx, gz, d);
+    this.onLightning?.(gx, gz, d, this.strikeHasBolt);
   }
 
   private buildBolt(gx: number, gy: number, gz: number, top: number) {
@@ -976,7 +981,7 @@ export class WeatherSystem {
       u.uTime.value = time;
       u.uAmount.value = ff;
       u.uRadius.value = THREE.MathUtils.clamp(alt * 0.45, 40, 160);
-      u.uSize.value = THREE.MathUtils.clamp(alt * 0.0035, 0.25, 1.2);
+      u.uSize.value = THREE.MathUtils.clamp(alt * 0.005, 0.35, 1.7);
     }
     // Florida snow: exactly one flake, drifting down in front of the lens
     this.flake.visible = v.flake > 0.02;

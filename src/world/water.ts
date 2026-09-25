@@ -105,7 +105,8 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
         }
         vec3 n = normalize(vec3(slope.x, 1.0, slope.y));
         vec3 viewDir = normalize(cameraPosition - vW);
-        float fres = 0.02 + 0.98 * pow(1.0 - max(dot(n, viewDir), 0.0), 5.0);
+        // softer-than-physical Fresnel so the water mirrors sunsets and storm skies at RTS angles
+        float fres = 0.06 + 0.94 * pow(1.0 - max(dot(n, viewDir), 0.0), 3.0);
         float light = min(uLight, mix(1.0, 0.3, uNight));
         float cl = cloudLight(vW.xz);
 

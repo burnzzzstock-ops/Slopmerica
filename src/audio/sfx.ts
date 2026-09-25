@@ -117,20 +117,22 @@ export const SFX: Record<SfxKind, SfxRecipe> = {
     if (v > 0.7) s.burst(out, { type: 'highpass', f0: 1600, dur: 0.14, a: 0.002, gain: 0.25 * v });
     const src = c.createBufferSource();
     src.buffer = s.noise('brown');
+    src.loop = true; // the rumble outlasts the 3 s noise buffer
     const lp = c.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.frequency.setValueAtTime(420, t0);
-    lp.frequency.exponentialRampToValueAtTime(120, t0 + 5);
+    lp.frequency.setValueAtTime(480, t0);
+    lp.frequency.exponentialRampToValueAtTime(160, t0 + 5);
     const g = c.createGain();
     g.gain.setValueAtTime(0.0001, t0);
     let t = t0 + 0.06;
-    g.gain.exponentialRampToValueAtTime(0.9 * v, t);
-    const swells = 4 + Math.floor(Math.random() * 3);
+    g.gain.exponentialRampToValueAtTime(1.2 * v, t);
+    // the rumble rolls on in uneven swells for several seconds
+    const swells = 5 + Math.floor(Math.random() * 3);
     for (let i = 0; i < swells; i++) {
-      t += rnd(0.3, 0.9);
-      g.gain.exponentialRampToValueAtTime(rnd(0.2, 0.75) * v * (1 - i / (swells + 2)), t);
+      t += rnd(0.35, 0.9);
+      g.gain.exponentialRampToValueAtTime(rnd(0.5, 1.4) * v * (1 - i / (swells + 5)), t);
     }
-    g.gain.exponentialRampToValueAtTime(0.0001, t + rnd(1.5, 2.5));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + rnd(1.8, 2.8));
     src.connect(lp).connect(g);
     g.connect(out);
     g.connect(rev);
@@ -138,8 +140,8 @@ export const SFX: Record<SfxKind, SfxRecipe> = {
     src.stop(t + 3);
   },
   cannon(s, out, rev, v) {
-    s.tone(out, { f0: 125, f1: 30, dur: 1.0, a: 0.003, gain: 0.95 * v });
-    s.burst(out, { color: 'brown', type: 'lowpass', f0: 1400, f1: 140, dur: 0.7, a: 0.002, gain: 0.85 * v });
+    s.tone(out, { f0: 125, f1: 30, dur: 1.0, a: 0.003, gain: 0.7 * v });
+    s.burst(out, { color: 'brown', type: 'lowpass', f0: 1400, f1: 140, dur: 0.7, a: 0.002, gain: 0.6 * v });
     s.burst(out, { type: 'highpass', f0: 2200, dur: 0.06, a: 0.001, gain: 0.3 * v });
     s.burst(rev, { color: 'brown', type: 'lowpass', f0: 900, dur: 1.2, a: 0.01, gain: 0.6 * v });
   },

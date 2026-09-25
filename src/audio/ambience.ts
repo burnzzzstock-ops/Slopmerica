@@ -165,6 +165,7 @@ export class Ambience {
         const t0 = c.currentTime + t;
         const src = c.createBufferSource();
         src.buffer = s.noise('pink');
+        src.loop = true;
         const f = c.createBiquadFilter();
         f.type = 'bandpass';
         f.Q.value = 0.9;
@@ -215,7 +216,7 @@ export class Ambience {
     this.tick -= dt;
     if (this.tick <= 0) {
       this.tick = 0.08;
-      this.set(this.wind, (0.04 + windW * 0.5) * (0.55 + z * 0.8));
+      this.set(this.wind, (0.015 + windW * 0.45) * (0.4 + z * 0.9));
       this.set(this.windHi, Math.max(0, windW - 0.45) * 0.4);
       this.set(this.rainHiss, rain * 0.26 * (0.7 + near * 0.3));
       this.set(this.rainDrum, rain * 0.16 * (0.4 + near * 0.6));

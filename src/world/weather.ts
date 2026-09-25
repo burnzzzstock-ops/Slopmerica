@@ -309,6 +309,7 @@ export class WeatherSystem {
   private lastDay = NaN;
   private visDay = NaN;
   private started = false;
+  private pendingNotify = false;
   private focusY = 0;
   private realTime = 0;
   private windAngle = 0.7;
@@ -528,7 +529,10 @@ export class WeatherSystem {
     this.forced = forced;
     if (changed) this.intensity = 0;
     this.nextStrike = 1.5 + this.rng() * 3;
-    if (changed || forced) this.onChange?.(kind, this.season);
+    if (!(changed || forced)) return;
+    // before the first update we don't know the season yet; announce once we do
+    if (this.started) this.onChange?.(kind, this.season);
+    else this.pendingNotify = true;
   }
 
   /** Debug / UI override: force a weather kind for N game days. */
@@ -595,7 +599,9 @@ export class WeatherSystem {
       this.season = s;
       if (this.started) this.onChange?.(this.kind, s);
     }
+    if (!this.started && this.pendingNotify) this.onChange?.(this.kind, s);
     this.started = true;
+    this.pendingNotify = false;
     this.temperature = temperatureC(ctx.mapId, this.visDay, env.hour) - this.vis.precip * 2 + this.vis.heat * 7 - this.vis.snow * 3;
 
     // ---- spells advance with game days

@@ -116,6 +116,7 @@ export class Synth {
     const t0 = c.currentTime + (o.t ?? 0);
     const src = c.createBufferSource();
     src.buffer = this.noise(o.color ?? 'white');
+    src.loop = true;
     const f = c.createBiquadFilter();
     f.type = o.type ?? 'bandpass';
     f.frequency.setValueAtTime(o.f0, t0);

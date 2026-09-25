@@ -76,6 +76,7 @@ void main() {
     p.z += cos(age * 2.6 + aK.w * 20.0) * 0.7 * t;
   }
   float size = mix(aK.y, aK.z, 1.0 - (1.0 - t) * (1.0 - t));
+  if (k == 3) p.y += size * 0.45; // dust clouds billow up as they grow, instead of into the ground
   vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
   vec2 c = corner;
   if (k == 7) c.y *= 0.5; // dollar bill aspect
@@ -108,7 +109,7 @@ void main() {
   if (k == 0) { // smoke
     float n = pn(vUv * 1.8 + vSeed * 17.0) * 0.6 + pn(vUv * 3.7 - vSeed * 9.0) * 0.4;
     a = smoothstep(1.0, 0.15, r + (n - 0.5) * 0.5) * 0.55 * (1.0 - vT) * fadeIn;
-    col = mix(vec3(0.3), vec3(0.58), vSeed) * mix(1.0, 1.25, vT) * uLight;
+    col = mix(vec3(0.14), vec3(0.3), vSeed) * mix(0.8, 1.5, vT) * uLight; // sooty, thinning out
   } else if (k == 1) { // cigarette
     a = smoothstep(1.0, 0.1, r) * 0.42 * (1.0 - vT) * fadeIn;
     col = vec3(0.78, 0.82, 0.88) * uLight;
@@ -243,6 +244,8 @@ export class Particles {
     const sz = opts.size ?? 1;
     const life = opts.life ?? s.life;
     const J = s.jitter;
+    // ground-hugging puffs start half a size up so the terrain doesn't slice them flat
+    if (kind === 'dust' || kind === 'smoke' || kind === 'steam') y += s.size[0] * sz * 0.6;
     for (let c = 0; c < n; c++) {
       const i = pool.next() * 4;
       // uniform-ish point in a sphere

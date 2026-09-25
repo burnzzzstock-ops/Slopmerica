@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { PersonAction } from '../contracts';
+import { PeopleRendererCore } from './models/personRenderer';
 
 export type BodyType = 'slim' | 'average' | 'broad' | 'stocky' | 'tall';
 export type Outfit = 'tee' | 'hoodie' | 'suit' | 'vest' | 'tank' | 'flannel' | 'overalls' | 'robe' | 'jersey' | 'workwear' | 'raincoat';
@@ -169,7 +170,7 @@ function buildLogoTexture(): THREE.CanvasTexture {
   const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace; return texture;
 }
 
-export class PeopleRenderer {
+class LegacyPeopleRenderer {
   readonly object = new THREE.Group();
   private readonly free: number[] = [];
   private readonly alive: Uint8Array;
@@ -492,4 +493,12 @@ export class PeopleRenderer {
     }
     return null;
   }
+}
+
+/**
+ * AA citizen renderer. The archetype catalog intentionally remains in this module so
+ * simulation and UI callers retain their existing imports and stable numeric indices.
+ */
+export class PeopleRenderer extends PeopleRendererCore {
+  constructor(scene: THREE.Scene, max: number) { super(scene, max, ARCHETYPES); }
 }

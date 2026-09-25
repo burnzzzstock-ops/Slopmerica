@@ -587,7 +587,9 @@ export class Game {
         const deviceCeiling: Quality['name'] = IS_TOUCH || !caps.isWebGL2 || caps.maxTextureSize < 8192 ? 'medium' : 'ultra';
         let chosen: Quality['name'] = avg > 34 ? 'low' : avg > 24 ? 'medium' : avg > 16 ? 'high' : 'ultra';
         if (deviceCeiling === 'medium' && (chosen === 'high' || chosen === 'ultra')) chosen = IS_TOUCH ? 'low' : 'medium';
-        if (saveQuality(chosen, true) && chosen !== this.q.name) location.reload();
+        // Apply live (no reload mid-city); asset budgets pick it up next launch.
+        if (chosen !== this.q.name) this.requestQuality(chosen);
+        saveQuality(chosen, true);
       }
     }
     this.resolutionCooldown -= intervalMs / 1000;

@@ -53,6 +53,8 @@ export class Terrain {
   readonly heightTex: THREE.DataTexture;
   readonly material: THREE.MeshStandardMaterial;
   readonly detail: THREE.DataArrayTexture;
+  /** Increments when grading or ground paint changes near-surface scenery. */
+  surfaceVersion = 0;
   private chunks: Chunk[] = [];
   private dirty = new Set<number>();
   private texRows: [number, number] | null = null;
@@ -280,6 +282,12 @@ float gPuddle;`,
     return this.cover[j * HM_N + i];
   }
 
+  paintAt(x: number, z: number): Paint {
+    const i = clamp(Math.round((x + HALF) / HM_STEP), 0, HM_N - 1);
+    const j = clamp(Math.round((z + HALF) / HM_STEP), 0, HM_N - 1);
+    return this.paint[j * HM_N + i] as Paint;
+  }
+
   inBounds(x: number, z: number, margin = 0): boolean {
     return x > -HALF + margin && x < HALF - margin && z > -HALF + margin && z < HALF - margin;
   }
@@ -312,6 +320,7 @@ float gPuddle;`,
 
   /** Cut high ground and fill low ground under a road; deep gaps stay open for bridges. */
   gradeRoad(pts: V2[], hs: number[], halfWidth: number) {
+    this.surfaceVersion++;
     const margin = 10;
     let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
     for (const p of pts) {
@@ -352,6 +361,7 @@ float gPuddle;`,
   }
 
   flattenLot(corners: V2[], height: number, paint: Paint) {
+    this.surfaceVersion++;
     let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
     for (const p of corners) {
       minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
@@ -374,6 +384,7 @@ float gPuddle;`,
   }
 
   paintCircle(x: number, z: number, r: number, p: Paint) {
+    this.surfaceVersion++;
     this.forEachIn(x - r, z - r, x + r, z + r, (i, j, px, pz, id) => {
       if ((px - x) ** 2 + (pz - z) ** 2 < r * r) {
         this.paint[id] = p;

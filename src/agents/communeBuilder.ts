@@ -10,6 +10,8 @@ type V3 = [number, number, number];
 
 export interface CommuneLayout {
   geometry: THREE.BufferGeometry;
+  flameGeometry: THREE.BufferGeometry;
+  bulbGeometry: THREE.BufferGeometry;
   emitters: Emitter[];
   /** Footprints to clear trees from (local x, z, radius). */
   clear: { x: number; z: number; r: number }[];
@@ -24,8 +26,11 @@ const BUS_PAINT = [0x5ec8ff, 0xff8a3a, 0x7dcf8a, 0xffd23a, 0xe86a8a, 0x9a7ae0];
 const FLAG_COLS = [0x2a6ad8, 0xf2f2f2, 0xd83a2a, 0x2ab04a, 0xf2d23a];
 const LAUNDRY = [0xe86a8a, 0x5ec8ff, 0xf2f2f2, 0xffd23a, 0x7dcf8a, 0x6a4a8a];
 
-export function buildCommune(name: string, radius: number, members: number, seed: number, ground: (lx: number, lz: number) => number, mapId: string): CommuneLayout {
+export function buildCommune(name: string, radius: number, members: number, seed: number, ground: (lx: number, lz: number) => number, mapId: string,
+  level?: (lx: number, lz: number, radius: number) => number, cover?: (lx: number, lz: number) => number): CommuneLayout {
   const k = new Kit();
+  const fireKit = new Kit();
+  const bulbs = new Kit();
   const rng = new Rng(seed);
   const r = () => rng.float();
   const pick = <X>(a: X[]) => a[Math.floor(r() * a.length) % a.length];
@@ -35,7 +40,7 @@ export function buildCommune(name: string, radius: number, members: number, seed
   const wood = col(0x8a6a4a), darkWood = col(0x5a4230), metal = col(0x8f969c), rope = col(0xcbb89a);
 
   // ---------------------------------------------------------------- fire circle
-  const fy = ground(0, 0);
+  const fy = level?.(0, 0, 6.5) ?? ground(0, 0);
   dirt.push({ x: 0, z: 0, r: 7.5 });
   clear.push({ x: 0, z: 0, r: 9 });
   for (let i = 0; i < 12; i++) {
@@ -48,9 +53,9 @@ export function buildCommune(name: string, radius: number, members: number, seed
     const a = (i / 5) * Math.PI * 2 + 0.3;
     k.tube([Math.cos(a) * 0.9, fy + 0.05, Math.sin(a) * 0.9], [Math.cos(a) * 0.12, fy + 0.9, Math.sin(a) * 0.12], 0.09, 5, col(0x3a2a1e), T.WOOD);
   }
-  k.glowBox(0, fy + 0.12, 0, 0.9, 'flame', 2.5);
-  k.flame(0, fy + 0.1, 0, 1.6, 1.2, 5);
-  k.flame(0.25, fy + 0.1, -0.2, 1.0, 0.8, 5);
+  fireKit.glowBox(0, fy + 0.12, 0, 0.9, 'flame', 2.5);
+  fireKit.flame(0, fy + 0.1, 0, 1.6, 1.2, 5);
+  fireKit.flame(0.25, fy + 0.1, -0.2, 1.0, 0.8, 5);
   k.emit('fire', 0, fy + 0.9, 0);
   k.emit('smoke', 0, fy + 2.2, 0);
   // log benches around the fire
@@ -67,22 +72,32 @@ export function buildCommune(name: string, radius: number, members: number, seed
     const x = Math.cos(a) * 3.2, z = Math.sin(a) * 3.2;
     k.cyl(x, z, 0.28, ground(x, z), ground(x, z) + 0.62, 9, T.WOOD, col(0x9a6a3a), col(0xe8dcc0), 0.24);
   }
+  // A few actual seats leave the dance and drum space open for members.
+  for (const a of [0.43, 2.48, 4.65]) {
+    const x = Math.sin(a) * 6.2, z = Math.cos(a) * 6.2;
+    lawnChair(k, x, z, ground(x, z), a + Math.PI, col(0x8a9b72));
+  }
+  for (const a of [1.1, 3.1, 5.25]) {
+    const x = Math.sin(a) * 7.1, z = Math.cos(a) * 7.1, gy = ground(x, z);
+    k.cyl(x, z, 0.38, gy - 0.04, gy + 0.23, 7, T.STONE, col(a < 2 ? 0xc77b6b : 0x9c8fb0));
+    k.cyl(x, z, 0.27, gy + 0.24, gy + 0.27, 7, T.TIEDYE, col(0xffffff));
+  }
 
   // ---------------------------------------------------------------- geodesic dome
   const da = r() * Math.PI * 2, dd = R * 0.3 + 5;
   const dx = Math.cos(da) * dd, dz = Math.sin(da) * dd;
-  dome(k, dx, dz, ground(dx, dz), 7, r);
+  dome(k, dx, dz, level?.(dx, dz, 8) ?? ground(dx, dz), 7, r);
   clear.push({ x: dx, z: dz, r: 8.5 });
   dirt.push({ x: dx * 0.5, z: dz * 0.5, r: 2.2 });
 
   // ---------------------------------------------------------------- yurts + teepees
   const n = Math.min(9, 3 + Math.floor(members / 6));
   const used: { x: number; z: number; r: number }[] = [{ x: 0, z: 0, r: 8 }, { x: dx, z: dz, r: 8.5 }];
-  const spot = (minD: number, maxD: number, rr: number) => {
+  const spot = (minD: number, maxD: number, rr: number, accept?: (x: number, z: number) => boolean) => {
     for (let t = 0; t < 40; t++) {
       const a = r() * Math.PI * 2, d = minD + r() * (maxD - minD);
       const x = Math.cos(a) * d, z = Math.sin(a) * d;
-      if (used.every((u) => Math.hypot(u.x - x, u.z - z) > u.r + rr + 1.5)) {
+      if ((!accept || accept(x, z)) && used.every((u) => Math.hypot(u.x - x, u.z - z) > u.r + rr + 1.5)) {
         used.push({ x, z, r: rr });
         return { x, z, a };
       }
@@ -94,7 +109,7 @@ export function buildCommune(name: string, radius: number, members: number, seed
     const s = spot(R * 0.35, R * 0.8, yr + 1);
     if (!s) continue;
     const face = Math.atan2(-s.x, -s.z); // door faces the fire
-    yurt(k, s.x, s.z, ground(s.x, s.z), yr, face, col(pick(CANVAS_TINTS)), r);
+    yurt(k, s.x, s.z, level?.(s.x, s.z, yr + 0.4) ?? ground(s.x, s.z), yr, face, col(pick(CANVAS_TINTS)), r);
     clear.push({ x: s.x, z: s.z, r: yr + 2 });
     // trampled path toward the fire
     for (let t = 0.25; t < 0.9; t += 0.22) dirt.push({ x: s.x * t, z: s.z * t, r: 1.1 });
@@ -103,7 +118,7 @@ export function buildCommune(name: string, radius: number, members: number, seed
   for (let i = 0; i < teepees; i++) {
     const s = spot(R * 0.4, R * 0.85, 3);
     if (!s) continue;
-    teepee(k, s.x, s.z, ground(s.x, s.z), 2.6 + r() * 0.6, r);
+    teepee(k, s.x, s.z, level?.(s.x, s.z, 3) ?? ground(s.x, s.z), 2.6 + r() * 0.6, r);
     clear.push({ x: s.x, z: s.z, r: 3.5 });
   }
 
@@ -111,13 +126,13 @@ export function buildCommune(name: string, radius: number, members: number, seed
   {
     const s = spot(R * 0.7, R * 0.95, 3.2);
     if (s) {
-      vwBus(k, s.x, s.z, ground(s.x, s.z), r() * Math.PI * 2, col(pick(BUS_PAINT)));
+      vwBus(k, s.x, s.z, level?.(s.x, s.z, 3) ?? ground(s.x, s.z), r() * Math.PI * 2, col(pick(BUS_PAINT)));
       clear.push({ x: s.x, z: s.z, r: 3.5 });
     }
     if (members > 18) {
       const s2 = spot(R * 0.6, R * 0.95, 6);
       if (s2) {
-        skoolie(k, s2.x, s2.z, ground(s2.x, s2.z), r() * Math.PI * 2, r);
+        skoolie(k, s2.x, s2.z, level?.(s2.x, s2.z, 6) ?? ground(s2.x, s2.z), r() * Math.PI * 2, r);
         clear.push({ x: s2.x, z: s2.z, r: 6.5 });
       }
     }
@@ -240,8 +255,9 @@ export function buildCommune(name: string, radius: number, members: number, seed
         for (let i = 0; i < pts.length - 1; i++) {
           const a = pts[i], b = pts[i + 1];
           const wa = i === 0 ? 0.05 : 0.45, wb = i === pts.length - 2 ? 0.05 : 0.45;
-          k.quad([a[0], a[1], -wa], [b[0], b[1], -wb], [b[0], b[1], wb], [a[0], a[1], wa], [[0, 0], [0.2, 0], [0.2, 0.4], [0, 0.4]], col(0xffffff), T.TIEDYE);
-          k.quad([a[0], a[1] - 0.01, wa], [b[0], b[1] - 0.01, wb], [b[0], b[1] - 0.01, -wb], [a[0], a[1] - 0.01, -wa], [[0, 0], [0.2, 0], [0.2, 0.4], [0, 0.4]], col(0xffffff), T.TIEDYE);
+          // Top faces up; underside is separated enough to avoid z-fighting.
+          k.quad([a[0], a[1], wa], [b[0], b[1], wb], [b[0], b[1], -wb], [a[0], a[1], -wa], [[0, 0], [0.2, 0], [0.2, 0.4], [0, 0.4]], col(0xffffff), T.TIEDYE);
+          k.quad([a[0], a[1] - 0.025, -wa], [b[0], b[1] - 0.025, -wb], [b[0], b[1] - 0.025, wb], [a[0], a[1] - 0.025, wa], [[0, 0], [0.2, 0], [0.2, 0.4], [0, 0.4]], col(0xffffff), T.TIEDYE);
         }
       });
     }
@@ -275,10 +291,99 @@ export function buildCommune(name: string, radius: number, members: number, seed
     }
   }
 
+  // ---------------------------------------------------------------- lived-in corners
+  {
+    const s = spot(R * 0.45, R * 0.86, 4.6);
+    if (s) {
+      const gy = level?.(s.x, s.z, 4) ?? ground(s.x, s.z);
+      k.at(s.x, s.z, s.a, () => {
+        // Raised hen house and a fenced run, with a deliberately crooked roof.
+        k.box(-1.1, -0.7, 2.1, 1.8, gy + 0.65, gy + 2.1, T.WOOD, col(0x8d6647), T.WOOD);
+        k.gable(-1.1, -0.7, 2.1, 1.8, gy + 2.1, 0.65, false, col(0x695e50), col(0x8d6647), T.WOOD, 0.2);
+        for (const xx of [-1.9, -0.3]) for (const zz of [-1.35, -0.05]) k.tube([xx, gy - 0.15, zz], [xx, gy + 0.7, zz], 0.07, 4, darkWood);
+        k.box(-1.1, 0.28, 0.65, 0.08, gy + 0.7, gy + 1.35, T.SOLID, col(0x302b25), null);
+        k.slab(-0.95, 0.34, -0.2, 1.1, gy + 0.5, T.WOOD, wood);
+        fence(k, -2.8, -2.2, 3.0, 2.8, gy, 1.1, col(0x97785c));
+        for (let i = 0; i < 4; i++) {
+          const xx = 0.5 + (i % 2) * 0.75, zz = -0.85 + Math.floor(i / 2) * 0.85;
+          k.cyl(xx, zz, 0.18, gy + 0.1, gy + 0.42, 6, T.CANVAS, col(i % 2 ? 0xc8a47d : 0xe0d3ad), null, 0.12);
+          k.cyl(xx, zz + 0.14, 0.1, gy + 0.38, gy + 0.56, 5, T.CANVAS, col(0xd8bb95));
+        }
+      });
+      clear.push({ x: s.x, z: s.z, r: 5.2 }); dirt.push({ x: s.x, z: s.z, r: 3.8 });
+    }
+  }
+  {
+    const s = spot(R * 0.45, R * 0.84, 4.1);
+    if (s) {
+      const gy = level?.(s.x, s.z, 3.7) ?? ground(s.x, s.z);
+      k.at(s.x, s.z, s.a, () => {
+        fence(k, -3, -2.4, 3, 2.4, gy, 1.2, col(0x806248));
+        for (const gx of [-1.25, 1.35]) {
+          k.box(gx, 0, 1.05, 1.65, gy + 0.75, gy + 1.5, T.CANVAS, col(0xbcb8a5), T.CANVAS);
+          for (const xx of [-0.37, 0.37]) for (const zz of [-0.56, 0.56]) k.tube([gx + xx, gy + 0.05, zz], [gx + xx, gy + 0.95, zz], 0.07, 4, col(0x77786b));
+          k.cyl(gx, 0.97, 0.26, gy + 1.28, gy + 1.73, 6, T.CANVAS, col(0xbcb8a5));
+          for (const xx of [-0.16, 0.16]) k.tube([gx + xx, gy + 1.65, 1.02], [gx + xx * 1.65, gy + 1.98, 1.08], 0.035, 4, col(0x5c5647));
+        }
+      });
+      clear.push({ x: s.x, z: s.z, r: 4.8 }); dirt.push({ x: s.x, z: s.z, r: 3.4 });
+    }
+  }
+  {
+    const s = spot(R * 0.32, R * 0.76, 3.6);
+    if (s) {
+      const gy = level?.(s.x, s.z, 3.3) ?? ground(s.x, s.z);
+      k.at(s.x, s.z, s.a, () => {
+        // Kombucha bar and its hand-painted, reversible mural backing.
+        k.box(0, 0, 4.4, 0.85, gy + 0.75, gy + 1.05, T.WOOD, col(0x816044), T.WOOD);
+        k.box(0, -0.46, 4.7, 0.16, gy + 0.45, gy + 2.85, T.WOOD, col(0x71533e), null);
+        k.quad([-2.2, gy + 0.6, -0.57], [2.2, gy + 0.6, -0.57], [2.2, gy + 2.6, -0.57], [-2.2, gy + 2.6, -0.57], [[0, 0], [1, 0], [1, 1], [0, 1]], col(0xffffff), T.TIEDYE);
+        for (let i = 0; i < 7; i++) {
+          const xx = -1.7 + i * 0.57;
+          k.cyl(xx, 0, 0.12, gy + 1.03, gy + 1.52 + (i % 3) * 0.12, 7, T.GLASS, col(0xb8a068), col(0xd5b789));
+        }
+        k.quad([-2.7, gy + 3.0, 0.4], [2.7, gy + 3.0, 0.4], [2.5, gy + 3.2, -1.0], [-2.5, gy + 3.2, -1.0], [[0, 0], [1.6, 0], [1.6, 0.8], [0, 0.8]], col(0xe8c88b), T.CANVAS);
+        for (const xx of [-2.5, 2.5]) k.tube([xx, gy, 0.4], [xx, gy + 3.05, 0.4], 0.06, 4, wood);
+      });
+      clear.push({ x: s.x, z: s.z, r: 4.1 }); dirt.push({ x: s.x, z: s.z, r: 3.3 });
+    }
+  }
+  {
+    const s = spot(R * 0.36, R * 0.78, 3.7);
+    if (s) {
+      const gy = level?.(s.x, s.z, 3.5) ?? ground(s.x, s.z);
+      k.at(s.x, s.z, s.a, () => {
+        k.cyl(0, 0, 3.15, gy - 0.2, gy + 0.16, 12, T.WOOD, col(0x907251), col(0x9d805d));
+        for (const xx of [-1.3, 0, 1.3]) {
+          k.slab(xx - 0.46, -1.5, xx + 0.46, 1.45, gy + 0.18, T.TIEDYE, col(0xd6b78c));
+          k.cyl(xx, -1.55, 0.2, gy + 0.2, gy + 0.48, 6, T.STONE, col(0xbab1a2));
+        }
+        for (const zz of [-2.2, 2.2]) planter(k, 2.1, zz, gy + 0.16);
+      });
+      clear.push({ x: s.x, z: s.z, r: 4.2 }); dirt.push({ x: s.x, z: s.z, r: 3.2 });
+    }
+  }
+  if (cover && mapId !== 'florida') {
+    const s = spot(R * 0.56, R * 0.9, 3.8, (x, z) => cover(x, z) > 0.48);
+    if (s) {
+      const gy = ground(s.x, s.z);
+      k.at(s.x, s.z, s.a, () => {
+        k.tube([0, gy - 0.5, 0], [0, gy + 6.8, 0], 0.55, 9, col(0x68513d), T.WOOD);
+        k.box(0.4, 0.15, 3.3, 3.1, gy + 4.25, gy + 6.4, T.WOOD, col(0x93734e), T.WOOD);
+        k.gable(0.4, 0.15, 3.3, 3.1, gy + 6.4, 1.15, false, col(0x676553), col(0x93734e), T.WOOD, 0.25);
+        k.slab(-1.7, -1.8, 2.5, 2, gy + 4.2, T.WOOD, col(0x816447));
+        for (const xx of [-1.4, 2.1]) for (const zz of [-1.5, 1.7]) k.tube([xx, gy + 4.2, zz], [xx, gy + 5.25, zz], 0.06, 5, darkWood);
+        for (let j = 0; j < 8; j++) k.tube([-2, gy + j * 0.52, 1.8], [-1.25, gy + j * 0.52, 1.8], 0.05, 4, wood);
+        for (const xx of [-0.55, 1.15]) k.quad([xx, gy + 5.0, 1.72], [xx + 0.65, gy + 5.0, 1.72], [xx + 0.65, gy + 5.65, 1.72], [xx, gy + 5.65, 1.72], [[0, 0], [1, 0], [1, 1], [0, 1]], col(0xffffff), T.HOUSE_WIN);
+      });
+      clear.push({ x: s.x, z: s.z, r: 2 });
+    }
+  }
+
   // ---------------------------------------------------------------- flags + lights
   const poles: V3[] = [];
   for (let i = 0; i < 4; i++) {
-    const a = (i / 4) * Math.PI * 2 + r() * 0.6, d = R * 0.3 + r() * 4;
+    const a = (i / 4) * Math.PI * 2 + r() * 0.25, d = R * 0.62 + r() * 5;
     const x = Math.cos(a) * d, z = Math.sin(a) * d;
     const gy = ground(x, z);
     k.tube([x, gy, z], [x, gy + 5.2, z], 0.08, 5, darkWood);
@@ -300,7 +405,7 @@ export function buildCommune(name: string, radius: number, members: number, seed
       }
     } else {
       // warm string lights
-      for (let j = 1; j < pts.length - 1; j++) k.glowBox(pts[j][0], pts[j][1] - 0.12, pts[j][2], 0.12, j % 5 === 0 ? 'glowPink' : 'glowWarm', 4);
+      for (let j = 1; j < pts.length - 1; j++) bulbs.glowBox(pts[j][0], pts[j][1] - 0.12, pts[j][2], 0.15, j % 5 === 0 ? 'glowPink' : 'glowWarm', 5);
     }
   }
   // lights from each pole to the fire circle center pole
@@ -309,7 +414,7 @@ export function buildCommune(name: string, radius: number, members: number, seed
   for (const p of poles.slice(0, 2)) {
     const pts = catenary(cp, p, 0.8, 14);
     for (let j = 0; j < pts.length - 1; j++) k.tube(pts[j], pts[j + 1], 0.022, 3, rope);
-    for (let j = 1; j < pts.length - 1; j++) k.glowBox(pts[j][0], pts[j][1] - 0.12, pts[j][2], 0.12, 'glowWarm', 4);
+    for (let j = 1; j < pts.length - 1; j++) bulbs.glowBox(pts[j][0], pts[j][1] - 0.12, pts[j][2], 0.15, 'glowWarm', 5);
   }
 
   // ---------------------------------------------------------------- entrance sign
@@ -349,7 +454,7 @@ export function buildCommune(name: string, radius: number, members: number, seed
     }
   }
 
-  return { geometry: k.build(), emitters: k.emitters, clear, dirt, fire: [0, fy + 1.2, 0] };
+  return { geometry: k.build(), flameGeometry: fireKit.build(), bulbGeometry: bulbs.build(), emitters: k.emitters, clear, dirt, fire: [0, fy + 1.2, 0] };
 }
 
 // ------------------------------------------------------------------ pieces
@@ -372,7 +477,22 @@ function yurt(k: Kit, x: number, z: number, gy: number, rad: number, face: numbe
     // painted band under the eave
     k.cyl(0, 0, rad + 0.02, y0 + wallH - 0.45, y0 + wallH - 0.1, seg, r() < 0.5 ? T.TIEDYE : T.CANVAS, r() < 0.5 ? col(0xffffff) : col(0xb84a3a), null);
     // conical roof, crown and stovepipe
-    k.cyl(0, 0, rad * 1.12, y0 + wallH - 0.05, y0 + wallH + rad * 0.42, seg, T.CANVAS, tint.clone().multiplyScalar(0.92), null, 0.55);
+    const eaveY = y0 + wallH - 0.05, crownY = eaveY + rad * 0.42;
+    const roof = tint.clone().multiplyScalar(0.92);
+    const roofP = (a: number, rr: number, y: number): V3 => [Math.sin(a) * rr, y, Math.cos(a) * rr];
+    for (let i = 0; i < seg; i++) {
+      const a = i * Math.PI * 2 / seg, b = (i + 1) * Math.PI * 2 / seg;
+      const r0 = rad * 1.12, rm = rad * 0.62, rt = 0.55;
+      const ym = eaveY + (crownY - eaveY) * 0.52 - 0.09;
+      // Two courses of slightly sagging canvas with a dark stitched seam.
+      k.quad(roofP(a, r0, eaveY), roofP(b, r0, eaveY), roofP(b, rm, ym), roofP(a, rm, ym), [[0, 0], [0.62, 0], [0.62, 0.55], [0, 0.55]], roof, T.CANVAS);
+      k.quad(roofP(a, rm, ym), roofP(b, rm, ym), roofP(b, rt, crownY), roofP(a, rt, crownY), [[0, 0.55], [0.62, 0.55], [0.62, 1], [0, 1]], roof, T.CANVAS);
+      const seam = col(0x9a917b);
+      k.tube(roofP(a, r0 + 0.025, eaveY + 0.025), roofP(a, rm + 0.025, ym + 0.025), 0.013, 3, seam);
+      k.tube(roofP(a, rm + 0.025, ym + 0.025), roofP(a, rt + 0.025, crownY + 0.025), 0.013, 3, seam);
+      k.tube(roofP(a, rad + 0.025, y0 + 0.23), roofP(a, rad + 0.025, y0 + wallH - 0.49), 0.012, 3, seam);
+      if (i % 3 === 0) k.tube(roofP(a, 0.56, crownY + 0.14), roofP(a + Math.PI, 0.56, crownY + 0.14), 0.035, 4, col(0x8a6a4a));
+    }
     k.cyl(0, 0, 0.6, y0 + wallH + rad * 0.42, y0 + wallH + rad * 0.42 + 0.35, 10, T.WOOD, col(0x6a4a30), col(0x8fb8d0));
     const px = rad * 0.45, pz = -rad * 0.3;
     const pipeTop = y0 + wallH + rad * 0.42 + 1.1;
@@ -386,6 +506,15 @@ function yurt(k: Kit, x: number, z: number, gy: number, rad: number, face: numbe
     for (const a of [1.2, -1.2, 2.4]) {
       const wx = Math.sin(a) * (rad + 0.02), wz = Math.cos(a) * (rad + 0.02);
       k.at(wx, wz, a, () => k.quad([-0.35, y0 + 1.0, 0.01], [0.35, y0 + 1.0, 0.01], [0.35, y0 + 1.6, 0.01], [-0.35, y0 + 1.6, 0.01], [[0.1, 0.25], [0.45, 0.25], [0.45, 0.62], [0.1, 0.62]], col(0xffffff), T.HOUSE_WIN));
+    }
+    // A weathered runner and two planters make the threshold readable at night.
+    k.slab(-0.54, rad + 0.3, 0.54, rad + 2.25, gy + 0.05, T.TIEDYE, col(0xe5c7a3));
+    planter(k, -1.15, rad + 0.56, gy + 0.06);
+    planter(k, 1.15, rad + 0.56, gy + 0.06);
+    for (const px of [-rad * 0.72, rad * 0.72]) {
+      const pz = -rad * 0.7;
+      k.tube([px, y0 + wallH + 0.05, pz], [px, y0 + wallH - 0.6, pz], 0.02, 4, col(0x5a4230));
+      planter(k, px, pz, y0 + wallH - 0.78, true);
     }
     // porch steps + a chair
     k.box(0, rad + 0.7, 1.6, 0.9, gy - 0.1, gy + 0.12, T.WOOD, col(0x8a6a4a), T.WOOD);
@@ -406,7 +535,8 @@ function teepee(k: Kit, x: number, z: number, gy: number, rad: number, r: () => 
     const a = (i / 9) * Math.PI * 2;
     k.tube([x + Math.cos(a) * rad * 0.96, gy, z + Math.sin(a) * rad * 0.96], [x - Math.cos(a) * 0.35, gy + h * 1.05, z - Math.sin(a) * 0.35], 0.05, 4, col(0x8a6a4a));
   }
-  k.quad([x - 0.5, gy + 0.02, z + rad * 0.92], [x + 0.5, gy + 0.02, z + rad * 0.92], [x, gy + 1.5, z + rad * 0.62], [x, gy + 1.5, z + rad * 0.62], [[0, 0], [1, 0], [0.5, 1], [0.5, 1]], col(0x2a1a10), T.SOLID);
+  k.tri([x - 0.58, gy + 0.03, z + rad * 0.94], [x + 0.58, gy + 0.03, z + rad * 0.94], [x, gy + 1.62, z + rad * 0.7], [[0, 0], [1, 0], [0.5, 1]], col(0x27201b), T.SOLID);
+  for (const sign of [-1, 1]) k.tube([x + sign * 0.59, gy + 0.02, z + rad * 0.96], [x, gy + 1.66, z + rad * 0.72], 0.02, 3, col(0x9a7954));
 }
 
 /** Half-geodesic dome (2-frequency icosahedron) with struts, glass panels and a door. */
@@ -445,9 +575,10 @@ function dome(k: Kit, cx: number, cz: number, gy: number, rad: number, r: () => 
     const n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
     const outward = n[0] * mid[0] + n[1] * ((pa[1] + pb[1] + pc[1]) / 3 - y0 + 0.01) + n[2] * mid[2] > 0;
     const glass = r() < 0.28 && cyc > 0.25;
-    const tile = glass ? T.GLASS : T.CANVAS;
+    // Window tile includes a shallow room mask and warm window emission at night.
+    const tile = glass ? T.HOUSE_WIN : T.CANVAS;
     const c0 = glass ? col(0xffffff) : col(idx % 7 === 0 ? 0xd8e6f0 : 0xf2f0ea);
-    const uvs: [number, number][] = glass ? [[0.05, 0.25], [0.45, 0.25], [0.25, 0.8]] : [[0, 0], [1, 0], [0.5, 0.86]];
+    const uvs: [number, number][] = glass ? [[0, 0], [1, 0], [0.5, 1]] : [[0, 0], [1, 0], [0.5, 0.86]];
     if (outward) k.tri(pa, pb, pc, uvs, c0, tile);
     else k.tri(pa, pc, pb, uvs, c0, tile);
     for (const [u, v] of [[a, b], [b, c], [c, a]] as [V3, V3][]) {
@@ -521,5 +652,38 @@ function skoolie(k: Kit, x: number, z: number, gy: number, yaw: number, r: () =>
     for (const az of [1.0, -2.5]) k.tube([W / 2 + 2.2, gy, az], [W / 2 + 2.2, y0 + 1.6, az], 0.03, 4, col(0x666666));
     k.slab(W / 2 + 0.2, -2.3, W / 2 + 2.0, 0.8, gy + 0.04, T.TIEDYE, col(0xffffff));
     void r;
+  });
+}
+
+function planter(k: Kit, x: number, z: number, y: number, hanging = false) {
+  const radius = hanging ? 0.25 : 0.34;
+  k.cyl(x, z, radius, y, y + (hanging ? 0.26 : 0.34), 7, T.STONE, col(0x9e765f), col(0x443d31), radius * 1.08);
+  for (let i = 0; i < 5; i++) {
+    const a = i * Math.PI * 2 / 5;
+    k.tube([x, y + 0.27, z], [x + Math.sin(a) * radius * 1.3, y + 0.53 + (i % 2) * 0.12, z + Math.cos(a) * radius * 1.3], 0.035, 3, col(0x4f7545));
+  }
+}
+
+function fence(k: Kit, x0: number, z0: number, x1: number, z1: number, y: number, h: number, wood: Col) {
+  for (const [a, b, c, d] of [[x0, z0, x1, z0], [x1, z0, x1, z1], [x1, z1, x0, z1], [x0, z1, x0, z0]]) {
+    const n = Math.max(1, Math.ceil(Math.hypot(c - a, d - b) / 1.5));
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, xx = a + (c - a) * t, zz = b + (d - b) * t;
+      k.tube([xx, y - 0.15, zz], [xx, y + h, zz], 0.035, 4, wood);
+    }
+    for (const yy of [0.35, 0.88]) k.tube([a, y + yy * h, b], [c, y + yy * h, d], 0.018, 3, wood);
+  }
+}
+
+function lawnChair(k: Kit, x: number, z: number, gy: number, yaw: number, fabric: Col) {
+  k.at(x, z, yaw, () => {
+    const steel = col(0x777b78);
+    for (const xx of [-0.35, 0.35]) {
+      k.tube([xx, gy - 0.08, -0.32], [xx, gy + 0.48, 0.25], 0.025, 4, steel);
+      k.tube([xx, gy - 0.08, 0.39], [xx, gy + 0.48, 0.25], 0.025, 4, steel);
+      k.tube([xx, gy + 0.5, -0.2], [xx, gy + 1.15, -0.5], 0.025, 4, steel);
+    }
+    k.slab(-0.36, -0.22, 0.36, 0.36, gy + 0.5, T.CANVAS, fabric);
+    k.quad([0.36, gy + 0.5, -0.2], [-0.36, gy + 0.5, -0.2], [-0.36, gy + 1.15, -0.5], [0.36, gy + 1.15, -0.5], [[0, 0], [1, 0], [1, 1], [0, 1]], fabric, T.CANVAS);
   });
 }

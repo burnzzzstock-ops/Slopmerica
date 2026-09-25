@@ -1328,10 +1328,33 @@ a {
 .ta-tip.bad {
   color: #ff8a80;
 }
+.perf-overlay {
+  position: absolute;
+  top: calc(78px + var(--safe-t));
+  right: 12px;
+  z-index: 30;
+  padding: 8px 11px;
+  background: rgba(10, 15, 15, 0.88);
+  border: 1px solid rgba(198, 244, 50, 0.6);
+  border-radius: 8px;
+  color: #d9ecb4;
+  font: 11px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre;
+  pointer-events: none;
+}
+.quality-controls select {
+  background: #242632;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font: inherit;
+}
 @media (max-width: 760px) {
   .tool-actions {
     top: calc(100px + var(--safe-t));
   }
+  .perf-overlay { top: calc(104px + var(--safe-t)); right: 7px; font-size: 10px; }
 }
 
 /* the hidden attribute always wins over component display rules */

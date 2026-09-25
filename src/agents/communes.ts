@@ -9,6 +9,8 @@ import type { Terrain } from '../world/terrain';
 import { Paint } from '../world/terrain';
 import type { Emitter } from '../contracts';
 import { buildingMaterial } from '../buildings/generator';
+import { Kit, col } from '../buildings/kit';
+import { T } from '../buildings/atlas';
 import { buildCommune } from './communeBuilder';
 import type { Trees } from '../world/trees';
 import { COMMUNE_NAMES as NAMES } from '../art/communeNames';
@@ -33,6 +35,10 @@ export interface Commune {
   protestUntil: number;
   group: THREE.Group;
   fire: THREE.PointLight;
+  flameMesh: THREE.Mesh | null;
+  bulbMesh: THREE.Mesh | null;
+  remains: THREE.Mesh | null;
+  baseY: number;
   /** Smoke / fire emitters in commune-local space. */
   emitters: Emitter[];
   leaveT: number;
@@ -75,7 +81,8 @@ export class Communes {
       const c: Commune = {
         id: this.list.length + 1, name, x, z, r: 30 + members * 0.8, members, stubborn: rng.range(0.1, 0.7), forever: rng.chance(foreverChance),
         vibe: rng.pick(VIBES), demand: rng.pick(DEMANDS), founded: rng.int(1967, 2019), state: 'active', suitDays: 0, suitOdds: 0,
-        nextProtest: rng.range(20, 70), protestSeg: 0, protestUntil: 0, group: new THREE.Group(), fire: new THREE.PointLight(0xff8a3a, 0, 60, 2), leaveT: 0, emitters: [],
+        nextProtest: rng.range(20, 70), protestSeg: 0, protestUntil: 0, group: new THREE.Group(), fire: new THREE.PointLight(0xff8a3a, 0, 38, 2),
+        flameMesh: null, bulbMesh: null, remains: null, baseY: 0, leaveT: 0, emitters: [],
       };
       if (c.forever) { c.founded = 1969; c.stubborn = 1; }
       this.build(c, rng, mapId);
@@ -86,21 +93,68 @@ export class Communes {
 
   private build(c: Commune, rng: Rng, mapId: MapId) {
     const y0 = this.terrain.h(c.x, c.z);
-    const L = buildCommune(c.name, c.r, c.members, rng.int(1, 1e9), (lx, lz) => this.terrain.h(c.x + lx, c.z + lz) - y0, mapId);
+    c.baseY = y0;
+    const ground = (lx: number, lz: number) => this.terrain.h(c.x + lx, c.z + lz) - y0;
+    const leveled: { x: number; z: number; r: number }[] = [];
+    const level = (lx: number, lz: number, radius: number) => {
+      const x = c.x + lx, z = c.z + lz, h = this.terrain.h(x, z);
+      const r = radius * 0.86;
+      this.terrain.flattenLot([{ x: x - r, z: z - r }, { x: x + r, z: z - r }, { x: x + r, z: z + r }, { x: x - r, z: z + r }], h, Paint.Dirt);
+      leveled.push({ x, z, r: r + 6 }); // terrain's six metre feather also moves tree roots
+      return this.terrain.h(x, z) - y0;
+    };
+    const L = buildCommune(c.name, c.r, c.members, rng.int(1, 1e9), ground, mapId, level,
+      (lx, lz) => this.terrain.coverAt(c.x + lx, c.z + lz));
     const mesh = new THREE.Mesh(L.geometry, buildingMaterial());
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     c.group.add(mesh);
+    c.flameMesh = new THREE.Mesh(L.flameGeometry, buildingMaterial());
+    c.flameMesh.castShadow = false;
+    c.group.add(c.flameMesh);
+    c.bulbMesh = new THREE.Mesh(L.bulbGeometry, buildingMaterial());
+    c.bulbMesh.castShadow = false;
+    c.group.add(c.bulbMesh);
     c.emitters = L.emitters;
     // clear trees out of the structures, trample paths into the grass
     for (const f of L.clear) {
       const fx = c.x + f.x, fz = c.z + f.z;
       this.trees.cut(fx - f.r, fz - f.r, fx + f.r, fz + f.r, (x, z) => (x - fx) ** 2 + (z - fz) ** 2 < f.r * f.r);
     }
+    for (const f of leveled) {
+      this.trees.cut(f.x - f.r, f.z - f.r, f.x + f.r, f.z + f.r,
+        (x, z) => Math.abs(x - f.x) <= f.r && Math.abs(z - f.z) <= f.r);
+    }
     for (const d of L.dirt) this.terrain.paintCircle(c.x + d.x, c.z + d.z, d.r, Paint.Dirt);
     c.fire.position.set(L.fire[0], L.fire[1] + 0.8, L.fire[2]);
     c.group.add(c.fire);
     c.group.position.set(c.x, y0, c.z);
+    c.remains = new THREE.Mesh(this.remainsGeometry(L.fire[1] - 1.2), buildingMaterial());
+    c.remains.position.set(c.x, y0, c.z);
+    c.remains.receiveShadow = true;
+  }
+
+  private remainsGeometry(y: number) {
+    const k = new Kit();
+    for (let i = 0; i < 11; i++) {
+      const a = i * Math.PI * 2 / 11;
+      k.at(Math.cos(a) * 1.5, Math.sin(a) * 1.5, a, () =>
+        k.box(0, 0, 0.5, 0.37, y - 0.08, y + 0.23, T.STONE, col(0x655f59), T.STONE));
+    }
+    for (let i = 0; i < 4; i++) {
+      const a = i * Math.PI / 4;
+      k.tube([Math.cos(a) * 0.72, y + 0.08, Math.sin(a) * 0.72], [-Math.cos(a) * 0.72, y + 0.1, -Math.sin(a) * 0.72], 0.09, 5, col(0x292421), T.WOOD);
+    }
+    k.at(3.4, 2.2, 0.35, () => {
+      const steel = col(0x77766d), fabric = col(0x757f62);
+      for (const x of [-0.34, 0.34]) {
+        k.tube([x, y, -0.32], [x, y + 0.47, 0.22], 0.025, 4, steel);
+        k.tube([x, y, 0.38], [x, y + 0.47, 0.22], 0.025, 4, steel);
+      }
+      k.box(0, 0.16, 0.75, 0.65, y + 0.44, y + 0.49, T.CANVAS, fabric, T.CANVAS);
+      k.quad([-0.36, y + 0.46, -0.12], [0.36, y + 0.46, -0.12], [0.36, y + 1.12, -0.45], [-0.36, y + 1.12, -0.45], [[0, 0], [1, 0], [1, 1], [0, 1]], fabric, T.CANVAS);
+    });
+    return k.build();
   }
 
   blockers() {
@@ -137,17 +191,30 @@ export class Communes {
   }
 
   /** Animate: flicker fires; leaving communes sink and fade. */
-  update(dt: number, night: number, time: number) {
+  update(dt: number, night: number, time: number, camera: THREE.Vector3) {
     for (const c of this.list) {
       if (c.state === 'gone') continue;
-      c.fire.intensity = night * 40 * (0.8 + Math.sin(time * 13 + c.id) * 0.2);
-      c.fire.visible = night > 0.05;
+      const flicker = 0.88 + Math.sin(time * 13 + c.id) * 0.09 + Math.sin(time * 23.7 + c.id * 4) * 0.035;
+      c.fire.intensity = night * 25 * flicker;
+      // Distant campfires remain visible through emissive geometry; their point
+      // lights need only shade the nearby ground and props.
+      c.fire.visible = night > 0.05 && Math.abs(c.x - camera.x) < 420 && Math.abs(c.z - camera.z) < 420;
+      if (c.flameMesh) {
+        c.flameMesh.scale.set(1 + Math.sin(time * 9 + c.id) * 0.028, 0.94 + flicker * 0.07, 1 + Math.cos(time * 7.1 + c.id) * 0.025);
+        c.flameMesh.rotation.y = Math.sin(time * 3.7 + c.id) * 0.045;
+      }
+      if (c.bulbMesh) {
+        c.bulbMesh.position.y = Math.sin(time * 1.15 + c.id) * 0.045;
+        c.bulbMesh.rotation.y = Math.sin(time * 0.8 + c.id) * 0.0018;
+      }
       if (c.state === 'leaving') {
         c.leaveT += dt;
-        c.group.position.y -= dt * 2;
+        c.group.position.y = c.baseY - Math.min(4, c.leaveT) * 2;
         if (c.leaveT > 4) {
           c.state = 'gone';
           this.group.remove(c.group);
+          if (c.remains) this.group.add(c.remains);
+          this.terrain.paintCircle(c.x, c.z, 7.5, Paint.Scorched);
         }
       }
     }

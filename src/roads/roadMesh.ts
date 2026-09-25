@@ -4,6 +4,8 @@ import * as THREE from 'three';
 import { clamp, convexHull, lerp, locate, norm, sub, V2 } from '../core/math';
 import { carriageHalf, ROAD_TYPES, RoadType, RoadTypeId, ROAD_ORDER } from './roadTypes';
 import type { RNode, RoadNetwork, RSeg } from './network';
+import { StreetDetails } from './streetDetails';
+import type { SignalStateProvider } from './streetDetails';
 
 const REPEAT = 12; // meters per texture repeat along the road
 
@@ -188,7 +190,7 @@ interface SegGeo {
 
 const CONCRETE: [number, number, number] = [0.62, 0.61, 0.58];
 const CONCRETE_DARK: [number, number, number] = [0.34, 0.3, 0.25];
-const BARRIER: [number, number, number] = [0.72, 0.71, 0.68];
+const CURB: [number, number, number] = [0.69, 0.68, 0.64];
 
 export class RoadRenderer {
   readonly group = new THREE.Group();
@@ -201,6 +203,7 @@ export class RoadRenderer {
   private lampPoles: THREE.InstancedMesh;
   private lampHeads: THREE.InstancedMesh;
   private lampMat: THREE.MeshStandardMaterial;
+  private details = new StreetDetails();
   readonly typeMats = new Map<RoadTypeId, THREE.MeshStandardMaterial>();
 
   constructor(private net: RoadNetwork, renderer: THREE.WebGLRenderer) {
@@ -235,6 +238,7 @@ export class RoadRenderer {
     this.lampPoles.count = this.lampHeads.count = 0;
     this.lampPoles.castShadow = true;
     this.group.add(this.lampPoles, this.lampHeads);
+    this.group.add(this.details.group);
 
     net.events.on('segAdded', (s) => this.invalidateSeg(s));
     net.events.on('segChanged', (s) => this.invalidateSeg(s));
@@ -256,6 +260,11 @@ export class RoadRenderer {
     this.lampMat.emissiveIntensity = n * 4;
   }
 
+  /** Connects visible traffic lights to the simulation without coupling render and traffic modules. */
+  setSignalStateProvider(provider?: SignalStateProvider) {
+    this.details.setSignalStateProvider(provider);
+  }
+
   private wetWas = -1;
   /** Rain makes asphalt dark and glossy. */
   setWet(w: number) {
@@ -269,6 +278,7 @@ export class RoadRenderer {
   }
 
   update() {
+    this.details.updateSignals();
     if (!this.dirty) return;
     this.dirty = false;
     const perType = new Map<RoadTypeId, Buf[]>();
@@ -311,6 +321,7 @@ export class RoadRenderer {
     this.lampPoles.instanceMatrix.needsUpdate = this.lampHeads.instanceMatrix.needsUpdate = true;
     this.lampPoles.computeBoundingSphere();
     this.lampHeads.computeBoundingSphere();
+    this.details.rebuild(this.net);
   }
 
   /** Point, tangent, height at arc length d along a segment. */
@@ -331,12 +342,22 @@ export class RoadRenderer {
     const lights: SegGeo['lights'] = [];
     const s0 = seg.trimA, s1 = seg.length - seg.trimB;
     if (s1 - s0 < 0.5) return { surf, conc, lights };
+    const driveways: { d: number; side: number }[] = [];
+    if (t.sidewalk > 0) {
+      for (let d = s0 + 18 + (seg.id % 5) * 4; d < s1 - 12; d += 34 + (seg.id % 3) * 5) {
+        driveways.push({ d, side: ((Math.floor(d / 30) + seg.id) & 1) ? 1 : -1 });
+      }
+    }
     const steps: number[] = [s0];
     for (const c of seg.samp.cum) if (c > s0 + 0.2 && c < s1 - 0.2) steps.push(c);
+    // Add three curb samples per apron for a cheap, visible driveway dip.
+    for (const drive of driveways) for (const o of [-1.7, 0, 1.7]) if (drive.d + o > s0 && drive.d + o < s1) steps.push(drive.d + o);
     steps.push(s1);
+    steps.sort((a, b) => a - b);
+    for (let i = steps.length - 1; i > 0; i--) if (steps[i] - steps[i - 1] < 0.01) steps.splice(i, 1);
     let prevL = -1, prevR = -1;
     let prevBL = -1, prevBR = -1, prevTL = -1, prevTR = -1;
-    const elevAt: boolean[] = [];
+    let prevCurb: number[][] | undefined;
     for (let k = 0; k < steps.length; k++) {
       const d = steps[k];
       const F = RoadRenderer.frame(seg, d);
@@ -357,7 +378,6 @@ export class RoadRenderer {
       prevR = R;
       // concrete sides (curb / embankment face / bridge deck)
       const elevated = F.y - F.ground > 2.6;
-      elevAt.push(elevated);
       const bottom = elevated ? F.y - 1.3 : F.y - 1.1;
       const col = elevated ? CONCRETE : CONCRETE_DARK;
       const tl = conc.v(F.p.x - r.x * hw, y, F.p.z - r.z * hw, -r.x, 0, -r.z, 0, 0, col);
@@ -373,25 +393,39 @@ export class RoadRenderer {
         }
       }
       prevTL = tl; prevBL = bl; prevTR = tr; prevBR = br;
+
+      // A narrow raised curb reads at street level without tessellating each slab.
+      if (t.sidewalk > 0) {
+        const ch = carriageHalf(t);
+        const curb: number[][] = [];
+        for (const side of [-1, 1]) {
+          const inner = ch - 0.08, outer = ch + 0.14;
+          const ix = F.p.x + r.x * inner * side, iz = F.p.z + r.z * inner * side;
+          const ox = F.p.x + r.x * outer * side, oz = F.p.z + r.z * outer * side;
+          const base = F.y + 0.06;
+          const lowered = driveways.some((drive) => drive.side === side && Math.abs(drive.d - d) < 0.15);
+          const top = base + (lowered ? 0.025 : 0.13);
+          curb.push([
+            conc.v(ix, top, iz, 0, 1, 0, 0, 0, CURB),
+            conc.v(ox, top, oz, 0, 1, 0, 0, 0, CURB),
+            conc.v(ox, base, oz, r.x * side, 0, r.z * side, 0, 0, CURB),
+          ]);
+        }
+        if (prevCurb) {
+          for (let side = 0; side < 2; side++) {
+            const a = prevCurb[side], q = curb[side];
+            conc.quad(a[0], a[1], q[1], q[0]);
+            conc.quad(a[1], a[2], q[2], q[1]);
+          }
+        }
+        prevCurb = curb;
+      }
     }
-    // barriers, pillars, median, lights
+    // Pillars and lighting. Guardrails and median rails are instanced by StreetDetails.
     const yaw = (d: number) => {
       const F = RoadRenderer.frame(seg, d);
       return Math.atan2(F.t.x, F.t.z);
     };
-    for (let d = s0 + 2; d < s1 - 2; d += 4) {
-      const F = RoadRenderer.frame(seg, d);
-      const r = { x: -F.t.z, z: F.t.x };
-      const elevated = F.y - F.ground > 2.6;
-      const ya = yaw(d);
-      if (elevated || t.id === 'highway') {
-        for (const side of [-1, 1]) {
-          const off = hw - 0.35;
-          conc.box(F.p.x + r.x * off * side, F.y + 0.5, F.p.z + r.z * off * side, 0.25, 0.45, 2.05, ya, BARRIER);
-        }
-      }
-      if (t.median > 0) conc.box(F.p.x, F.y + 0.45, F.p.z, 0.3, 0.42, 2.05, ya, BARRIER);
-    }
     for (let d = s0 + 10; d < s1 - 6; d += 22) {
       const F = RoadRenderer.frame(seg, d);
       if (F.y - F.ground <= 2.6) continue;

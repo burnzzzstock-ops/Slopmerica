@@ -41,8 +41,9 @@ export const T = {
   PSYCHE: 26, // hand-painted psychedelic bus/van side with a window band
   TIEDYE: 27,
   STONE: 28, // fieldstone
+  CLAY_TILE: 29, // warm overlapping barrel tiles, common on western / coastal roofs
 } as const;
-export const SIGN_BASE = 29;
+export const SIGN_BASE = 30;
 
 /** Meters covered by one repeat of each tile (u, v). */
 export const TILE_M: Record<number, [number, number]> = {
@@ -51,6 +52,7 @@ export const TILE_M: Record<number, [number, number]> = {
   [T.PARKING]: [2.7, 5.4], [T.CONCRETE]: [4, 4], [T.LAWN]: [6, 6], [T.GARAGE]: [3, 2.4], [T.TRAILER]: [3.2, 2.6],
   [T.OFFICE_WIN]: [4, 4], [T.SOLID]: [1, 1], [T.CAR_GLASS]: [1, 1], [T.DOCK]: [4, 4.5], [T.PANEL]: [3.4, 3], [T.DIRT]: [6, 6], [T.WATER]: [6, 6],
   [T.CANVAS]: [2.4, 2.4], [T.WOOD]: [2, 2], [T.CROPS]: [1.2, 2.4], [T.SOLAR]: [1, 1.6], [T.PSYCHE]: [4, 2.2], [T.TIEDYE]: [2, 2], [T.STONE]: [1.6, 1.6],
+  [T.CLAY_TILE]: [2.4, 2.4],
 };
 
 interface SignSlot { layer: number; v0: number; v1: number }
@@ -88,10 +90,29 @@ function noise(ctx: Ctx, base: number, amp: number, seed: number, tint: [number,
 
 /** A glass pane: sky reflection gradient, a soft highlight, maybe curtains. */
 function pane(ctx: Ctx, x: number, y: number, w: number, h: number, rnd: () => number, curtains = true) {
+  // Paint the reveal before the glass. The asymmetric top/side shadow makes a
+  // flat facade read as a window set several centimeters into the wall.
+  const reveal = Math.max(4, Math.min(w, h) * 0.08);
+  ctx.fillStyle = 'rgba(12,16,20,0.62)';
+  ctx.fillRect(x - reveal, y - reveal, w + reveal * 2, h + reveal * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.16)';
+  ctx.beginPath();
+  ctx.moveTo(x - reveal, y - reveal);
+  ctx.lineTo(x + w + reveal, y - reveal);
+  ctx.lineTo(x + w, y);
+  ctx.lineTo(x, y);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.10)';
+  ctx.beginPath();
+  ctx.moveTo(x - reveal, y - reveal);
+  ctx.lineTo(x, y);
+  ctx.lineTo(x, y + h);
+  ctx.lineTo(x - reveal, y + h + reveal);
+  ctx.fill();
   const g = ctx.createLinearGradient(x, y, x + w * 0.4, y + h);
-  g.addColorStop(0, '#9fb6c9');
-  g.addColorStop(0.45, '#5a7187');
-  g.addColorStop(1, '#2c3b4a');
+  g.addColorStop(0, '#8fa8bc');
+  g.addColorStop(0.36, '#50687d');
+  g.addColorStop(1, '#182631');
   ctx.fillStyle = g;
   ctx.fillRect(x, y, w, h);
   if (curtains && rnd() < 0.6) {
@@ -106,6 +127,12 @@ function pane(ctx: Ctx, x: number, y: number, w: number, h: number, rnd: () => n
   ctx.lineTo(x + w * 0.6, y);
   ctx.lineTo(x + w * 0.25, y + h);
   ctx.fill();
+  // A dark lower return and slim inner highlight complete the recess illusion.
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.fillRect(x, y + h - Math.max(2, reveal * 0.35), w, Math.max(2, reveal * 0.35));
+  ctx.strokeStyle = 'rgba(220,235,245,0.22)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
 }
 
 /** Write the mask channel: every pixel inside the listed rects gets `a`. */
@@ -561,6 +588,35 @@ painters[T.STONE] = (ctx, rnd) => {
     g.addColorStop(1, `rgb(${v - 25},${v - 28},${v - 30})`);
     ctx.fillStyle = g;
     ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.75, rnd() * 3, 0, Math.PI * 2); ctx.fill();
+  }
+};
+
+// CLAY_TILE: staggered barrel tiles with dark overlaps and sunlit crowns.
+painters[T.CLAY_TILE] = (ctx, rnd) => {
+  noise(ctx, 186, 18, 29, [1.08, 0.58, 0.38]);
+  const rows = 9;
+  const rh = TS / rows;
+  const tw = 34;
+  for (let row = 0; row < rows; row++) {
+    const y = row * rh;
+    const off = row % 2 ? -tw / 2 : 0;
+    ctx.fillStyle = 'rgba(55,20,10,0.34)';
+    ctx.fillRect(0, y, TS, 4);
+    for (let x = off; x < TS + tw; x += tw) {
+      const warm = 0.08 + rnd() * 0.08;
+      const g = ctx.createLinearGradient(x, y, x + tw, y);
+      g.addColorStop(0, 'rgba(70,24,12,0.34)');
+      g.addColorStop(0.48, `rgba(255,205,158,${warm})`);
+      g.addColorStop(1, 'rgba(65,20,10,0.38)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(x + 2, y + 2);
+      ctx.lineTo(x + tw - 2, y + 2);
+      ctx.lineTo(x + tw - 5, y + rh);
+      ctx.quadraticCurveTo(x + tw / 2, y + rh + 5, x + 5, y + rh);
+      ctx.closePath();
+      ctx.fill();
+    }
   }
 };
 

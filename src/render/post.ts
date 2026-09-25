@@ -205,6 +205,7 @@ export class PostFX {
   /** Screen height (0 bottom .. 1 top) of the in-focus band for tilt-shift. */
   tiltFocus = 0.45;
   private ao: boolean;
+  private aoScale: number;
   private sceneRT?: THREE.WebGLRenderTarget;
   private aoRT?: THREE.WebGLRenderTarget;
   private aoRT2?: THREE.WebGLRenderTarget;
@@ -223,6 +224,7 @@ export class PostFX {
   constructor(private renderer: THREE.WebGLRenderer, private scene: THREE.Scene, private camera: THREE.PerspectiveCamera, q: Quality) {
     this.enabled = q.post && renderer.capabilities.isWebGL2;
     this.ao = q.ao;
+    this.aoScale = q.aoFull ? 1 : 0.5;
     if (!this.enabled) return;
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
     const w = Math.max(1, size.x), h = Math.max(1, size.y);
@@ -233,7 +235,7 @@ export class PostFX {
     });
     this.sceneRT.depthTexture!.minFilter = this.sceneRT.depthTexture!.magFilter = THREE.NearestFilter;
     this.hdrRT = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, depthBuffer: false });
-    const aw = Math.max(1, w >> 1), ah = Math.max(1, h >> 1);
+    const aw = Math.max(1, Math.floor(w * this.aoScale)), ah = Math.max(1, Math.floor(h * this.aoScale));
     this.aoRT = new THREE.WebGLRenderTarget(aw, ah, { type: THREE.UnsignedByteType, depthBuffer: false });
     this.aoRT2 = this.aoRT.clone();
     this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.25, 0.3, 0.92);
@@ -245,8 +247,8 @@ export class PostFX {
     const w = Math.max(1, Math.floor(cssW * pr)), h = Math.max(1, Math.floor(cssH * pr));
     this.sceneRT!.setSize(w, h);
     this.hdrRT!.setSize(w, h);
-    this.aoRT!.setSize(Math.max(1, w >> 1), Math.max(1, h >> 1));
-    this.aoRT2!.setSize(Math.max(1, w >> 1), Math.max(1, h >> 1));
+    this.aoRT!.setSize(Math.max(1, Math.floor(w * this.aoScale)), Math.max(1, Math.floor(h * this.aoScale)));
+    this.aoRT2!.setSize(Math.max(1, Math.floor(w * this.aoScale)), Math.max(1, Math.floor(h * this.aoScale)));
     this.bloom!.setSize(w, h);
   }
 

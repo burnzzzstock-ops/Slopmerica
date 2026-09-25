@@ -1,4 +1,4 @@
-// Low-level geometry kit for procedural buildings. Emits NON-INDEXED triangles
+// Low-level geometry kit for procedural buildings. Emits indexed triangles
 // with position / normal / uv / color / tile, where uv is in "tile repeats"
 // (the shader wraps it inside the facade texture array layer `tile`).
 import * as THREE from 'three';
@@ -17,6 +17,7 @@ export class Kit {
   private uv: number[] = [];
   private col: number[] = [];
   private tile: number[] = [];
+  private idx: number[] = [];
   readonly emitters: Emitter[] = [];
   /** Local transform applied to everything added (for rotated sub-parts). */
   private ox = 0;
@@ -62,7 +63,9 @@ export class Kit {
     const l = Math.hypot(n[0], n[1], n[2]) || 1;
     n = [n[0] / l, n[1] / l, n[2] / l];
     const P = [a, b, c, d];
-    for (const i of [0, 1, 2, 0, 2, 3]) this.vert(P[i], n, uvs[i][0], uvs[i][1], color, tile, shades[i]);
+    const base = this.pos.length / 3;
+    for (let i = 0; i < 4; i++) this.vert(P[i], n, uvs[i][0], uvs[i][1], color, tile, shades[i]);
+    this.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
   }
 
   tri(a: V3, b: V3, c: V3, uvs: [number, number][], color: Col, tile: number) {
@@ -71,7 +74,9 @@ export class Kit {
     const l = Math.hypot(n[0], n[1], n[2]) || 1;
     n = [n[0] / l, n[1] / l, n[2] / l];
     const P = [a, b, c];
+    const base = this.pos.length / 3;
     for (let i = 0; i < 3; i++) this.vert(P[i], n, uvs[i][0], uvs[i][1], color, tile);
+    this.idx.push(base, base + 1, base + 2);
   }
 
   /**
@@ -118,14 +123,14 @@ export class Kit {
   }
 
   /** Gable roof. ridgeX: ridge runs along X (gables face ±X). */
-  gable(cx: number, cz: number, w: number, d: number, y: number, rise: number, ridgeX: boolean, roof: Col, gableColor: Col, gableTile: number = T.SIDING, over = 0.45) {
+  gable(cx: number, cz: number, w: number, d: number, y: number, rise: number, ridgeX: boolean, roof: Col, gableColor: Col, gableTile: number = T.SIDING, over = 0.45, roofTile: number = T.SHINGLE) {
     const x0 = cx - w / 2 - over, x1 = cx + w / 2 + over, z0 = cz - d / 2 - over, z1 = cz + d / 2 + over;
     const yt = y + rise;
-    const [tu, tv] = TILE_M[T.SHINGLE];
+    const [tu, tv] = TILE_M[roofTile];
     if (ridgeX) {
       const slope = Math.hypot(d / 2 + over, rise);
-      this.quad([x0, y, z1], [x1, y, z1], [x1, yt, cz], [x0, yt, cz], [[0, 0], [(x1 - x0) / tu, 0], [(x1 - x0) / tu, slope / tv], [0, slope / tv]], roof, T.SHINGLE);
-      this.quad([x1, y, z0], [x0, y, z0], [x0, yt, cz], [x1, yt, cz], [[0, 0], [(x1 - x0) / tu, 0], [(x1 - x0) / tu, slope / tv], [0, slope / tv]], roof, T.SHINGLE);
+      this.quad([x0, y, z1], [x1, y, z1], [x1, yt, cz], [x0, yt, cz], [[0, 0], [(x1 - x0) / tu, 0], [(x1 - x0) / tu, slope / tv], [0, slope / tv]], roof, roofTile);
+      this.quad([x1, y, z0], [x0, y, z0], [x0, yt, cz], [x1, yt, cz], [[0, 0], [(x1 - x0) / tu, 0], [(x1 - x0) / tu, slope / tv], [0, slope / tv]], roof, roofTile);
       // gable ends (inset to the wall plane)
       const gx0 = cx - w / 2, gx1 = cx + w / 2, gz0 = cz - d / 2, gz1 = cz + d / 2;
       const [gu, gv] = TILE_M[gableTile];
@@ -136,8 +141,8 @@ export class Kit {
       this.slab(x0, z1 - over, x1, z1, y - 0.01, T.SOLID, gableColor, true);
     } else {
       const slope = Math.hypot(w / 2 + over, rise);
-      this.quad([x1, y, z1], [x1, y, z0], [cx, yt, z0], [cx, yt, z1], [[0, 0], [(z1 - z0) / tu, 0], [(z1 - z0) / tu, slope / tv], [0, slope / tv]], roof, T.SHINGLE);
-      this.quad([x0, y, z0], [x0, y, z1], [cx, yt, z1], [cx, yt, z0], [[0, 0], [(z1 - z0) / tu, 0], [(z1 - z0) / tu, slope / tv], [0, slope / tv]], roof, T.SHINGLE);
+      this.quad([x1, y, z1], [x1, y, z0], [cx, yt, z0], [cx, yt, z1], [[0, 0], [(z1 - z0) / tu, 0], [(z1 - z0) / tu, slope / tv], [0, slope / tv]], roof, roofTile);
+      this.quad([x0, y, z0], [x0, y, z1], [cx, yt, z1], [cx, yt, z0], [[0, 0], [(z1 - z0) / tu, 0], [(z1 - z0) / tu, slope / tv], [0, slope / tv]], roof, roofTile);
       const gx0 = cx - w / 2, gx1 = cx + w / 2, gz0 = cz - d / 2, gz1 = cz + d / 2;
       const [gu, gv] = TILE_M[gableTile];
       this.tri([gx0, y, gz1], [gx1, y, gz1], [cx, yt, gz1], [[0, y / gv], [w / gu, y / gv], [w / 2 / gu, yt / gv]], gableColor, gableTile);
@@ -148,23 +153,23 @@ export class Kit {
   }
 
   /** Hip roof (four sloped faces). */
-  hip(cx: number, cz: number, w: number, d: number, y: number, rise: number, roof: Col, over = 0.5) {
+  hip(cx: number, cz: number, w: number, d: number, y: number, rise: number, roof: Col, over = 0.5, roofTile: number = T.SHINGLE) {
     const x0 = cx - w / 2 - over, x1 = cx + w / 2 + over, z0 = cz - d / 2 - over, z1 = cz + d / 2 + over;
     const yt = y + rise;
     const inset = Math.min(w, d) / 2 + over;
-    const [tu, tv] = TILE_M[T.SHINGLE];
+    const [tu, tv] = TILE_M[roofTile];
     const rx0 = Math.min(cx, x0 + inset), rx1 = Math.max(cx, x1 - inset), rz0 = Math.min(cz, z0 + inset), rz1 = Math.max(cz, z1 - inset);
     const sl = Math.hypot(inset, rise) / tv;
     if (w >= d) {
-      this.quad([x0, y, z1], [x1, y, z1], [rx1, yt, cz], [rx0, yt, cz], [[0, 0], [(x1 - x0) / tu, 0], [(rx1 - x0) / tu, sl], [(rx0 - x0) / tu, sl]], roof, T.SHINGLE);
-      this.quad([x1, y, z0], [x0, y, z0], [rx0, yt, cz], [rx1, yt, cz], [[0, 0], [(x1 - x0) / tu, 0], [(x1 - rx0) / tu, sl], [(x1 - rx1) / tu, sl]], roof, T.SHINGLE);
-      this.tri([x1, y, z1], [x1, y, z0], [rx1, yt, cz], [[0, 0], [(z1 - z0) / tu, 0], [(z1 - z0) / 2 / tu, sl]], roof, T.SHINGLE);
-      this.tri([x0, y, z0], [x0, y, z1], [rx0, yt, cz], [[0, 0], [(z1 - z0) / tu, 0], [(z1 - z0) / 2 / tu, sl]], roof, T.SHINGLE);
+      this.quad([x0, y, z1], [x1, y, z1], [rx1, yt, cz], [rx0, yt, cz], [[0, 0], [(x1 - x0) / tu, 0], [(rx1 - x0) / tu, sl], [(rx0 - x0) / tu, sl]], roof, roofTile);
+      this.quad([x1, y, z0], [x0, y, z0], [rx0, yt, cz], [rx1, yt, cz], [[0, 0], [(x1 - x0) / tu, 0], [(x1 - rx0) / tu, sl], [(x1 - rx1) / tu, sl]], roof, roofTile);
+      this.tri([x1, y, z1], [x1, y, z0], [rx1, yt, cz], [[0, 0], [(z1 - z0) / tu, 0], [(z1 - z0) / 2 / tu, sl]], roof, roofTile);
+      this.tri([x0, y, z0], [x0, y, z1], [rx0, yt, cz], [[0, 0], [(z1 - z0) / tu, 0], [(z1 - z0) / 2 / tu, sl]], roof, roofTile);
     } else {
-      this.quad([x1, y, z1], [x1, y, z0], [cx, yt, rz0], [cx, yt, rz1], [[0, 0], [(z1 - z0) / tu, 0], [(z1 - rz0) / tu, sl], [(z1 - rz1) / tu, sl]], roof, T.SHINGLE);
-      this.quad([x0, y, z0], [x0, y, z1], [cx, yt, rz1], [cx, yt, rz0], [[0, 0], [(z1 - z0) / tu, 0], [(rz1 - z0) / tu, sl], [(rz0 - z0) / tu, sl]], roof, T.SHINGLE);
-      this.tri([x0, y, z1], [x1, y, z1], [cx, yt, rz1], [[0, 0], [(x1 - x0) / tu, 0], [(x1 - x0) / 2 / tu, sl]], roof, T.SHINGLE);
-      this.tri([x1, y, z0], [x0, y, z0], [cx, yt, rz0], [[0, 0], [(x1 - x0) / tu, 0], [(x1 - x0) / 2 / tu, sl]], roof, T.SHINGLE);
+      this.quad([x1, y, z1], [x1, y, z0], [cx, yt, rz0], [cx, yt, rz1], [[0, 0], [(z1 - z0) / tu, 0], [(z1 - rz0) / tu, sl], [(z1 - rz1) / tu, sl]], roof, roofTile);
+      this.quad([x0, y, z0], [x0, y, z1], [cx, yt, rz1], [cx, yt, rz0], [[0, 0], [(z1 - z0) / tu, 0], [(rz1 - z0) / tu, sl], [(rz0 - z0) / tu, sl]], roof, roofTile);
+      this.tri([x0, y, z1], [x1, y, z1], [cx, yt, rz1], [[0, 0], [(x1 - x0) / tu, 0], [(x1 - x0) / 2 / tu, sl]], roof, roofTile);
+      this.tri([x1, y, z0], [x0, y, z0], [cx, yt, rz0], [[0, 0], [(x1 - x0) / tu, 0], [(x1 - x0) / 2 / tu, sl]], roof, roofTile);
     }
   }
 
@@ -268,7 +273,7 @@ export class Kit {
     });
   }
 
-  /** A parked car / pickup / SUV (~20 triangles), facing +Z. */
+  /** A parked low-poly car / pickup / SUV, facing +Z. */
   car(x: number, z: number, yaw: number, color: Col, kind: 'sedan' | 'suv' | 'pickup' | 'van' = 'sedan') {
     const dark = col(0x1a1c20);
     const glass = col(0xffffff);
@@ -276,13 +281,46 @@ export class Kit {
       const L = kind === 'pickup' ? 5.3 : kind === 'suv' ? 4.8 : kind === 'van' ? 5 : 4.5;
       const W = kind === 'sedan' ? 1.8 : 1.95;
       const bodyH = kind === 'sedan' ? 0.75 : 0.95;
-      this.box(0, 0, W, L, 0.28, 0.28 + bodyH, T.SOLID, color, T.SOLID, color, { ao: false });
-      this.box(0, 0, W * 0.96, L * 0.96, 0.12, 0.3, T.SOLID, dark, null, undefined, { ao: false });
+      const baseY = 0.22;
+      this.box(0, 0, W, L, baseY, baseY + bodyH, T.SOLID, color, T.SOLID, color, { ao: false });
       const cabL = kind === 'pickup' ? 2.1 : kind === 'van' || kind === 'suv' ? L * 0.7 : 2.4;
       const cabZ = kind === 'pickup' ? 0.9 : kind === 'van' ? -0.2 : -0.15;
       const cabH = kind === 'sedan' ? 0.6 : 0.75;
-      const y0 = 0.28 + bodyH;
-      this.box(0, cabZ, W * 0.9, cabL, y0, y0 + cabH, T.CAR_GLASS, glass, T.SOLID, color, { ao: false });
+      const y0 = baseY + bodyH;
+      const y1 = y0 + cabH;
+      const xb = W * 0.43, xt = W * (kind === 'van' ? 0.39 : 0.34);
+      const zb = cabZ - cabL / 2, zf = cabZ + cabL / 2;
+      const ztb = cabZ - cabL * (kind === 'van' ? 0.43 : 0.34), ztf = cabZ + cabL * (kind === 'van' ? 0.43 : 0.34);
+      const uv: [number, number][] = [[0, 0], [1, 0], [1, 1], [0, 1]];
+      // Four sloped glass faces and a painted roof make the cabin readable in silhouette.
+      this.quad([xb, y0, zf], [xb, y0, zb], [xt, y1, ztb], [xt, y1, ztf], uv, glass, T.CAR_GLASS);
+      this.quad([-xb, y0, zb], [-xb, y0, zf], [-xt, y1, ztf], [-xt, y1, ztb], uv, glass, T.CAR_GLASS);
+      this.quad([-xb, y0, zf], [xb, y0, zf], [xt, y1, ztf], [-xt, y1, ztf], uv, glass, T.CAR_GLASS);
+      this.quad([xb, y0, zb], [-xb, y0, zb], [-xt, y1, ztb], [xt, y1, ztb], uv, glass, T.CAR_GLASS);
+      this.quad([-xt, y1, ztf], [xt, y1, ztf], [xt, y1, ztb], [-xt, y1, ztb], uv, color, T.SOLID);
+
+      if (kind === 'pickup') {
+        // Dark bed floor reads as an open box instead of a long sedan trunk.
+        this.slab(-W * 0.38, -L / 2 + 0.35, W * 0.38, zb - 0.12, y0 + 0.035, T.SOLID, dark);
+      }
+
+      // Wheels are two-tone low-poly cards on the outer faces: enough depth at
+      // city-camera distance without four cylinder meshes per parked vehicle.
+      const wheelZ = L * 0.29, wheelY = 0.42, wheelW = 0.72, wheelH = 0.62;
+      for (const side of [-1, 1]) for (const wz of [-wheelZ, wheelZ]) {
+        const wx = side * (W / 2 + 0.012);
+        if (side > 0) {
+          this.quad([wx, wheelY - wheelH / 2, wz + wheelW / 2], [wx, wheelY - wheelH / 2, wz - wheelW / 2], [wx, wheelY + wheelH / 2, wz - wheelW / 2], [wx, wheelY + wheelH / 2, wz + wheelW / 2], uv, col(0x111216), T.SOLID);
+        } else {
+          this.quad([wx, wheelY - wheelH / 2, wz - wheelW / 2], [wx, wheelY - wheelH / 2, wz + wheelW / 2], [wx, wheelY + wheelH / 2, wz + wheelW / 2], [wx, wheelY + wheelH / 2, wz - wheelW / 2], uv, col(0x111216), T.SOLID);
+        }
+      }
+
+      // Front lamps and rear lenses break up the otherwise featureless end caps.
+      for (const lx of [-W * 0.3, W * 0.3]) {
+        this.quad([lx - 0.16, 0.55, L / 2 + 0.012], [lx + 0.16, 0.55, L / 2 + 0.012], [lx + 0.16, 0.78, L / 2 + 0.012], [lx - 0.16, 0.78, L / 2 + 0.012], uv, col(0xffe8ad), T.SOLID);
+        this.quad([lx + 0.14, 0.55, -L / 2 - 0.012], [lx - 0.14, 0.55, -L / 2 - 0.012], [lx - 0.14, 0.78, -L / 2 - 0.012], [lx + 0.14, 0.78, -L / 2 - 0.012], uv, col(0xa91e24), T.SOLID);
+      }
     });
   }
 
@@ -302,6 +340,7 @@ export class Kit {
     g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
     g.setAttribute('tile', new THREE.Float32BufferAttribute(this.tile, 1));
+    g.setIndex(this.idx);
     g.computeBoundingBox();
     g.computeBoundingSphere();
     return g;

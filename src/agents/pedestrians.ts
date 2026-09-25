@@ -13,7 +13,7 @@ import type { Communes } from './communes';
 export interface Ped {
   h: number;
   arch: number;
-  kind: 'walk' | 'loiter' | 'commune' | 'protest';
+  kind: 'walk' | 'loiter' | 'commune' | 'protest' | 'wait';
   action: PersonAction;
   seg: number;
   dir: 1 | -1;
@@ -27,6 +27,8 @@ export interface Ped {
   yaw: number;
   phase: number;
   communeId?: number;
+  transitStopId?: number;
+  targetS?: number;
   label: string;
 }
 
@@ -41,7 +43,14 @@ export class Pedestrians {
   private norm: number[];
   private merch: number[];
   private spawnT = 0;
+  // codex:transit begin - visible riders waiting at registered curb stops
+  transitStops?: () => { id: number; seg: number; s: number; side: 1 | -1; label: string; riders: number }[];
+  // codex:transit end
   outdoorMul = 1;
+  // codex:policies begin -- separate from the weather multiplier reset by Game.frame
+  policyOutdoorMul = 1;
+  policySmokingAllowedAt?: (x: number, z: number) => boolean;
+  // codex:policies end
   /** scales the crowd with the city: nobody walks in a town of 50 */
   population = 0;
 
@@ -85,7 +94,9 @@ export class Pedestrians {
       this.spawnT -= dtReal;
       if (this.spawnT <= 0) {
         this.spawnT = 0.08;
-        const budget = Math.floor(Math.min(this.max, 12 + this.population * 0.35 + this.communes.list.filter((c) => c.state !== 'gone').length * 6) * clamp(this.outdoorMul, 0.1, 1.2));
+        // codex:policies begin -- Ban Bikes visibly reduces ambient walking
+        const budget = Math.floor(Math.min(this.max, 12 + this.population * 0.35 + this.communes.list.filter((c) => c.state !== 'gone').length * 6) * clamp(this.outdoorMul * this.policyOutdoorMul, 0.1, 1.2));
+        // codex:policies end
         for (let k = 0; k < 4 && this.peds.length < budget; k++) this.trySpawn(cam, R);
       }
     }
@@ -96,6 +107,17 @@ export class Pedestrians {
         const seg = this.net.segs.get(p.seg);
         if (!seg) continue;
         p.s += p.speed * dt * p.dir;
+        if (p.targetS !== undefined && ((p.dir > 0 && p.s >= p.targetS) || (p.dir < 0 && p.s <= p.targetS))) {
+          p.s = p.targetS;
+          p.kind = 'wait';
+          p.action = Math.random() < 0.55 ? 'phone' : 'idle';
+          p.speed = 0;
+          p.life = 22 + Math.random() * 30;
+          delete p.targetS;
+          this.placeOnSidewalk(p);
+          this.renderer.set(p.h, p.x, p.y, p.z, p.yaw, p.action, p.phase);
+          continue;
+        }
         if (p.s < 0 || p.s > seg.length) {
           // hop to a connected segment at the node
           const nodeId = p.s > seg.length ? seg.b : seg.a;
@@ -136,6 +158,30 @@ export class Pedestrians {
 
   private trySpawn(cam: THREE.Vector3, R: number) {
     const r = Math.random();
+    // codex:transit begin - turn simulated boardings into small visible waiting crowds
+    if (r < 0.16 && this.transitStops) {
+      const atStop = new Map<number, number>();
+      for (const p of this.peds) if (p.transitStopId !== undefined) atStop.set(p.transitStopId, (atStop.get(p.transitStopId) ?? 0) + 1);
+      const stops = this.transitStops().filter((s) => {
+        const seg = this.net.segs.get(s.seg);
+        if (!seg) return false;
+        const p = seg.samp.pts[Math.min(seg.samp.pts.length - 1, Math.round((s.s / seg.length) * (seg.samp.pts.length - 1)))];
+        return Math.abs(p.x - cam.x) < R && Math.abs(p.z - cam.z) < R && (atStop.get(s.id) ?? 0) < Math.min(8, Math.ceil(s.riders / 8));
+      });
+      const stop = stops[Math.floor(Math.random() * stops.length)];
+      const seg = stop && this.net.segs.get(stop.seg);
+      if (stop && seg) {
+        const approach = 18 + Math.random() * 34;
+        const dir: 1 | -1 = stop.s > seg.length / 2 ? -1 : 1;
+        const startS = clamp(stop.s - approach * dir, 0, seg.length);
+        const p: Omit<Ped, 'h'> = { arch: this.archFor('wait'), kind: 'walk', action: 'walk', seg: stop.seg, dir, s: startS, side: stop.side, speed: 1.05 + Math.random() * 0.35, life: 65, x: 0, y: 0, z: 0, yaw: 0, phase: Math.random() * 10, label: stop.label, transitStopId: stop.id, targetS: stop.s };
+        this.add(p);
+        const last = this.peds[this.peds.length - 1];
+        if (last) this.placeOnSidewalk(last);
+        return;
+      }
+    }
+    // codex:transit end
     // commune folks
     if (r < 0.2) {
       const c = this.communes.list.find((c) => c.state !== 'gone' && Math.abs(c.x - cam.x) < R && Math.abs(c.z - cam.z) < R && this.peds.filter((p) => p.communeId === c.id).length < Math.min(24, c.members));
@@ -143,7 +189,11 @@ export class Pedestrians {
         const a = Math.random() * Math.PI * 2, d = Math.random() * c.r * 0.7;
         const x = c.x + Math.cos(a) * d, z = c.z + Math.sin(a) * d;
         const acts: PersonAction[] = ['drum', 'dance', 'yoga', 'smoke', 'idle', 'dance', 'drum', 'sit'];
-        this.add({ arch: this.archFor('commune'), kind: 'commune', action: acts[Math.floor(Math.random() * acts.length)], seg: 0, dir: 1, s: 0, side: 1, speed: 0, life: 60 + Math.random() * 90, x, y: this.terrain.h(x, z), z, yaw: Math.atan2(c.x + 8 - x, c.z - 4 - z), phase: Math.random() * 10, communeId: c.id, label: c.name });
+        // codex:policies begin -- smoke-free districts suppress visible smoking actions
+        let action = acts[Math.floor(Math.random() * acts.length)];
+        if (action === 'smoke' && this.policySmokingAllowedAt?.(x, z) === false) action = 'idle';
+        // codex:policies end
+        this.add({ arch: this.archFor('commune'), kind: 'commune', action, seg: 0, dir: 1, s: 0, side: 1, speed: 0, life: 60 + Math.random() * 90, x, y: this.terrain.h(x, z), z, yaw: Math.atan2(c.x + 8 - x, c.z - 4 - z), phase: Math.random() * 10, communeId: c.id, label: c.name });
         return;
       }
     }
@@ -171,7 +221,11 @@ export class Pedestrians {
         const lx = (Math.random() - 0.5) * bld.hw * 1.6, lz = bld.hd - 2 - Math.random() * 3;
         const x = bld.x + lx * c + lz * s, z = bld.z - lx * s + lz * c;
         const arch = this.archFor('loiter', bld.brand);
-        const vices = ARCHETYPES[arch]?.vices?.length ? ARCHETYPES[arch].vices : (['smoke', 'phone', 'drink', 'vape'] as PersonAction[]);
+        // codex:policies begin -- smoke-free districts remove smoke/vape loiter actions
+        let vices = ARCHETYPES[arch]?.vices?.length ? [...ARCHETYPES[arch].vices] : (['smoke', 'phone', 'drink', 'vape'] as PersonAction[]);
+        if (this.policySmokingAllowedAt?.(x, z) === false) vices = vices.filter((a) => a !== 'smoke' && a !== 'vape');
+        if (!vices.length) vices = ['phone'];
+        // codex:policies end
         this.add({ arch, kind: 'loiter', action: vices[Math.floor(Math.random() * vices.length)], seg: 0, dir: 1, s: 0, side: 1, speed: 0, life: 25 + Math.random() * 40, x, y: bld.y + 0.05, z, yaw: bld.yaw + (Math.random() - 0.5) * 1.5, phase: Math.random() * 10, label: bld.label });
         return;
       }

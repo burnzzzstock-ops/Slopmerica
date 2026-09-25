@@ -188,6 +188,15 @@ export class RoadNetwork {
       if (close > 4) return { ...res, ok: false, reason: 'Overlaps an existing road' };
       for (const x of this.crossingsWith(samp, seg)) crossings.push(x.p);
     }
+    // grade between the two ends: the road can cut and fill between them, but
+    // not climb a cliff (heights are what the junctions would actually get)
+    {
+      const ya = start.kind === 'node' ? this.nodes.get(start.id)!.y : this.nodeHeight(samp.pts[0].x, samp.pts[0].z);
+      const pe = samp.pts[samp.pts.length - 1];
+      const snapEnd = this.snap(pe.x, pe.z, 6);
+      const yb = snapEnd.kind === 'node' ? this.nodes.get(snapEnd.id)!.y : this.nodeHeight(pe.x, pe.z);
+      if (Math.abs(yb - ya) > 0.15 * samp.length + 2) return { ...res, ok: false, reason: `Too steep (${Math.round((Math.abs(yb - ya) / samp.length) * 100)}% grade). Go around or zig-zag.` };
+    }
     res.bridgeLen = water;
     res.cost = Math.round(samp.length * t.costPerM + water * t.costPerM * 2.5);
     res.grant = Math.round(res.cost * t.fedGrant);
@@ -211,9 +220,26 @@ export class RoadNetwork {
   }
 
   // ------------------------------------------------------------------ building
-  private addNode(x: number, z: number): RNode {
+  /** Ground height for a new junction: averaged over the junction's footprint
+   *  so a node on a crest or in a gully doesn't pin the road to a spike. */
+  nodeHeight(x: number, z: number): number {
     const g = this.terrain.h(x, z);
-    const n: RNode = { id: this.nextNode++, x, z, y: g < WATER + 0.6 ? BRIDGE_DECK : g, segs: [] };
+    if (g < WATER + 0.6) return BRIDGE_DECK;
+    let s = g * 2, c = 2;
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      for (const r of [8, 18]) {
+        const h = this.terrain.h(x + Math.cos(a) * r, z + Math.sin(a) * r);
+        if (h < WATER + 0.6) continue;
+        s += h;
+        c++;
+      }
+    }
+    return s / c;
+  }
+
+  private addNode(x: number, z: number): RNode {
+    const n: RNode = { id: this.nextNode++, x, z, y: this.nodeHeight(x, z), segs: [] };
     this.nodes.set(n.id, n);
     return n;
   }
@@ -385,10 +411,27 @@ export class RoadNetwork {
       y[i] = lerp(lerp(y[i], A.y, wa), B.y, wb * (1 - wa));
       if (ground[i] < WATER + 0.6) y[i] = Math.max(y[i], WATER + 3.2);
     }
-    // grade clamp (both directions)
-    const g = 0.11;
-    for (let i = 1; i < n; i++) { const ds = seg.samp.cum[i] - seg.samp.cum[i - 1]; y[i] = clamp(y[i], y[i - 1] - g * ds, y[i - 1] + g * ds); }
-    for (let i = n - 2; i >= 0; i--) { const ds = seg.samp.cum[i + 1] - seg.samp.cum[i]; y[i] = clamp(y[i], y[i + 1] - g * ds, y[i + 1] + g * ds); }
+    // grade clamp with both ends pinned: alternate forward/backward passes until
+    // consistent (a single pair of passes can leave a cliff next to an endpoint)
+    const g = Math.max(0.11, (Math.abs(B.y - A.y) / Math.max(1, L)) * 1.05);
+    for (let it = 0; it < 6; it++) {
+      y[0] = A.y;
+      y[n - 1] = B.y;
+      let moved = 0;
+      for (let i = 1; i < n - 1; i++) {
+        const ds = seg.samp.cum[i] - seg.samp.cum[i - 1];
+        const v = clamp(y[i], y[i - 1] - g * ds, y[i - 1] + g * ds);
+        moved += Math.abs(v - y[i]);
+        y[i] = v;
+      }
+      for (let i = n - 2; i >= 1; i--) {
+        const ds = seg.samp.cum[i + 1] - seg.samp.cum[i];
+        const v = clamp(y[i], y[i + 1] - g * ds, y[i + 1] + g * ds);
+        moved += Math.abs(v - y[i]);
+        y[i] = v;
+      }
+      if (moved < 0.01) break;
+    }
     y[0] = A.y;
     y[n - 1] = B.y;
     seg.hs = y;

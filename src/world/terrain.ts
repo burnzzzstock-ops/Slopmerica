@@ -30,6 +30,8 @@ interface Chunk {
   geos: (THREE.BufferGeometry | null)[];
   minY: number;
   maxY: number;
+  /** number of road-bed samples inside the chunk (coarse LODs must not bridge over them) */
+  roads: number;
 }
 
 const tmpA = new THREE.Color();
@@ -49,6 +51,8 @@ export class Terrain {
   readonly heights: Float32Array;
   readonly cover: Float32Array;
   readonly paint: Uint8Array;
+  /** 1 where a road bed was graded (road surface + shoulders). */
+  readonly roadMask: Uint8Array;
   readonly group = new THREE.Group();
   readonly heightTex: THREE.DataTexture;
   readonly material: THREE.MeshStandardMaterial;
@@ -66,6 +70,7 @@ export class Terrain {
     this.heights = map.heights;
     this.cover = map.cover;
     this.paint = new Uint8Array(HM_N * HM_N);
+    this.roadMask = new Uint8Array(HM_N * HM_N);
     this.lodDist = q.lod;
     for (const [k, v] of Object.entries(map.def.palette)) this.pal[k] = new THREE.Color(v);
 
@@ -83,7 +88,7 @@ export class Terrain {
       for (let cx = 0; cx < CN; cx++) {
         const mesh = new THREE.Mesh(new THREE.BufferGeometry(), this.material);
         mesh.receiveShadow = true;
-        const ch: Chunk = { cx, cz, mesh, lod: -1, geos: [null, null, null, null], minY: 0, maxY: 0 };
+        const ch: Chunk = { cx, cz, mesh, lod: -1, geos: [null, null, null, null], minY: 0, maxY: 0, roads: 0 };
         this.chunks.push(ch);
         this.setLod(ch, 3);
         this.group.add(mesh);
@@ -347,11 +352,19 @@ float gPuddle;`,
       const w = 1 - smoothstep(halfWidth + 1, R, d);
       let next = cur;
       if (cur > target) next = lerp(cur, target, w);
-      else if (target - cur < 4.5 && cur > WATER - 0.5) next = lerp(cur, target, w * 0.95);
+      // never pile fill onto another road's bed (neighbouring segments at a
+      // junction or a crossing on a slope): that's what buried roads in hillsides
+      else if (!this.roadMask[id] && target - cur < 4.5 && cur > WATER - 0.5) next = lerp(cur, target, w * 0.95);
       if (next !== cur) {
         this.heights[id] = next;
         this.markDirty(i, j);
         if (cur < 1.5 || next < 1.5) this.markTex(j);
+      }
+      if (d < halfWidth + 2.5 && !this.roadMask[id]) {
+        this.roadMask[id] = 1;
+        const ch = this.chunks[clamp(Math.floor(j / CQ), 0, CN - 1) * CN + clamp(Math.floor(i / CQ), 0, CN - 1)];
+        if (ch) ch.roads++;
+        this.markDirty(i, j);
       }
       if (d < halfWidth + 3 && this.paint[id] === Paint.None) {
         this.paint[id] = Paint.Dirt;
@@ -427,7 +440,8 @@ float gPuddle;`,
       const dx = Math.max(minX - cam.x, 0, cam.x - (minX + size));
       const dz = Math.max(minZ - cam.z, 0, cam.z - (minZ + size));
       const dy = Math.max(ch.minY - cam.y, 0, cam.y - ch.maxY);
-      const d = Math.hypot(dx, dy * 0.7, dz);
+      // chunks with roads keep full detail farther out (road cuts are narrow)
+      const d = Math.hypot(dx, dy * 0.7, dz) * (ch.roads ? 0.6 : 1);
       const want = d < d0 ? 0 : d < d1 ? 1 : d < d2 ? 2 : 3;
       if (want === ch.lod) continue;
       if (ch.geos[want]) this.setLod(ch, want);
@@ -537,6 +551,18 @@ float gPuddle;`,
           for (let bj = Math.max(0, j - r); bj <= Math.min(HM_N - 1, j + r); bj++)
             for (let bi = Math.max(0, i - r); bi <= Math.min(HM_N - 1, i + r); bi++) lo = Math.min(lo, H[bj * HM_N + bi]);
           if (lo < WATER - 0.2) h = Math.min(h, Math.max(lo, WATER - 1.2));
+        }
+        if (s > 1 && ch.roads) {
+          // coarse triangles span s samples each way; if any road bed lies under
+          // them, sink this vertex to the lowest bed height so the surface can't
+          // bridge over the cut and bury the road on a hillside
+          let lo = Infinity;
+          for (let bj = Math.max(0, j - s); bj <= Math.min(HM_N - 1, j + s); bj++)
+            for (let bi = Math.max(0, i - s); bi <= Math.min(HM_N - 1, i + s); bi++) {
+              const bid = bj * HM_N + bi;
+              if (this.roadMask[bid] && H[bid] < lo) lo = H[bid];
+            }
+          if (lo < h) h = lo - 0.05;
         }
         minY = Math.min(minY, h);
         maxY = Math.max(maxY, h);

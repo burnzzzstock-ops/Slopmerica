@@ -74,5 +74,8 @@ export function debugApi(g: Game) {
       return { segs: g.net.segs.size, nodes: g.net.nodes.size, cells: g.zones.cells.size, counts: g.zones.counts(), trees: g.trees.alive, communes: g.communes.list.map((c) => [c.name, Math.round(c.x), Math.round(c.z)]) };
     },
   };
+  Object.assign(api, agentShowcase(g));
   return api;
 }
+
+import { agentShowcase } from './agentShowcase';

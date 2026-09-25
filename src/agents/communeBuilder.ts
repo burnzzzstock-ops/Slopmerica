@@ -231,7 +231,7 @@ export function buildCommune(name: string, radius: number, members: number, seed
         k.tube([-2.8, gy, 0], [-2.8, gy + 2.1, 0], 0.05, 4, wood);
         k.tube([2.8, gy, 0], [2.8, gy + 2.1, 0], 0.05, 4, wood);
         const pts = catenary([-2.8, gy + 2.0, 0], [2.8, gy + 2.0, 0], 0.25, 8);
-        for (let i = 0; i < pts.length - 1; i++) k.tube(pts[i], pts[i + 1], 0.012, 3, rope);
+        for (let i = 0; i < pts.length - 1; i++) k.tube(pts[i], pts[i + 1], 0.022, 3, rope);
         for (let i = 1; i < 7; i++) {
           const p = pts[i];
           const w = 0.45 + r() * 0.3, h = 0.5 + r() * 0.4;
@@ -392,7 +392,7 @@ export function buildCommune(name: string, radius: number, members: number, seed
   for (let i = 0; i < poles.length; i++) {
     const a = poles[i], b = poles[(i + 1) % poles.length];
     const pts = catenary(a, b, 0.9, 16);
-    for (let j = 0; j < pts.length - 1; j++) k.tube(pts[j], pts[j + 1], 0.012, 3, rope);
+    for (let j = 0; j < pts.length - 1; j++) k.tube(pts[j], pts[j + 1], 0.022, 3, rope);
     if (i % 2 === 0) {
       // prayer flags
       for (let j = 1; j < pts.length - 1; j++) {
@@ -413,7 +413,7 @@ export function buildCommune(name: string, radius: number, members: number, seed
   k.tube([cp[0], fy, cp[2]], cp, 0.08, 5, darkWood);
   for (const p of poles.slice(0, 2)) {
     const pts = catenary(cp, p, 0.8, 14);
-    for (let j = 0; j < pts.length - 1; j++) k.tube(pts[j], pts[j + 1], 0.012, 3, rope);
+    for (let j = 0; j < pts.length - 1; j++) k.tube(pts[j], pts[j + 1], 0.022, 3, rope);
     for (let j = 1; j < pts.length - 1; j++) bulbs.glowBox(pts[j][0], pts[j][1] - 0.12, pts[j][2], 0.15, 'glowWarm', 5);
   }
 

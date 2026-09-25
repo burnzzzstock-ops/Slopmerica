@@ -335,6 +335,9 @@ float gSnow;`,
     this.builtThisFrame = 0;
     const [d0, d1, d2] = this.lodDist;
     const size = CQ * HM_STEP;
+    // switch cached levels immediately; build missing ones nearest-first so the
+    // ground under the camera sharpens first after a jump
+    const pending: { ch: Chunk; want: number; d: number }[] = [];
     for (const ch of this.chunks) {
       const minX = ch.cx * size - HALF, minZ = ch.cz * size - HALF;
       const dx = Math.max(minX - cam.x, 0, cam.x - (minX + size));
@@ -342,8 +345,14 @@ float gSnow;`,
       const dy = Math.max(ch.minY - cam.y, 0, cam.y - ch.maxY);
       const d = Math.hypot(dx, dy * 0.7, dz);
       const want = d < d0 ? 0 : d < d1 ? 1 : d < d2 ? 2 : 3;
-      if (want !== ch.lod && (ch.geos[want] || this.builtThisFrame < 3)) this.setLod(ch, want);
+      if (want === ch.lod) continue;
+      if (ch.geos[want]) this.setLod(ch, want);
+      else pending.push({ ch, want, d });
     }
+    if (!pending.length) return;
+    pending.sort((a, b) => a.d - b.d);
+    const budget = pending.length > 12 ? 6 : 3;
+    for (let k = 0; k < Math.min(budget, pending.length); k++) this.setLod(pending[k].ch, pending[k].want);
   }
 
   private setLod(ch: Chunk, lod: number) {
@@ -435,7 +444,16 @@ float gSnow;`,
       for (let ii = 0; ii < n; ii++) {
         const i = ch.cx * CQ + ii * s, j = ch.cz * CQ + jj * s;
         const k = jj * n + ii;
-        const h = H[j * HM_N + i];
+        let h = H[j * HM_N + i];
+        if (s > 1 && h > WATER - 0.3) {
+          // coarse levels skip samples; keep narrow rivers and creeks from vanishing
+          // by pulling a vertex down to the waterline if its block holds water
+          const r = s >> 1;
+          let lo = h;
+          for (let bj = Math.max(0, j - r); bj <= Math.min(HM_N - 1, j + r); bj++)
+            for (let bi = Math.max(0, i - r); bi <= Math.min(HM_N - 1, i + r); bi++) lo = Math.min(lo, H[bj * HM_N + bi]);
+          if (lo < WATER - 0.2) h = Math.min(h, Math.max(lo, WATER - 1.2));
+        }
         minY = Math.min(minY, h);
         maxY = Math.max(maxY, h);
         pos[k * 3] = i * HM_STEP - HALF;

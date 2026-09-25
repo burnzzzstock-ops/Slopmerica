@@ -23,6 +23,13 @@ export const VEHICLE_SPECS: Record<VehicleKind, VehicleSpec> = {
   slopVan: { length: 5.4, width: 2.0, height: 2.4, maxSpeed: 32, label: 'SLOP Van' },
   motorcycle: { length: 2.2, width: 0.8, height: 1.3, maxSpeed: 48, label: 'Motorcycle' },
   towTruck: { length: 7, width: 2.4, height: 3, maxSpeed: 32, label: 'Tow Truck' },
+  cityBus: { length: 12, width: 2.55, height: 3.15, maxSpeed: 28, label: 'SLOP Transit Bus' },
+  garbageTruck: { length: 9, width: 2.5, height: 3.4, maxSpeed: 28, label: 'Garbage Truck' },
+};
+
+/** Liveried vehicles ignore the random paint pool. */
+export const FIXED_PAINT: Partial<Record<VehicleKind, number>> = {
+  police: 0xe9e6de, ambulance: 0xf1efe8, firetruck: 0xb3151d, cityBus: 0xeceee8, garbageTruck: 0xe6e6e0,
 };
 
 const KINDS = Object.keys(VEHICLE_SPECS) as VehicleKind[];

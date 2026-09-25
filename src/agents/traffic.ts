@@ -9,7 +9,7 @@ import { fx } from '../core/rng';
 import type { RNode, RoadNetwork, RSeg } from '../roads/network';
 import { laneOffset, ROAD_TYPES } from '../roads/roadTypes';
 import type { Bld, Buildings } from '../sim/buildings';
-import { randomVehicleKind, VEHICLE_SPECS, VehicleRenderer } from './vehicles';
+import { FIXED_PAINT, randomVehicleKind, VEHICLE_SPECS, VehicleRenderer } from './vehicles';
 import { ARCHETYPES } from './people';
 import { HALF } from '../config';
 
@@ -450,7 +450,7 @@ export class Traffic {
       if (!ok && !oB) return null;
     }
     const spec = VEHICLE_SPECS[kind];
-    const h = this.renderer.add(kind, PAINT[Math.floor(Math.random() * PAINT.length)]);
+    const h = this.renderer.add(kind, FIXED_PAINT[kind] ?? PAINT[Math.floor(Math.random() * PAINT.length)]);
     if (h < 0) return null;
     const night = hour > 21 || hour < 4;
     const drunk = !sober && Math.random() < (night ? 0.14 : 0.04);

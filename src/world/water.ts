@@ -63,15 +63,17 @@ export class WaterReflection {
     renderer.getDrawingBufferSize(this.size);
     const w = Math.max(64, Math.min(1400, Math.floor(this.size.x * this.scale))), h = Math.max(64, Math.floor((w * this.size.y) / Math.max(1, this.size.x)));
     if (this.rt.width !== w || this.rt.height !== h) this.rt.setSize(w, h);
-    // mirror the camera across y = WATER (kept a proper rotation, like three's Reflector)
+    // Mirror about the current water height, including a hurricane surge.
+    const planeY = hide[0]?.position.y ?? WATER;
+    this.clip[0].constant = -planeY + 0.25;
     const c = this.cam;
     c.copy(camera, false);
     camera.getWorldDirection(this.t);
     this.v.copy(camera.position);
-    c.position.set(this.v.x, 2 * WATER - this.v.y, this.v.z);
+    c.position.set(this.v.x, 2 * planeY - this.v.y, this.v.z);
     const up = this.up.set(0, 1, 0).applyQuaternion(camera.quaternion);
     c.up.set(up.x, -up.y, up.z);
-    c.lookAt(this.v.x + this.t.x, 2 * WATER - (this.v.y + this.t.y), this.v.z + this.t.z);
+    c.lookAt(this.v.x + this.t.x, 2 * planeY - (this.v.y + this.t.y), this.v.z + this.t.z);
     c.updateMatrixWorld();
     c.projectionMatrix.copy(camera.projectionMatrix);
     c.projectionMatrixInverse.copy(camera.projectionMatrixInverse);
@@ -94,7 +96,7 @@ export class WaterReflection {
     renderer.setRenderTarget(prevTarget);
     renderer.clippingPlanes = prevClip;
     renderer.shadowMap.autoUpdate = prevShadow;
-    hide.forEach((o, i) => (o.visible = vis[i]));
+    for (let i = 0; i < hide.length; i++) hide[i].visible = vis[i];
     return true;
   }
 
@@ -110,13 +112,13 @@ export class WaterReflection {
         let hasWater = false;
         for (let j = j0; j <= j1 && !hasWater; j++)
           for (let i = i0; i <= i1; i++)
-            if (terrain.heights[j * HM_N + i] <= WATER + 0.02) { hasWater = true; break; }
+            if (terrain.heights[j * HM_N + i] <= WATER + 1.6) { hasWater = true; break; }
         if (!hasWater) continue;
         const x = i0 * HM_STEP - HALF;
         const z = j0 * HM_STEP - HALF;
         this.waterBounds.push(new THREE.Box3(
           new THREE.Vector3(x - 24, WATER - 1, z - 24),
-          new THREE.Vector3(Math.min(HALF, x + tileSize) + 24, WATER + 1, Math.min(HALF, z + tileSize) + 24),
+          new THREE.Vector3(Math.min(HALF, x + tileSize) + 24, WATER + 3, Math.min(HALF, z + tileSize) + 24),
         ));
       }
     }
@@ -324,7 +326,7 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
         if (uReflOn > 0.5) {
           // planar reflection: project the surface point with the mirrored camera,
           // wobble it by the wave normal (less far away)
-          vec4 rc = uReflMat * vec4(vW.x, ${WATER.toFixed(1)}, vW.z, 1.0);
+          vec4 rc = uReflMat * vec4(vW.x, ${WATER.toFixed(1)} + uLevel, vW.z, 1.0);
           vec2 ruv = rc.xy / rc.w + n.xz * 0.045 * (1.0 - smoothstep(150.0, 2500.0, camD));
           float inView = step(0.0, ruv.x) * step(ruv.x, 1.0) * step(0.0, ruv.y) * step(ruv.y, 1.0);
           vec3 tex = textureLod(uRefl, clamp(ruv, 0.001, 0.999), 0.0).rgb;

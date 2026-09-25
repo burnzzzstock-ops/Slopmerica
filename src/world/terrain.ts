@@ -210,9 +210,9 @@ uniform float uInfoOn;`,
     // lupine-purple instead of averaging out to brown
     float fdrift = mix(0.1, 0.9, smoothstep(0.36, 0.64, tn(vWPos.xz * 0.021 + 3.0) * 0.8 + tn(vWPos.xz * 0.083 + 1.0) * 0.2));
     vec3 fA, fB, fC;
-    if (uFlowerMap < 0.5) { fA = vec3(0.62, 0.3, 0.7); fB = vec3(0.95, 0.8, 0.12); fC = vec3(0.94, 0.92, 0.86); } // phlox, buttercups, daisies
-    else if (uFlowerMap < 1.5) { fA = vec3(1.0, 0.42, 0.02); fB = vec3(0.36, 0.26, 0.86); fC = vec3(0.95, 0.8, 0.1); } // poppies, lupine, goldfields
-    else { fA = vec3(0.95, 0.78, 0.1); fB = vec3(0.55, 0.3, 0.75); fC = fA; } // tickseed, blazing star
+    if (uFlowerMap < 0.5) { fA = vec3(0.49, 0.31, 0.52); fB = vec3(0.75, 0.63, 0.22); fC = vec3(0.78, 0.77, 0.7); } // phlox, buttercups, daisies
+    else if (uFlowerMap < 1.5) { fA = vec3(0.8, 0.34, 0.17); fB = vec3(0.43, 0.34, 0.64); fC = vec3(0.77, 0.65, 0.23); } // poppies, lupine, goldfields
+    else { fA = vec3(0.77, 0.64, 0.21); fB = vec3(0.48, 0.33, 0.59); fC = fA; } // tickseed, blazing star
     vec2 fp = vWPos.xz / 1.1;
     vec2 fcell = floor(fp);
     float fh = th(fcell), fk = th(fcell + 17.3);
@@ -221,10 +221,10 @@ uniform float uInfoOn;`,
     vec3 ffarCol = mix(mix(fA, fB, fdrift), fC, 0.1);
     fcol *= fcol;
     ffarCol *= ffarCol;
-    float fdot = step(1.0 - dens * 0.85, fh) * smoothstep(0.42, 0.24, length(fo));
+    float fdot = step(1.0 - dens * 0.35, fh) * smoothstep(0.25, 0.12, length(fo));
     float ffar = smoothstep(0.25, 0.9, fwidth(vWPos.x));
     float fmott = clamp(0.3 + 0.95 * tn(vWPos.xz * 0.11 + 5.0), 0.0, 1.0); // clumps, so far fields aren't flat paint
-    diffuseColor.rgb = mix(diffuseColor.rgb, mix(fcol, ffarCol, ffar), mix(fdot, dens * 0.42 * fmott, ffar));
+    diffuseColor.rgb = mix(diffuseColor.rgb, mix(fcol, ffarCol, ffar), mix(fdot, dens * 0.24 * fmott, ffar));
   }
   // snow settles on flat-ish ground above the snow line, patchy at the edges
   vec3 wN = gWN;

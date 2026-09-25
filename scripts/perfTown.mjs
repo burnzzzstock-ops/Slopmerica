@@ -118,6 +118,9 @@ async function runPreset(preset) {
     await page.evaluate(({ x, z }) => {
       const g = window.__game, d = window.__dbg;
       g.stop(); g.sim.speed = 0; g.hour = 13;
+      g.env.hour = 13;
+      g.weather.force('clear', 4);
+      g.weather.settle();
       d.view(x, z, 650, 0.65, 0.72);
       // Browser-level F3 can be intercepted. Dispatch to the same window listener as a real key event.
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', code: 'F3', bubbles: true, cancelable: true }));
@@ -232,9 +235,12 @@ async function runPreset(preset) {
       };
     }, run.build);
 
-    const canvasPng = await page.evaluate(() => window.__game.renderer.domElement.toDataURL('image/png').split(',')[1]);
-    await writeFile(`${out}/town-${preset}-${width}x${height}.png`, Buffer.from(canvasPng, 'base64'));
-    await page.evaluate(() => document.querySelector('.xfeed')?.classList.add('collapsed'));
+    // WebGL uses preserveDrawingBuffer=false, so toDataURL() after a stopped
+    // frame can return a black buffer. Capture Chrome's composited canvas with
+    // the HUD temporarily hidden for a clean town image.
+    await page.evaluate(() => { const hud = document.querySelector('.hud'); if (hud) hud.style.visibility = 'hidden'; });
+    await page.locator('canvas.game-canvas').screenshot({ path: `${out}/town-${preset}-${width}x${height}.png`, timeout: 30000 });
+    await page.evaluate(() => { const hud = document.querySelector('.hud'); if (hud) hud.style.visibility = ''; document.querySelector('.xfeed')?.classList.add('collapsed'); });
     await page.screenshot({ path: `${out}/town-${preset}-${width}x${height}-overlay.png`, timeout: 30000 });
     await writeFile(`${out}/town-${preset}-${width}x${height}-overlay.txt`, `${run.result.overlay || ''}\n`);
     console.log(`[${preset}] result`, JSON.stringify(run.result));

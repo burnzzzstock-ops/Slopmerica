@@ -168,7 +168,20 @@ export type FeedEventKind =
   | 'weatherChange'
   | 'nightfall'
   | 'merchDrop'
-  | 'ambient';
+  | 'ambient'
+  // city services (src/sim/services.ts)
+  | 'serviceBuilt'
+  | 'blackout'
+  | 'waterOutage'
+  | 'sewageBackup'
+  | 'garbagePile'
+  | 'landfillFull'
+  | 'buildingFire'
+  | 'buildingBurned'
+  | 'abandoned'
+  | 'crimeWave'
+  | 'sickness'
+  | 'pollution';
 
 export interface FeedContext {
   city: string;

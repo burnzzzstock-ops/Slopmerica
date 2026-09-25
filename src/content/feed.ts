@@ -256,6 +256,72 @@ const templates: Record<FeedEventKind, readonly string[]> = {
     'Goodnight to everyone except the lifted truck outside {building}.',
     'The county sleeps. Neural Fly absolutely does not.',
   ],
+  serviceBuilt: [
+    'Ribbon cutting at the new {building}. The mayor thanked himself for his courage.',
+    '{building} is open. Staffed by one guy named Randy and a laminated binder.',
+    'They built {building}. My taxes went up and so did my expectations. One of those is wrong.',
+    'Finally, {building}. Only took three referendums and a guy yelling about fluoride.',
+    '{city} opened {building} and a Facebook group already wants it closed.',
+  ],
+  blackout: [
+    'Power out in {count} buildings. The generator guy is charging $400 an hour and has never been happier.',
+    'Blackout across {city}. Somebody tell the grid that the cloud runs on electricity.',
+    'No power again. Grandpa says this is why he stockpiled 900 AA batteries in 1999.',
+    'The lights went out and my smart fridge unfollowed me.',
+    '{count} buildings dark. The official statement blames windmills, which we do not have.',
+  ],
+  waterOutage: [
+    'No running water in {count} buildings. Showering with LaCroix like our ancestors did.',
+    'Taps are dry. The artisanal water store downtown raised prices 300%. Capitalism works.',
+    'Water outage day {count}. I have discovered what dry shampoo was invented for.',
+  ],
+  sewageBackup: [
+    'Sewage backing up in {count} buildings. The smell has a Wikipedia page now.',
+    'Toilets aren\'t flushing and the HOA sent a letter about my lawn.',
+    'The sewer is full. Nobody will say where it all goes. We all know where it goes.',
+  ],
+  garbagePile: [
+    'Trash piling up in {count} buildings. The raccoons have unionized.',
+    'Garbage day was three weeks ago. The bags are forming a government.',
+    'My trash can is now load-bearing.',
+    'The dumpster behind the Slop Mart has achieved sentience and is running for city council.',
+  ],
+  landfillFull: [
+    '{building} is FULL. Mt. Trashmore is now visible from the interstate and has a ski lift proposal.',
+    'The landfill hit capacity. Plan B: a second, larger landfill named after the mayor.',
+  ],
+  buildingFire: [
+    '{building} is ON FIRE. Everyone is filming. Nobody called 911.',
+    'Smoke over {city}: {building} is burning. Somebody said "it\'s the vibe" and got ratioed.',
+    'Huge fire at {building}. Volunteer fire dept is en route after finishing their chili.',
+    'FIRE at {building}. The comments are already blaming a different political party.',
+  ],
+  buildingBurned: [
+    '{building} burned to the ground. No fire station close enough. Thoughts and prayers deployed.',
+    'RIP {building}. The fire department was "fifteen minutes out" for forty minutes.',
+    '{building} is ash. The insurance company is already typing the word "unfortunately."',
+  ],
+  abandoned: [
+    '{building} has been abandoned. It is now the most affordable housing in {city}.',
+    'Another one abandoned: {building}. The squatters left a 4.5-star review.',
+    '{building} is empty. Zillow calls it "a blank canvas with character."',
+    'Abandoned: {building}. No power, no water, no problem for the urban explorers.',
+  ],
+  crimeWave: [
+    'Crime spike near {building}. Neighborhood app is 90% suspicious-van posts.',
+    'Somebody stole a catalytic converter off a catalytic converter.',
+    'Police response time near {building}: "just move." Crime is up.',
+  ],
+  sickness: [
+    'Half the block near {building} is sick. Doctors say it\'s the water. Influencers say it\'s 5G.',
+    'Urgent care wait is 6 hours. I have healed naturally out of spite.',
+    'Everybody near {building} has a cough. The essential oil MLM has never been busier.',
+  ],
+  pollution: [
+    'The air in {city} now has a flavor. Tastes like freedom and diesel.',
+    'Air quality in {city} is "Rolling Coal." Stay indoors, keep grinding.',
+    'Sunset was beautiful tonight. Scientists say that\'s the pollution.',
+  ],
   merchDrop: [
     'SLOP DROP: Slop Script hoodies, questionable judgment, cream ink. imaginesupply.co',
     'Slop 69 pinstripe jersey landed. Dress for the collapse. imaginesupply.co',

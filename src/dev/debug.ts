@@ -4,11 +4,14 @@ import { lineCubic, quadCubic } from '../core/math';
 import type { RoadTypeId } from '../roads/roadTypes';
 import type { ZoneType } from '../contracts';
 import { saveGame } from '../sim/save';
+import { EXT } from '../ext/registry';
+import { CUSTOM_BUILDINGS } from '../sim/buildings';
 import * as THREE from 'three';
 import { buildingMaterial, generateBuilding, generateLandmark, landmarkFootprint } from '../buildings/generator';
 import type { LandmarkId } from '../contracts';
 
 export function debugApi(g: Game) {
+  (window as unknown as { __ext: typeof EXT }).__ext = EXT;
   const api = {
     road(x1: number, z1: number, x2: number, z2: number, type: RoadTypeId = 'twoLane', cx?: number, cz?: number) {
       const a = g.net.snap(x1, z1);
@@ -69,6 +72,27 @@ export function debugApi(g: Game) {
       g.scene.add(grp);
       g.trees.cut(x - 180, z - 150, x + 340, z + 260, () => true);
       return grp.children.length;
+    },
+    /** Every service building in a row (for eyeballing the models). */
+    serviceShowcase(x: number, z: number) {
+      const grp = new THREE.Group();
+      const y = g.terrain.h(x, z);
+      let cx = x;
+      const defs = [...CUSTOM_BUILDINGS.entries()];
+      defs.forEach(([, def], i) => {
+        const m = def.model();
+        const mesh = new THREE.Mesh(m.geometry, buildingMaterial());
+        const w = def.w * 8;
+        const row = i < 9 ? 0 : 1;
+        if (i === 9) cx = x;
+        mesh.position.set(cx + w / 2, y, z + row * 70);
+        cx += w + 10;
+        mesh.castShadow = mesh.receiveShadow = true;
+        grp.add(mesh);
+      });
+      g.scene.add(grp);
+      g.trees.cut(x - 20, z - 40, x + 460, z + 120, () => true);
+      return defs.length;
     },
     info() {
       return { segs: g.net.segs.size, nodes: g.net.nodes.size, cells: g.zones.cells.size, counts: g.zones.counts(), trees: g.trees.alive, communes: g.communes.list.map((c) => [c.name, Math.round(c.x), Math.round(c.z)]) };

@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../core/rng';
 import { BRANDS, GENERIC_SIGNS, type SignFont } from '../art/brands';
+import { EXTRA_SIGNS } from './signRegistry';
 import { ALL_COMMUNE_NAMES } from '../art/communeNames';
 
 export const TS = 256;
@@ -694,6 +695,7 @@ function buildTexture(): THREE.DataArrayTexture {
   const signs: { id: string; text: string; colors: [string, string]; font: SignFont; style?: SignStyle }[] = [
     ...BRANDS.map((b) => ({ id: b.id, text: b.name, colors: b.colors, font: b.font ?? 'Bungee' })),
     ...GENERIC_SIGNS,
+    ...EXTRA_SIGNS,
     ...ALL_COMMUNE_NAMES.map((n) => ({ id: `commune:${n}`, text: n, colors: ['#000', '#000'] as [string, string], font: 'Permanent Marker' as SignFont, style: 'rainbow' as SignStyle })),
     { id: 'glowWarm', text: '', colors: ['#ffd27a', '#000'], font: 'Bungee', style: 'glow' },
     { id: 'glowCool', text: '', colors: ['#bfe3ff', '#000'], font: 'Bungee', style: 'glow' },

@@ -47,6 +47,16 @@ function vnoise(x: number, z: number, scale: number, seed: number) {
   return (a + (b - a) * tx) * (1 - tz) + (c + (d - c) * tx) * tz;
 }
 
+/**
+ * Info-view ground overlay: an RGBA texture covering the whole map (alpha =
+ * strength). While on, the ground desaturates and the overlay color shows
+ * through (Cities: Skylines-style info views). Written by gameplay systems.
+ */
+export const INFO_OVERLAY = {
+  tex: { value: null as THREE.Texture | null },
+  on: { value: 0 },
+};
+
 export class Terrain {
   readonly heights: Float32Array;
   readonly cover: Float32Array;
@@ -101,6 +111,8 @@ export class Terrain {
     const detail = this.detail;
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.tDetail = { value: detail };
+      sh.uniforms.tInfo = INFO_OVERLAY.tex;
+      sh.uniforms.uInfoOn = INFO_OVERLAY.on;
       bindAtmos(sh);
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nattribute vec4 mats;\nvarying vec4 vMats;\nvarying vec3 vWPos;')
@@ -153,7 +165,9 @@ float gSnow;
 // atmosphere extras (seasons.ts registers these into ATMOS)
 uniform float uFlowers, uPuddle, uRainAmt, uAtmoTime, uFlowerMap;
 uniform vec3 uSkyRefl;
-float gPuddle;`,
+float gPuddle;
+uniform sampler2D tInfo;
+uniform float uInfoOn;`,
         )
         .replace(
           '#include <color_fragment>',
@@ -242,6 +256,14 @@ float gPuddle;`,
     ring = smoothstep(0.05, 0.0, abs(rd - rt * 0.45)) * (1.0 - rt) * min(uRainAmt, 1.0);
   }
   outgoingLight = mix(outgoingLight, uSkyRefl * (0.55 + ring), gPuddle * (0.2 + 0.4 * fres));
+}
+if (uInfoOn > 0.0) {
+  // info view: grey the world, then paint the data on top (lit, so hills still read)
+  vec4 inf = texture(tInfo, vWPos.xz / ${WORLD.toFixed(1)} + 0.5);
+  float lum = dot(outgoingLight, vec3(0.299, 0.587, 0.114));
+  vec3 grey = vec3(lum) * 0.7 + 0.02;
+  float lit = clamp(lum * 3.0, 0.35, 1.2);
+  outgoingLight = mix(outgoingLight, mix(grey, inf.rgb * lit, inf.a), uInfoOn);
 }
 #include <opaque_fragment>`,
         )

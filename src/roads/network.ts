@@ -534,7 +534,7 @@ export class RoadNetwork {
     let c = 0;
     for (const s of this.segs.values()) {
       const ageYears = (this.day - s.builtDay) / 365;
-      const ageMul = ageYears < 2 ? 0.3 : ageYears < 8 ? 0.3 + (ageYears - 2) * 0.12 : 1 + Math.min(1.5, (ageYears - 8) * 0.1);
+      const ageMul = ageYears < 1 ? 0.35 : ageYears < 4 ? 0.35 + (ageYears - 1) * 0.22 : 1 + Math.min(1.5, (ageYears - 4) * 0.12);
       c += s.length * this.type(s.type).upkeepPerM * ageMul;
     }
     return c;

@@ -380,7 +380,7 @@ export class Game {
         if (segs.length) {
           segs.sort((a, b) => Math.hypot(a.samp.pts[0].x - c.x, a.samp.pts[0].z - c.z) - Math.hypot(b.samp.pts[0].x - c.x, b.samp.pts[0].z - c.z));
           const s = segs[0];
-          s.blocked = 90;
+          s.blocked = 30;
           this.feed.push('communeProtest', { commune: c.name, road: s.name });
         }
         if (c.forever && Math.random() < 0.3) this.feed.push('communeForever', { commune: c.name });

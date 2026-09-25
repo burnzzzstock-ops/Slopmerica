@@ -106,6 +106,22 @@ export class Traffic {
   private signals = new Map<number, Signal>();
   private buckets = new Map<number, Car[]>();
   private junctionCars = new Map<number, Car[]>();
+  private enteredAt = new Map<number, number>();
+  private junctionTargets = new Map<number, number>();
+
+  /** Is there room to leave the junction onto this lane? ("don't block the box") */
+  private exitClear(c: Car): boolean {
+    const nx = c.path[c.pi + 1];
+    const ns = nx && this.net.segs.get(nx.seg);
+    if (!ns) return true;
+    const lane = Math.min(c.lane, ROAD_TYPES[ns.type].lanesPerDir - 1);
+    const k = nx.seg * 16 + (nx.dir > 0 ? 0 : 8) + lane;
+    const entryS = nx.dir > 0 ? ns.trimA : ns.trimB;
+    const q = this.buckets.get(k);
+    const inBox = this.junctionTargets.get(k) ?? 0;
+    const room = q && q.length ? q[0].s - q[0].len - entryS : Infinity;
+    return room > 3 + inBox * 7;
+  }
   flowEma = 1;
   speedMul = 1;
   crashMul = 1;
@@ -321,6 +337,18 @@ export class Traffic {
     if (!o || !d) return false;
     const rt = this.route(o.seg, o.s, d.seg, d.s);
     if (!rt) return false;
+    {
+      const st0 = rt.steps[0];
+      const seg0 = this.net.segs.get(st0.seg)!;
+      const busyAt = (s: number) => this.cars.some((c) => !c.junction && c.crashed !== -1 && c.path[c.pi].seg === st0.seg && c.path[c.pi].dir === st0.dir && Math.abs(c.s - s) < 9);
+      let ok = false;
+      for (const off of [0, 12, -12, 24, -24]) {
+        const s = rt.startS + off;
+        if (s < 2 || s > seg0.length - 2 || (rt.steps.length === 1 && s >= rt.endS)) continue;
+        if (!busyAt(s)) { rt.startS = s; ok = true; break; }
+      }
+      if (!ok) return false;
+    }
     const spec = VEHICLE_SPECS[kind];
     const h = this.renderer.add(kind, PAINT[Math.floor(Math.random() * PAINT.length)]);
     if (h < 0) return false;
@@ -347,6 +375,12 @@ export class Traffic {
 
   // ------------------------------------------------------------------ update
   update(dtReal: number, simSpeed: number, hour: number, population: number, jobs: number, camTarget: THREE.Vector3) {
+    const total = dtReal * Math.max(0.0001, simSpeed);
+    const steps = Math.min(8, Math.ceil(total / 0.08));
+    for (let k = 0; k < steps; k++) this.step(dtReal / steps, simSpeed, hour, population, jobs, camTarget, k === steps - 1);
+  }
+
+  private step(dtReal: number, simSpeed: number, hour: number, population: number, jobs: number, camTarget: THREE.Vector3, last: boolean) {
     const dt = dtReal * Math.max(0.0001, simSpeed);
     if (simSpeed > 0) for (const s of this.signals.values()) s.t += dt;
 
@@ -357,7 +391,7 @@ export class Traffic {
     this.targetCars = Math.min(this.maxCars, Math.round((population * 0.12 + jobs * 0.05 + edgeBoost) * tod * induced));
     if (simSpeed > 0) {
       let spawns = 0;
-      while (this.cars.length < this.targetCars && spawns < 6) {
+      while (this.cars.length < this.targetCars && spawns < 12) {
         spawns++;
         this.spawnTrip(hour);
       }
@@ -365,14 +399,22 @@ export class Traffic {
 
     // buckets per seg/dir/lane
     this.buckets.clear();
+    this.enteredAt.clear();
     this.junctionCars.clear();
     for (const s of this.net.segs.values()) s.load[0] = s.load[1] = 0;
+    this.junctionTargets.clear();
     for (const c of this.cars) {
       if (c.crashed === -1) continue;
       if (c.junction) {
         let arr = this.junctionCars.get(c.junction.node);
         if (!arr) this.junctionCars.set(c.junction.node, (arr = []));
         arr.push(c);
+        const nx = c.path[c.pi + 1];
+        const ns = nx && this.net.segs.get(nx.seg);
+        if (ns) {
+          const k = nx.seg * 16 + (nx.dir > 0 ? 0 : 8) + Math.min(c.lane, ROAD_TYPES[ns.type].lanesPerDir - 1);
+          this.junctionTargets.set(k, (this.junctionTargets.get(k) ?? 0) + 1);
+        }
         continue;
       }
       const st = c.path[c.pi];
@@ -401,7 +443,15 @@ export class Traffic {
         // obstacles: leader, red light, blocked seg
         let gap = Infinity, dv = 0;
         const lead = arr[i + 1];
-        if (lead) { gap = lead.s - c.s - lead.len; dv = c.v - lead.v; }
+        if (lead) {
+          gap = lead.s - c.s - lead.len;
+          dv = c.v - lead.v;
+          if (gap < -1.5 && lead.crashed === 0) { gap = Infinity; dv = 0; } // overlapped: let them untangle
+        }
+        if (!last && exitS - c.s < 30 && !this.exitClear(c)) {
+          const g4 = exitS - 1.5 - c.s;
+          if (g4 < gap) { gap = g4; dv = c.v; }
+        }
         if (!last) {
           const nodeId = st.dir > 0 ? seg.b : seg.a;
           if (!this.isGreen(nodeId, seg.id)) {
@@ -418,20 +468,20 @@ export class Traffic {
           if (c.s < mid) { const g3 = mid - c.s; if (g3 < gap) { gap = g3; dv = c.v; } }
         }
         // IDM
-        const a = 1.7, bdec = 2.8, Th = c.drunk ? 0.5 : 1.3, s0 = c.drunk ? 1 : 2.5;
+        const a = 1.7, bdec = 2.8, Th = c.drunk ? 0.8 : 1.3, s0 = c.drunk ? 1.5 : 2.5;
         const sStar = s0 + Math.max(0, c.v * Th + (c.v * dv) / (2 * Math.sqrt(a * bdec)));
         let acc = a * (1 - Math.pow(c.v / Math.max(1, v0), 4) - (gap < Infinity ? Math.pow(sStar / Math.max(0.1, gap), 2) : 0));
-        acc = clamp(acc, -9, a);
+        acc = clamp(acc, -12, a);
         c.v = Math.max(0, c.v + acc * dt);
         const move = Math.min(c.v * dt, Math.max(0, gap + 0.5));
         c.s += move;
         flowSum += c.v / Math.max(1, v0);
         flowN++;
         // rear-end + random crashes
-        if (lead && gap < 0.2 && dv > 4 && lead.crashed === 0) this.crash([c, lead], seg, c.drunk);
+        if (lead && gap < 0.2 && gap > -1 && dv > 6 && c.drunk && lead.crashed === 0) { this.crashCause.rear++; this.crash([c, lead], seg, c.drunk); }
         else {
-          const p = 0.00001 * this.crashMul * (c.drunk ? 40 : 1) * (c.reckless ? 6 : 1) * (T.centerTurn ? 1.5 : 1) * (c.v / 20) * dt;
-          if (Math.random() < p) this.crash(lead && lead.s - c.s < 12 ? [c, lead] : [c], seg, c.drunk);
+          const p = 0.00006 * this.crashMul * (c.drunk ? 30 : 1) * (c.reckless ? 5 : 1) * (T.centerTurn ? 1.5 : 1) * (0.3 + c.v / 25) * dt;
+          if (Math.random() < p) { this.crashCause.random++; this.crash(lead && lead.s - c.s < 12 ? [c, lead] : [c], seg, c.drunk); }
         }
         // smoking out the window
         if (c.smoker && Math.abs(c.x - camX) < 300 && Math.abs(c.z - camZ) < 300) {
@@ -456,7 +506,9 @@ export class Traffic {
         const key = nseg.id * 16 + (next.dir > 0 ? 0 : 8) + Math.min(c.lane, ROAD_TYPES[nseg.type].lanesPerDir - 1);
         const q = this.buckets.get(key);
         const entryS = next.dir > 0 ? nseg.trimA : nseg.trimB;
-        const blocked = q && q.length && q[0].s - entryS < q[0].len + 2 && J.t > 0.7;
+        const entered = this.enteredAt.get(key);
+        const frontS = Math.min(q && q.length ? q[0].s - q[0].len : Infinity, entered ?? Infinity);
+        const blocked = frontS - entryS < 3 && J.t > 0.7;
         const vt = blocked ? 0 : Math.min(9, ROAD_TYPES[nseg.type].speed);
         c.v += clamp(vt - c.v, -8 * dt, 2 * dt);
         J.t += (c.v * dt) / Math.max(1, J.len);
@@ -464,13 +516,15 @@ export class Traffic {
         if (c.redsRun > 0) {
           for (const o of arr) {
             if (o === c || o.crashed !== 0 || o.junction?.fromSeg === J.fromSeg) continue;
-            if (Math.hypot(o.x - c.x, o.z - c.z) < 3.5) { this.crash([c, o], this.net.segs.get(J.fromSeg), c.drunk); break; }
+            if (Math.hypot(o.x - c.x, o.z - c.z) < 3.5) { this.crashCause.junction++; this.crash([c, o], this.net.segs.get(J.fromSeg), c.drunk); break; }
           }
         }
         if (J.t >= 1) {
+          if (blocked) { J.t = 1; c.v = 0; continue; }
           c.junction = null;
           c.pi++;
           c.s = entryS;
+          this.enteredAt.set(key, entryS - c.len);
           c.lane = Math.min(c.lane, ROAD_TYPES[nseg.type].lanesPerDir - 1);
           c.redsRun = 0;
         }
@@ -501,7 +555,7 @@ export class Traffic {
         if (t > 40) { this.jamTimer.set(seg.id, -200); this.onJam?.(seg); }
       } else if ((this.jamTimer.get(seg.id) ?? 0) > 0) this.jamTimer.set(seg.id, 0);
     }
-    this.place(dtReal);
+    if (last) this.place(dtReal);
   }
 
   private enterJunction(c: Car, seg: RSeg, st: Step) {
@@ -576,7 +630,7 @@ export class Traffic {
   crash(cars: Car[], seg: RSeg | undefined, drunk: boolean) {
     for (const c of cars) {
       if (c.crashed !== 0) continue;
-      c.crashed = 30 + Math.random() * 25;
+      c.crashed = 16 + Math.random() * 12;
       c.crashYaw = (Math.random() - 0.5) * 1.6;
       c.crashRoll = Math.random() < 0.15 ? Math.PI : Math.random() < 0.3 ? (Math.random() - 0.5) * 1.2 : 0;
       c.v = 0;
@@ -584,10 +638,29 @@ export class Traffic {
       this.onEmit?.('smoke', c.x, c.y + 1.2, c.z, 10);
       if (Math.random() < 0.2) this.onEmit?.('fire', c.x, c.y + 1, c.z, 12);
     }
-    if (seg) seg.blocked = Math.max(seg.blocked, 20);
+    if (seg) seg.blocked = Math.max(seg.blocked, 8);
     this.crashes++;
     this.onCrash?.(cars, seg, drunk);
   }
+
+  /** Debug: why are cars stopped? */
+  stats() {
+    const out = { total: this.cars.length, moving: 0, stopped: 0, junctionWait: 0, crashed: 0, atRed: 0, blockedSeg: 0, byCause: this.crashCause };
+    for (const c of this.cars) {
+      if (c.crashed > 0) { out.crashed++; continue; }
+      if (c.junction) { if (c.v < 0.5) out.junctionWait++; continue; }
+      if (c.v > 0.5) { out.moving++; continue; }
+      out.stopped++;
+      const st = c.path[c.pi];
+      const seg = this.net.segs.get(st.seg);
+      if (!seg) continue;
+      if (seg.blocked > 0) out.blockedSeg++;
+      const nodeId = st.dir > 0 ? seg.b : seg.a;
+      if (c.pi < c.path.length - 1 && !this.isGreen(nodeId, seg.id)) out.atRed++;
+    }
+    return out;
+  }
+  crashCause = { rear: 0, random: 0, junction: 0 };
 
   pick(ray: THREE.Raycaster): Car | null {
     const h = this.renderer.pick(ray);

@@ -271,7 +271,7 @@ export class Hud implements UiSink {
           <table>
             ${row('Residential tax', L.resTax)}${row('Commercial tax', L.comTax)}${row('Industrial tax', L.indTax)}${row('Office tax', L.offTax)}
             ${row('Impact fees (new construction)', L.impact)}${row('Federal Slop Grants', L.grants)}${row('Other', L.other)}
-            ${row('Road upkeep', L.roads)}${row('Construction', L.construction)}${row('Communes & lawyers', L.communes)}${row('Loan payments', L.loans)}
+            ${row('Road upkeep (ages badly)', L.roads)}${row('Services: cops, fire, schools', L.services)}${row('Construction', L.construction)}${row('Communes & lawyers', L.communes)}${row('Loan payments', L.loans)}
             <tr class="total"><td>Last week</td><td class="${s.weeklyNet() < 0 ? 'neg' : 'pos'}">${money(s.weeklyNet())}</td></tr>
           </table>
           <div class="tax">

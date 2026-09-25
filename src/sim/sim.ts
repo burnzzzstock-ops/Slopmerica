@@ -28,9 +28,10 @@ export interface Ledger {
   construction: number;
   communes: number;
   loans: number;
+  services: number;
 }
 
-const emptyLedger = (): Ledger => ({ resTax: 0, comTax: 0, indTax: 0, offTax: 0, impact: 0, grants: 0, other: 0, roads: 0, construction: 0, communes: 0, loans: 0 });
+const emptyLedger = (): Ledger => ({ resTax: 0, comTax: 0, indTax: 0, offTax: 0, impact: 0, grants: 0, other: 0, roads: 0, construction: 0, communes: 0, loans: 0, services: 0 });
 
 export const UNLOCKS: { pop: number; what: string; zone?: ZoneType; road?: string }[] = [
   { pop: 250, what: 'Luxury Slop apartments', zone: 'resHigh' },
@@ -242,15 +243,18 @@ export class Sim {
       if (bld.zone === 'landmark') continue;
       const near = this.b.near(bld.x, bld.z, 140);
       let lv = 18;
-      let ind = 0, com = 0, slop = 0, dense = 0;
+      let ind = 0, com = 0, slop = 0, dense = 0, lm = 0;
       for (const o of near) {
         if (o === bld) continue;
+        if (o.zone === 'landmark') { lm++; continue; }
         dense++;
         if (o.zone === 'industry') ind++;
         if (o.zone === 'comLow' || o.zone === 'comHigh') com++;
         if (o.brand === 'slop' || o.landmark === 'slopCannon') slop++;
       }
-      lv += Math.min(34, dense * 1.1);
+      lv += Math.min(40, dense * 1.1);
+      lv += Math.min(30, lm * 15);
+      for (const o of this.b.near(bld.x, bld.z, 300)) if (o.zone === 'landmark') { lv += 6; break; }
       if (bld.zone !== 'industry') lv -= Math.min(30, ind * (bld.zone.startsWith('res') ? 4 : 1.5));
       if (bld.zone.startsWith('res')) lv += Math.min(10, com * 1.2);
       lv += Math.min(10, slop * 5);
@@ -275,8 +279,8 @@ export class Sim {
   private updateSprawl() {
     let covered = 0;
     for (const p of this.buildable) {
-      if (this.b.at(p.x, p.z)) { covered++; continue; }
-      const s = this.net.pickSeg(p.x, p.z, 0);
+      if (this.b.at(p.x, p.z) || this.b.near(p.x, p.z, 10).some((b) => this.b.contains(b, p.x, p.z, 5))) { covered++; continue; }
+      const s = this.net.pickSeg(p.x, p.z, 5);
       if (s) covered++;
     }
     this.coverage = this.buildable.length ? covered / this.buildable.length : 0;
@@ -312,7 +316,7 @@ export class Sim {
 
   private onBuildingComplete(bld: Bld) {
     if (bld.zone === 'landmark' || bld.level > 1) return;
-    const perCell = { resLow: 220, resHigh: 260, comLow: 380, comHigh: 420, industry: 320, office: 480 }[bld.zone];
+    const perCell = { resLow: 110, resHigh: 130, comLow: 190, comHigh: 210, industry: 160, office: 240 }[bld.zone];
     this.earn(Math.round(perCell * bld.w * bld.d), 'impact');
   }
 
@@ -322,16 +326,17 @@ export class Sim {
     for (const bld of this.b.list.values()) {
       if (bld.state !== 'active' && bld.occ === 0) continue;
       const lm = 1 + (bld.level - 1) * 0.3;
-      if (bld.zone === 'resLow' || bld.zone === 'resHigh') res += bld.occ * 2.2 * lm;
-      else if (bld.zone === 'comLow' || bld.zone === 'comHigh') com += bld.occ * 3.0 * lm;
-      else if (bld.zone === 'industry') ind += bld.occ * 2.6 * lm;
-      else if (bld.zone === 'office') off += bld.occ * 3.6 * lm;
+      if (bld.zone === 'resLow' || bld.zone === 'resHigh') res += bld.occ * 0.9 * lm;
+      else if (bld.zone === 'comLow' || bld.zone === 'comHigh') com += bld.occ * 1.2 * lm;
+      else if (bld.zone === 'industry') ind += bld.occ * 1.0 * lm;
+      else if (bld.zone === 'office') off += bld.occ * 1.5 * lm;
     }
     this.earn(Math.round(res * t), 'resTax');
     this.earn(Math.round(com * t), 'comTax');
     this.earn(Math.round(ind * t), 'indTax');
     this.earn(Math.round(off * t), 'offTax');
     this.spend(Math.round(this.net.upkeep()), 'Road upkeep', 'roads');
+    this.spend(Math.round(this.population * 0.55), 'Services', 'services');
     for (const L of this.loans) {
       if (L.weeksLeft <= 0) continue;
       L.weeksLeft--;

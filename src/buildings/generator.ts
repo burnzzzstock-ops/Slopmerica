@@ -94,7 +94,11 @@ roughnessFactor = mix(roughnessFactor, 0.35, uWet * 0.6 * (1.0 - gGlass));`,
   vec3 wc = mix(vec3(1.0, 0.72, 0.42), vec3(0.78, 0.88, 1.0), step(0.7, bh(cell + 17.0)));
   totalEmissiveRadiance += wc * gGlow * lit * uNightB * 0.85;
   // lightbox signs: faintly self-lit by day, blazing at night
-  totalEmissiveRadiance += gTex * gSign * (0.1 + uNightB * 0.75);
+  float boost = 1.0;
+#if defined( USE_COLOR ) || defined( USE_COLOR_ALPHA )
+  boost = max(1.0, vColor.r);
+#endif
+  totalEmissiveRadiance += gTex * gSign * (0.1 + uNightB * 0.75 * boost) * (boost > 1.5 ? 1.8 : 1.0);
 }`,
       )
       .replace('#include <lights_fragment_end>', cloudShadowChunk('vBW'));

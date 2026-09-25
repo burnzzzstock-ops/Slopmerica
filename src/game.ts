@@ -560,6 +560,17 @@ export class Game {
         }
       }
     }
+    if (this.emitT === 0.6 && spd > 0 && this.rts.distance < 900) {
+      const tgt = this.rts.target;
+      for (const c of this.communes.list) {
+        if (c.state === 'gone' || Math.abs(c.x - tgt.x) > 500 || Math.abs(c.z - tgt.z) > 500) continue;
+        for (const em of c.emitters) {
+          if (Math.random() > 0.6) continue;
+          const [lx, ly, lz] = em.pos;
+          this.particles.emit(em.kind === 'fire' ? 'fire' : 'smoke', c.x + lx, c.group.position.y + ly, c.z + lz, { count: em.kind === 'fire' ? 4 : 2, spread: em.kind === 'fire' ? 0.8 : 0.3, size: em.kind === 'fire' ? 0.8 : 0.5 });
+        }
+      }
+    }
     this.tools.update();
     this.overlays.update(dt);
     this.particles.night = this.env.night;

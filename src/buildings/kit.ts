@@ -194,15 +194,67 @@ export class Kit {
   }
 
   /** Two-sided brand sign (w x h) centered at x,y,z facing +Z rotated by yaw. */
-  sign(x: number, y: number, z: number, w: number, h: number, id: string, yaw = 0, twoSided = true, back?: Col) {
+  sign(x: number, y: number, z: number, w: number, h: number, id: string, yaw = 0, twoSided = true, back?: Col, glow = 1) {
     const s = signSlot(id);
     if (!s) return;
     this.at(x, z, yaw, () => {
-      const c = col(0xffffff);
+      // signs ignore vertex color for albedo; its brightness scales the night glow
+      const c = col(0xffffff).multiplyScalar(glow);
       this.quad([-w / 2, y - h / 2, 0.06], [w / 2, y - h / 2, 0.06], [w / 2, y + h / 2, 0.06], [-w / 2, y + h / 2, 0.06], [[0, s.v0], [1, s.v0], [1, s.v1], [0, s.v1]], c, s.layer);
       if (twoSided) this.quad([w / 2, y - h / 2, -0.06], [-w / 2, y - h / 2, -0.06], [-w / 2, y + h / 2, -0.06], [w / 2, y + h / 2, -0.06], [[0, s.v0], [1, s.v0], [1, s.v1], [0, s.v1]], c, s.layer);
       else if (back) this.quad([w / 2, y - h / 2, -0.06], [-w / 2, y - h / 2, -0.06], [-w / 2, y + h / 2, -0.06], [w / 2, y + h / 2, -0.06], [[0, 0], [1, 0], [1, 1], [0, 1]], back, T.SOLID);
     });
+  }
+
+  /** Cylinder/strut between two arbitrary points (logs, poles, ropes, lattice). */
+  tube(a: V3, b: V3, r: number, seg: number, color: Col, tile: number = T.SOLID, r1 = r) {
+    const d = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    const L = d.length();
+    if (L < 1e-4) return;
+    d.normalize();
+    const up = Math.abs(d.y) < 0.95 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+    const u = new THREE.Vector3().crossVectors(d, up).normalize();
+    const v = new THREE.Vector3().crossVectors(u, d).normalize();
+    const [tu, tv] = TILE_M[tile] ?? [1, 1];
+    const ring = (p: V3, rr: number, t: number): V3 => {
+      const c = Math.cos(t), s = Math.sin(t);
+      return [p[0] + (u.x * c + v.x * s) * rr, p[1] + (u.y * c + v.y * s) * rr, p[2] + (u.z * c + v.z * s) * rr];
+    };
+    for (let i = 0; i < seg; i++) {
+      const t0 = (i / seg) * Math.PI * 2, t1 = ((i + 1) / seg) * Math.PI * 2;
+      const uu0 = ((i / seg) * 2 * Math.PI * r) / tu, uu1 = (((i + 1) / seg) * 2 * Math.PI * r) / tu;
+      this.quad(ring(a, r, t0), ring(a, r, t1), ring(b, r1, t1), ring(b, r1, t0), [[uu0, 0], [uu1, 0], [uu1, L / tv], [uu0, L / tv]], color, tile);
+    }
+  }
+
+  /** Small cube that glows at night (bulbs, lanterns, embers). */
+  glowBox(x: number, y: number, z: number, s: number, id = 'glowWarm', glow = 3) {
+    const sl = signSlot(id);
+    if (!sl) return;
+    const c = col(0xffffff).multiplyScalar(glow);
+    const h = s / 2;
+    const uv: [number, number][] = [[0.1, sl.v0], [0.9, sl.v0], [0.9, sl.v1], [0.1, sl.v1]];
+    const P = (dx: number, dy: number, dz: number): V3 => [x + dx * h, y + dy * h, z + dz * h];
+    this.quad(P(-1, -1, 1), P(1, -1, 1), P(1, 1, 1), P(-1, 1, 1), uv, c, sl.layer);
+    this.quad(P(1, -1, -1), P(-1, -1, -1), P(-1, 1, -1), P(1, 1, -1), uv, c, sl.layer);
+    this.quad(P(1, -1, 1), P(1, -1, -1), P(1, 1, -1), P(1, 1, 1), uv, c, sl.layer);
+    this.quad(P(-1, -1, -1), P(-1, -1, 1), P(-1, 1, 1), P(-1, 1, -1), uv, c, sl.layer);
+    this.quad(P(-1, 1, 1), P(1, 1, 1), P(1, 1, -1), P(-1, 1, -1), uv, c, sl.layer);
+    this.quad(P(-1, -1, -1), P(1, -1, -1), P(1, -1, 1), P(-1, -1, 1), uv, c, sl.layer);
+  }
+
+  /** Crossed flame blades (emissive) standing at x,y,z. */
+  flame(x: number, y: number, z: number, h: number, w: number, glow = 4) {
+    const sl = signSlot('flame');
+    if (!sl) return;
+    const c = col(0xffffff).multiplyScalar(glow);
+    for (let k = 0; k < 3; k++) {
+      const a = (k / 3) * Math.PI;
+      const dx = Math.cos(a) * w / 2, dz = Math.sin(a) * w / 2;
+      const uvs: [number, number][] = [[0, sl.v0], [1, sl.v0], [0.5, sl.v1]];
+      this.tri([x - dx, y, z - dz], [x + dx, y, z + dz], [x, y + h, z], uvs, c, sl.layer);
+      this.tri([x + dx, y, z + dz], [x - dx, y, z - dz], [x, y + h, z], uvs, c, sl.layer);
+    }
   }
 
   /** Pole sign: post(s) + two-sided sign box. */

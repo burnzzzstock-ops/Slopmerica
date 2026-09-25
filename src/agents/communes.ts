@@ -1,13 +1,17 @@
 // Hippie communes: scattered opposition. Pay them off, sue them, or (rarely)
 // learn to live with them forever.
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { HALF, WATER } from '../config';
 import { clamp } from '../core/math';
 import { Rng } from '../core/rng';
 import type { MapId } from '../world/maps';
 import type { Terrain } from '../world/terrain';
+import { Paint } from '../world/terrain';
+import type { Emitter } from '../contracts';
+import { buildingMaterial } from '../buildings/generator';
+import { buildCommune } from './communeBuilder';
 import type { Trees } from '../world/trees';
+import { COMMUNE_NAMES as NAMES } from '../art/communeNames';
 
 export interface Commune {
   id: number;
@@ -29,20 +33,11 @@ export interface Commune {
   protestUntil: number;
   group: THREE.Group;
   fire: THREE.PointLight;
+  /** Smoke / fire emitters in commune-local space. */
+  emitters: Emitter[];
   leaveT: number;
 }
 
-const NAMES: Record<MapId | 'any', string[]> = {
-  any: [
-    'Sunflower Collective', 'Mother Earth Commune', 'The Vibe Zone', 'Camp Kombucha', 'Free Love Acres', 'Crystal Healing Co-op',
-    'Harmony Hollow', 'Moonchild Ranch', 'Tofu Ridge', 'Sprout Nation', 'Hemp Haven', 'Granola Gulch', 'Solstice Village',
-    'The Drum Circle That Never Ends', 'Woodstock Forever', 'Birkenstock Bluffs', 'Vegan Vortex', 'Cosmic Yurt Collective',
-    'Mushroom Meadow', 'Patchouli Pines', 'Third Eye Estates', 'Dandelion Nation',
-  ],
-  appalachia: ['Dreadlock Holler', 'Moonshine & Mantras', 'Banjo Buddha Farm', 'Ramp Festival Forever'],
-  norcal: ['Big Sur-render', 'Redwood Rainbow Tribe', 'Humboldt Harmony', 'Esalen-ish Institute', 'Burning Mini'],
-  florida: ['Swamp Shaman Co-op', 'Gator Gaia', 'Manatee Mindfulness', 'Everglade Energy Healing'],
-};
 const VIBES = [
   'Immaculate', 'Patchouli-forward', 'Aggressively peaceful', 'Mercury is in retrograde', 'Kombucha-scented',
   'Drum circle since 1969', 'Vibing, suspiciously', 'Off-grid and extremely online', 'Crunchy', 'Barefoot, litigious',
@@ -53,50 +48,9 @@ const DEMANDS = [
   'Rename the county "Gaia"', 'Stop cutting the trees, man', 'Fluoride out, crystals in', 'A 4-day week. Weeks are a construct.',
 ];
 
-function colorGeo(g: THREE.BufferGeometry, hex: number) {
-  const gg = g.index ? g.toNonIndexed() : g;
-  gg.deleteAttribute('uv');
-  const c = new THREE.Color(hex);
-  const n = gg.getAttribute('position').count;
-  const a = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; }
-  gg.setAttribute('color', new THREE.BufferAttribute(a, 3));
-  return gg;
-}
-
-function signTexture(name: string): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = 512;
-  c.height = 192;
-  const ctx = c.getContext('2d')!;
-  const g = ctx.createLinearGradient(0, 0, 512, 0);
-  ['#ff4d6d', '#ffb347', '#fff275', '#7dff8a', '#5ec8ff', '#b388ff'].forEach((col, i) => g.addColorStop(i / 5, col));
-  ctx.fillStyle = '#6b4a2b';
-  ctx.fillRect(0, 0, 512, 192);
-  ctx.fillStyle = g;
-  ctx.fillRect(10, 10, 492, 172);
-  ctx.fillStyle = '#2a1a0a';
-  ctx.font = '44px "Permanent Marker", "Comic Sans MS", cursive';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  const words = name.split(' ');
-  if (name.length > 18 && words.length > 1) {
-    const h = Math.ceil(words.length / 2);
-    ctx.fillText(words.slice(0, h).join(' '), 256, 70);
-    ctx.fillText(words.slice(h).join(' '), 256, 128);
-  } else ctx.fillText(name, 256, 96);
-  ctx.font = '26px "Permanent Marker", cursive';
-  ctx.fillText('☮ NO STROADS ☮', 256, 170);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-
 export class Communes {
   list: Commune[] = [];
   readonly group = new THREE.Group();
-  private mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 });
-  private fireMat = new THREE.MeshBasicMaterial({ color: 0xff8a2a });
 
   constructor(private terrain: Terrain, private trees: Trees, mapId: MapId, count: number, seed: number, foreverChance: number, avoid: { x: number; z: number; r: number }[]) {
     const rng = new Rng(seed);
@@ -121,83 +75,31 @@ export class Communes {
       const c: Commune = {
         id: this.list.length + 1, name, x, z, r: 30 + members * 0.8, members, stubborn: rng.range(0.1, 0.7), forever: rng.chance(foreverChance),
         vibe: rng.pick(VIBES), demand: rng.pick(DEMANDS), founded: rng.int(1967, 2019), state: 'active', suitDays: 0, suitOdds: 0,
-        nextProtest: rng.range(20, 70), protestSeg: 0, protestUntil: 0, group: new THREE.Group(), fire: new THREE.PointLight(0xff8a3a, 0, 60, 2), leaveT: 0,
+        nextProtest: rng.range(20, 70), protestSeg: 0, protestUntil: 0, group: new THREE.Group(), fire: new THREE.PointLight(0xff8a3a, 0, 60, 2), leaveT: 0, emitters: [],
       };
       if (c.forever) { c.founded = 1969; c.stubborn = 1; }
-      this.build(c, rng);
+      this.build(c, rng, mapId);
       this.list.push(c);
       this.group.add(c.group);
     }
   }
 
-  private build(c: Commune, rng: Rng) {
-    const parts: THREE.BufferGeometry[] = [];
+  private build(c: Commune, rng: Rng, mapId: MapId) {
     const y0 = this.terrain.h(c.x, c.z);
-    const place = (g: THREE.BufferGeometry, lx: number, lz: number, rot = 0) => {
-      g.rotateY(rot);
-      g.translate(lx, this.terrain.h(c.x + lx, c.z + lz) - y0, lz);
-      parts.push(g);
-    };
-    const yurtColors = [0xe8d8b8, 0xd96c4a, 0x6a9a5b, 0xe0b04a, 0x7a5aa8, 0x4a8ab8];
-    const n = 3 + Math.floor(c.members / 8);
-    for (let k = 0; k < n; k++) {
-      const a = (k / n) * Math.PI * 2 + rng.range(-0.3, 0.3);
-      const d = c.r * rng.range(0.35, 0.75);
-      const r = rng.range(2.6, 3.8);
-      const wall = colorGeo(new THREE.CylinderGeometry(r, r, 2.4, 12).translate(0, 1.2, 0), rng.pick(yurtColors));
-      const roof = colorGeo(new THREE.ConeGeometry(r * 1.08, 1.8, 12).translate(0, 3.3, 0), 0xc9b48a);
-      place(mergeGeometries([wall, roof])!, Math.cos(a) * d, Math.sin(a) * d);
-    }
-    // geodesic dome
-    const dome = colorGeo(new THREE.IcosahedronGeometry(6, 1), 0xf2f2ee);
-    dome.scale(1, 0.85, 1);
-    place(dome, rng.range(-6, 6), rng.range(-6, 6));
-    // VW buses (two-tone)
-    for (let k = 0; k < 2; k++) {
-      const a = rng.range(0, Math.PI * 2);
-      const body = colorGeo(new THREE.BoxGeometry(1.9, 1.3, 4.4).translate(0, 1.15, 0), rng.pick([0x5ec8ff, 0xff8a3a, 0x7dff8a, 0xffd23a]));
-      const top = colorGeo(new THREE.BoxGeometry(1.9, 0.8, 4.4).translate(0, 2.2, 0), 0xf5f0e0);
-      const w1 = colorGeo(new THREE.CylinderGeometry(0.38, 0.38, 2.0, 8).rotateZ(Math.PI / 2).translate(0, 0.38, 1.4), 0x222222);
-      const w2 = colorGeo(new THREE.CylinderGeometry(0.38, 0.38, 2.0, 8).rotateZ(Math.PI / 2).translate(0, 0.38, -1.4), 0x222222);
-      place(mergeGeometries([body, top, w1, w2])!, Math.cos(a) * c.r * 0.9, Math.sin(a) * c.r * 0.9, rng.range(0, 6));
-    }
-    // garden beds
-    for (let k = 0; k < 4; k++) {
-      place(colorGeo(new THREE.BoxGeometry(8, 0.5, 1.4).translate(0, 0.25, 0), 0x4a7a2a), -c.r * 0.3 + k * 2.2, c.r * 0.45, 0.2);
-    }
-    // campfire logs + ring
-    place(colorGeo(new THREE.CylinderGeometry(2.2, 2.4, 0.4, 10).translate(0, 0.2, 0), 0x6d6a66), 8, -4);
-    // prayer flag poles
-    for (let k = 0; k < 3; k++) place(colorGeo(new THREE.CylinderGeometry(0.12, 0.12, 7, 5).translate(0, 3.5, 0), 0x8a6a4a), rng.range(-c.r * 0.6, c.r * 0.6), rng.range(-c.r * 0.6, c.r * 0.6));
-    const merged = mergeGeometries(parts)!;
-    const mesh = new THREE.Mesh(merged, this.mat);
+    const L = buildCommune(c.name, c.r, c.members, rng.int(1, 1e9), (lx, lz) => this.terrain.h(c.x + lx, c.z + lz) - y0, mapId);
+    const mesh = new THREE.Mesh(L.geometry, buildingMaterial());
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     c.group.add(mesh);
-    // flames
-    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.9, 2.2, 6), this.fireMat);
-    flame.position.set(8, this.terrain.h(c.x + 8, c.z - 4) - y0 + 1.3, -4);
-    flame.name = 'flame';
-    c.group.add(flame);
-    c.fire.position.set(8, flame.position.y + 2, -4);
-    c.group.add(c.fire);
-    // prayer flags string (colored quads)
-    const flagCols = [0x2a6ad8, 0xf2f2f2, 0xd83a2a, 0x2ab04a, 0xf2d23a];
-    const flags: THREE.BufferGeometry[] = [];
-    for (let k = 0; k < 14; k++) {
-      const q = colorGeo(new THREE.PlaneGeometry(0.8, 1).translate(-c.r * 0.5 + k * (c.r / 14), 5.5 - Math.sin((k / 13) * Math.PI) * 1.2, 0), flagCols[k % 5]);
-      flags.push(q);
+    c.emitters = L.emitters;
+    // clear trees out of the structures, trample paths into the grass
+    for (const f of L.clear) {
+      const fx = c.x + f.x, fz = c.z + f.z;
+      this.trees.cut(fx - f.r, fz - f.r, fx + f.r, fz + f.r, (x, z) => (x - fx) ** 2 + (z - fz) ** 2 < f.r * f.r);
     }
-    const fm = new THREE.Mesh(mergeGeometries(flags)!, new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide }));
-    c.group.add(fm);
-    // hand-painted sign facing outward
-    const sign = new THREE.Mesh(new THREE.PlaneGeometry(9, 3.4), new THREE.MeshStandardMaterial({ map: signTexture(c.name), side: THREE.DoubleSide }));
-    const sa = rng.range(0, Math.PI * 2);
-    sign.position.set(Math.cos(sa) * (c.r + 2), this.terrain.h(c.x + Math.cos(sa) * (c.r + 2), c.z + Math.sin(sa) * (c.r + 2)) - y0 + 3.2, Math.sin(sa) * (c.r + 2));
-    sign.lookAt(Math.cos(sa) * (c.r + 30), sign.position.y, Math.sin(sa) * (c.r + 30));
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.3, 3.2, 0.3), new THREE.MeshStandardMaterial({ color: 0x6b4a2b }));
-    post.position.copy(sign.position).setY(sign.position.y - 2.4);
-    c.group.add(sign, post);
+    for (const d of L.dirt) this.terrain.paintCircle(c.x + d.x, c.z + d.z, d.r, Paint.Dirt);
+    c.fire.position.set(L.fire[0], L.fire[1] + 0.8, L.fire[2]);
+    c.group.add(c.fire);
     c.group.position.set(c.x, y0, c.z);
   }
 
@@ -240,8 +142,6 @@ export class Communes {
       if (c.state === 'gone') continue;
       c.fire.intensity = night * 40 * (0.8 + Math.sin(time * 13 + c.id) * 0.2);
       c.fire.visible = night > 0.05;
-      const f = c.group.getObjectByName('flame');
-      if (f) f.scale.setScalar(0.85 + Math.sin(time * 11 + c.id * 3) * 0.15);
       if (c.state === 'leaving') {
         c.leaveT += dt;
         c.group.position.y -= dt * 2;

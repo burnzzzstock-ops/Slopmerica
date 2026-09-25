@@ -86,4 +86,6 @@ export const GENERIC_SIGNS: { id: string; text: string; colors: [string, string]
   { id: 'slopmerica', text: 'SLOPMERICA', colors: ['#f1f1f1', '#1d3a8a'], font: 'Bungee' },
   { id: 'jesusSaves', text: 'JESUS SAVES (15% OFF)', colors: ['#ffffff', '#1d3a8a'], font: 'Anton' },
   { id: 'datacenter', text: 'NEURAL FLY  DATA  DO NOT LICK', colors: ['#0b0f1a', '#6ef0ff'], font: 'Overpass' },
+  { id: 'noStroads', text: 'NO STROADS', colors: ['#3a2414', '#fff275'], font: 'Permanent Marker' },
+  { id: 'goodVibes', text: 'GOOD VIBES ONLY', colors: ['#2a6a3a', '#fff4e0'], font: 'Permanent Marker' },
 ];

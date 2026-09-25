@@ -517,6 +517,7 @@ export class RoadRenderer {
     const trims = segs.map((s) => (s.a === n.id ? s.trimA : s.trimB));
     if (trims.every((t) => t < 0.01)) return b;
     const pts: V2[] = [{ x: n.x, z: n.z }];
+    const edgeHeights: { p: V2; y: number }[] = [];
     for (const s of segs) {
       const atA = s.a === n.id;
       const t = ROAD_TYPES[s.type];
@@ -525,7 +526,10 @@ export class RoadRenderer {
       const F = RoadRenderer.frame(s, clamp(d, 0, s.length));
       const r = { x: -F.t.z, z: F.t.x };
       const hw = carriageHalf(t);
-      pts.push({ x: F.p.x + r.x * hw, z: F.p.z + r.z * hw }, { x: F.p.x - r.x * hw, z: F.p.z - r.z * hw });
+      const left = { x: F.p.x + r.x * hw, z: F.p.z + r.z * hw };
+      const right = { x: F.p.x - r.x * hw, z: F.p.z - r.z * hw };
+      pts.push(left, right);
+      edgeHeights.push({ p: left, y: F.y + 0.08 }, { p: right, y: F.y + 0.08 });
     }
     let hull = convexHull(pts);
     // screen-CCW (x right, -z up) needs negative xz signed area
@@ -536,7 +540,16 @@ export class RoadRenderer {
     }
     if (area > 0) hull = hull.reverse();
     const c = b.v(n.x, y, n.z, 0, 1, 0, n.x / 8, n.z / 8);
-    const ids = hull.map((p) => b.v(p.x, y, p.z, 0, 1, 0, p.x / 8, p.z / 8));
+    // Approach profiles can differ noticeably on hills. Keep the center pinned
+    // to the averaged node height, but meet each road at its sampled edge height.
+    const ids = hull.map((p) => {
+      let best = edgeHeights[0], d2 = Infinity;
+      for (const edge of edgeHeights) {
+        const dx = p.x - edge.p.x, dz = p.z - edge.p.z, dd = dx * dx + dz * dz;
+        if (dd < d2) { best = edge; d2 = dd; }
+      }
+      return b.v(p.x, best?.y ?? y, p.z, 0, 1, 0, p.x / 8, p.z / 8);
+    });
     for (let k = 0; k < ids.length; k++) b.tri(c, ids[k], ids[(k + 1) % ids.length]);
     return b;
   }

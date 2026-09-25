@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import type { Season } from '../contracts';
 import type { MapId } from './maps';
+import { ATMOS } from './atmos';
 
 export const YEAR = 365;
 
@@ -72,10 +73,11 @@ interface MapCurves {
 
 const CURVES: Record<MapId, MapCurves> = {
   appalachia: {
-    bare: K(0, 1, 12, 0.9, 22, 0.55, 32, 0.18, 42, 0, 206, 0, 222, 0.28, 238, 0.78, 252, 1),
+    // A new game (Mar 20) opens mid-bloom, not in bare March woods: paradise first.
+    bare: K(0, 0.3, 8, 0.08, 14, 0, 206, 0, 222, 0.28, 238, 0.78, 252, 1, 330, 1, 352, 0.75),
     fall: K(0, 0, 172, 0, 192, 0.3, 206, 0.8, 216, 1, 236, 1, 256, 0.7, 276, 0.2, 300, 0),
-    fresh: K(0, 0, 18, 0.3, 30, 1, 56, 0.75, 84, 0.15, 104, 0),
-    blossom: K(0, 0, 6, 0.15, 16, 1, 34, 0.95, 44, 0.2, 52, 0),
+    fresh: K(0, 0.6, 20, 1, 50, 0.7, 84, 0.15, 104, 0, 330, 0, 355, 0.35),
+    blossom: K(0, 0.9, 12, 1, 24, 0.8, 36, 0.2, 46, 0, 340, 0),
     dull: K(0, 0.45, 40, 0, 238, 0, 270, 0.6, 330, 0.6),
     dry: K(0, 0, 120, 0, 150, 0.15, 180, 0.1, 200, 0),
     dormant: K(0, 0.6, 18, 0.35, 38, 0.05, 50, 0, 200, 0, 228, 0.3, 256, 0.75, 330, 0.8),
@@ -83,7 +85,7 @@ const CURVES: Record<MapId, MapCurves> = {
     golden: FLAT0,
     marsh: FLAT0,
     flowers: K(0, 0, 22, 0.15, 42, 0.7, 70, 0.45, 100, 0.2, 130, 0.35, 170, 0.05, 186, 0),
-    snow: K(0, 0.12, 12, 0, 244, 0, 262, 0.15, 285, 0.5, 305, 0.72, 325, 0.6, 345, 0.3),
+    snow: K(0, 0, 244, 0, 262, 0.15, 285, 0.5, 305, 0.72, 325, 0.6, 345, 0.25, 360, 0.05),
   },
   norcal: {
     bare: K(0, 0.5, 26, 0, 236, 0, 262, 0.4, 296, 0.9, 340, 0.8),
@@ -234,6 +236,22 @@ export const atmo = {
   uFlowers: { value: 0 },
 };
 export type AtmoUniforms = typeof atmo;
+
+/**
+ * Extra shared uniforms for the terrain extras (wildflowers, puddles with rain
+ * rings, sky reflection), registered into ATMOS so bindAtmos() hands them to
+ * every atmosphere material. Names are unique so they never shadow a
+ * material's own uTime / uRain.
+ */
+export const ATMOS_EXTRA = {
+  uFlowers: atmo.uFlowers,
+  uPuddle: atmo.uPuddle,
+  uRainAmt: atmo.uRain,
+  uAtmoTime: atmo.uTime,
+  uSkyRefl: atmo.uSkyRefl,
+  uFlowerMap: { value: 0 }, // 0 Holler County, 1 Golden Coast, 2 Gator Gulch
+};
+Object.assign(ATMOS, ATMOS_EXTRA);
 
 /** Write a sampled season into the shared uniforms. */
 export function applySeasonUniforms(s: SeasonLook) {

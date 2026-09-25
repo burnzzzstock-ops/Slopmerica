@@ -109,7 +109,10 @@ export class Game {
 
   constructor(public container: HTMLElement, public opts: GameOptions) {
     this.q = opts.quality ?? defaultQuality();
+    let tLap = performance.now();
+    const lap = (n: string) => { const t = performance.now(); console.info(`[boot] ${n} ${(t - tLap).toFixed(0)}ms`); tLap = t; };
     this.map = generateMap(opts.map);
+    lap('map');
     this.cityName = opts.cityName || defaultCityName(opts.map);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: !IS_TOUCH || this.q.name === 'high', powerPreference: 'high-performance' });
@@ -122,15 +125,17 @@ export class Game {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.domElement.className = 'game-canvas';
     container.appendChild(this.renderer.domElement);
-    this.camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 1, 16000);
+    this.camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 1, 50000);
 
     // world
-    this.terrain = new Terrain(this.map);
+    this.terrain = new Terrain(this.map, this.renderer, this.q);
     this.scene.add(this.terrain.group);
+    lap('terrain');
     this.water = createWater(this.terrain, this.map.def.water);
     this.scene.add(this.water.mesh);
-    this.trees = new Trees(this.terrain, this.map, this.q.treeDensity);
+    this.trees = new Trees(this.terrain, this.map, this.q, this.renderer);
     this.scene.add(this.trees.group);
+    lap('trees');
     this.env = new Environment(this.scene, this.map.def, this.q);
     this.env.hour = this.hour;
     this.weather = new WeatherSystem({ scene: this.scene, renderer: this.renderer, env: this.env, terrain: this.terrain, trees: this.trees, water: this.water, quality: this.q, mapId: opts.map });
@@ -145,12 +150,17 @@ export class Game {
     this.zones = new Zoning(this.net, this.terrain, this.scene);
     this.buildings = new Buildings(this.scene, this.terrain, this.trees, this.zones, this.net);
     this.sim = new Sim(opts.mode, this.buildings, this.zones, this.net, this.terrain, this.trees);
+    lap('city');
 
     const start = this.startView();
+    lap('start');
     const communeCount = Math.round(this.map.def.communes * (opts.mode === 'hippie' ? 2.2 : 1));
-    this.communes = new Communes(this.terrain, this.trees, opts.map, communeCount, this.map.def.seed + 5, opts.mode === 'hippie' ? 0.3 : 0.12, [{ x: start.x, z: start.z, r: 260 }]);
+    const avoid = [{ x: start.x, z: start.z, r: 320 }];
+    for (let t = 0; t <= 1; t += 0.05) avoid.push({ x: start.edge.x + (start.x - start.edge.x) * t, z: start.edge.z + (start.z - start.edge.z) * t, r: 140 });
+    this.communes = new Communes(this.terrain, this.trees, opts.map, communeCount, this.map.def.seed + 5, opts.mode === 'hippie' ? 0.3 : 0.12, avoid);
     this.scene.add(this.communes.group);
     this.syncBlockers();
+    lap('communes');
     this.sim.communePenalty = (x, z) => this.communes.penalty(x, z);
 
     this.traffic = new Traffic(this.scene, this.net, this.buildings, this.q.maxCars);
@@ -159,11 +169,12 @@ export class Game {
     this.tools = new Tools(this);
 
     this.rts = new RTSCamera(this.camera, this.renderer.domElement, this.terrain, this.tools as PointerHandlers);
-    this.rts.setView(start.x, start.z, IS_TOUCH ? 700 : 620, start.yaw, 0.78, true);
+    this.rts.setView(start.x, start.z, IS_TOUCH ? 900 : 800, start.yaw, 0.72, true);
 
     this.wireEvents();
     if (opts.restore) applySave(this, opts.restore);
     else this.seedRoad(start);
+    lap('rest');
     window.addEventListener('resize', () => this.resize());
   }
 
@@ -173,18 +184,37 @@ export class Game {
     return new Game(container, opts);
   }
 
+  private startCache: { x: number; z: number; yaw: number; edge: { x: number; z: number } } | null = null;
+  /** Find flat, dry, roomy land near the middle of the map for the first town. */
   private startView() {
-    const id = this.map.def.id;
-    if (id === 'norcal') return { x: -330, z: 160, yaw: -1.75, edge: { x: HALF - 14, z: 140 } };
-    if (id === 'florida') return { x: 40, z: 40, yaw: 2.9, edge: { x: 40, z: -HALF + 14 } };
-    return { x: -150, z: 20, yaw: 0.6, edge: { x: -HALF + 14, z: 10 } };
+    if (this.startCache) return this.startCache;
+    const T = this.terrain;
+    let best = { x: 0, z: 0 }, bestScore = -Infinity;
+    for (let z = -HALF * 0.55; z <= HALF * 0.55; z += 150)
+      for (let x = -HALF * 0.55; x <= HALF * 0.55; x += 150) {
+        if (T.h(x, z) < 2) continue;
+        let flat = 0;
+        for (let k = 0; k < 36; k++) {
+          const a = k * 2.399, r = 50 + (k / 36) * 330;
+          const px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
+          const hh = T.h(px, pz);
+          if (hh > 1.4 && T.slope(px, pz) < 0.12) flat++;
+        }
+        const score = flat - (Math.hypot(x, z) / HALF) * 8;
+        if (score > bestScore) { bestScore = score; best = { x, z }; }
+      }
+    const e = this.map.def.entry;
+    const edge = e === 'west' ? { x: -HALF + 14, z: best.z } : e === 'east' ? { x: HALF - 14, z: best.z } : e === 'north' ? { x: best.x, z: -HALF + 14 } : { x: best.x, z: HALF - 14 };
+    const yaw = Math.atan2(edge.x - best.x, edge.z - best.z) + 0.5;
+    this.startCache = { x: best.x, z: best.z, yaw, edge };
+    return this.startCache;
   }
 
   /** The county starts with one road in from the outside world. */
   private seedRoad(start: { x: number; z: number; edge: { x: number; z: number } }) {
     const pts: V2[] = [];
     const a = start.edge, b = { x: start.x, z: start.z };
-    const n = 6;
+    const n = Math.max(6, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 400));
     for (let k = 0; k <= n; k++) pts.push({ x: a.x + ((b.x - a.x) * k) / n, z: a.z + ((b.z - a.z) * k) / n });
     // nudge points onto dry land
     for (const p of pts) {
@@ -195,9 +225,9 @@ export class Game {
     for (let k = 1; k < pts.length; k++) {
       const end = { kind: 'free' as const, x: pts[k].x, z: pts[k].z };
       const c = lineCubic({ x: prev.x, z: prev.z }, pts[k]);
-      const plan = this.net.plan(prev, c, 'twoLane');
+      const plan = this.net.plan(prev, c, 'stroad4');
       if (!plan.ok) break;
-      const segs = this.net.build(prev, end, c, 'twoLane', 'Old County Road');
+      const segs = this.net.build(prev, end, c, 'stroad4', 'Old County Road');
       if (!segs.length) break;
       const last = segs[segs.length - 1];
       const node = this.net.nodes.get(last.b)!;
@@ -491,6 +521,9 @@ export class Game {
       this.dayTick = Math.floor(this.sim.day);
       this.communeTick();
     }
+    this.terrain.updateLOD(this.camera.position);
+    this.trees.setDayOfYear(t.dayOfYear);
+    this.trees.update(this.time, this.rts.target, this.rts.distance);
     this.zones.update();
     this.roads.update();
     const jobs = this.sim.jobsFilled;
@@ -530,7 +563,6 @@ export class Game {
     if (n > 0.6 && !this.nightWas) { this.nightWas = true; if (Math.random() < 0.5) this.feed.push('nightfall'); }
     if (n < 0.3) this.nightWas = false;
 
-    this.trees.wind.value = this.time;
     const wu = this.water.mat.uniforms;
     wu.uTime.value = this.time;
     wu.uSunDir.value.copy(this.env.sunDirection);

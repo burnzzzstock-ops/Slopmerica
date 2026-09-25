@@ -171,7 +171,7 @@ function asphaltTexture(maxAniso: number) {
   const c = document.createElement('canvas');
   c.width = c.height = 256;
   const ctx = c.getContext('2d')!;
-  noiseFill(ctx, 256, 256, [56, 56, 60], 22);
+  noiseFill(ctx, 256, 256, [74, 73, 76], 22);
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.anisotropy = maxAniso;

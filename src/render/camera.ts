@@ -79,7 +79,7 @@ export class RTSCamera {
 
   private zoomAt(f: number, cx: number, cy: number) {
     const before = this.goal.distance;
-    const next = clamp(before * f, 25, 2600);
+    const next = clamp(before * f, 25, 6500);
     const p = this.groundAt(cx, cy);
     if (p && next < before) {
       const k = 1 - next / before;
@@ -209,7 +209,7 @@ export class RTSCamera {
 
   update(dt: number) {
     const k = this.keys;
-    const sp = this.distance * 1.1 * dt * (k.has('shift') ? 2.5 : 1);
+    const sp = Math.max(120, this.distance) * 1.1 * dt * (k.has('shift') ? 2.5 : 1);
     const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
     let mx = 0, mz = 0;
     if (k.has('w') || k.has('arrowup')) { mx -= fx; mz -= fz; }
@@ -225,8 +225,8 @@ export class RTSCamera {
     if (k.has('e')) this.goal.yaw -= dt * 1.4;
     if (k.has('r')) this.goal.pitch = clamp(this.goal.pitch + dt, this.minPitch(), 1.48);
     if (k.has('f')) this.goal.pitch = clamp(this.goal.pitch - dt, this.minPitch(), 1.48);
-    if (k.has('=') || k.has('+')) this.goal.distance = clamp(this.goal.distance * (1 - dt * 1.5), 25, 2600);
-    if (k.has('-')) this.goal.distance = clamp(this.goal.distance * (1 + dt * 1.5), 25, 2600);
+    if (k.has('=') || k.has('+')) this.goal.distance = clamp(this.goal.distance * (1 - dt * 1.5), 25, 6500);
+    if (k.has('-')) this.goal.distance = clamp(this.goal.distance * (1 + dt * 1.5), 25, 6500);
 
     const s = 1 - Math.pow(0.0001, dt);
     this.goal.target.y = Math.max(WATER, this.terrain.h(this.goal.target.x, this.goal.target.z));
@@ -242,7 +242,7 @@ export class RTSCamera {
     if (pos.y < ground) pos.y = ground;
     this.camera.lookAt(this.target);
     this.camera.near = clamp(this.distance * 0.004, 0.5, 8);
-    this.camera.far = 16000;
+    this.camera.far = 50000;
     this.camera.updateProjectionMatrix();
   }
 }

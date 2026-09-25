@@ -21,7 +21,7 @@ export class Environment {
   private fogDusk = new THREE.Color(0xd08a6a);
 
   constructor(private scene: THREE.Scene, private def: MapDef, q: Quality) {
-    this.sky.scale.setScalar(40000);
+    this.sky.scale.setScalar(90000);
     const u = this.sky.material.uniforms;
     u.turbidity.value = def.sky.turbidity;
     u.rayleigh.value = def.sky.rayleigh;
@@ -42,7 +42,7 @@ export class Environment {
     this.sun.shadow.normalBias = 0.6;
     const cam = this.sun.shadow.camera;
     cam.near = 10;
-    cam.far = 3000;
+    cam.far = 5000;
     scene.add(this.sun);
     scene.add(this.sun.target);
 
@@ -52,9 +52,9 @@ export class Environment {
     for (let i = 0; i < n; i++) {
       const th = Math.random() * Math.PI * 2;
       const ph = Math.acos(Math.random() * 0.9 + 0.1);
-      pos[i * 3] = Math.cos(th) * Math.sin(ph) * 15000;
-      pos[i * 3 + 1] = Math.cos(ph) * 15000;
-      pos[i * 3 + 2] = Math.sin(th) * Math.sin(ph) * 15000;
+      pos[i * 3] = Math.cos(th) * Math.sin(ph) * 40000;
+      pos[i * 3 + 1] = Math.cos(ph) * 40000;
+      pos[i * 3 + 2] = Math.sin(th) * Math.sin(ph) * 40000;
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -82,8 +82,8 @@ export class Environment {
 
     // Directional light follows the sun by day and a pale moon by night
     const lightDir = daylight > 0.05 ? this.sunDir.clone() : new THREE.Vector3(-0.4, 0.8, 0.3).normalize();
-    const shadowSize = THREE.MathUtils.clamp(viewDist * 0.9, 120, 900);
-    this.sun.position.copy(focus).addScaledVector(lightDir, 1500);
+    const shadowSize = THREE.MathUtils.clamp(viewDist * 0.75, 90, 1400);
+    this.sun.position.copy(focus).addScaledVector(lightDir, 2500);
     this.sun.target.position.copy(focus);
     const cam = this.sun.shadow.camera;
     if (cam.right !== shadowSize) {

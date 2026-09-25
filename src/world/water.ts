@@ -59,9 +59,13 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
         float outsideDepth = 30.0;
         float depth = mix(outsideDepth, ${WATER.toFixed(1)} - ground, inside);
         if (depth < -0.02) discard;
-        float e = 0.8;
+        float camD = length(cameraPosition - vW);
+        // widen the sampling footprint and calm the normals with distance so
+        // far water doesn't alias into white noise
+        float e = 0.8 + camD * 0.004;
+        float amp = 2.2 * (1.0 - 0.85 * smoothstep(250.0, 2600.0, camD));
         float c0 = wave(vW.xz), cx = wave(vW.xz + vec2(e,0.0)), cz = wave(vW.xz + vec2(0.0,e));
-        vec3 n = normalize(vec3((c0-cx)*2.2, 1.0, (c0-cz)*2.2));
+        vec3 n = normalize(vec3((c0-cx)*amp*0.8/e, 1.0, (c0-cz)*amp*0.8/e));
         vec3 viewDir = normalize(cameraPosition - vW);
         float fres = pow(1.0 - max(dot(n, viewDir), 0.0), 3.0);
         float dT = smoothstep(0.0, 9.0, depth);
@@ -69,7 +73,7 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
         base = mix(base, uMurk, uPollution);
         vec3 col = mix(base, uSky, fres * 0.55);
         vec3 h = normalize(uSunDir + viewDir);
-        float spec = pow(max(dot(n, h), 0.0), 180.0) * (1.0 - uNight);
+        float spec = pow(max(dot(n, h), 0.0), mix(180.0, 60.0, smoothstep(300.0, 3000.0, camD))) * (1.0 - uNight) * (1.0 - 0.6 * smoothstep(800.0, 4000.0, camD));
         col += uSunColor * spec * 1.6;
         float foam = (1.0 - smoothstep(0.0, 0.55, depth)) * smoothstep(0.35, 0.75, vn(vW.xz*0.5 + uTime*0.3));
         col = mix(col, vec3(0.95), foam * 0.6 * (1.0 - uPollution*0.5));
@@ -81,7 +85,7 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
       }
     `,
   });
-  const geo = new THREE.PlaneGeometry(WORLD + 12000, WORLD + 12000, 1, 1);
+  const geo = new THREE.PlaneGeometry(WORLD * 8, WORLD * 8, 1, 1);
   geo.rotateX(-Math.PI / 2);
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.y = WATER;

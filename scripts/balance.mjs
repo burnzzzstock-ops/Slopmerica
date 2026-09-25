@@ -11,7 +11,11 @@ const out = await page.evaluate(async () => {
   const log = [];
   // grid of roads around the start
   const s = g.net.nodes.values().next().value;
-  const cx = 60, cz = 60;
+  const S0 = g.startView();
+  // put the test grid past the end of the seed road, away from the map edge
+  const ex = S0.x - S0.edge.x, ez = S0.z - S0.edge.z, el = Math.hypot(ex, ez) || 1;
+  const cx = Math.round(S0.x + (ex / el) * 380), cz = Math.round(S0.z + (ez / el) * 380);
+  d.road(S0.x, S0.z, cx - 300, cz, 'twoLane');
   const res = [];
   for (let k = -3; k <= 3; k++) {
     res.push(d.road(cx - 300, cz + k * 90, cx + 300, cz + k * 90, k === 0 ? 'stroad4' : 'twoLane'));

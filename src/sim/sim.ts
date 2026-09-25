@@ -9,7 +9,7 @@ import type { RoadNetwork } from '../roads/network';
 import type { Zoning, ZCell } from '../zones/zoning';
 import type { Terrain } from '../world/terrain';
 import type { Trees } from '../world/trees';
-import { WATER } from '../config';
+import { HALF, WATER } from '../config';
 
 export const DAY_SECONDS = 2.5;
 export const SPEEDS = [0, 1, 2, 4];
@@ -92,8 +92,8 @@ export class Sim {
     if (mode === 'speedrun') this.growthMul = 2;
     if (mode === 'sandbox') for (const u of UNLOCKS) this.unlocked.add(u.what);
     // sample buildable land once (for the sprawl meter)
-    for (let z = -1000; z <= 1000; z += 16)
-      for (let x = -1000; x <= 1000; x += 16) {
+    for (let z = -HALF + 16; z < HALF; z += 32)
+      for (let x = -HALF + 16; x < HALF; x += 32) {
         const h = terrain.h(x, z);
         if (h > WATER + 0.4 && terrain.slope(x, z) < 0.3) this.buildable.push({ x, z });
       }

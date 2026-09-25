@@ -5,7 +5,7 @@ import { WATER } from '../config';
 import { Emitter } from '../core/events';
 import {
   bezPoint, clamp, closestOnSampled, Cubic, dist, lerp, lineCubic, norm, Sampled, sampleCubic, segIntersect,
-  smoothstep, SpatialHash, splitCubic, sub, V2,
+  smoothstep, SpatialHash, splitCubic, sub, tangentAt, V2,
 } from '../core/math';
 import type { Terrain } from '../world/terrain';
 import type { Trees } from '../world/trees';
@@ -178,7 +178,12 @@ export class RoadNetwork {
       let close = 0;
       for (let i = 2; i < samp.pts.length - 2; i++) {
         const c = closestOnSampled(samp.pts[i], seg.samp);
-        if (c.d < hw * 0.7) close++;
+        if (c.d >= hw * 0.7) continue;
+        // only count stretches that run alongside; a clean crossing is fine
+        const a = sub(samp.pts[i + 1], samp.pts[i - 1]);
+        const b = tangentAt(seg.samp, c.s);
+        const al = Math.hypot(a.x, a.z) || 1, bl = Math.hypot(b.x, b.z) || 1;
+        if (Math.abs((a.x * b.x + a.z * b.z) / (al * bl)) > 0.75) close++;
       }
       if (close > 4) return { ...res, ok: false, reason: 'Overlaps an existing road' };
       for (const x of this.crossingsWith(samp, seg)) crossings.push(x.p);

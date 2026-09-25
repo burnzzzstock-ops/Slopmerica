@@ -11,7 +11,7 @@ const page = await browser.newPage({ viewport: { width: +w, height: +h }, device
 const logs = [];
 page.on('console', (m) => { const t = m.text(); if (!t.includes('CERT') && !t.includes('404') && !t.includes('[vite]')) logs.push(`[${m.type()}] ${t}`); });
 page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}\n${e.stack}`));
-await page.goto(`http://127.0.0.1:5173/#skip&map=${map}&mode=sandbox`, { waitUntil: 'load', timeout: 120000 });
+await page.goto(`http://127.0.0.1:5173/#skip&map=${map}&mode=${process.env.MODE || "sandbox"}`, { waitUntil: 'load', timeout: 120000 });
 await page.waitForFunction(() => window.__game && window.__dbg, null, { timeout: 120000 });
 await page.evaluate(() => document.querySelector('.onboard button, .onboarding button')?.click());
 // Pause the live rAF loop: software GL is too slow to keep up, and screenshots

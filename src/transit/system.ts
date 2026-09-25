@@ -129,6 +129,7 @@ export class TransitSystem {
     })() : 0;
     if (!this.unlocked) return { ok: false, yaw, reason: `Unlocks at 300 population (${this.g.sim.population}/300)` };
     if (!this.g.terrain.inBounds(x, z, r + 10)) return { ok: false, yaw, reason: 'Outside the county' };
+    if (this.g.net.allowed && !this.g.net.allowed(x, z)) return { ok: false, yaw, reason: "You don't own this land yet. Buy it in 🏞️ Land." };
     if (this.g.terrain.h(x, z) < WATER + 0.8) return { ok: false, yaw, reason: 'The buses are not amphibious' };
     if (!pick) return { ok: false, yaw, reason: 'Needs road access within 40 m' };
     if (this.g.net.pickSeg(x, z, r - 2)) return { ok: false, yaw, reason: 'Overlaps a road' };

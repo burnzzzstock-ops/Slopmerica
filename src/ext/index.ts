@@ -6,3 +6,4 @@ import '../tools/terraform';
 import '../sim/disasters';
 import '../sim/freight';
 import '../transit/system';
+import '../sim/land';

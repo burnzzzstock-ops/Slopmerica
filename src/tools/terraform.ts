@@ -17,6 +17,7 @@ let message = '';
 
 function valid(g: Game, x: number, z: number, lowering: boolean): string | null {
   if (!g.terrain.inBounds(x, z, radius + 2)) return 'Outside the county line';
+  if (g.net.allowed && !g.net.allowed(x, z)) return "You don't own this land yet";
   if (lowering && g.terrain.h(x, z) <= WATER + 0.15) return 'Water mask is baked; underwater lowering is unavailable';
   if (g.net.pickSeg(x, z, 12)) return 'Too close to a road';
   if (g.buildings.near(x, z, 10).length) return 'Too close to a building';
@@ -37,6 +38,7 @@ function brush(g: Game, x: number, z: number) {
     const weight = (1 - d / radius) ** 2;
     if (weight < 0.005) return;
     if (g.net.pickSeg(sx, sz, 10) || g.communes.at(sx, sz)) return;
+    if (g.net.allowed && !g.net.allowed(sx, sz)) return;
     if (nearBuildings.some(b => Math.abs(b.x - sx) < b.hw + 8 && Math.abs(b.z - sz) < b.hd + 8)) return;
     const before = H[id];
     let wanted = before;

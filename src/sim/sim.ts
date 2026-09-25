@@ -105,6 +105,8 @@ export class Sim {
   private buildable: { x: number; z: number }[] = [];
   private cand: ZCell[] = [];
   growthMul = 1;
+  /** fractional new construction sites carried over between days */
+  private growthAcc = 0;
   weatherBuildMul = 1;
   weatherDemandMul = 1;
   /** gameplay hooks provided by the game */
@@ -187,21 +189,35 @@ export class Sim {
   }
 
   private dailyTick(d: number) {
-    this.population = 0;
-    let resHighPop = 0;
     const cap = { comLow: 0, comHigh: 0, industry: 0, office: 0 };
+    // Households arrive at a steady, city-wide rate (a trickle that grows with
+    // the town), not by instantly filling every new building.
+    const open: Bld[] = [];
     for (const bld of this.b.list.values()) {
-      if (bld.state !== 'active' && bld.occ === 0) continue;
-      if (bld.abandoned !== undefined) continue;
+      if (bld.state !== 'active' || bld.abandoned !== undefined) continue;
       if (bld.zone === 'resLow' || bld.zone === 'resHigh') {
-        // move-ins / move-outs
-        if (bld.occ < bld.cap && this.demand.res > -30 && !this.vacancyBlock(bld)) bld.occ = Math.min(bld.cap, bld.occ + Math.max(1, Math.ceil(bld.cap * 0.18)));
-        else if (this.demand.res < -60 && bld.occ > 0 && this.rng.chance(0.2)) bld.occ--;
-        this.population += bld.occ;
-        if (bld.zone === 'resHigh') resHighPop += bld.occ;
-      } else if (isZoned(bld) && bld.state === 'active' && !this.vacancyBlock(bld)) {
+        if (this.demand.res < -60 && bld.occ > 0 && this.rng.chance(0.2)) bld.occ--;
+        else if (bld.occ < bld.cap && !this.vacancyBlock(bld)) open.push(bld);
+      } else if (isZoned(bld) && !this.vacancyBlock(bld)) {
         cap[bld.zone as keyof typeof cap] += bld.cap;
       }
+    }
+    if (this.demand.res > -30 && open.length) {
+      let arrivals = Math.round((2.5 + this.population * 0.012) * clamp(this.demand.res / 50, 0.25, 1.3) * this.growthMul);
+      for (let guard = 0; arrivals > 0 && open.length && guard < 400; guard++) {
+        const k = this.rng.int(0, open.length - 1), bld = open[k];
+        const hh = Math.min(bld.cap - bld.occ, this.rng.int(1, 3), arrivals); // a household
+        bld.occ += hh;
+        arrivals -= hh;
+        if (bld.occ >= bld.cap) { open[k] = open[open.length - 1]; open.pop(); }
+      }
+    }
+    this.population = 0;
+    let resHighPop = 0;
+    for (const bld of this.b.list.values()) {
+      if (bld.abandoned !== undefined || (bld.zone !== 'resLow' && bld.zone !== 'resHigh')) continue;
+      this.population += bld.occ;
+      if (bld.zone === 'resHigh') resHighPop += bld.occ;
     }
     this.jobsCap = cap;
     const jobs = cap.comLow + cap.comHigh + cap.industry + cap.office;
@@ -215,7 +231,7 @@ export class Sim {
 
     // ---- demand: the real-ish urban economics (jobs-housing balance, retail per capita, goods chain)
     const P = this.population, W = this.workers;
-    const boom = P < 200 ? 45 : P < 800 ? 20 : 0;
+    const boom = P < 200 ? 25 : P < 800 ? 10 : 0;
     const taxHit = (this.taxRate - 0.09) * 450;
     let res = 30 + (70 * (jobs * 0.95 - W)) / Math.max(60, W) + boom - taxHit;
     const comCap = cap.comLow + cap.comHigh;
@@ -253,14 +269,24 @@ export class Sim {
         case 'office': return dm.off;
       }
     };
+    // Builders start a steady number of new sites per day (more as the town
+    // grows), handed to the zones with the most demand.
+    this.growthAcc = Math.min(3, this.growthAcc + Math.min(5, (0.8 + P / 800) * this.growthMul));
+    const wants: [ZoneType, number][] = [];
     for (const z of ZONE_TYPES) {
       if (!this.isUnlocked({ zone: z })) continue;
       const dem = catDemand(z);
-      if (dem < 5) continue;
-      const attempts = Math.min(6, Math.ceil((dem / 25) * this.growthMul));
+      if (dem >= 5) wants.push([z, dem]);
+    }
+    for (let guard = 0; this.growthAcc >= 1 && wants.length && guard < 12; guard++) {
+      const i = this.pickWeighted(wants);
+      const [z, dem] = wants[i];
       this.zones.candidates(z, this.cand);
-      if (!this.cand.length) continue;
-      for (let k = 0; k < attempts; k++) if (this.rng.chance(clamp(dem / 90, 0.1, 1))) this.b.tryGrow(z, this.cand);
+      let built = false;
+      for (let k = 0; k < 3 && this.cand.length && !built; k++) built = !!this.b.tryGrow(z, this.cand);
+      if (built) this.growthAcc -= 1;
+      else wants.splice(i, 1); // no room for this zone today
+      void dem;
     }
 
     // ---- land value + level ups every 3 days
@@ -346,6 +372,14 @@ export class Sim {
     const need = (b.level) * 18;
     if (b.lv < need) return `Land value ${Math.round(b.lv)} of ${need} needed for level ${b.level + 1}`;
     return null;
+  }
+
+  private pickWeighted(list: [unknown, number][]): number {
+    let sum = 0;
+    for (const [, w] of list) sum += w;
+    let r = this.rng.float() * sum;
+    for (let i = 0; i < list.length; i++) { r -= list[i][1]; if (r <= 0) return i; }
+    return list.length - 1;
   }
 
   private updateSprawl() {

@@ -233,7 +233,7 @@ export class Game {
 
   private startCache: { x: number; z: number; yaw: number; edge: { x: number; z: number } } | null = null;
   /** Find flat, dry, roomy land near the middle of the map for the first town. */
-  private startView() {
+  startView() {
     if (this.startCache) return this.startCache;
     const T = this.terrain;
     let best = { x: 0, z: 0 }, bestScore = -Infinity;
@@ -259,6 +259,13 @@ export class Game {
 
   /** The county starts with one road in from the outside world. */
   private seedRoad(start: { x: number; z: number; edge: { x: number; z: number } }) {
+    // the county highway predates you: it runs through land you don't own yet
+    const allowed = this.net.allowed;
+    this.net.allowed = null;
+    try { this.buildSeedRoad(start); } finally { this.net.allowed = allowed; }
+  }
+
+  private buildSeedRoad(start: { x: number; z: number; edge: { x: number; z: number } }) {
     const pts: V2[] = [];
     const a = start.edge, b = { x: start.x, z: start.z };
     const n = Math.max(6, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 400));
@@ -424,6 +431,7 @@ export class Game {
       return Math.atan2(p.x - x, p.z - z);
     })() : 0;
     if (!this.terrain.inBounds(x, z, r + 10)) return { ok: false, yaw, reason: 'Outside the county' };
+    if (this.net.allowed && !this.net.allowed(x, z)) return { ok: false, yaw, reason: "You don't own this land yet. Buy it in 🏞️ Land." };
     if (this.terrain.h(x, z) < WATER + 0.8) return { ok: false, yaw, reason: 'Not in the water (yet)' };
     if (this.net.pickSeg(x, z, r - 2)) return { ok: false, yaw, reason: 'Overlaps a road' };
     for (const b of this.buildings.near(x, z, r + 30)) if (Math.hypot(b.x - x, b.z - z) < r + Math.max(b.hw, b.hd)) return { ok: false, yaw, reason: `Overlaps ${b.label}` };

@@ -57,6 +57,12 @@ export const INFO_OVERLAY = {
   on: { value: 0 },
 };
 
+/** Land ownership mask (R = owned, nearest-filtered tiles). Unowned ground is dimmed. */
+export const LAND_MASK = {
+  tex: { value: null as THREE.Texture | null },
+  on: { value: 0 },
+};
+
 export class Terrain {
   readonly heights: Float32Array;
   readonly cover: Float32Array;
@@ -113,6 +119,8 @@ export class Terrain {
       sh.uniforms.tDetail = { value: detail };
       sh.uniforms.tInfo = INFO_OVERLAY.tex;
       sh.uniforms.uInfoOn = INFO_OVERLAY.on;
+      sh.uniforms.tLand = LAND_MASK.tex;
+      sh.uniforms.uLandOn = LAND_MASK.on;
       bindAtmos(sh);
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nattribute vec4 mats;\nvarying vec4 vMats;\nvarying vec3 vWPos;')
@@ -167,7 +175,9 @@ uniform float uFlowers, uPuddle, uRainAmt, uAtmoTime, uFlowerMap;
 uniform vec3 uSkyRefl;
 float gPuddle;
 uniform sampler2D tInfo;
-uniform float uInfoOn;`,
+uniform float uInfoOn;
+uniform sampler2D tLand;
+uniform float uLandOn;`,
         )
         .replace(
           '#include <color_fragment>',
@@ -256,6 +266,12 @@ uniform float uInfoOn;`,
     ring = smoothstep(0.05, 0.0, abs(rd - rt * 0.45)) * (1.0 - rt) * min(uRainAmt, 1.0);
   }
   outgoingLight = mix(outgoingLight, uSkyRefl * (0.55 + ring), gPuddle * (0.2 + 0.4 * fres));
+}
+if (uLandOn > 0.0) {
+  // land you don't own yet: dimmer and a bit washed out
+  float own = texture(tLand, vWPos.xz / ${WORLD.toFixed(1)} + 0.5).r;
+  float lumL = dot(outgoingLight, vec3(0.299, 0.587, 0.114));
+  outgoingLight = mix(mix(outgoingLight, vec3(lumL), 0.35) * 0.62, outgoingLight, mix(1.0, own, uLandOn));
 }
 if (uInfoOn > 0.0) {
   // info view: grey the world, then paint the data on top (lit, so hills still read)

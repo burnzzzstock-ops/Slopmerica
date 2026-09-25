@@ -64,23 +64,23 @@ interface SvcDef {
 }
 
 const SVC: SvcDef[] = [
-  { id: 'gasPeaker', cat: 'power', name: 'Frack Gas Peaker', blurb: 'Cheap, fast, smells like a birthday candle in a gas station.', icon: '🔥', w: 4, d: 3, cost: 16000, upkeep: 150, buildDays: 8, unlock: 0, power: 14, pollution: 0.3, noise: 0.7, height: 16 },
-  { id: 'coalPlant', cat: 'power', name: 'Clean Coal™ Plant', blurb: 'The ™ does a lot of work. Huge output, huge smoke.', icon: '🏭', w: 6, d: 6, cost: 38000, upkeep: 260, buildDays: 14, unlock: 0, power: 45, pollution: 1.2, noise: 0.9, height: 62 },
-  { id: 'solarFarm', cat: 'power', name: 'Freedom Solar Farm', blurb: 'Zero emissions. Output drops at night and under clouds.', icon: '☀️', w: 6, d: 4, cost: 30000, upkeep: 60, buildDays: 10, unlock: 400, power: 10, height: 4 },
-  { id: 'nuclearPlant', cat: 'power', name: 'Three Mile Island Jr.', blurb: 'Enough power for the whole county. What could go wrong.', icon: '☢️', w: 7, d: 7, cost: 220000, upkeep: 900, buildDays: 30, unlock: 5000, power: 220, noise: 0.5, height: 52 },
-  { id: 'waterPump', cat: 'water', name: 'Artesian Tap Pump', blurb: 'Pumps river water. Must touch water. Keep it far from the sewage outfall.', icon: '🚰', w: 2, d: 2, cost: 9000, upkeep: 70, buildDays: 6, unlock: 0, water: 3200, nearWater: true, noise: 0.3, height: 7 },
-  { id: 'wellTower', cat: 'water', name: 'Groundwater Well Tower', blurb: 'Works anywhere. Small output. Boil notice pending.', icon: '🗼', w: 2, d: 2, cost: 7000, upkeep: 45, buildDays: 6, unlock: 0, water: 800, height: 26 },
-  { id: 'sewageOutfall', cat: 'sewage', name: 'Sewage Outfall', blurb: 'Straight into the river. Must touch water. Pollutes the neighborhood.', icon: '🚽', w: 2, d: 2, cost: 6000, upkeep: 35, buildDays: 5, unlock: 0, sewage: 3800, nearWater: true, pollution: 0.5, noise: 0.2, height: 4 },
-  { id: 'treatmentPlant', cat: 'sewage', name: 'Poop Palace Treatment', blurb: 'Actually cleans it. Costs more. Smells less.', icon: '🧫', w: 5, d: 4, cost: 32000, upkeep: 200, buildDays: 12, unlock: 1000, sewage: 6000, nearWater: true, pollution: 0.06, noise: 0.3, height: 7 },
-  { id: 'landfill', cat: 'garbage', name: 'Mt. Trashmore Landfill', blurb: 'Trucks collect trash within reach. Fills up. Stinks up the neighbors.', icon: '🗑️', w: 6, d: 6, cost: 14000, upkeep: 110, buildDays: 8, unlock: 0, store: 9000, collect: 36, cov: 'garbage', reach: 220, pollution: 0.3, noise: 0.5, vehicle: 'garbageTruck', height: 16 },
-  { id: 'incinerator', cat: 'garbage', name: 'Freedom Incinerator', blurb: 'Burns 60 t/day forever and makes 8 MW. The smoke is a feature.', icon: '♨️', w: 4, d: 4, cost: 42000, upkeep: 240, buildDays: 12, unlock: 1200, collect: 60, cov: 'garbage', reach: 260, power: 8, pollution: 0.8, noise: 0.6, vehicle: 'garbageTruck', height: 44 },
-  { id: 'fireStation', cat: 'fire', name: 'Volunteer Fire Dept.', blurb: 'Reaches buildings by drive time. Prevents fires and saves the ones that catch.', icon: '🚒', w: 3, d: 3, cost: 12000, upkeep: 120, buildDays: 6, unlock: 0, cov: 'fire', reach: 100, capacity: 260, noise: 0.3, vehicle: 'firetruck', height: 13 },
-  { id: 'sheriff', cat: 'police', name: "Sheriff's Office", blurb: 'Keeps crime down within reach. Qualified immunity included.', icon: '🚓', w: 3, d: 3, cost: 11000, upkeep: 130, buildDays: 6, unlock: 0, cov: 'police', reach: 110, capacity: 2600, noise: 0.2, vehicle: 'police', height: 9 },
-  { id: 'clinic', cat: 'health', name: 'Urgent Care (Out of Network)', blurb: 'Treats the sick within reach. You will receive a bill.', icon: '🩺', w: 3, d: 3, cost: 14000, upkeep: 150, buildDays: 6, unlock: 0, cov: 'health', reach: 110, capacity: 1800, vehicle: 'ambulance', height: 7 },
-  { id: 'hospital', cat: 'health', name: "St. Deductible's Hospital", blurb: 'Big reach, big capacity, bigger deductible.', icon: '🏥', w: 5, d: 4, cost: 60000, upkeep: 420, buildDays: 14, unlock: 1500, cov: 'health', reach: 200, capacity: 8000, noise: 0.3, vehicle: 'ambulance', height: 25 },
-  { id: 'school', cat: 'education', name: 'Charter School of Excellence™', blurb: 'Educated residents unlock level 3+ homes and better offices.', icon: '🏫', w: 4, d: 4, cost: 16000, upkeep: 150, buildDays: 8, unlock: 0, cov: 'school', reach: 130, capacity: 1600, noise: 0.2, height: 10 },
-  { id: 'college', cat: 'education', name: 'Prosperity Gospel University', blurb: 'College grads unlock the top levels. Tuition is a spiritual journey.', icon: '🎓', w: 6, d: 5, cost: 70000, upkeep: 450, buildDays: 16, unlock: 2000, cov: 'college', reach: 320, capacity: 9000, height: 28 },
-  { id: 'park', cat: 'parks', name: 'Pocket Park', blurb: 'Raises land value nearby. No skateboarding.', icon: '🌳', w: 2, d: 2, cost: 3000, upkeep: 12, buildDays: 3, unlock: 0, cov: 'parks', reach: 45, height: 9 },
+  { id: 'gasPeaker', cat: 'power', name: 'Frack Gas Peaker', blurb: 'Cheap, fast, smells like a birthday candle in a gas station.', icon: '🔥', w: 4, d: 3, cost: 16000, upkeep: 90, buildDays: 8, unlock: 0, power: 14, pollution: 0.3, noise: 0.7, height: 16 },
+  { id: 'coalPlant', cat: 'power', name: 'Clean Coal™ Plant', blurb: 'The ™ does a lot of work. Huge output, huge smoke.', icon: '🏭', w: 6, d: 6, cost: 38000, upkeep: 200, buildDays: 14, unlock: 0, power: 45, pollution: 1.2, noise: 0.9, height: 62 },
+  { id: 'solarFarm', cat: 'power', name: 'Freedom Solar Farm', blurb: 'Zero emissions. Output drops at night and under clouds.', icon: '☀️', w: 6, d: 4, cost: 30000, upkeep: 40, buildDays: 10, unlock: 400, power: 10, height: 4 },
+  { id: 'nuclearPlant', cat: 'power', name: 'Three Mile Island Jr.', blurb: 'Enough power for the whole county. What could go wrong.', icon: '☢️', w: 7, d: 7, cost: 220000, upkeep: 700, buildDays: 30, unlock: 5000, power: 220, noise: 0.5, height: 52 },
+  { id: 'waterPump', cat: 'water', name: 'Artesian Tap Pump', blurb: 'Pumps river water. Must touch water. Keep it far from the sewage outfall.', icon: '🚰', w: 2, d: 2, cost: 9000, upkeep: 45, buildDays: 6, unlock: 0, water: 3200, nearWater: true, noise: 0.3, height: 7 },
+  { id: 'wellTower', cat: 'water', name: 'Groundwater Well Tower', blurb: 'Works anywhere. Small output. Boil notice pending.', icon: '🗼', w: 2, d: 2, cost: 7000, upkeep: 30, buildDays: 6, unlock: 0, water: 800, height: 26 },
+  { id: 'sewageOutfall', cat: 'sewage', name: 'Sewage Outfall', blurb: 'Straight into the river. Must touch water. Pollutes the neighborhood.', icon: '🚽', w: 2, d: 2, cost: 6000, upkeep: 25, buildDays: 5, unlock: 0, sewage: 3800, nearWater: true, pollution: 0.5, noise: 0.2, height: 4 },
+  { id: 'treatmentPlant', cat: 'sewage', name: 'Poop Palace Treatment', blurb: 'Actually cleans it. Costs more. Smells less.', icon: '🧫', w: 5, d: 4, cost: 32000, upkeep: 150, buildDays: 12, unlock: 1000, sewage: 6000, nearWater: true, pollution: 0.06, noise: 0.3, height: 7 },
+  { id: 'landfill', cat: 'garbage', name: 'Mt. Trashmore Landfill', blurb: 'Trucks collect trash within reach. Fills up. Stinks up the neighbors.', icon: '🗑️', w: 6, d: 6, cost: 14000, upkeep: 70, buildDays: 8, unlock: 0, store: 9000, collect: 36, cov: 'garbage', reach: 220, pollution: 0.3, noise: 0.5, vehicle: 'garbageTruck', height: 16 },
+  { id: 'incinerator', cat: 'garbage', name: 'Freedom Incinerator', blurb: 'Burns 60 t/day forever and makes 8 MW. The smoke is a feature.', icon: '♨️', w: 4, d: 4, cost: 42000, upkeep: 180, buildDays: 12, unlock: 1200, collect: 60, cov: 'garbage', reach: 260, power: 8, pollution: 0.8, noise: 0.6, vehicle: 'garbageTruck', height: 44 },
+  { id: 'fireStation', cat: 'fire', name: 'Volunteer Fire Dept.', blurb: 'Reaches buildings by drive time. Prevents fires and saves the ones that catch.', icon: '🚒', w: 3, d: 3, cost: 12000, upkeep: 80, buildDays: 6, unlock: 0, cov: 'fire', reach: 100, capacity: 260, noise: 0.3, vehicle: 'firetruck', height: 13 },
+  { id: 'sheriff', cat: 'police', name: "Sheriff's Office", blurb: 'Keeps crime down within reach. Qualified immunity included.', icon: '🚓', w: 3, d: 3, cost: 11000, upkeep: 85, buildDays: 6, unlock: 0, cov: 'police', reach: 110, capacity: 2600, noise: 0.2, vehicle: 'police', height: 9 },
+  { id: 'clinic', cat: 'health', name: 'Urgent Care (Out of Network)', blurb: 'Treats the sick within reach. You will receive a bill.', icon: '🩺', w: 3, d: 3, cost: 14000, upkeep: 95, buildDays: 6, unlock: 0, cov: 'health', reach: 110, capacity: 1800, vehicle: 'ambulance', height: 7 },
+  { id: 'hospital', cat: 'health', name: "St. Deductible's Hospital", blurb: 'Big reach, big capacity, bigger deductible.', icon: '🏥', w: 5, d: 4, cost: 60000, upkeep: 320, buildDays: 14, unlock: 1500, cov: 'health', reach: 200, capacity: 8000, noise: 0.3, vehicle: 'ambulance', height: 25 },
+  { id: 'school', cat: 'education', name: 'Charter School of Excellence™', blurb: 'Educated residents unlock level 3+ homes and better offices.', icon: '🏫', w: 4, d: 4, cost: 16000, upkeep: 100, buildDays: 8, unlock: 0, cov: 'school', reach: 130, capacity: 1600, noise: 0.2, height: 10 },
+  { id: 'college', cat: 'education', name: 'Prosperity Gospel University', blurb: 'College grads unlock the top levels. Tuition is a spiritual journey.', icon: '🎓', w: 6, d: 5, cost: 70000, upkeep: 350, buildDays: 16, unlock: 2000, cov: 'college', reach: 320, capacity: 9000, height: 28 },
+  { id: 'park', cat: 'parks', name: 'Pocket Park', blurb: 'Raises land value nearby. No skateboarding.', icon: '🌳', w: 2, d: 2, cost: 3000, upkeep: 8, buildDays: 3, unlock: 0, cov: 'parks', reach: 45, height: 9 },
 ];
 export const SERVICE_DEFS = new Map<string, SvcDef>(SVC.map((d) => [d.id, d]));
 for (const d of SVC) CUSTOM_BUILDINGS.set(d.id, { label: d.name, w: d.w, d: d.d, buildDays: d.buildDays, model: () => serviceModel(d.id, d.w, d.d), paint: d.id === 'park' ? Paint.Lawn : Paint.Paved });
@@ -1047,7 +1047,7 @@ const VIEW_FOR_CAT: Partial<Record<SvcCat, ViewId>> = { power: 'power', water: '
 let placing: ServiceModelId = 'gasPeaker';
 let ghost: THREE.Group | null = null;
 let ghostMat: THREE.MeshBasicMaterial | null = null;
-let lastCheck: { ok: boolean; reason?: string } | null = null;
+let lastCheck: { ok: boolean; reason?: string; snapped?: boolean } | null = null;
 let panelCat: SvcCat = 'power';
 
 function rectCorners(x: number, z: number, hw: number, hd: number, yaw: number) {
@@ -1073,12 +1073,14 @@ export function canPlaceService(g: Game, id: ServiceModelId, x: number, z: numbe
   }
   if (g.sim.mode !== 'sandbox' && g.sim.population < d.unlock) return { ok: false, yaw, reason: `Unlocks at ${d.unlock.toLocaleString()} people` };
   if (!g.terrain.inBounds(x, z, Math.max(hw, hd) + 12)) return { ok: false, yaw, reason: 'Outside the county' };
+  if (g.net.allowed && !g.net.allowed(x, z)) return { ok: false, yaw, reason: "You don't own this land yet. Buy it in 🏞️ Land." };
   if (!pick) return { ok: false, yaw, reason: 'Needs a road within 40 m' };
   const cs = rectCorners(x, z, hw, hd, yaw);
   let lo = Infinity, hi = -Infinity;
   for (const p of [...cs, { x, z }]) { const h = g.terrain.h(p.x, p.z); lo = Math.min(lo, h); hi = Math.max(hi, h); }
-  if (lo < WATER + 0.6) return { ok: false, yaw, reason: 'Not in the water' };
-  if (hi - lo > Math.max(7, Math.max(hw, hd) * 0.35)) return { ok: false, yaw, reason: 'Too steep here' };
+  // shore plants may hang a corner over the bank (the pad gets filled in)
+  if (d.nearWater ? g.terrain.h(x, z) < WATER + 0.35 : lo < WATER + 0.6) return { ok: false, yaw, reason: 'Not in the water' };
+  if (hi - Math.max(lo, WATER) > Math.max(d.nearWater ? 11 : 7, Math.max(hw, hd) * (d.nearWater ? 0.6 : 0.35))) return { ok: false, yaw, reason: 'Too steep here' };
   const r = hw + hd + 14;
   for (const s of g.net.segsNear(x - r, z - r, x + r, z + r)) {
     const half = ROAD_TYPES[s.type].width / 2;
@@ -1093,14 +1095,46 @@ export function canPlaceService(g: Game, id: ServiceModelId, x: number, z: numbe
     let wet = false;
     const R = Math.max(hw, hd);
     for (let a = 0; a < 16 && !wet; a++)
-      for (const rr of [R + 6, R + 16, R + 28]) {
+      for (const rr of [R + 4, R + 14, R + 26, R + 40]) {
         const ang = (a / 16) * Math.PI * 2;
         if (g.terrain.h(x + Math.cos(ang) * rr, z + Math.sin(ang) * rr) < WATER - 0.3) { wet = true; break; }
       }
-    if (!wet) return { ok: false, yaw, reason: 'Must be right next to water' };
+    if (!wet) return { ok: false, yaw, reason: 'Must be on a river or lake shore (within 40 m of water)' };
   }
   if (d.cost > g.sim.spendable()) return { ok: false, yaw, reason: 'Not enough money' };
   return { ok: true, yaw };
+}
+
+/** Problems moving the building a bit can fix (not money, unlocks or land). */
+const snappable = (reason?: string) => !!reason && !/money|Unlocks|own this land|county/i.test(reason);
+
+/**
+ * The cursor spot, or the nearest valid spot around it (shore plants search
+ * wider), so placing doesn't need pixel-perfect aim. null = nothing close works.
+ */
+export function findServiceSpot(g: Game, id: ServiceModelId, x: number, z: number): { x: number; z: number; yaw: number; snapped: boolean; reason?: string } {
+  const here = canPlaceService(g, id, x, z);
+  if (here.ok) return { x, z, yaw: here.yaw, snapped: false };
+  if (!snappable(here.reason)) return { x, z, yaw: here.yaw, snapped: false, reason: here.reason };
+  const maxR = SERVICE_DEFS.get(id)!.nearWater ? 110 : 60;
+  for (let r = 8; r <= maxR; r += 8) {
+    const n = Math.max(8, Math.round((2 * Math.PI * r) / 14));
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * Math.PI * 2;
+      const px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
+      const c = canPlaceService(g, id, px, pz);
+      if (c.ok) return { x: px, z: pz, yaw: c.yaw, snapped: true };
+    }
+  }
+  return { x, z, yaw: here.yaw, snapped: false, reason: here.reason };
+}
+
+let spotCache: { id: string; x: number; z: number; r: ReturnType<typeof findServiceSpot> } | null = null;
+function spotFor(g: Game, id: ServiceModelId, x: number, z: number) {
+  if (spotCache && spotCache.id === id && Math.hypot(spotCache.x - x, spotCache.z - z) < 3) return spotCache.r;
+  const r = findServiceSpot(g, id, x, z);
+  spotCache = { id, x, z, r };
+  return r;
 }
 
 function ensureGhost(g: Game) {
@@ -1122,17 +1156,19 @@ function updateGhost(g: Game, p: THREE.Vector3 | null) {
   const gh = ensureGhost(g);
   if (!p) { gh.visible = false; lastCheck = null; return; }
   const d = SERVICE_DEFS.get(placing)!;
-  const chk = canPlaceService(g, placing, p.x, p.z);
-  lastCheck = chk;
+  const spot = spotFor(g, placing, p.x, p.z);
+  const ok = !spot.reason;
+  lastCheck = { ok, reason: spot.reason, snapped: spot.snapped };
   gh.visible = true;
-  gh.position.set(p.x, g.terrain.h(p.x, p.z), p.z);
-  gh.rotation.y = chk.yaw;
+  gh.position.set(spot.x, g.terrain.h(spot.x, spot.z), spot.z);
+  gh.rotation.y = spot.yaw;
   gh.scale.set(d.w * CELL, Math.max(6, d.height * 0.6), d.d * CELL);
-  ghostMat!.color.setHex(chk.ok ? 0x57e389 : 0xff5a4a);
+  ghostMat!.color.setHex(ok ? (spot.snapped ? 0x9be36a : 0x57e389) : 0xff5a4a);
 }
 
 /** Place a service building (the tool, tests and future AI all use this). */
 export function placeService(g: Game, id: ServiceModelId, x: number, z: number): Bld | null {
+  spotCache = null;
   const d = SERVICE_DEFS.get(id)!;
   const chk = canPlaceService(g, id, x, z);
   if (!chk.ok) { g.toast(chk.reason ?? 'Nope', true); g.audio.play('error'); return null; }
@@ -1150,12 +1186,17 @@ registerTool({
   id: 'svcPlace',
   touchLift: 64,
   move: (g, p) => updateGhost(g, p),
-  up: (g, p, _e, wasDrag) => { if (p && !wasDrag) { placeService(g, placing, p.x, p.z); updateGhost(g, p); } },
+  up: (g, p, _e, wasDrag) => {
+    if (!p || wasDrag) return;
+    const spot = spotFor(g, placing, p.x, p.z);
+    if (placeService(g, placing, spot.x, spot.z)) spotCache = null;
+    updateGhost(g, p);
+  },
   cancel: () => { if (ghost) ghost.visible = false; lastCheck = null; },
   tip: () => {
     const d = SERVICE_DEFS.get(placing)!;
     if (lastCheck && !lastCheck.ok) return { text: `${d.name}: ${lastCheck.reason}`, bad: true };
-    return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} · $${d.upkeep}/wk` };
+    return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} · $${d.upkeep}/wk${lastCheck?.snapped ? ' · 📍 snapped to the nearest good spot' : ''}` };
   },
 });
 
@@ -1290,4 +1331,4 @@ registerSystem({
 export function servicesSnapshot() {
   return { util: S.util, counts: { ...S.counts }, garbage: { ...S.garbage }, facilities: S.f.size, buildings: S.b.size };
 }
-(globalThis as unknown as { __services?: unknown }).__services = { snapshot: servicesSnapshot, place: placeService, canPlace: canPlaceService, S };
+(globalThis as unknown as { __services?: unknown }).__services = { snapshot: servicesSnapshot, place: placeService, canPlace: canPlaceService, findSpot: findServiceSpot, S };

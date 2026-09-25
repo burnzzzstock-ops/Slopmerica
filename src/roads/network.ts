@@ -85,6 +85,8 @@ export class RoadNetwork {
   private hash = new SpatialHash<number>(64);
   /** Areas where roads may not go (hippie communes). */
   blockers: { x: number; z: number; r: number; name: string }[] = [];
+  /** land the player may build on (null = everywhere); see sim/land.ts */
+  allowed: ((x: number, z: number) => boolean) | null = null;
 
   constructor(public terrain: Terrain, public trees: Trees) {}
 
@@ -157,6 +159,7 @@ export class RoadNetwork {
     for (let i = 0; i < samp.pts.length; i++) {
       const p = samp.pts[i];
       if (!this.terrain.inBounds(p.x, p.z, 6)) return { ...res, ok: false, reason: 'Outside the county line' };
+      if (this.allowed && !this.allowed(p.x, p.z)) return { ...res, ok: false, reason: "You don't own this land yet. Buy it in 🏞️ Land." };
       if (this.terrain.h(p.x, p.z) < WATER + 0.4) water += i > 0 ? samp.cum[i] - samp.cum[i - 1] : 0;
       for (const b of this.blockers) {
         if (Math.hypot(p.x - b.x, p.z - b.z) < b.r + t.width / 2) return { ...res, ok: false, reason: `${b.name} won't let you. Pay them off or sue.` };

@@ -80,9 +80,15 @@ export class Hud implements UiSink {
     this.actions = this.mk('div', 'tool-actions');
     this.perfEl = this.mk('div', 'perf-overlay');
     this.perfEl.hidden = true;
-    this.actions.innerHTML = `<span class="ta-tip" id="ta-tip"></span><button id="ta-build" class="ta-build">🔨 Build</button><button id="ta-done" class="ta-done">✕ Stop</button><button id="ta-undo">↶ Undo</button>`;
+    this.actions.innerHTML = `<span class="ta-tip" id="ta-tip"></span><button id="ta-build" class="ta-build">🔨 Build</button><button id="ta-done" class="ta-done">${IS_TOUCH ? '✓ Done' : '✕ Stop'}</button><button id="ta-undo">↶ Undo</button>`;
     this.actions.hidden = true;
-    this.actions.querySelector('#ta-done')!.addEventListener('click', () => { game.tools.cancel(); game.audio.play('click', 0.4); });
+    // phones: Done leaves the tool entirely (double-tap ends just the current
+    // road); desktop: Stop ends the road being drawn and keeps the tool
+    this.actions.querySelector('#ta-done')!.addEventListener('click', () => {
+      if (IS_TOUCH) { this.exitTool(); return; }
+      game.tools.cancel();
+      game.audio.play('click', 0.4);
+    });
     this.actions.querySelector('#ta-build')!.addEventListener('click', () => game.tools.buildPending());
     this.actions.querySelector('#ta-undo')!.addEventListener('click', () => game.undo());
     game.feed = this.feed;
@@ -253,10 +259,21 @@ export class Hud implements UiSink {
       return;
     }
     const pid = id as PanelId;
-    this.openPanel(this.panel === pid ? null : pid);
+    const closing = this.panel === pid;
+    this.openPanel(closing ? null : pid);
+    // closing a panel (tapping its button again) must also put its tool away,
+    // or taps on the map keep drawing roads / painting zones with no menu open
+    if (closing) { g.tools.set('inspect'); return; }
     if (pid === 'roads') g.tools.set('road');
     else if (pid === 'zones') g.tools.set('zone');
-    else if (pid !== 'landmarks') g.tools.set('inspect');
+    else if (pid !== 'landmarks' || g.tools.active !== 'landmark') g.tools.set('inspect');
+  }
+
+  /** Put the current map tool away: back to Select with no panel open. */
+  private exitTool() {
+    this.openPanel(null);
+    this.game.tools.set('inspect');
+    this.game.audio.play('click', 0.4);
   }
 
   private openPanel(p: PanelId) {
@@ -631,7 +648,7 @@ export class Hud implements UiSink {
       tipEl.textContent = IS_TOUCH ? tip?.text ?? '' : '';
       tipEl.classList.toggle('bad', !!tip?.bad);
       tipEl.hidden = !IS_TOUCH || !tip;
-      (this.actions.querySelector('#ta-done') as HTMLElement).hidden = !t.drawing;
+      (this.actions.querySelector('#ta-done') as HTMLElement).hidden = IS_TOUCH ? false : !t.drawing;
       const build = this.actions.querySelector('#ta-build') as HTMLButtonElement;
       build.hidden = !t.pending;
       build.disabled = t.pendingCost === null;

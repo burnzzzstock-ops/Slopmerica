@@ -215,7 +215,9 @@ export class Tools implements PointerHandlers {
         } else if (e.pointerType === 'mouse') {
           if (!wasDrag) this.roadClick(p);
         } else if (this.startedThisTouch && !wasDrag) {
-          // tapped the start point: wait for the next drag or tap
+          // tapped the start point: wait for the next drag or tap (park the
+          // lifted aim on the start so no stray preview road hangs off it)
+          if (this.start) this.hover = new THREE.Vector3(this.start.x, this.game.terrain.h(this.start.x, this.start.z), this.start.z);
         } else if (this.roadMode === 'curve' && !this.control) {
           this.control = { x: p.x, z: p.z };
           this.game.audio.play('click');
@@ -404,7 +406,7 @@ export class Tools implements PointerHandlers {
       if (this.start && !this.pendingEnd && this.game.isTouch && Math.hypot(s.x - this.start.x, s.z - this.start.z) < 8) {
         // just placed the start: say what to do next instead of "Too short"
         this.preview.visible = false;
-        this.tip = { text: this.chained ? 'Drag from the green ring to keep going, or touch elsewhere for a new road' : 'Start set · now drag or tap where the road ends' };
+        this.tip = { text: this.chained ? 'Drag from the green ring to keep going, touch elsewhere for a new road, or tap Done' : 'Start set · now drag or tap where the road ends' };
       } else if (this.start) {
         const end: V2 = { x: s.x, z: s.z };
         let curve: Cubic | null;
@@ -423,7 +425,7 @@ export class Tools implements PointerHandlers {
         }
       } else {
         this.preview.visible = false;
-        this.tip = { text: this.game.isTouch ? `Drag to draw a ${ROAD_TYPES[this.roadType].name}` : `${ROAD_TYPES[this.roadType].name}: click to start` };
+        this.tip = { text: this.game.isTouch ? `Drag to draw a ${ROAD_TYPES[this.roadType].name} · Done when finished` : `${ROAD_TYPES[this.roadType].name}: click to start` };
       }
     } else if (this.active === 'upgrade' || this.active === 'bulldoze') {
       const pick = net.pickSeg(hov.x, hov.z, this.active === 'bulldoze' ? 1 : 3);

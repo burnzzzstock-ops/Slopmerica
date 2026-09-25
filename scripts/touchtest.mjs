@@ -28,7 +28,7 @@ await page.waitForTimeout(600);
 console.log('segs after Build', await segs(), 'drawing', await page.evaluate(() => window.__game.tools.drawing));
 // the first point lands under the finger (not 64 px above it)
 {
-  await page.tap('#ta-done').catch(() => {});
+  await page.evaluate(() => window.__game.tools.cancel());
   await page.waitForTimeout(200);
   const want = await page.evaluate(() => { const p = window.__game.rts.groundAt(200, 520); return p && [Math.round(p.x), Math.round(p.z)]; });
   await touch('touchStart', 200, 520); await touch('touchEnd', 0, 0);
@@ -43,20 +43,42 @@ console.log('segs after Build', await segs(), 'drawing', await page.evaluate(() 
   const tip = await page.evaluate(() => ({ tip: window.__game.tools.tip?.text, cost: window.__game.tools.pendingCost }));
   console.log('planned road:', JSON.stringify(tip));
   if (tip.cost !== null) { await page.tap('#ta-build'); await page.waitForTimeout(600); console.log('segs after tap-tap-Build', await segs()); }
-  await page.tap('#ta-done').catch(() => {});
+  await page.evaluate(() => window.__game.tools.cancel());
   await page.waitForTimeout(200);
 }
 // a stray tap far from the road's end starts a new road instead of building one
 await touch('touchStart', 130, 200); await touch('touchEnd', 0, 0);
 await page.waitForTimeout(600);
 console.log('segs after stray tap', await segs(), 'pending', await page.evaluate(() => window.__game.tools.pending), 'drawing', await page.evaluate(() => window.__game.tools.drawing));
-await page.tap('#ta-done'); // Stop
-await page.waitForTimeout(200);
-console.log('drawing after done', await page.evaluate(() => window.__game.tools.drawing));
 await page.tap('#ta-undo');
 await page.waitForTimeout(400);
 console.log('segs after undo', await segs());
+// Done puts the road tool away: map taps no longer pick road points
+await page.tap('#ta-done');
+await page.waitForTimeout(200);
+const off = async (label) => {
+  await touch('touchStart', 200, 520); await touch('touchEnd', 0, 0);
+  await page.waitForTimeout(400);
+  const st = await page.evaluate(() => { const t = window.__game.tools; return { active: t.active, start: !!t.start, bar: !document.querySelector('.tool-actions').hidden, panel: !document.querySelector('.subpanel').hidden }; });
+  console.log(label, JSON.stringify(st), st.active === 'inspect' && !st.start && !st.bar && !st.panel ? 'OK' : 'FAIL');
+};
+await off('after Done, tap map ->');
+// tapping Roads again closes the menu AND the tool
+await page.tap('button.tbtn[data-t="roads"]');
+await page.waitForTimeout(300);
+console.log('roads open ->', await page.evaluate(() => window.__game.tools.active));
+await page.tap('button.tbtn[data-t="roads"]');
+await page.waitForTimeout(300);
+await off('Roads toggled off, tap map ->');
+// same for Zoning
+await page.tap('button.tbtn[data-t="zones"]');
+await page.waitForTimeout(300);
+await page.tap('button.tbtn[data-t="zones"]');
+await page.waitForTimeout(300);
+await off('Zoning toggled off, tap map ->');
 // double-tap ends a road: draw again, then tap twice quickly on one spot
+await page.tap('button.tbtn[data-t="roads"]');
+await page.waitForTimeout(300);
 await touch('touchStart', 120, 380);
 for (let i = 1; i <= 10; i++) { await touch('touchMove', 120 + i * 18, 380 - i * 10); await page.waitForTimeout(40); }
 await touch('touchEnd', 0, 0);

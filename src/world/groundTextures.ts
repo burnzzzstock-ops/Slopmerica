@@ -80,26 +80,40 @@ function layer(seed: number, paint: (ctx: CanvasRenderingContext2D, rnd: () => n
 
 export function createGroundTextures(renderer: THREE.WebGLRenderer): THREE.DataArrayTexture {
   const grass = layer(11, (ctx, rnd) => {
-    for (let k = 0; k < 14000; k++) {
-      const x = rnd() * S, y = rnd() * S;
-      const L = 3 + rnd() * 7;
-      const a = -Math.PI / 2 + (rnd() - 0.5) * 1.2;
-      const v = 70 + rnd() * 150;
-      ctx.strokeStyle = `rgba(${v * 0.92},${v},${v * 0.8},${0.35 + rnd() * 0.4})`;
-      ctx.lineWidth = 0.8 + rnd() * 0.8;
-      wrapDraw(ctx, x, y, (px, py) => {
-        ctx.beginPath();
-        ctx.moveTo(px, py);
-        ctx.lineTo(px + Math.cos(a) * L, py + Math.sin(a) * L);
-        ctx.stroke();
-      });
+    // soft clumps of lighter/darker turf first, then blades in tufts (not uniform static)
+    for (let k = 0; k < 160; k++) {
+      const x = rnd() * S, y = rnd() * S, r = 10 + rnd() * 34;
+      const v = rnd() < 0.5 ? 'rgba(255,255,230,' : 'rgba(30,45,20,';
+      ctx.fillStyle = `${v}${0.05 + rnd() * 0.08})`;
+      wrapDraw(ctx, x, y, (px, py) => { ctx.beginPath(); ctx.ellipse(px, py, r, r * (0.6 + rnd() * 0.4), rnd() * 3, 0, Math.PI * 2); ctx.fill(); });
     }
-    for (let k = 0; k < 90; k++) {
-      const x = rnd() * S, y = rnd() * S, r = 6 + rnd() * 18;
-      ctx.fillStyle = `rgba(40,50,30,${0.08 + rnd() * 0.1})`;
+    for (let t = 0; t < 900; t++) {
+      const cx = rnd() * S, cy = rnd() * S;
+      const blades = 6 + Math.floor(rnd() * 10);
+      const lean = (rnd() - 0.5) * 0.9;
+      const tone = 0.75 + rnd() * 0.5;
+      for (let k = 0; k < blades; k++) {
+        const x = cx + (rnd() - 0.5) * 7, y = cy + (rnd() - 0.5) * 4;
+        const L = 5 + rnd() * 9;
+        const a = -Math.PI / 2 + lean + (rnd() - 0.5) * 0.7;
+        const v = (110 + rnd() * 110) * tone;
+        ctx.strokeStyle = `rgba(${v * 0.9},${v},${v * 0.72},${0.45 + rnd() * 0.35})`;
+        ctx.lineWidth = 0.7 + rnd() * 0.9;
+        wrapDraw(ctx, x, y, (px, py) => {
+          ctx.beginPath();
+          ctx.moveTo(px, py);
+          ctx.quadraticCurveTo(px + Math.cos(a) * L * 0.5, py + Math.sin(a) * L * 0.5, px + Math.cos(a + lean * 0.4) * L, py + Math.sin(a + lean * 0.4) * L);
+          ctx.stroke();
+        });
+      }
+    }
+    // a few clover patches and bare spots
+    for (let k = 0; k < 60; k++) {
+      const x = rnd() * S, y = rnd() * S, r = 4 + rnd() * 10;
+      ctx.fillStyle = rnd() < 0.6 ? `rgba(60,90,35,${0.15 + rnd() * 0.15})` : `rgba(120,100,70,${0.12 + rnd() * 0.1})`;
       wrapDraw(ctx, x, y, (px, py) => { ctx.beginPath(); ctx.ellipse(px, py, r, r * 0.7, rnd() * 3, 0, Math.PI * 2); ctx.fill(); });
     }
-  }, fbm(S, 5, [8, 16, 32], [0.5, 0.3, 0.2]), 90, [0.95, 1.05, 0.88]);
+  }, fbm(S, 5, [4, 8, 16, 32], [0.35, 0.3, 0.2, 0.15]), 70, [0.95, 1.05, 0.88]);
 
   const dirt = layer(21, (ctx, rnd) => {
     for (let k = 0; k < 2600; k++) {

@@ -1,0 +1,242 @@
+// Cities: Skylines-style camera: WASD/arrow pan, right/middle-drag orbit,
+// wheel zoom toward cursor, Q/E rotate. Touch: one finger pans (or uses the
+// active tool), two fingers pinch-zoom, twist to rotate, drag to tilt/pan.
+import * as THREE from 'three';
+import { HALF, WATER } from '../config';
+import { clamp } from '../core/math';
+import type { Terrain } from '../world/terrain';
+
+export interface PointerHandlers {
+  /** true if the active tool uses one-finger/left drags (zone brush etc.) */
+  toolCapturesDrag(): boolean;
+  down(p: THREE.Vector3 | null, e: PointerEvent): void;
+  move(p: THREE.Vector3 | null, e: PointerEvent, dragging: boolean): void;
+  up(p: THREE.Vector3 | null, e: PointerEvent, wasDrag: boolean): void;
+  cancel(): void;
+}
+
+export class RTSCamera {
+  target = new THREE.Vector3(0, 10, 0);
+  distance = 700;
+  yaw = 0.6;
+  pitch = 0.85;
+  private goal = { target: new THREE.Vector3(0, 10, 0), distance: 700, yaw: 0.6, pitch: 0.85 };
+  private keys = new Set<string>();
+  private ray = new THREE.Raycaster();
+  private ndc = new THREE.Vector2();
+  private pointers = new Map<number, { x: number; y: number; sx: number; sy: number }>();
+  private mode: 'none' | 'orbit' | 'tool' | 'pan1' | 'multi' = 'none';
+  private moved = false;
+  private last = { x: 0, y: 0 };
+  private multiStart: { d: number; a: number; cx: number; cy: number } | null = null;
+  enabled = true;
+  hover: THREE.Vector3 | null = null;
+  lastClient = { x: -1, y: -1 };
+
+  constructor(public camera: THREE.PerspectiveCamera, private dom: HTMLElement, private terrain: Terrain, private handlers: PointerHandlers) {
+    window.addEventListener('keydown', (e) => {
+      if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+      this.keys.add(e.key.toLowerCase());
+    });
+    window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
+    window.addEventListener('blur', () => this.keys.clear());
+    dom.addEventListener('contextmenu', (e) => e.preventDefault());
+    dom.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
+    dom.addEventListener('pointerdown', (e) => this.onDown(e));
+    window.addEventListener('pointermove', (e) => this.onMove(e));
+    window.addEventListener('pointerup', (e) => this.onUp(e));
+    window.addEventListener('pointercancel', (e) => this.onUp(e, true));
+  }
+
+  setView(x: number, z: number, dist: number, yaw = this.yaw, pitch = this.pitch, instant = false) {
+    this.goal.target.set(x, this.terrain.h(x, z), z);
+    this.goal.distance = dist;
+    this.goal.yaw = yaw;
+    this.goal.pitch = pitch;
+    if (instant) {
+      this.target.copy(this.goal.target);
+      this.distance = dist;
+      this.yaw = yaw;
+      this.pitch = pitch;
+    }
+  }
+
+  groundAt(clientX: number, clientY: number): THREE.Vector3 | null {
+    const r = this.dom.getBoundingClientRect();
+    this.ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+    this.ray.setFromCamera(this.ndc, this.camera);
+    return this.terrain.raycast(this.ray.ray.origin, this.ray.ray.direction);
+  }
+
+  private onWheel(e: WheelEvent) {
+    if (!this.enabled) return;
+    e.preventDefault();
+    const f = Math.exp(Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 120) * 0.0022);
+    this.zoomAt(f, e.clientX, e.clientY);
+  }
+
+  private zoomAt(f: number, cx: number, cy: number) {
+    const before = this.goal.distance;
+    const next = clamp(before * f, 25, 2600);
+    const p = this.groundAt(cx, cy);
+    if (p && next < before) {
+      const k = 1 - next / before;
+      this.goal.target.x += (p.x - this.goal.target.x) * k;
+      this.goal.target.z += (p.z - this.goal.target.z) * k;
+    }
+    this.goal.distance = next;
+  }
+
+  private isTouch(e: PointerEvent) {
+    return e.pointerType === 'touch' || e.pointerType === 'pen';
+  }
+
+  private onDown(e: PointerEvent) {
+    if (!this.enabled) return;
+    this.dom.setPointerCapture?.(e.pointerId);
+    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY });
+    this.moved = false;
+    this.last = { x: e.clientX, y: e.clientY };
+    if (this.pointers.size >= 2) {
+      if (this.mode === 'tool') this.handlers.cancel();
+      this.mode = 'multi';
+      this.multiStart = null;
+      return;
+    }
+    if (!this.isTouch(e) && (e.button === 2 || e.button === 1)) {
+      this.mode = 'orbit';
+      return;
+    }
+    if (e.button === 0) {
+      const touchPans = this.isTouch(e) && !this.handlers.toolCapturesDrag();
+      this.mode = touchPans ? 'pan1' : 'tool';
+      if (this.mode === 'tool') this.handlers.down(this.groundAt(e.clientX, e.clientY), e);
+    }
+  }
+
+  private onMove(e: PointerEvent) {
+    const pt = this.pointers.get(e.pointerId);
+    if (e.target === this.dom || pt) this.lastClient = { x: e.clientX, y: e.clientY };
+    if (!pt) {
+      if (e.target === this.dom && this.mode === 'none') {
+        this.hover = this.groundAt(e.clientX, e.clientY);
+        this.handlers.move(this.hover, e, false);
+      }
+      return;
+    }
+    const dx = e.clientX - pt.x, dy = e.clientY - pt.y;
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    if (Math.hypot(e.clientX - pt.sx, e.clientY - pt.sy) > 6) this.moved = true;
+
+    if (this.mode === 'orbit') {
+      this.goal.yaw -= dx * 0.005;
+      this.goal.pitch = clamp(this.goal.pitch + dy * 0.004, this.minPitch(), 1.48);
+    } else if (this.mode === 'pan1') {
+      this.panScreen(dx, dy);
+    } else if (this.mode === 'tool') {
+      this.hover = this.groundAt(e.clientX, e.clientY);
+      this.handlers.move(this.hover, e, true);
+    } else if (this.mode === 'multi' && this.pointers.size >= 2) {
+      const [a, b] = [...this.pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      const ang = Math.atan2(b.y - a.y, b.x - a.x);
+      const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+      if (!this.multiStart) {
+        this.multiStart = { d, a: ang, cx, cy };
+        return;
+      }
+      const s = this.multiStart;
+      if (d > 10) this.zoomAt(s.d / d, cx, cy);
+      let da = ang - s.a;
+      if (da > Math.PI) da -= Math.PI * 2;
+      if (da < -Math.PI) da += Math.PI * 2;
+      this.goal.yaw -= da;
+      const mdx = cx - s.cx, mdy = cy - s.cy;
+      // two-finger vertical drag with fingers level = tilt; otherwise pan
+      if (Math.abs(a.y - b.y) < 60 && Math.abs(mdy) > Math.abs(mdx) * 1.5) {
+        this.goal.pitch = clamp(this.goal.pitch + mdy * 0.005, this.minPitch(), 1.48);
+      } else {
+        this.panScreen(mdx, mdy);
+      }
+      this.multiStart = { d, a: ang, cx, cy };
+    }
+  }
+
+  private onUp(e: PointerEvent, cancelled = false) {
+    const pt = this.pointers.get(e.pointerId);
+    if (!pt) return;
+    this.pointers.delete(e.pointerId);
+    if (this.mode === 'tool') {
+      if (cancelled) this.handlers.cancel();
+      else this.handlers.up(this.groundAt(e.clientX, e.clientY), e, this.moved);
+    } else if (this.mode === 'pan1' && !this.moved && !cancelled) {
+      // a tap without a drag acts as a click
+      const p = this.groundAt(e.clientX, e.clientY);
+      this.handlers.down(p, e);
+      this.handlers.up(p, e, false);
+    }
+    if (this.pointers.size === 0) this.mode = 'none';
+    else if (this.pointers.size === 1 && this.mode === 'multi') {
+      this.mode = 'pan1';
+      this.moved = true;
+    }
+  }
+
+  private minPitch() {
+    return this.goal.distance < 180 ? 0.1 : 0.28;
+  }
+
+  private panScreen(dx: number, dy: number) {
+    const k = this.distance * 0.0017 * (1 / Math.max(0.35, Math.sin(this.pitch)));
+    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+    // drag moves the ground with the finger: right = (fz, -fx), forward = (-fx, -fz)
+    this.goal.target.x += (-fz * dx - fx * dy) * k;
+    this.goal.target.z += (fx * dx - fz * dy) * k;
+    this.clampTarget();
+  }
+
+  private clampTarget() {
+    this.goal.target.x = clamp(this.goal.target.x, -HALF - 200, HALF + 200);
+    this.goal.target.z = clamp(this.goal.target.z, -HALF - 200, HALF + 200);
+  }
+
+  update(dt: number) {
+    const k = this.keys;
+    const sp = this.distance * 1.1 * dt * (k.has('shift') ? 2.5 : 1);
+    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+    let mx = 0, mz = 0;
+    if (k.has('w') || k.has('arrowup')) { mx -= fx; mz -= fz; }
+    if (k.has('s') || k.has('arrowdown')) { mx += fx; mz += fz; }
+    if (k.has('a') || k.has('arrowleft')) { mx -= fz; mz += fx; }
+    if (k.has('d') || k.has('arrowright')) { mx += fz; mz -= fx; }
+    if (mx || mz) {
+      this.goal.target.x += mx * sp;
+      this.goal.target.z += mz * sp;
+      this.clampTarget();
+    }
+    if (k.has('q')) this.goal.yaw += dt * 1.4;
+    if (k.has('e')) this.goal.yaw -= dt * 1.4;
+    if (k.has('r')) this.goal.pitch = clamp(this.goal.pitch + dt, this.minPitch(), 1.48);
+    if (k.has('f')) this.goal.pitch = clamp(this.goal.pitch - dt, this.minPitch(), 1.48);
+    if (k.has('=') || k.has('+')) this.goal.distance = clamp(this.goal.distance * (1 - dt * 1.5), 25, 2600);
+    if (k.has('-')) this.goal.distance = clamp(this.goal.distance * (1 + dt * 1.5), 25, 2600);
+
+    const s = 1 - Math.pow(0.0001, dt);
+    this.goal.target.y = Math.max(WATER, this.terrain.h(this.goal.target.x, this.goal.target.z));
+    this.target.lerp(this.goal.target, s);
+    this.distance += (this.goal.distance - this.distance) * s;
+    this.yaw += (this.goal.yaw - this.yaw) * s;
+    this.pitch += (this.goal.pitch - this.pitch) * s;
+
+    const cp = Math.cos(this.pitch), sp2 = Math.sin(this.pitch);
+    const pos = this.camera.position;
+    pos.set(this.target.x + Math.sin(this.yaw) * cp * this.distance, this.target.y + sp2 * this.distance, this.target.z + Math.cos(this.yaw) * cp * this.distance);
+    const ground = Math.max(WATER, this.terrain.h(pos.x, pos.z)) + 4;
+    if (pos.y < ground) pos.y = ground;
+    this.camera.lookAt(this.target);
+    this.camera.near = clamp(this.distance * 0.004, 0.5, 8);
+    this.camera.far = 16000;
+    this.camera.updateProjectionMatrix();
+  }
+}

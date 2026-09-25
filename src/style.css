@@ -1,0 +1,41 @@
+:root {
+  --ink: #f4f1ff;
+  --panel: rgba(18, 16, 28, 0.86);
+  --panel-2: rgba(34, 30, 52, 0.92);
+  --line: rgba(255, 255, 255, 0.12);
+  --slop: #ff3ea5;
+  --slime: #9dff3c;
+  --gold: #ffcf3a;
+  --bad: #ff5a4f;
+  --good: #4dd98a;
+  --muted: #a9a3c2;
+  --res: #4bd66f;
+  --com: #3aa0ff;
+  --ind: #ffc93a;
+  --off: #b26bff;
+  color-scheme: dark;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0d0b14;
+  color: var(--ink);
+  font-family: 'Overpass', 'Arial Narrow', system-ui, sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+}
+#app {
+  position: fixed;
+  inset: 0;
+}
+.game-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  outline: none;
+}

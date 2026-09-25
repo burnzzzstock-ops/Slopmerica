@@ -460,6 +460,7 @@ export class Game {
     this.roads.update();
     const jobs = this.sim.jobsFilled;
     this.traffic.update(dt, spd, this.hour, this.sim.population, jobs, this.rts.target);
+    this.peds.population = this.sim.population;
     this.peds.update(dt, spd, this.rts.target, this.rts.distance, this.time);
     this.communes.update(dt, this.env.night, this.time);
     this.tools.update();

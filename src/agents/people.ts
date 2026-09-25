@@ -118,7 +118,7 @@ interface Pose {
 }
 
 function unitCylinder(radialSegments = 6): THREE.CylinderGeometry { return new THREE.CylinderGeometry(1, 1, 1, radialSegments); }
-function standardMaterial(roughness = 0.82): THREE.MeshStandardMaterial { return new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness }); }
+function standardMaterial(roughness = 0.82): THREE.MeshStandardMaterial { return new THREE.MeshStandardMaterial({ color: 0xffffff, roughness }); }
 
 function buildFaceAtlas(): THREE.CanvasTexture {
   const cell = 64;

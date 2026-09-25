@@ -42,6 +42,8 @@ export class Pedestrians {
   private merch: number[];
   private spawnT = 0;
   outdoorMul = 1;
+  /** scales the crowd with the city: nobody walks in a town of 50 */
+  population = 0;
 
   constructor(scene: THREE.Scene, private net: RoadNetwork, private b: Buildings, private terrain: Terrain, private communes: Communes, private max: number) {
     this.renderer = new PeopleRenderer(scene, max);
@@ -83,7 +85,7 @@ export class Pedestrians {
       this.spawnT -= dtReal;
       if (this.spawnT <= 0) {
         this.spawnT = 0.08;
-        const budget = Math.floor(this.max * clamp(this.outdoorMul, 0.1, 1.2));
+        const budget = Math.floor(Math.min(this.max, 12 + this.population * 0.35 + this.communes.list.filter((c) => c.state !== 'gone').length * 6) * clamp(this.outdoorMul, 0.1, 1.2));
         for (let k = 0; k < 4 && this.peds.length < budget; k++) this.trySpawn(cam, R);
       }
     }

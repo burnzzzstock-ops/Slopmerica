@@ -161,6 +161,7 @@ export class Game {
     this.post = new PostFX(this.renderer, this.scene, this.camera, this.q);
     this.particles = new Particles(this.scene, this.q);
     this.particles.pxH = this.renderer.getDrawingBufferSize(new THREE.Vector2()).y;
+    this.audio.mapId = opts.map;
 
     // city
     this.net = new RoadNetwork(this.terrain, this.trees);
@@ -325,6 +326,9 @@ export class Game {
     this.post.look && (this.weather.look = this.post.look);
     this.weather.onThunder = (delay, dist) => {
       setTimeout(() => this.audio.play('thunder', Math.max(0.15, 1 - dist / 2500)), delay * 1000);
+    };
+    this.weather.onLightning = (x, z, dist, bolt) => {
+      if (bolt && dist < 1800) this.particles.emit('spark', x, this.terrain.h(x, z) + 1, z, { count: 24, spread: 2 });
     };
     this.weather.onChange = (kind, season) => {
       if (season !== this.lastSeason) { this.lastSeason = season; this.feed.push('seasonChange'); }

@@ -127,16 +127,45 @@ const gradeMat = () =>
       uVignette: { value: 0.28 },
       uLift: { value: new THREE.Color(0, 0, 0) },
       uTime: { value: 0 },
+      uShimmer: { value: 0 },
+      uFlash: { value: 0 },
+      uTilt: { value: 0 },
+      uFocus: { value: 0.45 },
+      uRes: { value: new THREE.Vector2(1, 1) },
     },
     vertexShader: FSQ_VERT,
     fragmentShader: /* glsl */ `
       // three prepends the tone mapping + color space helpers to ShaderMaterials
       uniform sampler2D tColor;
       uniform vec3 uTint, uLift;
-      uniform float uSat, uContrast, uVignette, uTime, uExposure;
+      uniform float uSat, uContrast, uVignette, uTime, uExposure, uShimmer, uFlash, uTilt, uFocus;
+      uniform vec2 uRes;
       varying vec2 vUv;
       void main() {
-        vec3 c = texture2D(tColor, vUv).rgb * uTint * uExposure;
+        vec2 uv = vUv;
+        // heat shimmer: a rippling refraction, strongest low on screen near the ground
+        if (uShimmer > 0.001) {
+          float s = uShimmer * (0.35 + 0.65 * smoothstep(0.75, 0.3, uv.y));
+          uv += vec2(sin(uv.y * 160.0 + uTime * 0.11) + sin(uv.y * 57.0 - uTime * 0.07), cos(uv.x * 110.0 + uTime * 0.09)) * 0.0007 * s;
+        }
+        vec3 src = texture2D(tColor, uv).rgb;
+        // optional tilt-shift: a golden-angle blur outside the in-focus band
+        if (uTilt > 0.001) {
+          float r = smoothstep(0.07, 0.4, abs(uv.y - uFocus)) * uTilt * 10.0;
+          if (r > 0.35) {
+            vec3 acc = src; float wsum = 1.0;
+            for (int i = 1; i < 14; i++) {
+              float fi = float(i);
+              float a = fi * 2.39996;
+              acc += texture2D(tColor, uv + vec2(cos(a), sin(a)) * sqrt(fi / 13.0) * r / uRes).rgb;
+              wsum += 1.0;
+            }
+            src = acc / wsum;
+          }
+        }
+        // lightning: the whole frame jumps toward a cold white
+        src += src * uFlash * 1.2 + vec3(0.02, 0.025, 0.045) * uFlash;
+        vec3 c = src * uTint * uExposure;
         c = ACESFilmicToneMapping(c);
         // grade in display space so contrast doesn't crush the shadows
         c = sRGBTransferOETF(vec4(clamp(c, 0.0, 1.0), 1.0)).rgb;
@@ -155,8 +184,26 @@ const gradeMat = () =>
     depthWrite: false,
   });
 
+/** The grade WeatherSystem writes each frame (weather + season + heat shimmer + lightning). */
+export interface PostLook {
+  tint: THREE.Color;
+  sat: number;
+  contrast: number;
+  lift: THREE.Color;
+  exposure: number;
+  /** heat-haze distortion 0..1 */
+  shimmer: number;
+  /** lightning flash 0..1 */
+  flash: number;
+}
+
 export class PostFX {
   readonly enabled: boolean;
+  /** Optional looks (dev lab / photo mode). */
+  vignette = true;
+  tiltShift = false;
+  /** Screen height (0 bottom .. 1 top) of the in-focus band for tilt-shift. */
+  tiltFocus = 0.45;
   private ao: boolean;
   private aoScale: number;
   private sceneRT?: THREE.WebGLRenderTarget;
@@ -170,7 +217,7 @@ export class PostFX {
   private compM = compositeMat();
   private gradeM = gradeMat();
   /** Weather/season look, set by the weather system each frame. */
-  readonly look = { tint: new THREE.Color(1, 1, 1), sat: 1.0, contrast: 1.06, lift: new THREE.Color(0, 0, 0), exposure: 1 };
+  readonly look: PostLook = { tint: new THREE.Color(1, 1, 1), sat: 1.0, contrast: 1.06, lift: new THREE.Color(0, 0, 0), exposure: 1, shimmer: 0, flash: 0 };
   /** World-space AO radius; the game scales it with zoom. */
   aoRadius = 4;
 
@@ -256,7 +303,7 @@ export class PostFX {
 
     const bl = this.bloom!;
     // HDR input: only real light sources and sun glints should bloom
-    bl.strength = 0.1 + night * 0.35;
+    bl.strength = 0.1 + night * 0.35 + this.look.flash * 0.35;
     bl.threshold = 0.9 + (1 - night) * 4;
     bl.render(r, this.hdrRT!, this.hdrRT!, 0, false);
 
@@ -267,8 +314,13 @@ export class PostFX {
     g.uSat.value = this.look.sat;
     g.uContrast.value = this.look.contrast;
     g.uLift.value.copy(this.look.lift);
-    g.uVignette.value = 0.26;
+    g.uVignette.value = this.vignette ? 0.26 : 0;
     g.uTime.value = (g.uTime.value + 1.37) % 1000;
+    g.uShimmer.value = this.look.shimmer;
+    g.uFlash.value = this.look.flash;
+    g.uTilt.value = this.tiltShift ? 1 : 0;
+    g.uFocus.value = this.tiltFocus;
+    g.uRes.value.set(this.hdrRT!.width, this.hdrRT!.height);
     this.quad.material = this.gradeM;
     r.setRenderTarget(null);
     this.quad.render(r);

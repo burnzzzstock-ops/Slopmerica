@@ -1,3 +1,4 @@
+import './fonts';
 import './style.css';
 import { Game } from './game';
 import type { MapId } from './world/maps';

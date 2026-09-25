@@ -144,7 +144,11 @@ float gDetailH;
 ${CLOUD_GLSL}
 uniform float uSnow, uSnowLine, uWet;
 uniform vec3 uGrassTint;
-float gSnow;`,
+float gSnow;
+// atmosphere extras (seasons.ts registers these into ATMOS)
+uniform float uFlowers, uPuddle, uRainAmt, uAtmoTime, uFlowerMap;
+uniform vec3 uSkyRefl;
+float gPuddle;`,
         )
         .replace(
           '#include <color_fragment>',
@@ -178,6 +182,31 @@ float gSnow;`,
   diffuseColor.rgb *= 0.88 + macro * 0.22;
   // seasons: grass browns in winter, NorCal hills green up in the rainy season
   diffuseColor.rgb *= mix(vec3(1.0), uGrassTint, w.x);
+  // wildflowers: a Golden Coast superbloom, phlox and daisies in the hollers,
+  // tickseed in the Florida grass. Dots up close, a haze of color from afar.
+  if (uFlowers > 0.003) {
+    float dens = uFlowers * smoothstep(0.55, 0.9, w.x) * smoothstep(0.3, 1.2, vWPos.y)
+               * smoothstep(0.32, 0.72, tn(vWPos.xz * 0.012 + 7.0) * 0.72 + tn(vWPos.xz * 0.061 + 2.0) * 0.28);
+    // each drift is mostly one flower, so from afar a field reads poppy-orange or
+    // lupine-purple instead of averaging out to brown
+    float fdrift = mix(0.1, 0.9, smoothstep(0.36, 0.64, tn(vWPos.xz * 0.021 + 3.0) * 0.8 + tn(vWPos.xz * 0.083 + 1.0) * 0.2));
+    vec3 fA, fB, fC;
+    if (uFlowerMap < 0.5) { fA = vec3(0.49, 0.31, 0.52); fB = vec3(0.75, 0.63, 0.22); fC = vec3(0.78, 0.77, 0.7); } // phlox, buttercups, daisies
+    else if (uFlowerMap < 1.5) { fA = vec3(0.8, 0.34, 0.17); fB = vec3(0.43, 0.34, 0.64); fC = vec3(0.77, 0.65, 0.23); } // poppies, lupine, goldfields
+    else { fA = vec3(0.77, 0.64, 0.21); fB = vec3(0.48, 0.33, 0.59); fC = fA; } // tickseed, blazing star
+    vec2 fp = vWPos.xz / 1.1;
+    vec2 fcell = floor(fp);
+    float fh = th(fcell), fk = th(fcell + 17.3);
+    vec2 fo = fract(fp) - 0.5 - (vec2(th(fcell + 3.1), th(fcell + 5.7)) - 0.5) * 0.5;
+    vec3 fcol = fk > 0.9 ? fC : th(fcell + 9.1) < fdrift ? fB : fA;
+    vec3 ffarCol = mix(mix(fA, fB, fdrift), fC, 0.1);
+    fcol *= fcol;
+    ffarCol *= ffarCol;
+    float fdot = step(1.0 - dens * 0.35, fh) * smoothstep(0.25, 0.12, length(fo));
+    float ffar = smoothstep(0.25, 0.9, fwidth(vWPos.x));
+    float fmott = clamp(0.3 + 0.95 * tn(vWPos.xz * 0.11 + 5.0), 0.0, 1.0); // clumps, so far fields aren't flat paint
+    diffuseColor.rgb = mix(diffuseColor.rgb, mix(fcol, ffarCol, ffar), mix(fdot, dens * 0.24 * fmott, ffar));
+  }
   // snow settles on flat-ish ground above the snow line, patchy at the edges
   vec3 wN = gWN;
   float patchy = tn(vWPos.xz * 0.05) * 0.5 + macro * 0.5;
@@ -186,9 +215,31 @@ float gSnow;`,
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.92, 0.97), gSnow);
   gDetailH *= 1.0 - gSnow * 0.8;
   diffuseColor.rgb *= 1.0 - uWet * 0.3 * (1.0 - gSnow);
+  // puddles gather in the flats (and on dirt and paving) once the ground is soaked
+  gPuddle = uPuddle * (1.0 - gSnow) * smoothstep(0.96, 0.995, wN.y)
+          * smoothstep(0.62, 0.74, tn(vWPos.xz * 0.11) * 0.7 + tn(vWPos.xz * 0.47) * 0.3 + w.y * 0.1 + w.z * 0.08);
+  diffuseColor.rgb *= 1.0 - gPuddle * 0.45;
+  gDetailH *= 1.0 - gPuddle;
 }`,
         )
-        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.45, uWet * 0.7 * (1.0 - gSnow));')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.45, uWet * 0.7 * (1.0 - gSnow));\nroughnessFactor = mix(roughnessFactor, 0.06, gPuddle);')
+        .replace(
+          '#include <opaque_fragment>',
+          `{
+  // puddles mirror the sky, with raindrop rings while it pours
+  vec3 tv = normalize(cameraPosition - vWPos);
+  float fres = 0.04 + 0.96 * pow(1.0 - clamp(tv.y, 0.0, 1.0), 5.0);
+  float ring = 0.0;
+  if (uRainAmt > 0.01 && gPuddle > 0.01) {
+    vec2 rp = vWPos.xz * 1.4; vec2 rc = floor(rp);
+    float rt = fract(uAtmoTime * 1.3 + th(rc));
+    float rd = length(fract(rp) - 0.5 - (vec2(th(rc + 1.7), th(rc + 2.9)) - 0.5) * 0.4);
+    ring = smoothstep(0.05, 0.0, abs(rd - rt * 0.45)) * (1.0 - rt) * min(uRainAmt, 1.0);
+  }
+  outgoingLight = mix(outgoingLight, uSkyRefl * (0.55 + ring), gPuddle * (0.2 + 0.4 * fres));
+}
+#include <opaque_fragment>`,
+        )
         .replace('#include <lights_fragment_end>', cloudShadowChunk('vWPos'))
         .replace(
           '#include <normal_fragment_maps>',

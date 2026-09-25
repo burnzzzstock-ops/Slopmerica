@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>SLOPMERICA · Atmosphere Lab</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Bungee&family=Overpass:wght@400;600;800;900&family=Permanent+Marker&family=Titan+One&family=Yellowtail&display=swap" rel="stylesheet" />
+    <style>
+      .atmo-panel {
+        position: fixed; top: 10px; right: 10px; width: 300px; max-height: calc(100% - 20px); overflow-y: auto;
+        background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px 12px;
+        font-size: 12px; line-height: 1.35; backdrop-filter: blur(8px); -webkit-user-select: none; user-select: none; touch-action: pan-y;
+      }
+      .atmo-panel.collapsed > :not(.atmo-head) { display: none; }
+      .atmo-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .atmo-head h1 { margin: 0; font: 400 20px 'Bungee', sans-serif; letter-spacing: 0.02em; color: var(--slime); }
+      .atmo-panel h2 { margin: 12px 0 5px; font: 800 10px 'Overpass', sans-serif; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+      .atmo-row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+      .atmo-panel button {
+        font: 700 11px 'Overpass', sans-serif; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line);
+        border-radius: 7px; padding: 5px 8px; cursor: pointer;
+      }
+      .atmo-panel button:hover { border-color: rgba(255, 255, 255, 0.35); }
+      .atmo-panel button.on { background: var(--slime); color: #111; border-color: var(--slime); }
+      .atmo-panel input[type='range'] { width: 100%; accent-color: var(--slime); }
+      .atmo-panel label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+      .atmo-val { color: var(--ink); font-weight: 800; }
+      .atmo-readout { margin-top: 8px; padding: 7px 8px; border-radius: 8px; background: rgba(0, 0, 0, 0.35); color: var(--muted); font: 600 11px ui-monospace, Menlo, monospace; white-space: pre-wrap; }
+      .atmo-toast {
+        position: fixed; left: 50%; top: 14px; transform: translateX(-50%); padding: 8px 14px; border-radius: 999px;
+        background: var(--panel); border: 1px solid var(--line); font: 800 13px 'Overpass', sans-serif; opacity: 0; transition: opacity 0.3s; pointer-events: none;
+      }
+      @media (max-width: 640px) {
+        .atmo-panel { top: auto; bottom: 8px; right: 8px; left: 8px; width: auto; max-height: 46%; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/dev/atmosphere.ts"></script>
+  </body>
+</html>

@@ -305,8 +305,10 @@ a {
 .topbar {
   position: absolute;
   top: calc(8px + var(--safe-t));
-  left: 50%;
-  transform: translateX(-50%);
+  left: 8px;
+  right: 8px;
+  margin-inline: auto;
+  width: max-content;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -466,9 +468,11 @@ a {
 /* toolbar */
 .toolbar {
   position: absolute;
-  left: 50%;
+  left: 8px;
+  right: 8px;
+  margin-inline: auto;
+  width: max-content;
   bottom: calc(10px + var(--safe-b));
-  transform: translateX(-50%);
   display: flex;
   gap: 4px;
   padding: 6px;
@@ -541,9 +545,10 @@ a {
 /* sub panel */
 .subpanel {
   position: absolute;
-  left: 50%;
+  left: 8px;
+  right: 8px;
+  margin-inline: auto;
   bottom: calc(82px + var(--safe-b));
-  transform: translateX(-50%);
   width: min(880px, calc(100vw - 16px));
   max-height: min(46vh, 420px);
   overflow-y: auto;
@@ -994,8 +999,8 @@ a {
 .toasts {
   position: absolute;
   top: calc(78px + var(--safe-t));
-  left: 50%;
-  transform: translateX(-50%);
+  left: 8px;
+  right: 8px;
   display: flex;
   flex-direction: column;
   gap: 6px;

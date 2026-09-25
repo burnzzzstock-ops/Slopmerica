@@ -253,12 +253,12 @@ diffuseColor.rgb *= 0.86 + dn*0.26;`,
       // marsh (Florida lowlands)
       if (mapId === 'florida' && h < 0.95 && h > 0) out.lerp(P.marsh, smoothstep(0.95, 0.4, h));
       // shoreline
-      const shoreBand = mapId === 'appalachia' ? 1.4 : mapId === 'florida' ? 0.7 : 4.2;
+      const shoreBand = mapId === 'appalachia' ? 1.4 : mapId === 'florida' ? 0.28 : 4.2;
       if (h < shoreBand) {
         const sandy = mapId === 'appalachia' ? P.mud : P.sand;
         out.lerp(sandy, smoothstep(shoreBand, shoreBand * 0.35, h));
       }
-      if (mapId === 'florida' && z > 250 && h < 2.2) out.lerp(P.sand, 0.6 * smoothstep(2.2, 0.8, h));
+      if (mapId === 'florida' && z > 300 && h < 2.2) out.lerp(P.sand, 0.75 * smoothstep(2.2, 0.8, h));
       // rock on steep slopes
       out.lerp(P.rock, smoothstep(0.7, 1.25, slope) * 0.85);
       // ground paint from development

@@ -1,6 +1,6 @@
 // Game: owns the scene and every subsystem, and runs the frame loop.
 import * as THREE from 'three';
-import { defaultQuality, HALF, IS_TOUCH, QUALITY, Quality, saveQuality, storedQuality, WATER } from './config';
+import { defaultQuality, HALF, IS_TOUCH, MIN_RENDER_SCALE, presetPixelRatio, QUALITY, Quality, saveQuality, storedQuality, WATER } from './config';
 import type { FeedContext, FeedEventKind, LandmarkId } from './contracts';
 import { generateMap, MapData, MapId } from './world/maps';
 import { Terrain } from './world/terrain';
@@ -136,8 +136,10 @@ export class Game {
     this.cityName = opts.cityName || defaultCityName(opts.map);
 
     // with post-processing the scene is multisampled offscreen, so the canvas itself needn't be
-    this.renderer = new THREE.WebGLRenderer({ antialias: this.q.post ? false : !IS_TOUCH, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.q.pixelRatio));
+    // Without post-processing the default framebuffer does the MSAA (phones too:
+    // tile GPUs resolve it on-chip); with post, the HDR target does.
+    this.renderer = new THREE.WebGLRenderer({ antialias: !this.q.post, powerPreference: 'high-performance' });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, presetPixelRatio(this.q.name)));
     this.renderer.setSize(container.clientWidth, container.clientHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.95;
@@ -559,12 +561,12 @@ export class Game {
       this.env.sun.shadow.map?.dispose();
       this.env.sun.shadow.map = null;
     }
-    this.setRenderScale(this.dynamicScale, next.pixelRatio);
+    this.setRenderScale(this.dynamicScale, presetPixelRatio(name));
     return this.pendingQuality !== null;
   }
 
-  private setRenderScale(scale: number, presetRatio = QUALITY[this.pendingQuality ?? this.q.name].pixelRatio) {
-    this.dynamicScale = THREE.MathUtils.clamp(scale, 0.6, 1);
+  private setRenderScale(scale: number, presetRatio = presetPixelRatio(this.pendingQuality ?? this.q.name)) {
+    this.dynamicScale = THREE.MathUtils.clamp(scale, MIN_RENDER_SCALE, 1);
     this.perf.resolution = this.dynamicScale;
     const pr = Math.min(window.devicePixelRatio || 1, presetRatio) * this.dynamicScale;
     if (Math.abs(this.renderer.getPixelRatio() - pr) < 0.035) return;
@@ -604,7 +606,7 @@ export class Game {
     this.resolutionCooldown -= intervalMs / 1000;
     if (this.resolutionCooldown <= 0 && this.perfSamples > 80 && this.perf.frameMs > 0) {
       const ms = this.perf.frameMs;
-      if (ms > 18.5 && this.dynamicScale > 0.61) {
+      if (ms > 18.5 && this.dynamicScale > MIN_RENDER_SCALE + 0.01) {
         this.setRenderScale(this.dynamicScale - (ms > 25 ? 0.12 : 0.07));
         this.resolutionCooldown = 3;
       } else if (ms < 15.2 && this.perf.renderMs < 15.2 && this.dynamicScale < 0.99) {

@@ -37,7 +37,11 @@ const LANDMARKS: { id: LandmarkId; name: string; icon: string }[] = [
 
 const ZONE_ICON: Record<ZoneType, string> = { resLow: '🏡', resHigh: '🏢', comLow: '🛒', comHigh: '🏬', industry: '🏭', office: '💻' };
 
-type PanelId = 'roads' | 'zones' | 'landmarks' | 'views' | 'budget' | 'communes' | 'help' | `ext:${string}` | null;
+type PanelId = 'roads' | 'zones' | 'landmarks' | 'views' | 'budget' | 'communes' | 'help' | 'more' | `ext:${string}` | null;
+
+/** Phones get these in the toolbar; everything else lives in the More drawer. */
+const PHONE_PRIMARY = ['inspect', 'roads', 'zones', 'ext:services', 'views', 'bulldoze'];
+const COMPACT = IS_TOUCH || (typeof window !== 'undefined' && window.innerWidth < 700);
 
 export class Hud implements UiSink {
   root: HTMLElement;
@@ -67,6 +71,7 @@ export class Hud implements UiSink {
       if (b) { b.textContent = n ? String(n) : ''; b.hidden = !n; }
     };
     this.buildToolbar();
+    this.wirePanelMinimize();
     this.inspector = this.mk('aside', 'inspector');
     this.inspector.hidden = true;
     this.toasts = this.mk('div', 'toasts');
@@ -206,10 +211,34 @@ export class Hud implements UiSink {
     for (const ep of EXT.panels) withOrder.push({ it: [`ext:${ep.id}`, ep.icon, ep.label], o: ep.order ?? 65 });
     withOrder.sort((a, b) => a.o - b.o);
     const all = withOrder.map((x) => x.it);
-    this.bar.innerHTML =
-      all.map(([id, icon, label]) => `<button class="tbtn" data-t="${id}" title="${label}"><span class="ti">${icon}</span><span class="tl">${label}</span>${id === 'feed' ? '<i id="feed-badge" class="badge" hidden></i>' : ''}</button>`).join('') +
-      `<a class="tbtn merch" href="${MERCH_URL}" target="_blank" rel="noopener" title="Real Slop merch"><span class="ti slop-mini">Slop</span><span class="tl">Merch</span></a>`;
+    const btn = ([id, icon, label]: [string, string, string]) => `<button class="tbtn" data-t="${id}" title="${label}"><span class="ti">${icon}</span><span class="tl">${label}</span>${id === 'feed' || id === 'more' ? '<i id="feed-badge" class="badge" hidden></i>' : ''}</button>`;
+    if (COMPACT) {
+      // phones: a short toolbar; the rest opens from More
+      const short: Record<string, string> = { views: 'Views' };
+      const primary = (PHONE_PRIMARY.map((id) => all.find((x) => x[0] === id)).filter(Boolean) as [string, string, string][]).map(([id, icon, label]) => [id, icon, short[id] ?? label] as [string, string, string]);
+      this.moreItems = all.filter((x) => !PHONE_PRIMARY.includes(x[0]));
+      this.bar.innerHTML = primary.map(btn).join('') + btn(['more', '⋯', 'More']);
+      this.bar.classList.add('compact');
+    } else {
+      this.bar.innerHTML = all.map(btn).join('') +
+        `<a class="tbtn merch" href="${MERCH_URL}" target="_blank" rel="noopener" title="Real Slop merch"><span class="ti slop-mini">Slop</span><span class="tl">Merch</span></a>`;
+    }
     this.bar.querySelectorAll<HTMLButtonElement>('button.tbtn').forEach((b) => b.addEventListener('click', () => this.onTool(b.dataset.t!)));
+  }
+  private moreItems: [string, string, string][] = [];
+
+  /** Phones: an open panel shrinks to its title pill while you work on the map. */
+  private wirePanelMinimize() {
+    this.game.renderer.domElement.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' || this.sub.hidden || this.panel === 'more') return;
+      if (this.sub.querySelector(':scope > .sp-title')) this.sub.classList.add('min');
+    });
+    this.sub.addEventListener('click', (e) => {
+      if (!this.sub.classList.contains('min')) return;
+      e.stopPropagation();
+      e.preventDefault();
+      this.sub.classList.remove('min');
+    }, true);
   }
 
   private onTool(id: string) {
@@ -238,6 +267,7 @@ export class Hud implements UiSink {
     }
     this.panel = p;
     this.sub.hidden = !p;
+    this.sub.classList.remove('min');
     if (!p) { if (this.game.tools.active === 'road' || this.game.tools.active === 'zone' || this.game.tools.active === 'dezone') this.game.tools.set('inspect'); this.syncToolbar(); return; }
     this.renderPanel();
     this.syncToolbar();
@@ -250,6 +280,18 @@ export class Hud implements UiSink {
       const ep = EXT.panels.find((x) => `ext:${x.id}` === p);
       this.sub.innerHTML = '';
       ep?.render(this.sub, g, () => this.renderPanel());
+      return;
+    }
+    if (p === 'more') {
+      this.sub.innerHTML = `
+        <div class="sp-title">More</div>
+        <div class="more-grid">${this.moreItems.map(([id, icon, label]) => `<button class="more-btn" data-more="${id}"><span>${icon}</span>${esc(label)}</button>`).join('')}
+          <a class="more-btn merch" href="${MERCH_URL}" target="_blank" rel="noopener"><span class="slop-mini">Slop</span>Merch</a></div>`;
+      this.sub.querySelectorAll<HTMLButtonElement>('[data-more]').forEach((b) => b.addEventListener('click', () => {
+        const id = b.dataset.more!;
+        if (id === 'feed') this.openPanel(null);
+        this.onTool(id);
+      }));
       return;
     }
     if (p === 'roads') {
@@ -381,7 +423,8 @@ export class Hud implements UiSink {
     const act = this.game.tools.active;
     this.bar.querySelectorAll<HTMLButtonElement>('button.tbtn').forEach((b) => {
       const id = b.dataset.t!;
-      const on = id === this.panel || (id === 'upgrade' && act === 'upgrade') || (id === 'bulldoze' && act === 'bulldoze') || (id === 'inspect' && act === 'inspect' && !this.panel);
+      const inMore = id === 'more' && (this.panel === 'more' || (!!this.panel && this.moreItems.some((x) => x[0] === this.panel)) || (act === 'upgrade' && this.moreItems.some((x) => x[0] === 'upgrade')));
+      const on = inMore || id === this.panel || (id === 'upgrade' && act === 'upgrade') || (id === 'bulldoze' && act === 'bulldoze') || (id === 'inspect' && act === 'inspect' && !this.panel);
       b.classList.toggle('on', on);
     });
   }

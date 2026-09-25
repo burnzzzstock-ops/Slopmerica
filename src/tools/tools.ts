@@ -399,7 +399,7 @@ export class Tools implements PointerHandlers {
         }
       } else {
         this.preview.visible = false;
-        this.tip = { text: this.game.isTouch ? `${ROAD_TYPES[this.roadType].name}: drag from where the road starts · two fingers move the map` : `${ROAD_TYPES[this.roadType].name}: click to start` };
+        this.tip = { text: this.game.isTouch ? `Drag to draw a ${ROAD_TYPES[this.roadType].name}` : `${ROAD_TYPES[this.roadType].name}: click to start` };
       }
     } else if (this.active === 'upgrade' || this.active === 'bulldoze') {
       const pick = net.pickSeg(hov.x, hov.z, this.active === 'bulldoze' ? 1 : 3);

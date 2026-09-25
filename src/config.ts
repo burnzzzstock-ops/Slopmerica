@@ -35,7 +35,7 @@ export interface Quality {
 export const QUALITY: Record<Quality['name'], Quality> = {
   low: {
     name: 'low', pixelRatio: 1, shadows: true, shadowMap: 1024, treeDensity: 0.5, treeNear: 290, treeNearCap: 6000, treeFarCap: 42000,
-    lod: [500, 1100, 2400], maxCars: 450, maxPeople: 120, post: false, ao: false, aoFull: false, groundRadius: 150,
+    lod: [600, 1300, 2800], maxCars: 450, maxPeople: 120, post: false, ao: false, aoFull: false, groundRadius: 150,
   },
   medium: {
     name: 'medium', pixelRatio: 1.4, shadows: true, shadowMap: 2048, treeDensity: 0.75, treeNear: 480, treeNearCap: 12000, treeFarCap: 85000,
@@ -50,6 +50,18 @@ export const QUALITY: Record<Quality['name'], Quality> = {
     lod: [1100, 2200, 4200], maxCars: 1900, maxPeople: 580, post: true, ao: true, aoFull: true, groundRadius: 300,
   },
 };
+
+/**
+ * Pixel density to render at. Phones have 3x screens: rendering Low at 1x and
+ * stretching it looked like pixel soup, so touch devices get a denser floor
+ * (with MSAA, which is cheap on tile-based mobile GPUs).
+ */
+export function presetPixelRatio(q: Quality['name']): number {
+  const base = QUALITY[q].pixelRatio;
+  return IS_TOUCH ? Math.max(base, q === 'low' ? 1.5 : 1.75) : base;
+}
+/** Dynamic resolution never drops below this share of the preset density. */
+export const MIN_RENDER_SCALE = IS_TOUCH ? 0.8 : 0.6;
 
 export function storedQuality(): Quality['name'] | null {
   try {

@@ -1562,3 +1562,158 @@ a {
   font-size: 11px;
   line-height: 1.35;
 }
+
+/* ---- phone layout: one-row top bar, short toolbar + More, shrinking panels ---- */
+.more-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 6px;
+}
+.more-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #1a1726;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+  text-decoration: none;
+}
+.more-btn span {
+  font-size: 20px;
+}
+.more-btn .slop-mini {
+  font-size: 13px;
+}
+.subpanel.min {
+  width: max-content;
+  max-width: calc(100vw - 16px);
+  padding: 7px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.subpanel.min > :not(.sp-title) {
+  display: none !important;
+}
+.subpanel.min > .sp-title {
+  margin: 0;
+  font-size: 12px;
+}
+.subpanel.min > .sp-title small {
+  display: none;
+}
+.subpanel.min > .sp-title::after {
+  content: '  ▴ tap for options';
+  font-family: 'Overpass', sans-serif;
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+@media (max-width: 760px) {
+  .topbar {
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 5px 8px;
+    white-space: nowrap;
+  }
+  .tb-lbl,
+  .meter b,
+  .tb-weather small {
+    display: none;
+  }
+  #tb-pop::before {
+    content: '👥 ';
+    font-size: 11px;
+  }
+  .tb-stat b {
+    font-size: 13px;
+  }
+  .tb-money i {
+    font-size: 9px;
+  }
+  .tb-speed button {
+    padding: 4px 6px;
+    font-size: 10px;
+  }
+  .tb-demand {
+    height: 24px;
+  }
+  .mtrack {
+    width: 30px;
+    height: 5px;
+  }
+  .meter {
+    gap: 3px;
+    font-size: 9px;
+  }
+  .tb-weather {
+    font-size: 15px;
+  }
+  .tool-actions {
+    top: calc(56px + var(--safe-t));
+    padding: 4px;
+  }
+  .ta-tip {
+    font-size: 11px;
+    max-width: 52vw;
+  }
+  .tool-actions button {
+    padding: 8px 11px;
+  }
+  .toasts {
+    top: calc(104px + var(--safe-t));
+  }
+  .perf-overlay {
+    top: calc(60px + var(--safe-t));
+  }
+  .xfeed {
+    top: calc(58px + var(--safe-t));
+  }
+  .toolbar.compact {
+    width: calc(100vw - 16px);
+    justify-content: space-between;
+    padding: 4px;
+    gap: 2px;
+  }
+  .toolbar.compact .tbtn {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 6px 2px 4px;
+  }
+  .toolbar.compact .ti {
+    font-size: 19px;
+  }
+  .toolbar.compact .tl {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 8.5px;
+    letter-spacing: 0;
+  }
+  .subpanel {
+    bottom: calc(76px + var(--safe-b));
+    max-height: 30vh;
+  }
+  .sp-row.modes .chip {
+    padding: 5px 9px;
+    font-size: 11px;
+  }
+  .card {
+    flex-basis: 104px;
+    padding: 6px 8px;
+  }
+  .card b {
+    font-size: 12px;
+  }
+  .card .ci {
+    font-size: 17px;
+  }
+}

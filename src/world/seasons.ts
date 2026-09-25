@@ -1,11 +1,12 @@
-// Seasons: smooth per-map seasonal curves (nothing pops), a toy climate, and the
-// shared atmosphere uniforms that the terrain, tree and water shaders read.
+// Seasons: smooth per-map seasonal curves (nothing pops), a toy climate, the
+// atmosphere extras layered onto core's ATMOS uniforms (wildflowers, puddles),
+// and applyAtmosphere() so any other material can catch snow, rain and cloud shadows.
 // Day 0 is March 20. Every look value is sampled from cyclic keyframes with
 // smoothstep easing, so scrubbing the calendar never snaps a color.
 import * as THREE from 'three';
 import type { Season } from '../contracts';
 import type { MapId } from './maps';
-import { ATMOS } from './atmos';
+import { ATMOS, bindAtmos, CLOUD_GLSL, cloudShadowChunk } from './atmos';
 
 export const YEAR = 365;
 
@@ -198,50 +199,23 @@ export function temperatureC(map: MapId, dayOfYear: number, hour: number): numbe
 
 // ------------------------------------------------------------------ shared uniforms
 /**
- * One set of uniform objects for the whole world. Trees and water plug these
- * exact objects into their shaders, and WeatherSystem hands them to the terrain
- * material, so updating a value here updates every shader at once.
+ * Atmosphere extras that ride along with core's ATMOS uniforms (atmos.ts):
+ * wildflowers, puddles and rain rings, and what wet ground reflects.
+ * WeatherSystem and Environment write them each frame.
  */
 export const atmo = {
-  uTime: { value: 0 },
-  // wind
-  uWindDir: { value: new THREE.Vector2(0.8, 0.6) },
-  uWindStrength: { value: 0.15 },
-  // ground weather
-  uSnow: { value: 0 }, // ground snow cover 0..1
-  uSnowLine: { value: 1e4 }, // snow sticks above this height (m)
-  uTreeSnow: { value: 0 }, // snow resting on canopies
-  uWet: { value: 0 }, // 0 dry .. 1 soaked
-  uPuddle: { value: 0 }, // standing water
-  uRain: { value: 0 }, // current rainfall, for ripples
-  uIce: { value: 0 }, // frozen river edges 0..1
-  // clouds
-  uCloudCover: { value: 0.25 },
-  uCloudShadow: { value: 0.35 }, // how dark cloud shadows are
-  uCloudOffset: { value: new THREE.Vector2() },
-  // light
+  uTime: { value: 0 }, // seconds, for rain rings
+  uPuddle: { value: 0 }, // standing water 0..1
+  uRain: { value: 0 }, // current rainfall, for rings
   uSkyRefl: { value: new THREE.Color(0.55, 0.65, 0.78) }, // what wet ground and puddles reflect
-  uFlash: { value: 0 }, // lightning
-  // seasonal vegetation
-  uBare: { value: 0 },
-  uFall: { value: 0 },
-  uFresh: { value: 0 },
-  uBlossom: { value: 0 },
-  uDull: { value: 0 },
-  uDry: { value: 0 },
-  uDormant: { value: 0 },
-  uLitter: { value: 0 },
-  uGolden: { value: 1 },
-  uMarsh: { value: 0 },
-  uFlowers: { value: 0 },
+  uFlowers: { value: 0 }, // wildflowers in the grass 0..1
 };
 export type AtmoUniforms = typeof atmo;
 
 /**
- * Extra shared uniforms for the terrain extras (wildflowers, puddles with rain
- * rings, sky reflection), registered into ATMOS so bindAtmos() hands them to
- * every atmosphere material. Names are unique so they never shadow a
- * material's own uTime / uRain.
+ * The extras registered into ATMOS so bindAtmos() hands them to every
+ * atmosphere material. Names are unique so they never shadow a material's own
+ * uTime / uRain.
  */
 export const ATMOS_EXTRA = {
   uFlowers: atmo.uFlowers,
@@ -253,39 +227,17 @@ export const ATMOS_EXTRA = {
 };
 Object.assign(ATMOS, ATMOS_EXTRA);
 
-/** Write a sampled season into the shared uniforms. */
+/** Write a sampled season into the shared uniforms (tree colors are handled in trees.ts). */
 export function applySeasonUniforms(s: SeasonLook) {
-  atmo.uBare.value = s.bare;
-  atmo.uFall.value = s.fall;
-  atmo.uFresh.value = s.fresh;
-  atmo.uBlossom.value = s.blossom;
-  atmo.uDull.value = s.dull;
-  atmo.uDry.value = s.dry;
-  atmo.uDormant.value = s.dormant;
-  atmo.uLitter.value = s.litter;
-  atmo.uGolden.value = s.golden;
-  atmo.uMarsh.value = s.marsh;
   atmo.uFlowers.value = s.flowers;
 }
 
 // ------------------------------------------------------------------ helpers for other materials
-/** GLSL: value noise + cloud-shadow lookup, expects atmo uniforms uCloud*. */
-export const GLSL_CLOUD_SHADOW = /* glsl */ `
-float atmoH(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
-float atmoN(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
-  return mix(mix(atmoH(i),atmoH(i+vec2(1,0)),f.x), mix(atmoH(i+vec2(0,1)),atmoH(i+vec2(1,1)),f.x), f.y); }
-float atmoCloudLight(vec2 xz){
-  if (uCloudShadow <= 0.001) return 1.0;
-  vec2 p = xz + uCloudOffset;
-  float n = atmoN(p*0.0021)*0.55 + atmoN(p*0.0057+3.7)*0.3 + atmoN(p*0.016-1.3)*0.15;
-  float c = smoothstep(1.02 - uCloudCover, 1.18 - uCloudCover, n);
-  return 1.0 - uCloudShadow * c;
-}`;
-
 /**
  * Opt-in weather for any MeshStandardMaterial (buildings, roads, props): snow
- * settles on up-facing surfaces, rain darkens and adds sheen, clouds cast
- * shadows. Call once per material before first render. Safe to call twice.
+ * settles on up-facing surfaces above the snow line, rain darkens and adds a
+ * sky sheen, and the cloud deck casts its shadows (the same ones the terrain and
+ * trees get). Call once per material before first render. Safe to call twice.
  */
 export function applyAtmosphere(mat: THREE.MeshStandardMaterial, opts: { snow?: number; wet?: number } = {}) {
   if (mat.userData.atmoApplied) return mat;
@@ -295,10 +247,7 @@ export function applyAtmosphere(mat: THREE.MeshStandardMaterial, opts: { snow?: 
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (sh, r) => {
     prev.call(mat, sh, r);
-    Object.assign(sh.uniforms, {
-      uSnow: atmo.uSnow, uSnowLine: atmo.uSnowLine, uWet: atmo.uWet, uCloudCover: atmo.uCloudCover,
-      uCloudShadow: atmo.uCloudShadow, uCloudOffset: atmo.uCloudOffset, uSkyRefl: atmo.uSkyRefl,
-    });
+    bindAtmos(sh);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vAtmoW;\nvarying vec3 vAtmoN;')
       .replace(
@@ -318,23 +267,19 @@ export function applyAtmosphere(mat: THREE.MeshStandardMaterial, opts: { snow?: 
         '#include <common>',
         `#include <common>
 varying vec3 vAtmoW; varying vec3 vAtmoN;
-uniform float uSnow, uSnowLine, uWet, uCloudCover, uCloudShadow; uniform vec2 uCloudOffset; uniform vec3 uSkyRefl;
-${GLSL_CLOUD_SHADOW}`,
+uniform float uSnow, uSnowLine, uWet; uniform vec3 uSkyRefl;
+${CLOUD_GLSL}`,
       )
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
-float atmoSnow = ${snowK} * smoothstep(0.55, 0.85, vAtmoN.y) * smoothstep(uSnowLine - 8.0, uSnowLine + 8.0, vAtmoW.y + 12.0) * smoothstep(0.0, 0.35, uSnow);
+float atmoSnow = ${snowK} * smoothstep(0.55, 0.85, vAtmoN.y) * smoothstep(uSnowLine - 30.0, uSnowLine + 60.0, vAtmoW.y) * smoothstep(0.0, 0.35, uSnow);
 float atmoWet = ${wetK} * uWet * (1.0 - atmoSnow);
 diffuseColor.rgb *= 1.0 - atmoWet * 0.35;
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.85, 0.89, 0.95), atmoSnow);`,
       )
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.35, atmoWet * 0.7);')
-      .replace(
-        '#include <lights_fragment_end>',
-        `#include <lights_fragment_end>
-{ float cl = atmoCloudLight(vAtmoW.xz); reflectedLight.directDiffuse *= cl; reflectedLight.directSpecular *= cl; }`,
-      )
+      .replace('#include <lights_fragment_end>', cloudShadowChunk('vAtmoW'))
       .replace(
         '#include <opaque_fragment>',
         `{ vec3 av = normalize(cameraPosition - vAtmoW); float af = pow(1.0 - clamp(dot(normalize(vAtmoN), av), 0.0, 1.0), 4.0);

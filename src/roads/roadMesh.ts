@@ -192,6 +192,30 @@ const CONCRETE: [number, number, number] = [0.62, 0.61, 0.58];
 const CONCRETE_DARK: [number, number, number] = [0.34, 0.3, 0.25];
 const CURB: [number, number, number] = [0.69, 0.68, 0.64];
 
+/** Render-only trim at a junction, based on intersecting carriageways rather
+ * than the graph's wider curb/sidewalk clearance envelope. */
+function visualTrim(net: RoadNetwork, seg: RSeg, nodeId: number) {
+  const node = net.nodes.get(nodeId);
+  if (!node || node.segs.length < 2) return 0;
+  const direction = (s: RSeg) => {
+    const atA = s.a === nodeId, pts = s.samp.pts;
+    return atA
+      ? norm(sub(pts[Math.min(2, pts.length - 1)], pts[0]))
+      : norm(sub(pts[Math.max(0, pts.length - 3)], pts[pts.length - 1]));
+  };
+  const dir = direction(seg);
+  let trim = 0;
+  for (const id of node.segs) {
+    const other = net.segs.get(id);
+    if (!other || other === seg) continue;
+    const od = direction(other);
+    if (dir.x * od.x + dir.z * od.z < -0.9) continue;
+    const sin = Math.abs(dir.x * od.z - dir.z * od.x);
+    trim = Math.max(trim, carriageHalf(ROAD_TYPES[other.type]) / Math.max(0.35, sin));
+  }
+  return Math.min(trim, seg.length * 0.45);
+}
+
 export class RoadRenderer {
   readonly group = new THREE.Group();
   private segGeo = new Map<number, SegGeo>();
@@ -242,8 +266,12 @@ export class RoadRenderer {
 
     net.events.on('segAdded', (s) => this.invalidateSeg(s));
     net.events.on('segChanged', (s) => this.invalidateSeg(s));
-    net.events.on('segRemoved', (s) => { this.segGeo.delete(s.id); this.invalidateNode(s.a); this.invalidateNode(s.b); });
-    net.events.on('nodeChanged', (n) => this.invalidateNode(n.id));
+    net.events.on('segRemoved', (s) => {
+      this.segGeo.delete(s.id);
+      this.invalidateJunction(s.a);
+      this.invalidateJunction(s.b);
+    });
+    net.events.on('nodeChanged', (n) => this.invalidateJunction(n.id));
   }
 
   private invalidateSeg(s: RSeg) {
@@ -254,6 +282,12 @@ export class RoadRenderer {
   private invalidateNode(id: number) {
     this.nodeGeo.delete(id);
     this.dirty = true;
+  }
+  /** Visual approach trims depend on every road meeting at the node. */
+  private invalidateJunction(id: number) {
+    const node = this.net.nodes.get(id);
+    if (node) for (const segId of node.segs) this.segGeo.delete(segId);
+    this.invalidateNode(id);
   }
 
   setNight(n: number) {
@@ -340,7 +374,10 @@ export class RoadRenderer {
     const hw = t.width / 2;
     const surf = new Buf(), conc = new Buf();
     const lights: SegGeo['lights'] = [];
-    const s0 = seg.trimA, s1 = seg.length - seg.trimB;
+    // Network trims reserve curb, sidewalk and clearance space. Rendering only
+    // needs the overlap of the intersecting carriageways.
+    const s0 = visualTrim(this.net, seg, seg.a);
+    const s1 = seg.length - visualTrim(this.net, seg, seg.b);
     if (s1 - s0 < 0.5) return { surf, conc, lights };
     const driveways: { d: number; side: number }[] = [];
     if (t.sidewalk > 0) {
@@ -482,10 +519,12 @@ export class RoadRenderer {
     const pts: V2[] = [{ x: n.x, z: n.z }];
     for (const s of segs) {
       const atA = s.a === n.id;
-      const d = atA ? s.trimA : s.length - s.trimB;
+      const t = ROAD_TYPES[s.type];
+      const trim = visualTrim(this.net, s, n.id);
+      const d = atA ? trim : s.length - trim;
       const F = RoadRenderer.frame(s, clamp(d, 0, s.length));
       const r = { x: -F.t.z, z: F.t.x };
-      const hw = ROAD_TYPES[s.type].width / 2;
+      const hw = carriageHalf(t);
       pts.push({ x: F.p.x + r.x * hw, z: F.p.z + r.z * hw }, { x: F.p.x - r.x * hw, z: F.p.z - r.z * hw });
     }
     let hull = convexHull(pts);

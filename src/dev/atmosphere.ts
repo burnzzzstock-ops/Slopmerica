@@ -271,8 +271,11 @@ class Lab {
     m.season = this.weather.season;
     this.audio.update(dt, m);
 
-    this.water.reflection?.render(this.renderer, this.scene, this.camera, [this.water.mesh]);
+    wu.uReflOn.value = this.water.reflection?.shouldRender(this.camera) ? 1 : 0;
     this.post.render(n);
+    // Render the main pass first so three.js has created the sun shadow texture.
+    // The reflection can safely reuse the previous frame while it refreshes.
+    this.water.reflection?.render(this.renderer, this.scene, this.camera, [this.water.mesh]);
     this.onTick?.();
   }
 

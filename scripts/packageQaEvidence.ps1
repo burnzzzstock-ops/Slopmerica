@@ -18,13 +18,13 @@ $pairs = @(
   @('shots/atmos-commune-final/appalachia-snow-40.png', 'commune-after-snow-40.jpg'),
   @('shots/atmos-commune-final/norcal-day-40.png', 'norcal-after-day-40.jpg'),
   @('shots/atmos-commune-final/florida-night-40.png', 'florida-after-night-40.jpg'),
-  @('shots/merged-street-qa/street-signal-day.png', 'street-signal-day.jpg'),
-  @('shots/merged-street-qa/street-signal-night.png', 'street-signal-night.jpg'),
-  @('shots/merged-commune-leave-final/burnt-remains.png', 'commune-burnt-remains.jpg'),
-  @('shots/merged-perf-final/town-high-1280x800-overlay.png', 'town-high-overlay.jpg'),
-  @('shots/merged-perf-final/town-low-390x844-overlay.png', 'town-low-overlay.jpg'),
-  @('shots/merged-perf-final/town-high-1280x800.png', 'town-high.jpg'),
-  @('shots/merged-perf-final/town-low-390x844.png', 'town-low.jpg')
+  @('shots/atmos-street-compact/street-signal-day.png', 'street-signal-day.jpg'),
+  @('shots/atmos-street-compact/street-signal-night.png', 'street-signal-night.jpg'),
+  @('shots/atmos-leave-final/burnt-remains.png', 'commune-burnt-remains.jpg'),
+  @('shots/atmos-perf-final-clear/town-high-1280x800-overlay.png', 'town-high-overlay.jpg'),
+  @('shots/atmos-perf-final-clear/town-low-390x844-overlay.png', 'town-low-overlay.jpg'),
+  @('shots/atmos-perf-final-clear/town-high-1280x800.png', 'town-high.jpg'),
+  @('shots/atmos-perf-final-clear/town-low-390x844.png', 'town-low.jpg')
 )
 foreach ($pair in $pairs) {
   $src = (Resolve-Path -LiteralPath $pair[0]).Path

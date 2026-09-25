@@ -191,8 +191,8 @@ export class AmbientLife {
       mesh.instanceColor!.setUsage(THREE.DynamicDrawUsage);
       mesh.userData.colorUpdateRange = { start: 0, count: 0 };
       mesh.count = 0;
-      mesh.castShadow = quality.name === 'high';
-      mesh.receiveShadow = quality.name === 'high';
+      mesh.castShadow = quality.name === 'high' || quality.name === 'ultra';
+      mesh.receiveShadow = quality.name === 'high' || quality.name === 'ultra';
       mesh.frustumCulled = false;
       this.object.add(mesh);
       this.batches.push({ def, mesh, count: 0 });

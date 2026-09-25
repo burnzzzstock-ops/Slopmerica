@@ -55,6 +55,27 @@ const frameAt = (seg: RSeg, d: number): Frame => {
 
 const yawAt = (f: Frame) => Math.atan2(f.t.x, f.t.z);
 const sideAt = (f: Frame) => ({ x: -f.t.z, z: f.t.x });
+const visualTrim = (net: RoadNetwork, seg: RSeg, nodeId: number) => {
+  const node = net.nodes.get(nodeId);
+  if (!node || node.segs.length < 2) return 0;
+  const direction = (s: RSeg) => {
+    const atA = s.a === nodeId, pts = s.samp.pts;
+    return atA
+      ? norm(sub(pts[Math.min(2, pts.length - 1)], pts[0]))
+      : norm(sub(pts[Math.max(0, pts.length - 3)], pts[pts.length - 1]));
+  };
+  const dir = direction(seg);
+  let trim = 0;
+  for (const id of node.segs) {
+    const other = net.segs.get(id);
+    if (!other || other === seg) continue;
+    const od = direction(other);
+    if (dir.x * od.x + dir.z * od.z < -0.9) continue;
+    const sin = Math.abs(dir.x * od.z - dir.z * od.x);
+    trim = Math.max(trim, carriageHalf(ROAD_TYPES[other.type]) / Math.max(0.35, sin));
+  }
+  return Math.min(trim, seg.length * 0.45);
+};
 const hash01 = (a: number, b: number) => {
   let h = Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b + 17, 0xc2b2ae35);
   h ^= h >>> 16;
@@ -321,9 +342,11 @@ export class StreetDetails {
         const atA = seg.a === node.id;
         const base = atA ? seg.trimA : seg.length - seg.trimB;
         const dir = atA ? 1 : -1;
+        const renderTrim = visualTrim(net, seg, node.id);
+        const markBase = atA ? renderTrim : seg.length - renderTrim;
         if (t.sidewalk > 0) {
           for (let k = -3; k <= 3; k++) {
-            const d = Math.max(0, Math.min(seg.length, base + dir * (1.2 + (k + 3) * 0.46)));
+            const d = Math.max(0, Math.min(seg.length, markBase + dir * (1.2 + (k + 3) * 0.46)));
             const f = frameAt(seg, d);
             crosswalks.push({ x: f.p.x, y: f.y + 0.105, z: f.p.z, yaw: yawAt(f), sx: carriageHalf(t) * 2 });
           }
@@ -332,7 +355,7 @@ export class StreetDetails {
         const d = Math.max(0, Math.min(seg.length, base + dir * 3.6));
         const f = frameAt(seg, d), r = sideAt(f);
         const approachSide = atA ? -1 : 1;
-        const barFrame = frameAt(seg, Math.max(0, Math.min(seg.length, base + dir * 4.45)));
+        const barFrame = frameAt(seg, Math.max(0, Math.min(seg.length, markBase + dir * 4.45)));
         const barSide = sideAt(barFrame), ch = carriageHalf(t);
         crosswalks.push({
           x: barFrame.p.x + barSide.x * approachSide * ch * 0.5,

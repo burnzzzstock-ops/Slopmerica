@@ -223,6 +223,40 @@ export class Buildings {
     return b;
   }
 
+  // ------------------------------------------------------------------ save / load
+  serialize() {
+    return [...this.list.values()].map((b) => [
+      b.zone, b.landmark ?? '', b.level, b.w, b.d, +b.x.toFixed(2), +b.z.toFixed(2), +b.y.toFixed(2), +b.yaw.toFixed(4), b.brand ?? '', b.occ, b.state === 'active' ? 1 : +b.progress.toFixed(2), b.seg, +b.levelProgress.toFixed(2),
+    ] as const);
+  }
+
+  restore(rows: ReturnType<Buildings['serialize']>) {
+    for (const r of rows) {
+      const [zone, landmark, level, w, d, x, z, y, yaw, brand, occ, prog, seg, lp] = r;
+      if (zone === 'landmark') {
+        const b = this.placeLandmark(landmark as LandmarkId, x, z, yaw);
+        b.state = 'active';
+        b.progress = 1;
+        this.writeMatrix(b, 1);
+        continue;
+      }
+      const zt = zone as ZoneType;
+      const e = this.modelFor(zt, level, w, d, this.rng.int(0, VARIANTS - 1), brand || undefined);
+      const b: Bld = {
+        id: this.nextId++, zone: zt, level, w, d, x, z, y, yaw, hw: (w * CELL) / 2, hd: (d * CELL) / 2, cells: [], seg,
+        label: e.model.label, brand: e.model.brand ?? (brand || undefined), model: e.model, state: prog >= 1 ? 'active' : 'building', progress: Math.min(1, prog),
+        buildDays: 5, cap: capacityFor(zt, level, w * d), occ, lv: 30, levelProgress: lp, born: this.day, inst: -1, emitT: Math.random() * 5,
+      };
+      this.list.set(b.id, b);
+      this.hash.insert(b, x - b.hw - b.hd, z - b.hw - b.hd, x + b.hw + b.hd, z + b.hw + b.hd);
+      for (const c of this.zones.cellsNear(x, z, b.hw + b.hd + 4)) if (this.contains(b, c.x, c.z, -1)) { c.bld = b.id; b.cells.push(c); }
+      this.terrain.flattenLot(this.corners(b), y, zt.startsWith('res') ? Paint.Lawn : Paint.Paved);
+      this.trees.cut(x - b.hw - b.hd, z - b.hw - b.hd, x + b.hw + b.hd, z + b.hw + b.hd, (tx, tz) => this.contains(b, tx, tz, 1.5));
+      this.placeInstance(b, e.id);
+    }
+    this.zones.markOverlayDirty();
+  }
+
   corners(b: { x: number; z: number; hw: number; hd: number; yaw: number }): V2[] {
     const c = Math.cos(b.yaw), s = Math.sin(b.yaw);
     // local x -> world (c, -s); local z -> world (s, c)

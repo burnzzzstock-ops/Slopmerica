@@ -5,6 +5,7 @@ import type { Mode } from './sim/sim';
 import { debugApi } from './dev/debug';
 import { Hud } from './ui/hud';
 import { showLoading, showTitle, StartChoice } from './ui/title';
+import { autosave } from './sim/save';
 
 const app = document.getElementById('app')!;
 
@@ -32,7 +33,8 @@ async function boot() {
   } catch {
     /* fonts are optional */
   }
-  const game = await Game.create(app, { map: choice.map, mode: choice.mode, cityName: choice.cityName });
+  const game = await Game.create(app, { map: choice.map, mode: choice.mode, cityName: choice.cityName, restore: choice.restore });
+  autosave(game);
   const hud = new Hud(game, app);
   game.onFrame.push((dt) => hud.update(dt));
   (window as any).__game = game;

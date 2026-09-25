@@ -15,6 +15,7 @@ import { IS_TOUCH } from '../config';
 import { SPEEDS } from '../sim/sim';
 import type { ViewMode } from '../render/overlays';
 import { ARCHETYPES } from '../agents/people';
+import { saveGame } from '../sim/save';
 import { VEHICLE_SPECS } from '../agents/vehicles';
 
 const esc = (s: string) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -196,14 +197,13 @@ export class Hud implements UiSink {
     const p = this.panel;
     if (p === 'roads') {
       this.sub.innerHTML = `
-        <div class="sp-title">Roads <small>Draw like Skylines. Right-click or Esc to stop.</small></div>
+        <div class="sp-title">Roads <small>Click start, click end, keep going. Right-click or Esc stops.</small></div>
         <div class="sp-row modes">${(['straight', 'curve', 'freeform'] as const).map((m) => `<button class="chip ${t.roadMode === m ? 'on' : ''}" data-mode="${m}">${m === 'straight' ? '📏 Straight' : m === 'curve' ? '↪️ Curved' : '〰️ Freeform'}</button>`).join('')}</div>
         <div class="sp-grid">${ROAD_ORDER.map((id) => {
           const r = ROAD_TYPES[id];
           const locked = !g.sim.isUnlocked({ road: id });
-          return `<button class="card ${t.roadType === id ? 'on' : ''}" data-road="${id}" ${locked ? 'disabled' : ''}>
-            <span class="ci">${r.icon}</span><b>${esc(r.name)}</b><small>${locked ? `🔒 Pop ${r.unlockPop.toLocaleString()}` : `$${r.costPerM}/m · ${r.lanesPerDir * 2} lanes${r.centerTurn ? ' + turn' : ''}`}</small>
-            <em>${esc(r.blurb)}</em></button>`;
+          return `<button class="card ${t.roadType === id ? 'on' : ''}" data-road="${id}" ${locked ? 'disabled' : ''} title="${esc(r.blurb)}">
+            <span class="ci">${r.icon}</span><b>${esc(r.name)}</b><small>${locked ? `🔒 Pop ${r.unlockPop.toLocaleString()}` : `$${r.costPerM}/m · ${r.lanesPerDir * 2} lanes${r.centerTurn ? ' + turn' : ''}`}</small></button>`;
         }).join('')}</div>`;
       this.sub.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) => b.addEventListener('click', () => { t.roadMode = b.dataset.mode as never; t.cancel(); t.set('road'); this.renderPanel(); }));
       this.sub.querySelectorAll<HTMLButtonElement>('[data-road]').forEach((b) => b.addEventListener('click', () => { t.roadType = b.dataset.road as RoadTypeId; t.set('road'); this.renderPanel(); }));
@@ -287,7 +287,10 @@ export class Hud implements UiSink {
           <div><b>Roads</b> click start, click end. Keeps chaining. Esc / right-click stops.</div>
           <div><b>Speed</b> Space pause · 1 2 3</div>
           <div><b>Tools</b> B bulldoze · U one more lane · Z zoning · Esc cancel</div>
-        </div>`;
+        </div>
+        <div class="sp-row"><button class="chip" id="save-now">💾 Save now</button><button class="chip" id="new-city">🆕 New city</button><small>Autosaves every 30 seconds in this browser.</small></div>`;
+      this.sub.querySelector('#save-now')?.addEventListener('click', () => { const ok = saveGame(g); this.toast(ok ? 'Saved.' : 'Could not save in this browser', !ok); });
+      this.sub.querySelector('#new-city')?.addEventListener('click', () => { saveGame(g); location.hash = ''; location.reload(); });
     }
   }
 

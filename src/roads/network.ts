@@ -69,6 +69,8 @@ type Events = {
   changed: void;
 };
 
+type SegRow = [number, number, number, RoadTypeId, [number, number][], string, number, number];
+
 const MAX_PIECE = 110; // long strokes are split into pieces this long
 const BRIDGE_DECK = WATER + 5.5;
 
@@ -296,6 +298,32 @@ export class RoadNetwork {
   }
 
   map: { id: string } = { id: 'appalachia' };
+
+  // ------------------------------------------------------------------ save / load
+  serialize() {
+    return {
+      nodes: [...this.nodes.values()].map((n): [number, number, number, number] => [n.id, +n.x.toFixed(2), +n.z.toFixed(2), +n.y.toFixed(2)]),
+      segs: [...this.segs.values()].map((s): SegRow => [s.id, s.a, s.b, s.type, [s.curve.p0, s.curve.p1, s.curve.p2, s.curve.p3].map((p) => [+p.x.toFixed(2), +p.z.toFixed(2)] as [number, number]), s.name, s.street, Math.round(s.builtDay)]),
+      next: [this.nextNode, this.nextSeg, this.nextStreet] as [number, number, number],
+    };
+  }
+
+  restore(data: ReturnType<RoadNetwork['serialize']>) {
+    for (const [id, x, z, y] of data.nodes) this.nodes.set(id, { id, x, z, y, segs: [] });
+    const made: RSeg[] = [];
+    for (const [id, a, b, type, pts, name, street, built] of data.segs) {
+      const A = this.nodes.get(a), B = this.nodes.get(b);
+      if (!A || !B) continue;
+      this.nextSeg = id;
+      const curve = { p0: { x: pts[0][0], z: pts[0][1] }, p1: { x: pts[1][0], z: pts[1][1] }, p2: { x: pts[2][0], z: pts[2][1] }, p3: { x: pts[3][0], z: pts[3][1] } };
+      const s = this.addSeg(A, B, curve, type, name, street);
+      if (s) { s.builtDay = built; made.push(s); }
+    }
+    [this.nextNode, this.nextSeg, this.nextStreet] = data.next;
+    for (const s of made) this.finalizeSeg(s);
+    for (const id of this.nodes.keys()) this.updateTrims(id);
+    this.events.emit('changed', undefined);
+  }
 
   private addSeg(a: RNode, b: RNode, curve: Cubic, type: RoadTypeId, name: string, street: number): RSeg | null {
     if (a.id === b.id) return null;

@@ -350,6 +350,23 @@ export class Sim {
     }
   }
 
+  restoreState(day: number, money: number | null, tax: number, loans: Sim['loans'], pop: number, nature: number, sprawl: number) {
+    this.day = day;
+    this.lastWhole = Math.floor(day);
+    this.net.day = day;
+    this.b.day = day;
+    this.money = money === null ? Infinity : money;
+    this.taxRate = tax;
+    this.loans = loans;
+    this.population = pop;
+    this.naturePct = nature;
+    this.sprawlPct = sprawl;
+    this.popMarks = this.popMarks.filter((m) => m > pop);
+    this.natureMarks = this.natureMarks.filter((m) => m < nature);
+    this.sprawlMarks = this.sprawlMarks.filter((m) => m > sprawl);
+    for (const u of UNLOCKS) if (pop >= u.pop) this.unlocked.add(u.what);
+  }
+
   /** Net per week from the last completed ledger. */
   weeklyNet() {
     const L = this.lastWeek;

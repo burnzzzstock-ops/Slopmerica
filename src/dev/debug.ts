@@ -3,6 +3,7 @@ import type { Game } from '../game';
 import { lineCubic, quadCubic } from '../core/math';
 import type { RoadTypeId } from '../roads/roadTypes';
 import type { ZoneType } from '../contracts';
+import { saveGame } from '../sim/save';
 
 export function debugApi(g: Game) {
   const api = {
@@ -33,6 +34,9 @@ export function debugApi(g: Game) {
     hour(h: number) {
       g.hour = h;
       g.frame(0.016);
+    },
+    save() {
+      return saveGame(g);
     },
     info() {
       return { segs: g.net.segs.size, nodes: g.net.nodes.size, cells: g.zones.cells.size, counts: g.zones.counts(), trees: g.trees.alive, communes: g.communes.list.map((c) => [c.name, Math.round(c.x), Math.round(c.z)]) };

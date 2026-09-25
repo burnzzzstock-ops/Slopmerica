@@ -283,6 +283,23 @@ export class Zoning {
     return { valid, built, zoned };
   }
 
+  serialize() {
+    const out: [number, number, string][] = [];
+    for (const c of this.cells.values()) if (c.valid && c.zone) out.push([+c.x.toFixed(1), +c.z.toFixed(1), c.zone]);
+    return out;
+  }
+
+  restore(rows: [number, number, string][]) {
+    this.update();
+    for (const [x, z, zone] of rows) {
+      for (const c of this.hash.query(x - 2, z - 2, x + 2, z + 2)) {
+        if (c.valid && Math.hypot(c.x - x, c.z - z) < 2) c.zone = zone as ZoneType;
+      }
+    }
+    this.overlayDirty = true;
+    this.version++;
+  }
+
   refreshBlockers() {
     for (const segId of this.bySeg.keys()) this.revalidate.add(segId);
   }

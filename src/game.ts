@@ -26,6 +26,7 @@ import { setBuildingNight, loadArt, landmarkFootprint } from './buildings/genera
 import { lineCubic, V2 } from './core/math';
 import { Overlays } from './render/overlays';
 import { buildingMaterial } from './buildings/generator';
+import { applySave, type SaveData } from './sim/save';
 
 export type GameMode = Mode;
 
@@ -34,6 +35,7 @@ export interface GameOptions {
   mode: GameMode;
   cityName?: string;
   quality?: Quality;
+  restore?: SaveData;
 }
 
 export type Selection =
@@ -154,7 +156,8 @@ export class Game {
     this.rts.setView(start.x, start.z, IS_TOUCH ? 700 : 620, start.yaw, 0.78, true);
 
     this.wireEvents();
-    this.seedRoad(start);
+    if (opts.restore) applySave(this, opts.restore);
+    else this.seedRoad(start);
     window.addEventListener('resize', () => this.resize());
   }
 
@@ -166,9 +169,9 @@ export class Game {
 
   private startView() {
     const id = this.map.def.id;
-    if (id === 'norcal') return { x: -330, z: 160, yaw: -1.75, edge: { x: HALF, z: 140 } };
-    if (id === 'florida') return { x: 40, z: 40, yaw: 2.9, edge: { x: 40, z: -HALF } };
-    return { x: -150, z: 20, yaw: 0.6, edge: { x: -HALF, z: 10 } };
+    if (id === 'norcal') return { x: -330, z: 160, yaw: -1.75, edge: { x: HALF - 14, z: 140 } };
+    if (id === 'florida') return { x: 40, z: 40, yaw: 2.9, edge: { x: 40, z: -HALF + 14 } };
+    return { x: -150, z: 20, yaw: 0.6, edge: { x: -HALF + 14, z: 10 } };
   }
 
   /** The county starts with one road in from the outside world. */

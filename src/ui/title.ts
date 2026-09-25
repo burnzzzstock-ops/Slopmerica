@@ -2,11 +2,13 @@
 import { MAPS, MapId } from '../world/maps';
 import type { Mode } from '../sim/sim';
 import { MERCH_URL } from '../art/brands';
+import { loadSave, type SaveData } from '../sim/save';
 
 export interface StartChoice {
   map: MapId;
   mode: Mode;
   cityName: string;
+  restore?: SaveData;
 }
 
 const MODES: { id: Mode; name: string; blurb: string }[] = [
@@ -144,13 +146,15 @@ export function showTitle(parent: HTMLElement): Promise<StartChoice> {
   return new Promise((resolve) => {
     const el = document.createElement('div');
     el.className = 'title';
+    const saved = loadSave();
     let map: MapId = 'appalachia';
     let mode: Mode = 'ponzi';
     el.innerHTML = `
       <div class="title-inner">
         ${slopLogoHTML()}
         <div class="tagline">Land of the Free Parking</div>
-        <h2 class="title-h">Pick your paradise</h2>
+        ${saved ? `<button class="continue" id="continue"><b>Continue ${saved.city}</b><small>${MAPS.find((m) => m.id === saved.map)?.name ?? saved.map} · pop ${saved.pop.toLocaleString()} · saved ${ago(saved.savedAt)}</small></button>` : ''}
+        <h2 class="title-h">${saved ? 'Or start a new city' : 'Pick your paradise'}</h2>
         <div class="maps">${MAPS.map((m) => `
           <button class="mapcard ${m.id === map ? 'on' : ''}" data-map="${m.id}">
             <canvas width="320" height="150"></canvas>
@@ -179,12 +183,26 @@ export function showTitle(parent: HTMLElement): Promise<StartChoice> {
       mode = b.dataset.mode as Mode;
       el.querySelectorAll('.modecard').forEach((x) => x.classList.toggle('on', (x as HTMLElement).dataset.mode === mode));
     }));
+    el.querySelector('#continue')?.addEventListener('click', () => {
+      el.classList.add('out');
+      setTimeout(() => el.remove(), 350);
+      resolve({ map: saved!.map, mode: saved!.mode, cityName: saved!.city, restore: saved! });
+    });
     el.querySelector('#go')!.addEventListener('click', () => {
       el.classList.add('out');
       setTimeout(() => el.remove(), 350);
       resolve({ map, mode, cityName: name.value.trim() || CITY_NAMES[map][0] });
     });
   });
+}
+
+function ago(t: number) {
+  const m = Math.round((Date.now() - t) / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h} h ago`;
+  return `${Math.round(h / 24)} days ago`;
 }
 
 export function showLoading(parent: HTMLElement): { done: () => void } {

@@ -7,6 +7,7 @@ import { WATER } from '../config';
 import type { WeatherKind } from '../contracts';
 import type { MapData, MapId } from '../world/maps';
 import type { Terrain } from '../world/terrain';
+import type { RoadNetwork } from '../roads/network';
 import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from '../world/atmos';
 import {
   AMBIENT_SPECIES,
@@ -63,6 +64,9 @@ const COLOR_BY_FAMILY: Record<AmbientFamily, number> = {
   waterAnimal: 0x849495,
   boat: 0xd3d8d5,
 };
+
+const MAX_ROAD_LINES = 768;
+const ROAD_LINE_STRIDE = 5; // x0, z0, x1, z1, flee radius
 
 function weatherKind(weather: AmbientWeather | WeatherKind): WeatherKind {
   return typeof weather === 'string' ? weather : weather.kind ?? 'clear';
@@ -126,6 +130,11 @@ export class AmbientLife {
   private readonly scale: Float32Array;
   private readonly shade: Float32Array;
   private readonly flock: Uint8Array;
+  private readonly roadFleeX: Float32Array;
+  private readonly roadFleeZ: Float32Array;
+  private readonly roadLines = new Float32Array(MAX_ROAD_LINES * ROAD_LINE_STRIDE);
+  private roadLineCount = 0;
+  private roadNetwork?: RoadNetwork;
 
   private readonly tmpPos = new THREE.Vector3();
   private readonly tmpScale = new THREE.Vector3();
@@ -168,6 +177,8 @@ export class AmbientLife {
     this.scale = new Float32Array(this.budget);
     this.shade = new Float32Array(this.budget);
     this.flock = new Uint8Array(this.budget);
+    this.roadFleeX = new Float32Array(this.budget);
+    this.roadFleeZ = new Float32Array(this.budget);
 
     this.object.name = 'ambient-life';
     for (const def of this.models) {
@@ -222,6 +233,16 @@ export class AmbientLife {
     this.object.add(this.runningLights);
 
     scene.add(this.object);
+  }
+
+  /** Optional road graph used by deer and elk. Safe to attach after construction. */
+  setRoadNetwork(net: RoadNetwork | null): this {
+    this.roadNetwork = net ?? undefined;
+    this.roadLineCount = 0;
+    this.roadFleeX.fill(0);
+    this.roadFleeZ.fill(0);
+    this.recycleT = 0;
+    return this;
   }
 
   private rnd() {
@@ -311,6 +332,74 @@ export class AmbientLife {
     this.tmpPos.set(x, 0, z);
   }
 
+  /** Snapshot road centerlines near the focus. Runs only on the recycle cadence. */
+  private cacheRoads() {
+    const net = this.roadNetwork;
+    this.roadLineCount = 0;
+    if (!net) return;
+    const radius = 650;
+    const segs = net.segsNear(this.focusX - radius, this.focusZ - radius, this.focusX + radius, this.focusZ + radius);
+    for (let si = 0; si < segs.length && this.roadLineCount < MAX_ROAD_LINES; si++) {
+      const seg = segs[si];
+      const pts = seg.samp.pts;
+      const fleeRadius = net.type(seg.type).width * .5 + 28;
+      // Terrain samples are about 4 m apart. Twelve-meter chords retain the
+      // curve while bounding the cache and the later proximity scan.
+      for (let p = 0; p < pts.length - 1 && this.roadLineCount < MAX_ROAD_LINES; p += 3) {
+        const q = Math.min(p + 3, pts.length - 1);
+        const at = this.roadLineCount++ * ROAD_LINE_STRIDE;
+        this.roadLines[at] = pts[p].x;
+        this.roadLines[at + 1] = pts[p].z;
+        this.roadLines[at + 2] = pts[q].x;
+        this.roadLines[at + 3] = pts[q].z;
+        this.roadLines[at + 4] = fleeRadius;
+      }
+    }
+  }
+
+  /** Cache a normalized away vector per deer/elk; movement reads two floats. */
+  private refreshRoadAvoidance() {
+    this.roadFleeX.fill(0);
+    this.roadFleeZ.fill(0);
+    if (!this.roadLineCount) return;
+    for (let i = 0; i < this.budget; i++) {
+      if (!this.active[i]) continue;
+      const species = this.models[this.kind[i]].kind;
+      if (species !== 'deer' && species !== 'elk') continue;
+      let bestD2 = Infinity, awayX = 0, awayZ = 0, bestRadius = 0;
+      for (let line = 0; line < this.roadLineCount; line++) {
+        const at = line * ROAD_LINE_STRIDE;
+        const ax = this.roadLines[at], az = this.roadLines[at + 1];
+        const vx = this.roadLines[at + 2] - ax, vz = this.roadLines[at + 3] - az;
+        const len2 = vx * vx + vz * vz || 1;
+        let t = ((this.x[i] - ax) * vx + (this.z[i] - az) * vz) / len2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const dx = this.x[i] - (ax + vx * t), dz = this.z[i] - (az + vz * t);
+        const d2 = dx * dx + dz * dz;
+        const radius = this.roadLines[at + 4];
+        if (d2 < radius * radius && d2 < bestD2) {
+          bestD2 = d2;
+          awayX = dx;
+          awayZ = dz;
+          bestRadius = radius;
+        }
+      }
+      if (bestD2 < Infinity) {
+        const len = Math.sqrt(bestD2);
+        if (len > .01) {
+          const strength = 1 - Math.min(1, len / bestRadius);
+          this.roadFleeX[i] = awayX / len * (.65 + strength * .35);
+          this.roadFleeZ[i] = awayZ / len * (.65 + strength * .35);
+        } else {
+          // Exactly on a centerline: choose the actor's existing side instead
+          // of allocating or introducing random jitter in the movement loop.
+          this.roadFleeX[i] = Math.cos(this.heading[i]);
+          this.roadFleeZ[i] = -Math.sin(this.heading[i]);
+        }
+      }
+    }
+  }
+
   private recycle(view: THREE.Camera | THREE.Vector3) {
     if ('isCamera' in view && view.isCamera) {
       const camera = view as THREE.Camera;
@@ -333,11 +422,13 @@ export class AmbientLife {
     this.focusZ = nz;
     this.haveFocus = true;
     if (this.showcaseOn) return;
+    this.cacheRoads();
     for (let i = 0; i < this.budget; i++) {
       if (this.locked[i]) continue;
       const dx = this.x[i] - nx, dz = this.z[i] - nz;
       if (!this.active[i] || dx * dx + dz * dz > 620 * 620 || moved && dx * dx + dz * dz > 500 * 500) this.spawnSlot(i);
     }
+    this.refreshRoadAvoidance();
   }
 
   private moveSlot(i: number, dt: number, night: number, storm: number) {
@@ -366,6 +457,14 @@ export class AmbientLife {
       if ((def.kind === 'deer' || def.kind === 'elk') && cx * cx + cz * cz < 95 * 95) {
         this.heading[i] = Math.atan2(-cx, -cz);
         speed = this.speed[i] * 2.4;
+      }
+      const rfx = this.roadFleeX[i], rfz = this.roadFleeZ[i];
+      if ((rfx !== 0 || rfz !== 0) && (def.kind === 'deer' || def.kind === 'elk')) {
+        const want = Math.atan2(rfx, rfz);
+        let d = want - this.heading[i];
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        turn += d * 1.5;
+        speed = Math.max(speed, this.speed[i] * 1.45);
       }
     } else if (def.family === 'shore' || def.family === 'waterAnimal') {
       speed *= night > .68 ? .08 : .25;

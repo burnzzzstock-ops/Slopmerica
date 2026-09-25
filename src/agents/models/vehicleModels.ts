@@ -95,8 +95,12 @@ function loft(stations: readonly Station[]): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setIndex(idx);
-  g.computeVertexNormals();
-  return g;
+  // Vehicle sheet metal needs visible panel breaks. Shared smooth normals made
+  // long vans read as inflated blobs once clearcoat caught the sun.
+  const flat = g.toNonIndexed();
+  flat.computeVertexNormals();
+  g.dispose();
+  return flat;
 }
 
 function tag(part: TaggedPart, kind: 'detail' | 'light'): THREE.BufferGeometry {
@@ -439,7 +443,19 @@ function addVanSpecial(kind: 'vwBus' | 'slopVan', s: VehicleDimensions, shell: T
     { z: s.length * 0.31, bottom: r * 0.66, top: s.height - 0.08, half: s.width * 0.47, roof: s.width * 0.39 },
     { z: s.length * 0.47, bottom: r * 0.66, top: r + 0.85, half: s.width * 0.43, roof: s.width * 0.35 },
   ]));
-  details.push({ geometry: quad([-s.width * 0.32, 1.14, s.length * 0.472], [s.width * 0.32, 1.14, s.length * 0.472], [s.width * 0.3, s.height - 0.25, s.length * 0.33], [-s.width * 0.3, s.height - 0.25, s.length * 0.33]), color: 0x263b47, zone: 1 });
+  // Offset the glass from the raked sheet-metal face to avoid z-fighting in
+  // the flat-panel shell. The dark windshield is the main front-view cue.
+  details.push({ geometry: quad([-s.width * 0.34, 1.14, s.length * 0.472 + 0.055], [s.width * 0.34, 1.14, s.length * 0.472 + 0.055], [s.width * 0.31, s.height - 0.25, s.length * 0.33 + 0.055], [-s.width * 0.31, s.height - 0.25, s.length * 0.33 + 0.055]), color: 0x172a34, zone: 1 });
+  const screenDy = s.height - 1.39;
+  const screenDz = s.length * 0.142;
+  details.push({
+    geometry: box(0.052, Math.hypot(screenDy, screenDz) * 0.94, 0.045, 0, (1.14 + s.height - 0.25) * 0.5, s.length * 0.401 + 0.025, -Math.atan2(screenDz, screenDy)),
+    color: 0x171b1e,
+    zone: 0,
+  });
+  addMirrors(details, s.width, 1.42, s.length * 0.37);
+  details.push({ geometry: endDecal(s.length * 0.482, 0.58, 0.83, -s.width * 0.31, s.width * 0.31, 'grille'), color: 0xffffff, zone: 4 });
+  details.push({ geometry: endDecal(-s.length * 0.482, 0.52, 0.68, -0.34, 0.34, 'plate'), color: 0xffffff, zone: 4 });
   for (const side of [-1, 1]) {
     const x = side * s.width * 0.476;
     for (let z = -s.length * 0.3; z <= s.length * 0.18; z += s.length * 0.2) details.push({ geometry: sideDecal(x, 1.2, s.height - 0.22, z - 0.32, z + 0.32, 'grille'), color: 0x263b47, zone: 1 });

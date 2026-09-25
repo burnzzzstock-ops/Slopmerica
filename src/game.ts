@@ -176,6 +176,7 @@ export class Game {
 
     // --- ambient life (codex) ---
     const ambientLife = new AmbientLife(this.scene, this.terrain, opts.map, this.q);
+    ambientLife.setRoadNetwork(this.net);
     this.onFrame.push(dt => ambientLife.update(dt, this.camera, this.env.night, this.weather));
     const stopWithoutAmbient = this.stop.bind(this);
     let ambientDisposed = false;

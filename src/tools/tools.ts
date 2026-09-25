@@ -53,6 +53,8 @@ export class Tools implements PointerHandlers {
   private preview: THREE.Mesh;
   private previewMat: THREE.MeshBasicMaterial;
   private marker: THREE.Mesh;
+  /** where the road being drawn starts (lime ring) */
+  private startPin: THREE.Mesh;
   private highlight: THREE.Mesh;
   private brushRing: THREE.Mesh;
 
@@ -66,6 +68,9 @@ export class Tools implements PointerHandlers {
     this.marker = new THREE.Mesh(ring, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthTest: false }));
     this.marker.renderOrder = 6;
     this.marker.visible = false;
+    this.startPin = new THREE.Mesh(ring, new THREE.MeshBasicMaterial({ color: 0x9dff3c, transparent: true, opacity: 0.95, depthTest: false }));
+    this.startPin.renderOrder = 7;
+    this.startPin.visible = false;
     this.highlight = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0xff4d4d, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }));
     this.highlight.renderOrder = 5;
     this.highlight.visible = false;
@@ -74,7 +79,7 @@ export class Tools implements PointerHandlers {
     this.brushRing = new THREE.Mesh(br, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthTest: false }));
     this.brushRing.renderOrder = 6;
     this.brushRing.visible = false;
-    game.scene.add(this.preview, this.marker, this.highlight, this.brushRing);
+    game.scene.add(this.preview, this.marker, this.startPin, this.highlight, this.brushRing);
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') this.cancel();
     });
@@ -109,6 +114,8 @@ export class Tools implements PointerHandlers {
 
   // Touch roads are planned first and built on confirm (no accidental roads).
   private pendingEnd: THREE.Vector3 | null = null;
+  /** the start is the end of a road just built (not a point the player picked) */
+  private chained = false;
   private touchDown = false;
   /** net cost of the planned touch road, or null when nothing is waiting */
   pendingCost: number | null = null;
@@ -135,6 +142,7 @@ export class Tools implements PointerHandlers {
     this.ext?.cancel?.(this.game);
     this.pendingEnd = null;
     this.pendingCost = null;
+    this.chained = false;
     this.start = null;
     this.control = null;
     this.lastDir = null;
@@ -155,9 +163,12 @@ export class Tools implements PointerHandlers {
       this.touchDown = true;
       // After a build the road stays chained to its end, but only a touch near
       // that end continues it: touching anywhere else starts a fresh road there.
-      const far = !!this.start && !this.pendingEnd && Math.hypot(p.x - this.start.x, p.z - this.start.z) > Math.max(this.snapR() * 2.5, 30);
+      const far = this.chained && !!this.start && !this.pendingEnd && Math.hypot(p.x - this.start.x, p.z - this.start.z) > Math.max(this.snapR() * 2.5, 30);
       if (!this.start || far) {
-        this.start = this.game.net.snap(p.x, p.z, this.snapR());
+        // the first point goes right under the finger (the lift is for the moving end)
+        const under = this.game.rts.groundAt(e.clientX, e.clientY) ?? p;
+        this.start = this.game.net.snap(under.x, under.z, this.snapR());
+        this.chained = false;
         this.lastDir = null;
         this.control = null;
         this.startedThisTouch = true;
@@ -302,6 +313,7 @@ export class Tools implements PointerHandlers {
       this.lastDir = norm(sub(samp.pts[n - 1], samp.pts[n - 2]));
       this.start = { kind: 'node', id: endNode.id, x: endNode.x, z: endNode.z };
       this.control = null;
+      this.chained = true;
     }
   }
 
@@ -371,8 +383,11 @@ export class Tools implements PointerHandlers {
     const net = this.game.net;
     const hov = this.hover;
     this.marker.visible = false;
+    this.startPin.visible = false;
     this.highlight.visible = false;
     this.brushRing.visible = false;
+    // road rings stay a readable size on screen at any zoom (bigger on phones)
+    this.marker.scale.setScalar(Math.max(1, this.game.rts.distance * (this.game.isTouch ? 0.009 : 0.005)));
     if (this.active === 'ext') { this.tip = this.ext?.tip?.(this.game) ?? null; return; }
     if (!hov) return;
     if (this.active === 'road') {
@@ -382,6 +397,15 @@ export class Tools implements PointerHandlers {
       this.marker.position.set(s.x, this.game.terrain.h(s.x, s.z) + 0.6, s.z);
       (this.marker.material as THREE.MeshBasicMaterial).color.set(s.kind === 'free' ? 0xffffff : 0x9dff3c);
       if (this.start) {
+        this.startPin.visible = true;
+        this.startPin.position.set(this.start.x, this.game.terrain.h(this.start.x, this.start.z) + 0.7, this.start.z);
+        this.startPin.scale.setScalar(this.marker.scale.x * 1.35);
+      }
+      if (this.start && !this.pendingEnd && this.game.isTouch && Math.hypot(s.x - this.start.x, s.z - this.start.z) < 8) {
+        // just placed the start: say what to do next instead of "Too short"
+        this.preview.visible = false;
+        this.tip = { text: this.chained ? 'Drag from the green ring to keep going, or touch elsewhere for a new road' : 'Start set · now drag or tap where the road ends' };
+      } else if (this.start) {
         const end: V2 = { x: s.x, z: s.z };
         let curve: Cubic | null;
         if (this.roadMode === 'curve' && !this.control) curve = lineCubic({ x: this.start.x, z: this.start.z }, end);

@@ -1717,3 +1717,494 @@ a {
     font-size: 17px;
   }
 }
+
+/* ================================================= title: vintage road map */
+.title.rm,
+.loading.rm {
+  --rm-paper: #efe3c4;
+  --rm-navy: #1f2b45;
+  --rm-red: #c23a24;
+  --rm-mustard: #e3a42c;
+  --rm-teal: #2e7b77;
+  --rm-ink: #2b2420;
+  color: var(--rm-ink);
+  background-color: #d9ccaa;
+  background-image:
+    linear-gradient(90deg, transparent calc(33.3% - 1px), rgba(90, 60, 30, 0.16) calc(33.3% - 1px), rgba(255, 255, 255, 0.35) calc(33.3% + 1px), transparent calc(33.3% + 2px)),
+    linear-gradient(90deg, transparent calc(66.6% - 1px), rgba(90, 60, 30, 0.16) calc(66.6% - 1px), rgba(255, 255, 255, 0.35) calc(66.6% + 1px), transparent calc(66.6% + 2px)),
+    radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(80, 50, 20, 0.28) 100%),
+    var(--paper);
+  background-attachment: local;
+  color-scheme: light;
+}
+.rm-sheet {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: calc(18px + var(--safe-t)) 18px calc(36px + var(--safe-b));
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.rm-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 3px double var(--rm-navy);
+  font-family: 'Anton', Impact, sans-serif;
+  font-size: 15px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--rm-navy);
+}
+.rm-top i {
+  color: var(--rm-red);
+  font-style: normal;
+}
+.rm-top em {
+  margin-left: auto;
+  font-family: 'Overpass', sans-serif;
+  font-weight: 800;
+  font-size: 11px;
+  font-style: normal;
+  letter-spacing: 0.08em;
+  color: var(--rm-red);
+}
+.rm-hero {
+  position: relative;
+  border: 3px solid var(--rm-navy);
+  border-radius: 6px;
+  overflow: hidden;
+  aspect-ratio: 12 / 5;
+  box-shadow: 0 2px 0 rgba(255, 255, 255, 0.5), 0 10px 26px rgba(60, 35, 10, 0.25);
+}
+.rm-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+/* printed look: halftone dots + a little ink bleed */
+.rm-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(30, 20, 10, 0.13) 0.9px, transparent 1.3px);
+  background-size: 4px 4px;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+.rm-title {
+  position: absolute;
+  left: 4%;
+  top: 7%;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.rm-kicker {
+  font-family: 'Anton', Impact, sans-serif;
+  font-size: clamp(12px, 1.6vw, 18px);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--rm-paper);
+  text-shadow: 2px 2px 0 var(--rm-navy);
+}
+.rm .logo {
+  justify-content: flex-start;
+}
+.rm .logo-slop {
+  color: var(--rm-paper);
+  text-shadow: 4px 4px 0 var(--rm-red), 7px 7px 0 var(--rm-navy);
+  font-size: clamp(56px, 10vw, 120px);
+}
+.rm .logo-slop .swoosh {
+  fill: var(--rm-paper);
+  filter: drop-shadow(3px 3px 0 var(--rm-red));
+}
+.rm .logo-merica {
+  font-family: 'Anton', Impact, sans-serif;
+  font-size: clamp(38px, 7vw, 86px);
+  color: var(--rm-mustard);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  text-shadow: 3px 3px 0 var(--rm-red), 6px 6px 0 var(--rm-navy);
+}
+.rm-tag {
+  margin-top: 14px;
+  padding: 5px 8px 5px 12px;
+  background: var(--rm-navy);
+  color: var(--rm-paper);
+  text-shadow: none;
+  letter-spacing: 0.34em;
+  box-shadow: 3px 3px 0 var(--rm-red);
+}
+.rm-shield {
+  position: absolute;
+  right: 3%;
+  bottom: 6%;
+  width: clamp(54px, 9vw, 104px);
+  z-index: 2;
+  filter: drop-shadow(2px 3px 0 rgba(31, 43, 69, 0.55));
+  transform: rotate(4deg);
+}
+.rm-roundel {
+  position: absolute;
+  right: 3%;
+  top: 6%;
+  z-index: 2;
+  width: clamp(64px, 10vw, 112px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--rm-red);
+  border: 4px solid var(--rm-paper);
+  outline: 3px solid var(--rm-navy);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--rm-paper);
+  transform: rotate(-8deg);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+}
+.rm-r-top,
+.rm-r-bot {
+  font-family: 'Anton', Impact, sans-serif;
+  font-size: clamp(8px, 1vw, 11px);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.rm-r-slop {
+  font-family: 'Yellowtail', cursive;
+  font-size: clamp(22px, 3.4vw, 40px);
+  line-height: 1;
+}
+.rm-ticket {
+  align-self: center;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 12px 34px;
+  border: 2px dashed var(--rm-navy);
+  border-radius: 4px;
+  background: #f7eed6;
+  color: var(--rm-ink);
+  box-shadow: 3px 3px 0 var(--rm-navy);
+}
+.rm-t-lbl {
+  font-family: 'Anton', Impact, sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--rm-red);
+}
+.rm-ticket b {
+  font-family: 'Anton', Impact, sans-serif;
+  font-weight: 400;
+  font-size: 22px;
+  letter-spacing: 0.04em;
+  color: var(--rm-navy);
+}
+.rm-ticket small {
+  color: #6b5b4a;
+  font-weight: 700;
+}
+.rm-sec h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0 10px;
+  font-family: 'Anton', Impact, sans-serif;
+  font-weight: 400;
+  font-size: 22px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--rm-navy);
+}
+.rm-sec h2 i {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--rm-navy);
+  color: var(--rm-paper);
+  font-style: normal;
+  font-size: 16px;
+}
+.rm-maps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 18px;
+}
+.rm-map {
+  position: relative;
+  text-align: left;
+  padding: 8px;
+  border: 1px solid rgba(31, 43, 69, 0.35);
+  border-radius: 2px;
+  background: #f6ecd2;
+  color: var(--rm-ink);
+  box-shadow: 2px 3px 0 rgba(31, 43, 69, 0.25);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.15s;
+}
+.rm-map:nth-child(1) { transform: rotate(-0.8deg); }
+.rm-map:nth-child(2) { transform: rotate(0.6deg); }
+.rm-map:nth-child(3) { transform: rotate(-0.4deg); }
+.rm-map:hover {
+  transform: translateY(-3px) rotate(0deg);
+}
+.rm-map canvas {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 32 / 15;
+  display: block;
+  border: 1px solid var(--rm-navy);
+  filter: saturate(0.78) sepia(0.18) contrast(1.05);
+}
+.rm-mbody {
+  padding: 8px 4px 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rm-mbody b {
+  font-family: 'Anton', Impact, sans-serif;
+  font-weight: 400;
+  font-size: 22px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--rm-navy);
+}
+.rm-mbody small {
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--rm-red);
+}
+.rm-mbody p {
+  margin: 6px 0 4px;
+  line-height: 1.35;
+  color: #4a3f36;
+}
+.rm-mbody em {
+  font-family: 'Permanent Marker', cursive;
+  font-style: normal;
+  color: var(--rm-teal);
+}
+/* the chosen county gets circled in red marker */
+.rm-circle {
+  position: absolute;
+  inset: -12px -14px;
+  width: calc(100% + 28px);
+  height: calc(100% + 24px);
+  pointer-events: none;
+  overflow: visible;
+}
+.rm-circle path {
+  fill: none;
+  stroke: var(--rm-red);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 400;
+  stroke-dashoffset: 400;
+  transition: stroke-dashoffset 0.5s ease-out;
+}
+.rm-map.on .rm-circle path {
+  stroke-dashoffset: 0;
+  stroke-width: 3.2;
+}
+.rm-modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 6px 22px;
+}
+.rm-mode {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  text-align: left;
+  padding: 10px 4px;
+  border: 0;
+  border-bottom: 1px solid rgba(31, 43, 69, 0.25);
+  background: transparent;
+  color: var(--rm-ink);
+}
+.rm-mode b {
+  display: block;
+  font-family: 'Anton', Impact, sans-serif;
+  font-weight: 400;
+  font-size: 18px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--rm-navy);
+}
+.rm-mode small {
+  display: block;
+  color: #5a4c40;
+  line-height: 1.35;
+}
+.rm-box {
+  position: relative;
+  flex: 0 0 26px;
+  height: 26px;
+  margin-top: 2px;
+  border: 2px solid var(--rm-navy);
+  background: #fbf5e4;
+}
+.rm-check {
+  position: absolute;
+  left: -2px;
+  top: -8px;
+  width: 34px;
+  height: 34px;
+  overflow: visible;
+}
+.rm-check path {
+  fill: none;
+  stroke: var(--rm-red);
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 40;
+  stroke-dashoffset: 40;
+  transition: stroke-dashoffset 0.3s ease-out;
+}
+.rm-mode.on .rm-check path {
+  stroke-dashoffset: 0;
+}
+.rm-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+}
+.rm-name {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 6px 4px;
+  border: 0;
+  border-bottom: 2px solid var(--rm-navy);
+  background: transparent;
+  font-family: 'Permanent Marker', cursive;
+  font-size: 30px;
+  color: var(--rm-teal);
+  outline: none;
+  user-select: text;
+}
+.rm-name:focus {
+  border-bottom-color: var(--rm-red);
+}
+.rm-go {
+  position: relative;
+  padding: 12px 26px 10px;
+  border: 3px solid var(--rm-red);
+  outline: 2px solid var(--rm-red);
+  outline-offset: 3px;
+  border-radius: 3px;
+  background: var(--rm-red);
+  color: var(--rm-paper);
+  font-family: 'Anton', Impact, sans-serif;
+  font-size: 26px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transform: rotate(-2deg);
+  box-shadow: 4px 5px 0 var(--rm-navy);
+  margin: 6px 6px 6px 0;
+}
+.rm-go span {
+  display: inline-block;
+  margin-left: 6px;
+  transition: transform 0.2s;
+}
+.rm-go:hover span {
+  transform: translateX(4px);
+}
+.rm-go:active {
+  transform: rotate(-2deg) translate(2px, 3px);
+  box-shadow: 2px 2px 0 var(--rm-navy);
+}
+.rm-fine {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(31, 43, 69, 0.3);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: center;
+  color: #6b5b4a;
+}
+.rm-fine a {
+  color: var(--rm-red);
+}
+/* loading: same map paper, the bar is a road being striped */
+.loading.rm .logo {
+  justify-content: center;
+}
+.loading.rm .rm-kicker {
+  color: var(--rm-navy);
+  text-shadow: none;
+}
+.loading.rm .load-tip {
+  font-family: 'Permanent Marker', cursive;
+  font-weight: 400;
+  font-size: 18px;
+  color: var(--rm-teal);
+}
+.rm-road.load-bar {
+  height: 14px;
+  border-radius: 0;
+  background: #34302e;
+  border-top: 2px solid var(--rm-paper);
+  border-bottom: 2px solid var(--rm-paper);
+  box-shadow: 0 0 0 2px #34302e;
+}
+.rm-road.load-bar span {
+  width: 100%;
+  height: 3px;
+  margin-top: 3.5px;
+  background: repeating-linear-gradient(90deg, var(--rm-mustard) 0 18px, transparent 18px 32px);
+  animation: rmroad 0.6s linear infinite;
+}
+@keyframes rmroad {
+  from { transform: translateX(0); }
+  to { transform: translateX(-32px); }
+}
+@media (max-width: 760px) {
+  .rm-hero {
+    aspect-ratio: 4 / 3.4;
+  }
+  .rm-top {
+    font-size: 12px;
+    letter-spacing: 0.12em;
+  }
+  .rm-top em {
+    margin-left: 0;
+    width: 100%;
+  }
+  .rm-title {
+    top: 5%;
+  }
+  .rm-roundel {
+    top: auto;
+    bottom: 5%;
+    left: 4%;
+    right: auto;
+  }
+  .rm-go {
+    width: 100%;
+    font-size: 22px;
+  }
+  .rm-name {
+    font-size: 26px;
+  }
+}

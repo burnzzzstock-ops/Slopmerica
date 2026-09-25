@@ -26,6 +26,26 @@ await page.screenshot({ path: 'shots/touch-after.png' });
 await page.tap('#ta-build');
 await page.waitForTimeout(600);
 console.log('segs after Build', await segs(), 'drawing', await page.evaluate(() => window.__game.tools.drawing));
+// the first point lands under the finger (not 64 px above it)
+{
+  await page.tap('#ta-done').catch(() => {});
+  await page.waitForTimeout(200);
+  const want = await page.evaluate(() => { const p = window.__game.rts.groundAt(200, 520); return p && [Math.round(p.x), Math.round(p.z)]; });
+  await touch('touchStart', 200, 520); await touch('touchEnd', 0, 0);
+  await page.waitForTimeout(500);
+  const got = await page.evaluate(() => { const s = window.__game.tools.start; return s && [Math.round(s.x), Math.round(s.z)]; });
+  console.log('start under finger', JSON.stringify(want), '->', JSON.stringify(got));
+  // a second tap somewhere else must plan a road from that start, not move the start
+  await touch('touchStart', 300, 380); await touch('touchEnd', 0, 0);
+  await page.waitForTimeout(500);
+  const after = await page.evaluate(() => { const t = window.__game.tools; return { pending: t.pending, start: t.start && [Math.round(t.start.x), Math.round(t.start.z)] }; });
+  console.log('tap start then tap end: pending', after.pending, 'start kept', JSON.stringify(after.start) === JSON.stringify(got));
+  const tip = await page.evaluate(() => ({ tip: window.__game.tools.tip?.text, cost: window.__game.tools.pendingCost }));
+  console.log('planned road:', JSON.stringify(tip));
+  if (tip.cost !== null) { await page.tap('#ta-build'); await page.waitForTimeout(600); console.log('segs after tap-tap-Build', await segs()); }
+  await page.tap('#ta-done').catch(() => {});
+  await page.waitForTimeout(200);
+}
 // a stray tap far from the road's end starts a new road instead of building one
 await touch('touchStart', 130, 200); await touch('touchEnd', 0, 0);
 await page.waitForTimeout(600);

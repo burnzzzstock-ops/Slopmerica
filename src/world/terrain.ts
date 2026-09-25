@@ -50,26 +50,161 @@ export class Terrain {
     this.heightTex.needsUpdate = true;
 
     this.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.97, metalness: 0 });
+    // ---- material.onBeforeCompile block (owned by the Atmosphere workstream) ----
+    // Seasons, wildflowers, slope-aware snow, wet ground + puddles and cloud
+    // shadows. WeatherSystem swaps the shared atmosphere uniforms into
+    // userData.atmo; the paint/cover textures keep seasonal tints off roads/lots.
+    const atmoU: Record<string, THREE.IUniform> = {
+      uTime: { value: 0 }, uSnow: { value: 0 }, uSnowLine: { value: 1e4 }, uWet: { value: 0 }, uPuddle: { value: 0 }, uRain: { value: 0 },
+      uCloudCover: { value: 0 }, uCloudShadow: { value: 0 }, uCloudOffset: { value: new THREE.Vector2() }, uSkyRefl: { value: new THREE.Color(0.6, 0.7, 0.8) },
+      uDormant: { value: 0 }, uFresh: { value: 0 }, uFall: { value: 0 }, uLitter: { value: 0 }, uGolden: { value: 1 }, uMarsh: { value: 0 }, uFlowers: { value: 0 },
+    };
+    this.material.userData.atmo = atmoU;
+    const atmoTex = (data: Uint8Array) => {
+      const t = new THREE.DataTexture(data, HM_N, HM_N, THREE.RedFormat, THREE.UnsignedByteType);
+      t.unpackAlignment = 1;
+      t.magFilter = t.minFilter = THREE.LinearFilter;
+      t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+      t.needsUpdate = true;
+      return t;
+    };
+    const paintTex = atmoTex(this.paint); // shares the live paint buffer
+    const coverTex = atmoTex(Uint8Array.from(this.cover, (v) => Math.round(clamp(v, 0, 1) * 255)));
+    /** Re-upload ground paint so seasonal tints follow new roads and lots. */
+    this.material.userData.atmoRefresh = () => { paintTex.needsUpdate = true; };
+    const mapKind = { value: map.def.id === 'appalachia' ? 0 : map.def.id === 'norcal' ? 1 : 2 };
     this.material.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, this.material.userData.atmo, { uPaint: { value: paintTex }, uCover: { value: coverTex }, uMapKind: mapKind });
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
-        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed,1.0)).xyz;');
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNrm;')
+        .replace(
+          '#include <worldpos_vertex>',
+          '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed,1.0)).xyz;\nvWNrm = normalize(mat3(modelMatrix) * objectNormal);',
+        );
       sh.fragmentShader = sh.fragmentShader
         .replace(
           '#include <common>',
           `#include <common>
 varying vec3 vWPos;
+varying vec3 vWNrm;
+uniform sampler2D uPaint, uCover;
+uniform float uMapKind, uTime, uSnow, uSnowLine, uWet, uPuddle, uRain, uCloudCover, uCloudShadow;
+uniform float uDormant, uFresh, uFall, uLitter, uGolden, uMarsh, uFlowers;
+uniform vec2 uCloudOffset;
+uniform vec3 uSkyRefl;
 float th(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
 float tn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
-  return mix(mix(th(i),th(i+vec2(1,0)),f.x), mix(th(i+vec2(0,1)),th(i+vec2(1,1)),f.x), f.y); }`,
+  return mix(mix(th(i),th(i+vec2(1,0)),f.x), mix(th(i+vec2(0,1)),th(i+vec2(1,1)),f.x), f.y); }
+float atmoCloud(vec2 xz){
+  if (uCloudShadow <= 0.001) return 1.0;
+  vec2 p = xz + uCloudOffset;
+  float n = tn(p*0.0021)*0.55 + tn(p*0.0057+3.7)*0.3 + tn(p*0.016-1.3)*0.15;
+  return 1.0 - uCloudShadow * smoothstep(1.02 - uCloudCover, 1.18 - uCloudCover, n);
+}`,
         )
         .replace(
           '#include <color_fragment>',
           `#include <color_fragment>
 float dn = tn(vWPos.xz*0.35)*0.55 + tn(vWPos.xz*1.7)*0.3 + tn(vWPos.xz*6.0)*0.15;
-diffuseColor.rgb *= 0.86 + dn*0.26;`,
+diffuseColor.rgb *= 0.86 + dn*0.26;
+// what kind of ground is this?
+vec2 tuv = (vWPos.xz + ${HALF.toFixed(1)}) / ${WORLD.toFixed(1)} * ${((HM_N - 1) / HM_N).toFixed(6)} + ${(0.5 / HM_N).toFixed(6)};
+float pnt = texture2D(uPaint, tuv).r * 255.0;
+float natural = 1.0 - clamp(pnt, 0.0, 1.0);
+float lawn = clamp(1.0 - abs(pnt - 2.0), 0.0, 1.0);
+float paved = clamp(pnt - 2.0, 0.0, 1.0);
+float cov = texture2D(uCover, tuv).r;
+vec3 gc = diffuseColor.rgb;
+vec3 gs = sqrt(max(gc, vec3(0.0)));
+float gmx = max(gs.r, max(gs.g, gs.b));
+float gsat = (gmx - min(gs.r, min(gs.g, gs.b))) / max(gmx, 1e-3);
+float glum = dot(gc, vec3(0.2126, 0.7152, 0.0722));
+float veg = smoothstep(0.4, 0.52, gsat) * smoothstep(0.1, 0.4, vWPos.y) * (natural + lawn * 0.5);
+float forest = 0.0;
+if (uMapKind < 0.5) {
+  // Holler County: pale spring green, ochre fall, tan dormant winter, leaf litter under the hardwoods
+  gc = mix(gc, gc * vec3(1.12, 1.18, 0.72), uFresh * veg);
+  gc = mix(gc, gc * vec3(1.22, 1.0, 0.62), uFall * veg * 0.45);
+  gc = mix(gc, vec3(glum) * vec3(1.55, 1.2, 0.72), uDormant * veg);
+  forest = smoothstep(0.34, 0.46, cov) * natural * smoothstep(1.2, 2.0, vWPos.y);
+  gc = mix(gc, vec3(0.21, 0.1, 0.04) * (0.75 + 0.5 * tn(vWPos.xz * 0.9)), uLitter * forest * 0.75);
+} else if (uMapKind < 1.5) {
+  // Golden Coast: the hills green up with the winter rains and go gold by summer
+  float goldArea = 1.0 - smoothstep(0.35, 0.8, cov);
+  gc = mix(gc, vec3(0.62, 1.2, 0.26) * glum * 0.85, (1.0 - uGolden) * goldArea * veg);
+  gc = mix(gc, gc * vec3(1.12, 1.0, 0.75), uGolden * (1.0 - goldArea) * veg * 0.35);
+} else {
+  // Gator Gulch: inland flats are sawgrass marsh (not beach), a little browner in winter
+  float marshFlat = natural * step(vWPos.z, 240.0) * smoothstep(0.02, 0.18, vWPos.y) * (1.0 - smoothstep(0.7, 0.95, vWPos.y));
+  float sandy = (1.0 - smoothstep(0.25, 0.45, gsat)) * smoothstep(0.25, 0.45, glum);
+  float sn = tn(vWPos.xz * 0.06) * 0.6 + tn(vWPos.xz * 0.31) * 0.4;
+  vec3 saw = mix(vec3(0.13, 0.17, 0.05), vec3(0.24, 0.24, 0.08), sn);
+  saw = mix(saw, vec3(0.05, 0.06, 0.03), smoothstep(0.62, 0.8, sn) * 0.7); // wet mud pockets
+  saw = mix(saw, vec3(0.3, 0.21, 0.09), uMarsh * 0.8);
+  gc = mix(gc, saw, marshFlat * sandy);
+  gc = mix(gc, vec3(glum) * vec3(1.5, 1.2, 0.7), uMarsh * smoothstep(1.1, 0.5, vWPos.y) * veg);
+}
+if (uFlowers > 0.003) {
+  float dens = uFlowers * veg * natural * (1.0 - forest) * smoothstep(0.3, 0.7, tn(vWPos.xz * 0.012 + 7.0));
+  vec2 fp = vWPos.xz / 1.1;
+  vec2 fcell = floor(fp);
+  float fh = th(fcell), fk = th(fcell + 17.3);
+  vec2 fo = fract(fp) - 0.5 - (vec2(th(fcell + 3.1), th(fcell + 5.7)) - 0.5) * 0.5;
+  vec3 fcol = uMapKind < 0.5 ? (fk < 0.4 ? vec3(0.62, 0.3, 0.7) : fk < 0.75 ? vec3(0.92, 0.9, 0.84) : vec3(0.95, 0.75, 0.08))
+            : uMapKind < 1.5 ? (fk < 0.55 ? vec3(1.0, 0.4, 0.02) : fk < 0.85 ? vec3(0.36, 0.22, 0.78) : vec3(0.95, 0.8, 0.1))
+            : (fk < 0.6 ? vec3(0.95, 0.78, 0.1) : vec3(0.55, 0.3, 0.75));
+  fcol *= fcol;
+  float fdot = step(1.0 - dens * 0.75, fh) * smoothstep(0.3, 0.16, length(fo));
+  float ffar = smoothstep(0.25, 0.9, fwidth(vWPos.x));
+  gc = mix(gc, fcol, mix(fdot, dens * 0.4, ffar));
+}
+// snow: sticks above the snow line on gentle slopes, patchy at the edge
+vec3 gn = normalize(vWNrm);
+float snz = tn(vWPos.xz * 0.045) * 0.6 + tn(vWPos.xz * 0.23) * 0.4;
+float sline = uSnowLine + (snz - 0.5) * 26.0;
+float snowM = smoothstep(sline - 5.0, sline + 8.0, vWPos.y) * smoothstep(0.6, 0.86, gn.y + snz * 0.12) * smoothstep(0.0, 0.2, uSnow);
+snowM = clamp(snowM * (0.75 + 0.5 * snz) * 1.25, 0.0, 1.0) * smoothstep(0.15, 0.6, vWPos.y) * (1.0 - paved * 0.4);
+gc = mix(gc, vec3(0.8, 0.85, 0.92), snowM);
+// rain: darker soil, then puddles in the flats
+float wetM = uWet * (1.0 - snowM) * smoothstep(0.0, 0.3, vWPos.y);
+float puddle = uPuddle * (1.0 - snowM) * smoothstep(0.96, 0.995, gn.y) * smoothstep(0.66, 0.76, tn(vWPos.xz * 0.11) * 0.7 + tn(vWPos.xz * 0.47) * 0.3 + paved * 0.12 + (1.0 - natural) * 0.06);
+gc *= 1.0 - wetM * (0.3 + 0.25 * gsat);
+gc *= 1.0 - puddle * 0.45;
+diffuseColor.rgb = gc;`,
+        )
+        .replace(
+          '#include <roughnessmap_fragment>',
+          `#include <roughnessmap_fragment>
+roughnessFactor = mix(roughnessFactor, 0.55, wetM * 0.8);
+roughnessFactor = mix(roughnessFactor, 0.08, puddle);
+roughnessFactor = mix(roughnessFactor, 0.65, snowM);`,
+        )
+        .replace(
+          '#include <lights_fragment_end>',
+          `#include <lights_fragment_end>
+float cloudL = atmoCloud(vWPos.xz);
+reflectedLight.directDiffuse *= cloudL;
+reflectedLight.directSpecular *= cloudL;`,
+        )
+        .replace(
+          '#include <opaque_fragment>',
+          `{
+  vec3 tv = normalize(cameraPosition - vWPos);
+  float fres = 0.04 + 0.96 * pow(1.0 - clamp(tv.y, 0.0, 1.0), 5.0);
+  float ring = 0.0;
+  if (uRain > 0.01) {
+    vec2 rp = vWPos.xz * 1.4; vec2 rc = floor(rp);
+    float rt = fract(uTime * 1.3 + th(rc));
+    float rd = length(fract(rp) - 0.5 - (vec2(th(rc + 1.7), th(rc + 2.9)) - 0.5) * 0.4);
+    ring = smoothstep(0.05, 0.0, abs(rd - rt * 0.45)) * (1.0 - rt) * uRain;
+  }
+  outgoingLight = mix(outgoingLight, uSkyRefl * (0.55 + ring), puddle * (0.3 + 0.5 * fres));
+  outgoingLight += uSkyRefl * wetM * fres * 0.12;
+}
+#include <opaque_fragment>`,
         );
     };
+    // ---- end of the Atmosphere-owned block ----
 
     for (let cz = 0; cz < CHUNKS; cz++)
       for (let cx = 0; cx < CHUNKS; cx++) {

@@ -12,6 +12,7 @@ import type { ToolId } from '../tools/tools';
 import { FeedPanel } from './feedPanel';
 import { MERCH_URL, brandById } from '../art/brands';
 import { IS_TOUCH } from '../config';
+import { QUALITY, type Quality } from '../config';
 import { SPEEDS } from '../sim/sim';
 import type { ViewMode } from '../render/overlays';
 import { ARCHETYPES } from '../agents/people';
@@ -46,6 +47,8 @@ export class Hud implements UiSink {
   private toasts!: HTMLElement;
   private tip!: HTMLElement;
   private actions!: HTMLElement;
+  private perfEl!: HTMLElement;
+  private perfVisible = false;
   private floats: { el: HTMLElement; p: THREE.Vector3; t: number }[] = [];
   private panel: PanelId = null;
   private domT = 0;
@@ -68,6 +71,8 @@ export class Hud implements UiSink {
     this.tip = this.mk('div', 'cursor-tip');
     this.tip.hidden = true;
     this.actions = this.mk('div', 'tool-actions');
+    this.perfEl = this.mk('div', 'perf-overlay');
+    this.perfEl.hidden = true;
     this.actions.innerHTML = `<span class="ta-tip" id="ta-tip"></span><button id="ta-done" class="ta-done">✓ Done</button><button id="ta-undo">↶ Undo</button>`;
     this.actions.hidden = true;
     this.actions.querySelector('#ta-done')!.addEventListener('click', () => { game.tools.cancel(); game.audio.play('click', 0.4); });
@@ -187,7 +192,7 @@ export class Hud implements UiSink {
       ['budget', '💰', 'Budget'],
       ['communes', '☮️', 'Communes'],
       ['feed', '𝕏', 'Feed'],
-      ['help', '❔', 'Controls'],
+      ['help', '⚙️', 'Settings'],
     ];
     this.bar.innerHTML =
       items.map(([id, icon, label]) => `<button class="tbtn" data-t="${id}" title="${label}"><span class="ti">${icon}</span><span class="tl">${label}</span>${id === 'feed' ? '<i id="feed-badge" class="badge" hidden></i>' : ''}</button>`).join('') +
@@ -307,7 +312,13 @@ export class Hud implements UiSink {
       }));
     } else if (p === 'help') {
       this.sub.innerHTML = `
-        <div class="sp-title">Controls</div>
+        <div class="sp-title">Settings &amp; Controls</div>
+        <div class="sp-row quality-controls"><label for="quality-preset">Graphics</label>
+          <select id="quality-preset">${(Object.keys(QUALITY) as Quality['name'][]).map((n) => `<option value="${n}" ${n === (g.pendingQuality ?? g.q.name) ? 'selected' : ''}>${n[0].toUpperCase() + n.slice(1)}</option>`).join('')}</select>
+          <button class="chip" id="perf-toggle">${this.perfVisible ? 'Hide' : 'Show'} performance</button>
+          ${g.pendingQuality ? '<button class="chip on" id="quality-reload">Reload to finish applying</button>' : ''}
+        </div>
+        <small>Resolution and shadows change immediately. Reload applies scenery, traffic, and post-processing budgets.</small>
         <div class="help">
           <div><b>Move</b> WASD / arrows · drag with one finger</div>
           <div><b>Rotate</b> right-drag · Q/E · twist two fingers</div>
@@ -316,10 +327,18 @@ export class Hud implements UiSink {
           <div><b>Roads</b> click start, click end. Keeps chaining. Esc / right-click stops.</div>
           <div><b>Speed</b> Space pause · 1 2 3</div>
           <div><b>Tools</b> B bulldoze · U one more lane · Z zoning · Esc cancel</div>
+          <div><b>Performance</b> F3 shows FPS, frame time, draw calls and triangles</div>
         </div>
         <div class="sp-row"><button class="chip" id="save-now">💾 Save now</button><button class="chip" id="new-city">🆕 New city</button><small>Autosaves every 30 seconds in this browser.</small></div>`;
       this.sub.querySelector('#save-now')?.addEventListener('click', () => { const ok = saveGame(g); this.toast(ok ? 'Saved.' : 'Could not save in this browser', !ok); });
       this.sub.querySelector('#new-city')?.addEventListener('click', () => { saveGame(g); location.hash = ''; location.reload(); });
+      this.sub.querySelector('#quality-preset')?.addEventListener('change', (e) => {
+        const reload = g.requestQuality((e.target as HTMLSelectElement).value as Quality['name']);
+        this.renderPanel();
+        this.toast(reload ? 'Graphics preset saved. Reload to apply all details.' : 'Graphics preset applied.');
+      });
+      this.sub.querySelector('#quality-reload')?.addEventListener('click', () => location.reload());
+      this.sub.querySelector('#perf-toggle')?.addEventListener('click', () => { this.togglePerf(); this.renderPanel(); });
     }
   }
 
@@ -338,9 +357,10 @@ export class Hud implements UiSink {
   }
 
   private hotkey(e: KeyboardEvent) {
-    if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+    if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
     const s = this.game.sim;
-    if (e.key === ' ') { e.preventDefault(); s.speed = s.speed === 0 ? 1 : 0; }
+    if (e.key === 'F3') { e.preventDefault(); this.togglePerf(); }
+    else if (e.key === ' ') { e.preventDefault(); s.speed = s.speed === 0 ? 1 : 0; }
     else if (e.key === '1' || e.key === '2' || e.key === '3') s.speed = Number(e.key);
     else if (e.key.toLowerCase() === 'b') this.onTool('bulldoze');
     else if (e.key.toLowerCase() === 'u') this.onTool('upgrade');
@@ -348,6 +368,11 @@ export class Hud implements UiSink {
     else if (e.key === 'Escape') { this.openPanel(null); this.game.tools.set('inspect'); this.select(null); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); this.game.undo(); }
     this.refreshTop();
+  }
+
+  private togglePerf() {
+    this.perfVisible = !this.perfVisible;
+    this.perfEl.hidden = !this.perfVisible;
   }
 
   // ------------------------------------------------------------------ inspector
@@ -501,6 +526,10 @@ export class Hud implements UiSink {
     if (this.domT <= 0) {
       this.domT = 0.25;
       this.refreshTop();
+      if (this.perfVisible) {
+        const p = this.game.perf;
+        this.perfEl.textContent = `${p.fps.toFixed(1)} fps · ${p.frameMs.toFixed(1)} ms frame · ${p.renderMs.toFixed(1)} ms work\n${p.calls.toLocaleString()} calls · ${p.triangles.toLocaleString()} tris · ${p.quality.toUpperCase()} · ${Math.round(p.resolution * 100)}% res`;
+      }
       if (this.game.selection && (this.game.selection.kind === 'car' || this.game.selection.kind === 'building')) this.renderInspector();
     }
     const tip = this.game.tools.tip;

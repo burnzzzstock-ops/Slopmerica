@@ -6,7 +6,7 @@ import { CELL } from '../config';
 import { MAX_LEVEL, type BuildingModel, type LandmarkId, type ZoneType } from '../contracts';
 import { SpatialHash, V2 } from '../core/math';
 import { Rng } from '../core/rng';
-import { buildingMaterial, generateBuilding, generateLandmark, landmarkFootprint } from '../buildings/generator';
+import { buildingMaterial, generateBuilding, generateConstruction, generateLandmark, landmarkFootprint, setBuildingRegion } from '../buildings/generator';
 import { BRANDS, type Brand } from '../art/brands';
 import type { Terrain } from '../world/terrain';
 import { Paint } from '../world/terrain';
@@ -41,6 +41,8 @@ export interface Bld {
   levelProgress: number;
   born: number;
   inst: number; // BatchedMesh instance id
+  buildInst: number; // temporary scaffold/crane instance in the same batch
+  buildH: number; // source height of the reusable construction model
   emitT: number;
 }
 
@@ -87,6 +89,7 @@ export class Buildings {
   day = 0;
 
   constructor(scene: THREE.Scene, private terrain: Terrain, private trees: Trees, private zones: Zoning, private net: RoadNetwork) {
+    setBuildingRegion(terrain.map.def.id);
     this.mesh = new THREE.BatchedMesh(this.maxInst, this.maxVerts, this.maxVerts, buildingMaterial());
     this.mesh.castShadow = true;
     this.mesh.receiveShadow = true;
@@ -124,6 +127,20 @@ export class Buildings {
     return e;
   }
 
+  private constructionFor(w: number, d: number, height: number) {
+    const buckets = [8, 16, 32, 64, 128, 192];
+    const h = buckets.find((x) => height <= x) ?? 256;
+    const key = `construction|${w}|${d}|${h}`;
+    let e = this.geoIds.get(key);
+    if (!e) {
+      const geometry = generateConstruction(w, d, h, w * 97 + d * 193 + h);
+      const model: BuildingModel = { geometry, height: h, label: 'Construction', emitters: [] };
+      e = { id: this.addGeometry(geometry), model };
+      this.geoIds.set(key, e);
+    }
+    return { id: e.id, height: h };
+  }
+
   private addGeometry(g: THREE.BufferGeometry): number {
     const n = g.getAttribute('position').count;
     const used = this.usedVerts;
@@ -137,11 +154,18 @@ export class Buildings {
   private usedVerts = 0;
 
   private placeInstance(b: Bld, geoId: number) {
-    if (this.list.size + 8 > this.maxInst) {
+    if (this.list.size * 2 + 8 > this.maxInst) {
       this.maxInst = Math.ceil(this.maxInst * 1.6);
       this.mesh.setInstanceCount(this.maxInst);
     }
     b.inst = this.mesh.addInstance(geoId);
+    b.buildInst = -1;
+    b.buildH = 1;
+    if (b.state === 'building') {
+      const build = this.constructionFor(b.w, b.d, b.model.height);
+      b.buildInst = this.mesh.addInstance(build.id);
+      b.buildH = build.height;
+    }
     this.writeMatrix(b, b.state === 'building' ? 0.04 : 1);
   }
 
@@ -150,6 +174,12 @@ export class Buildings {
     this.s.set(1, Math.max(0.02, grow), 1);
     this.m4.compose(this.v.set(b.x, b.y, b.z), this.q, this.s);
     this.mesh.setMatrixAt(b.inst, this.m4);
+    if (b.buildInst >= 0) {
+      const constructionGrow = Math.max(0.18, grow) * (b.model.height / Math.max(1, b.buildH));
+      this.s.set(1, constructionGrow, 1);
+      this.m4.compose(this.v.set(b.x, b.y, b.z), this.q, this.s);
+      this.mesh.setMatrixAt(b.buildInst, this.m4);
+    }
   }
 
   // ------------------------------------------------------------------ growth
@@ -190,7 +220,7 @@ export class Buildings {
       id: this.nextId++, zone, level, w, d, x, z, y, yaw, hw: (w * CELL) / 2, hd: (d * CELL) / 2, cells, seg: mid.seg,
       label: e.model.label, brand: e.model.brand ?? brand, model: e.model, state: 'building', progress: 0,
       buildDays: this.rng.range(3, 7) * (1 + level * 0.25), cap: capacityFor(zone, level, w * d), occ: 0, lv: 20, levelProgress: 0,
-      born: this.day, inst: -1, emitT: Math.random() * 5,
+      born: this.day, inst: -1, buildInst: -1, buildH: 1, emitT: Math.random() * 5,
     };
     for (const c of cells) c.bld = b.id;
     this.list.set(b.id, b);
@@ -214,7 +244,7 @@ export class Buildings {
     const b: Bld = {
       id: this.nextId++, zone: 'landmark', landmark: id, level: 1, w: fp.widthCells, d: fp.depthCells, x, z, y, yaw,
       hw: (fp.widthCells * CELL) / 2, hd: (fp.depthCells * CELL) / 2, cells: [], seg: 0, label: model.label, model,
-      state: 'building', progress: 0, buildDays: 6, cap: 0, occ: 0, lv: 50, levelProgress: 0, born: this.day, inst: -1, emitT: 0,
+      state: 'building', progress: 0, buildDays: 6, cap: 0, occ: 0, lv: 50, levelProgress: 0, born: this.day, inst: -1, buildInst: -1, buildH: 1, emitT: 0,
     };
     this.list.set(b.id, b);
     this.hash.insert(b, x - b.hw - b.hd, z - b.hw - b.hd, x + b.hw + b.hd, z + b.hw + b.hd);
@@ -239,6 +269,10 @@ export class Buildings {
         const b = this.placeLandmark(landmark as LandmarkId, x, z, yaw);
         b.state = 'active';
         b.progress = 1;
+        if (b.buildInst >= 0) {
+          this.mesh.deleteInstance(b.buildInst);
+          b.buildInst = -1;
+        }
         this.writeMatrix(b, 1);
         continue;
       }
@@ -247,7 +281,7 @@ export class Buildings {
       const b: Bld = {
         id: this.nextId++, zone: zt, level, w, d, x, z, y, yaw, hw: (w * CELL) / 2, hd: (d * CELL) / 2, cells: [], seg,
         label: e.model.label, brand: e.model.brand ?? (brand || undefined), model: e.model, state: prog >= 1 ? 'active' : 'building', progress: Math.min(1, prog),
-        buildDays: 5, cap: capacityFor(zt, level, w * d), occ, lv: 30, levelProgress: lp, born: this.day, inst: -1, emitT: Math.random() * 5,
+        buildDays: 5, cap: capacityFor(zt, level, w * d), occ, lv: 30, levelProgress: lp, born: this.day, inst: -1, buildInst: -1, buildH: 1, emitT: Math.random() * 5,
       };
       this.list.set(b.id, b);
       this.hash.insert(b, x - b.hw - b.hd, z - b.hw - b.hd, x + b.hw + b.hd, z + b.hw + b.hd);
@@ -297,11 +331,36 @@ export class Buildings {
     const r = new THREE.Ray();
     const hit = new THREE.Vector3();
     for (const b of this.list.values()) {
-      const h = b.model.height * (b.state === 'building' ? Math.max(0.05, b.progress) : 1);
+      let minX = -b.hw, maxX = b.hw, minZ = -b.hd, maxZ = b.hd;
+      let h = b.model.height;
+      if (b.state === 'building') {
+        // Construction dressing is horizontally unscaled, while its vertical
+        // growth follows the eased building progress with an 18% minimum.
+        // Mirror generateConstruction's envelope so its crane, platforms and
+        // temporary barriers remain pickable outside the finished footprint.
+        const W = b.w * CELL, D = b.d * CELL;
+        const sw = Math.max(4, Math.min(W - 2.2, 22));
+        const sd = Math.max(4, Math.min(D - 2.2, 18));
+        const cz = -Math.max(0, D - sd) * 0.22;
+        minZ = Math.min(minZ, cz - sd / 2 - 0.42);
+        maxZ = Math.max(maxZ, cz + sd / 2 + 1.61);
+
+        const bodyGrow = b.progress <= 0 ? 0.04 : easeGrow(b.progress);
+        const constructionGrow = Math.max(0.18, bodyGrow);
+        let constructionTop = b.model.height * constructionGrow;
+        if (b.buildH >= 14) {
+          const boom = Math.min(34, sw + 12);
+          const craneReach = sw / 2 + 1.3 + boom * 0.72;
+          minX = Math.min(minX, -craneReach);
+          maxX = Math.max(maxX, craneReach);
+          constructionTop *= 1 + Math.min(12, b.buildH * 0.25) / b.buildH;
+        }
+        h = Math.max(b.model.height * bodyGrow, constructionTop);
+      }
       inv.compose(new THREE.Vector3(b.x, b.y, b.z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), b.yaw), new THREE.Vector3(1, 1, 1)).invert();
       r.copy(ray).applyMatrix4(inv);
-      box.min.set(-b.hw, 0, -b.hd);
-      box.max.set(b.hw, h, b.hd);
+      box.min.set(minX, 0, minZ);
+      box.max.set(maxX, h, maxZ);
       if (r.intersectBox(box, hit)) {
         const d = hit.distanceTo(r.origin);
         if (d < bd) { bd = d; best = b; }
@@ -317,6 +376,7 @@ export class Buildings {
     for (const c of b.cells) if (c.bld === b.id) c.bld = 0;
     for (const c of this.zones.cellsNear(b.x, b.z, b.hw + b.hd + 6)) if (c.bld === b.id) c.bld = 0;
     if (b.inst >= 0) this.mesh.deleteInstance(b.inst);
+    if (b.buildInst >= 0) this.mesh.deleteInstance(b.buildInst);
     this.terrain.paintCircle(b.x, b.z, Math.min(b.hw, b.hd), Paint.Dirt);
     this.zones.markOverlayDirty();
     this.onDemolish?.(b, reason);
@@ -337,6 +397,10 @@ export class Buildings {
     b.state = 'building';
     b.progress = 0.35;
     b.buildDays = 4 + b.level;
+    if (b.buildInst >= 0) this.mesh.deleteInstance(b.buildInst);
+    const build = this.constructionFor(b.w, b.d, b.model.height);
+    b.buildInst = this.mesh.addInstance(build.id);
+    b.buildH = build.height;
     this.writeMatrix(b, b.progress);
     this.onLevel?.(b);
   }
@@ -349,6 +413,10 @@ export class Buildings {
       this.writeMatrix(b, easeGrow(b.progress));
       if (b.progress >= 1) {
         b.state = 'active';
+        if (b.buildInst >= 0) {
+          this.mesh.deleteInstance(b.buildInst);
+          b.buildInst = -1;
+        }
         this.onComplete?.(b);
       }
     }

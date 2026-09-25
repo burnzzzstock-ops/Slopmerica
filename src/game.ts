@@ -1,10 +1,11 @@
 // Game: owns the scene and every subsystem, and runs the frame loop.
 import * as THREE from 'three';
-import { defaultQuality, HALF, IS_TOUCH, Quality, WATER } from './config';
+import { defaultQuality, HALF, IS_TOUCH, QUALITY, Quality, saveQuality, storedQuality, WATER } from './config';
 import type { FeedContext, FeedEventKind, LandmarkId } from './contracts';
 import { generateMap, MapData, MapId } from './world/maps';
 import { Terrain } from './world/terrain';
 import { Trees } from './world/trees';
+import { GroundDetail } from './world/groundDetail';
 import { createWater } from './world/water';
 import { Environment } from './world/sky';
 import { WeatherSystem } from './world/weather';
@@ -76,6 +77,7 @@ export class Game {
   readonly rts: RTSCamera;
   readonly terrain: Terrain;
   readonly trees: Trees;
+  readonly groundDetail: GroundDetail;
   readonly env: Environment;
   readonly water: ReturnType<typeof createWater>;
   readonly weather: WeatherSystem;
@@ -105,10 +107,24 @@ export class Game {
   private raf = 0;
   private ray = new THREE.Raycaster();
   private nightWas = false;
+  readonly perf = { fps: 0, frameMs: 0, renderMs: 0, calls: 0, triangles: 0, resolution: 1, quality: 'high' as Quality['name'] };
+  private perfSamples = 0;
+  private perfWindowMs = 0;
+  private perfWindowFrames = 0;
+  private qualityBenchmarkMs = 0;
+  private qualityBenchmarkN = 0;
+  private qualityElapsed = 0;
+  private qualityBenchmarkDone = false;
+  private resolutionCooldown = 0;
+  private dynamicScale = 1;
+  pendingQuality: Quality['name'] | null = null;
   onFrame: ((dt: number) => void)[] = [];
 
   constructor(public container: HTMLElement, public opts: GameOptions) {
-    this.q = opts.quality ?? defaultQuality();
+    const selected = opts.quality ?? defaultQuality();
+    this.q = { ...selected, lod: [...selected.lod] };
+    this.perf.quality = this.q.name;
+    this.qualityBenchmarkDone = !!opts.quality || !!storedQuality();
     let tLap = performance.now();
     const lap = (n: string) => { const t = performance.now(); console.info(`[boot] ${n} ${(t - tLap).toFixed(0)}ms`); tLap = t; };
     this.map = generateMap(opts.map);
@@ -124,6 +140,7 @@ export class Game {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = this.q.shadows;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.info.autoReset = false;
     this.renderer.domElement.className = 'game-canvas';
     container.appendChild(this.renderer.domElement);
     this.camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 1, 50000);
@@ -137,7 +154,7 @@ export class Game {
     this.trees = new Trees(this.terrain, this.map, this.q, this.renderer);
     this.scene.add(this.trees.group);
     lap('trees');
-    this.env = new Environment(this.scene, this.map.def, this.q, this.q.name === 'high' ? this.renderer : undefined);
+    this.env = new Environment(this.scene, this.map.def, this.q, this.q.name === 'high' || this.q.name === 'ultra' ? this.renderer : undefined);
     this.env.hour = this.hour;
     this.weather = new WeatherSystem({ scene: this.scene, renderer: this.renderer, env: this.env, terrain: this.terrain, trees: this.trees, water: this.water, quality: this.q, mapId: opts.map });
     this.post = new PostFX(this.renderer, this.scene, this.camera, this.q);
@@ -162,10 +179,23 @@ export class Game {
     this.communes = new Communes(this.terrain, this.trees, opts.map, communeCount, this.map.def.seed + 5, opts.mode === 'hippie' ? 0.3 : 0.12, avoid);
     this.scene.add(this.communes.group);
     this.syncBlockers();
+    this.groundDetail = new GroundDetail(this.terrain, this.map, this.q, {
+      roads: this.net, zones: this.zones, buildings: this.buildings, communes: this.communes,
+    });
+    this.scene.add(this.groundDetail.group);
     lap('communes');
     this.sim.communePenalty = (x, z) => this.communes.penalty(x, z);
 
     this.traffic = new Traffic(this.scene, this.net, this.buildings, this.q.maxCars);
+    this.roads.setSignalStateProvider((nodeId, segId) => {
+      const s = this.traffic.signalState(nodeId);
+      if (!s) return 'green';
+      const cycle = 13.5; // traffic's 11 second green plus 2.5 second clear
+      const t = s.t % (cycle * s.phases);
+      const phase = Math.floor(t / cycle);
+      if (s.phaseOf.get(segId) !== phase) return 'red';
+      return t - phase * cycle > 11 ? 'yellow' : 'green';
+    });
     this.peds = new Pedestrians(this.scene, this.net, this.buildings, this.terrain, this.communes, this.q.maxPeople);
     this.overlays = new Overlays(this);
     this.tools = new Tools(this);
@@ -491,13 +521,82 @@ export class Game {
     this.camera.updateProjectionMatrix();
   }
 
+  /** Save a new preset and apply safe render changes immediately; reload completes asset budgets. */
+  requestQuality(name: Quality['name']) {
+    const next = QUALITY[name];
+    saveQuality(name);
+    this.pendingQuality = name === this.q.name ? null : name;
+    this.renderer.shadowMap.enabled = next.shadows;
+    this.env.sun.castShadow = next.shadows;
+    if (this.env.sun.shadow.mapSize.x !== next.shadowMap) {
+      this.env.sun.shadow.mapSize.set(next.shadowMap, next.shadowMap);
+      this.env.sun.shadow.map?.dispose();
+      this.env.sun.shadow.map = null;
+    }
+    this.setRenderScale(this.dynamicScale, next.pixelRatio);
+    return this.pendingQuality !== null;
+  }
+
+  private setRenderScale(scale: number, presetRatio = this.q.pixelRatio) {
+    this.dynamicScale = THREE.MathUtils.clamp(scale, 0.6, 1);
+    this.perf.resolution = this.dynamicScale;
+    const pr = Math.min(window.devicePixelRatio || 1, presetRatio) * this.dynamicScale;
+    if (Math.abs(this.renderer.getPixelRatio() - pr) < 0.035) return;
+    this.renderer.setPixelRatio(pr);
+    this.resize();
+  }
+
+  private sampleFrame(intervalMs: number, workMs: number) {
+    if (document.hidden || intervalMs <= 0) return;
+    this.perfSamples++;
+    this.perf.renderMs += (workMs - this.perf.renderMs) * 0.12;
+    this.perfWindowMs += intervalMs;
+    this.perfWindowFrames++;
+    if (this.perfWindowMs >= 1000) {
+      this.perf.fps = this.perfWindowFrames * 1000 / this.perfWindowMs;
+      this.perf.frameMs = this.perfWindowMs / this.perfWindowFrames;
+      this.perfWindowMs = this.perfWindowFrames = 0;
+    }
+    if (!this.qualityBenchmarkDone) {
+      this.qualityElapsed += intervalMs;
+      if (this.qualityElapsed > 500 && intervalMs < 2000) {
+        this.qualityBenchmarkMs += intervalMs;
+        this.qualityBenchmarkN++;
+      }
+      if (this.qualityElapsed >= 3000) {
+        this.qualityBenchmarkDone = true;
+        const avg = this.qualityBenchmarkMs / Math.max(1, this.qualityBenchmarkN);
+        const caps = this.renderer.capabilities;
+        const deviceCeiling: Quality['name'] = IS_TOUCH || !caps.isWebGL2 || caps.maxTextureSize < 8192 ? 'medium' : 'ultra';
+        let chosen: Quality['name'] = avg > 34 ? 'low' : avg > 24 ? 'medium' : avg > 16 ? 'high' : 'ultra';
+        if (deviceCeiling === 'medium' && (chosen === 'high' || chosen === 'ultra')) chosen = IS_TOUCH ? 'low' : 'medium';
+        if (saveQuality(chosen, true) && chosen !== this.q.name) location.reload();
+      }
+    }
+    this.resolutionCooldown -= intervalMs / 1000;
+    if (this.resolutionCooldown <= 0 && this.perfSamples > 80 && this.perf.frameMs > 0) {
+      const ms = this.perf.frameMs;
+      if (ms > 20.5 && this.dynamicScale > 0.61) {
+        this.setRenderScale(this.dynamicScale - (ms > 27 ? 0.12 : 0.07));
+        this.resolutionCooldown = 3;
+      } else if (ms < 15.2 && this.perf.renderMs < 15.2 && this.dynamicScale < 0.99) {
+        this.setRenderScale(this.dynamicScale + 0.04);
+        this.resolutionCooldown = 5;
+      } else this.resolutionCooldown = 1.5;
+    }
+  }
+
   // ------------------------------------------------------------------ loop
   start() {
+    let last = performance.now();
     const loop = () => {
       this.raf = requestAnimationFrame(loop);
-      this.timer.update();
-      const dt = Math.min(0.1, this.timer.getDelta());
+      const began = performance.now();
+      const interval = began - last;
+      last = began;
+      const dt = Math.min(0.1, interval / 1000);
       this.frame(dt);
+      this.sampleFrame(interval, performance.now() - began);
     };
     loop();
   }
@@ -524,6 +623,9 @@ export class Game {
     this.sim.update(dt);
     const t = this.sim.time(this.hour);
     this.weather.update(dt, t, this.camera, spd, this.rts.distance);
+    this.groundDetail.update(this.time, this.rts.target, this.rts.distance, {
+      season: this.weather.season, snowCover: this.weather.snowCover, wind: this.weather.wind,
+    });
     const fxs = this.weather.effects();
     this.traffic.speedMul = fxs.speedMul;
     this.traffic.crashMul = fxs.crashMul;
@@ -606,7 +708,12 @@ export class Game {
       construction: Math.min(1, this.buildings.counts().building / 20), people: Math.min(1, this.peds.peds.length / 150), night: n,
       weather: this.weather.kind, weatherIntensity: this.weather.intensity, season: this.weather.season,
     });
-    if (render) this.post.render(n);
+    if (render) {
+      this.renderer.info.reset();
+      this.post.render(n);
+      this.perf.calls = this.renderer.info.render.calls;
+      this.perf.triangles = this.renderer.info.render.triangles;
+    }
   }
 }
 

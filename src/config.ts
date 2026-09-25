@@ -15,7 +15,7 @@ export const IS_TOUCH =
   (window.matchMedia?.('(pointer: coarse)').matches || /Android|iPhone|iPad|iPod/i.test(ua));
 
 export interface Quality {
-  name: 'low' | 'high';
+  name: 'low' | 'medium' | 'high' | 'ultra';
   pixelRatio: number;
   shadows: boolean;
   shadowMap: number;
@@ -28,19 +28,44 @@ export interface Quality {
   maxPeople: number;
   post: boolean;
   ao: boolean;
+  aoFull: boolean;
+  groundRadius: number;
 }
 
-export const QUALITY: Record<'low' | 'high', Quality> = {
+export const QUALITY: Record<Quality['name'], Quality> = {
   low: {
-    name: 'low', pixelRatio: 1.25, shadows: true, shadowMap: 1024, treeDensity: 0.55, treeNear: 320, treeNearCap: 7000, treeFarCap: 45000,
-    lod: [500, 1100, 2400], maxCars: 450, maxPeople: 120, post: false, ao: false,
+    name: 'low', pixelRatio: 1, shadows: true, shadowMap: 1024, treeDensity: 0.5, treeNear: 290, treeNearCap: 6000, treeFarCap: 42000,
+    lod: [500, 1100, 2400], maxCars: 450, maxPeople: 120, post: false, ao: false, aoFull: false, groundRadius: 150,
+  },
+  medium: {
+    name: 'medium', pixelRatio: 1.4, shadows: true, shadowMap: 2048, treeDensity: 0.75, treeNear: 480, treeNearCap: 12000, treeFarCap: 85000,
+    lod: [650, 1450, 3000], maxCars: 800, maxPeople: 250, post: true, ao: false, aoFull: false, groundRadius: 190,
   },
   high: {
-    name: 'high', pixelRatio: 2, shadows: true, shadowMap: 4096, treeDensity: 1, treeNear: 700, treeNearCap: 26000, treeFarCap: 160000,
-    lod: [900, 1900, 3800], maxCars: 1400, maxPeople: 420, post: true, ao: true,
+    name: 'high', pixelRatio: 2, shadows: true, shadowMap: 2048, treeDensity: 1, treeNear: 700, treeNearCap: 26000, treeFarCap: 160000,
+    lod: [900, 1900, 3800], maxCars: 1400, maxPeople: 420, post: true, ao: true, aoFull: false, groundRadius: 240,
+  },
+  ultra: {
+    name: 'ultra', pixelRatio: 2.25, shadows: true, shadowMap: 4096, treeDensity: 1.15, treeNear: 850, treeNearCap: 34000, treeFarCap: 210000,
+    lod: [1100, 2200, 4200], maxCars: 1900, maxPeople: 580, post: true, ao: true, aoFull: true, groundRadius: 300,
   },
 };
 
+export function storedQuality(): Quality['name'] | null {
+  try {
+    const n = localStorage.getItem('slopmerica.quality');
+    return n && n in QUALITY ? n as Quality['name'] : null;
+  } catch { return null; }
+}
+
+export function saveQuality(n: Quality['name'], auto = false): boolean {
+  try {
+    localStorage.setItem('slopmerica.quality', n);
+    if (auto) localStorage.setItem('slopmerica.qualityAuto', '1');
+    return true;
+  } catch { return false; }
+}
+
 export function defaultQuality(): Quality {
-  return IS_TOUCH ? QUALITY.low : QUALITY.high;
+  return QUALITY[storedQuality() ?? (IS_TOUCH ? 'low' : 'high')];
 }

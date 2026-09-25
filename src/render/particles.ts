@@ -221,7 +221,7 @@ export class Particles {
   night = 0;
 
   constructor(scene: THREE.Scene, private q: Quality) {
-    const big = q.name === 'high';
+    const big = q.name === 'high' || q.name === 'ultra';
     this.normal = new Pool(scene, big ? 6000 : 2500, false);
     this.additive = new Pool(scene, big ? 1500 : 600, true);
     this.budget = big ? 1 : 0.5;

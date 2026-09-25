@@ -122,14 +122,71 @@ export async function loadArt(): Promise<void> {
 // ------------------------------------------------------------------ palettes
 type Rnd = () => number;
 const pick = <X>(r: Rnd, a: readonly X[]): X => a[Math.floor(r() * a.length) % a.length];
-const SIDING = [0xe8e2d0, 0xc9d3d8, 0xd9c9a8, 0xa8b89a, 0xe0d6c3, 0xb7c4cf, 0xf2efe6, 0x9fa8a3, 0xd8b98f, 0xc7a6a0, 0x8fa3b8, 0xefe3c2];
-const ROOFS = [0x4a4a4a, 0x6b5b4b, 0x3d4650, 0x7a6a5a, 0x5b3b30, 0x57534e, 0x2f3338];
-const BRICK = [0xb5553c, 0x9e4a3a, 0xc07a5a, 0x8a5a4a, 0xd0b090, 0xa86a50];
-const STUCCO = [0xe6d7bd, 0xd9c7a5, 0xf0e6d2, 0xc9b79c, 0xe8e1d6, 0xd4cbbe];
+type BuildingRegion = 'appalachia' | 'norcal' | 'florida';
+const REGIONAL = {
+  appalachia: {
+    siding: [0xe8e2d0, 0xc9d3d8, 0xd9c9a8, 0xa8b89a, 0xe0d6c3, 0xb7c4cf, 0xf2efe6, 0x9fa8a3, 0xd8b98f, 0x8fa3b8],
+    roofs: [0x3d4145, 0x4a4a4a, 0x5b3b30, 0x57534e, 0x2f3338, 0x6b5b4b],
+    brick: [0x9e4a3a, 0xb5553c, 0x8a4a3a, 0x7d493d, 0xa86a50],
+    stucco: [0xe6d7bd, 0xd9c7a5, 0xf0e6d2, 0xc9b79c, 0xd4cbbe],
+    panel: [0xd9d4ca, 0x6b6e73, 0x2f3134, 0xb8a58a, 0x8c8f93],
+    metal: [0xc9ccd0, 0xb8bec4, 0xd6cfc0, 0x9aa6b0, 0x9d8e76],
+    lawn: 0x6f934e,
+  },
+  norcal: {
+    siding: [0xf1ead9, 0xd7c5a4, 0xb8c2a0, 0xc8a887, 0xe6ded0, 0x9faeab, 0xd8b58d, 0xa8b89a],
+    roofs: [0x9f4934, 0xb65b3d, 0x814031, 0x6e5848, 0x4b4b47, 0x7b3f31],
+    brick: [0xb56b4c, 0x9b5542, 0xc18162, 0x8e5141, 0xc89b78],
+    stucco: [0xf1dfbd, 0xe9d0a9, 0xf3e7cf, 0xd9bf96, 0xe8d8c2, 0xd6c3a8],
+    panel: [0xe2d7c5, 0x9a806d, 0x656e6b, 0xc2aa88, 0xf0e6d3],
+    metal: [0xc7c4ba, 0xb5b9b2, 0xd8cfbd, 0x93a3a1, 0xb8a47f],
+    lawn: 0x8f9953,
+  },
+  florida: {
+    siding: [0xf3e9d2, 0xc8deda, 0xf1c9bd, 0xd8e3b6, 0xcbd8e8, 0xf0d9a8, 0xd8c7df, 0xf4efe3],
+    roofs: [0xc8bba7, 0xa6a39a, 0x746b63, 0xc47b57, 0x8d5c49, 0xb7aea0],
+    brick: [0xc77c62, 0xb56450, 0xd29a78, 0xa96556, 0xd2b08e],
+    stucco: [0xf2dfc0, 0xead0b2, 0xf6e8cf, 0xdcc7a8, 0xe7dad0, 0xc8ddd8],
+    panel: [0xe8ddd0, 0x7e8f91, 0xc6b49b, 0x93a8aa, 0xf0e9dd],
+    metal: [0xd4d6d1, 0xbfc7c8, 0xded5c5, 0xa9b7b7, 0xd2c19f],
+    lawn: 0x72a85b,
+  },
+} as const;
+
+let buildingRegion: BuildingRegion = 'appalachia';
+let SIDING: readonly number[] = REGIONAL.appalachia.siding;
+let ROOFS: readonly number[] = REGIONAL.appalachia.roofs;
+let BRICK: readonly number[] = REGIONAL.appalachia.brick;
+let STUCCO: readonly number[] = REGIONAL.appalachia.stucco;
 const CARS = [0xf2f2f2, 0x1b1b1d, 0xa8adb3, 0x5a5f66, 0x9b1b1b, 0x1d3a8a, 0x2f4a36, 0xc9b99a, 0x7a1f2b, 0xd8d8d0, 0x355c7d, 0xe0a030];
-const PANEL = [0xd9d4ca, 0x6b6e73, 0x2f3134, 0xb8a58a, 0x8c8f93, 0xe9e6df];
-const METAL = [0xc9ccd0, 0xb8bec4, 0xd6cfc0, 0x9aa6b0, 0xc8b89a];
-const LAWN_OK = 0x7aa35a, LAWN_DRY = 0xa6a060;
+let PANEL: readonly number[] = REGIONAL.appalachia.panel;
+let METAL: readonly number[] = REGIONAL.appalachia.metal;
+let LAWN_OK: number = REGIONAL.appalachia.lawn;
+const LAWN_DRY = 0xa6a060;
+
+/** Select the architecture palette before models are generated for a map. */
+export function setBuildingRegion(id: string) {
+  if (!(id in REGIONAL)) return;
+  buildingRegion = id as BuildingRegion;
+  const p = REGIONAL[buildingRegion];
+  SIDING = p.siding;
+  ROOFS = p.roofs;
+  BRICK = p.brick;
+  STUCCO = p.stucco;
+  PANEL = p.panel;
+  METAL = p.metal;
+  LAWN_OK = p.lawn;
+}
+
+function residentialRoof(r: Rnd): { color: Col; tile: number } {
+  const clayChance = buildingRegion === 'norcal' ? 0.68 : buildingRegion === 'florida' ? 0.24 : 0.04;
+  const color = col(pick(r, ROOFS));
+  const tile = r() < clayChance ? T.CLAY_TILE : T.SHINGLE;
+  if (tile === T.CLAY_TILE) color.lerp(col(0xf0a078), 0.42);
+  return { color, tile };
+}
+
+const roofRise = (rise: number) => rise * (buildingRegion === 'appalachia' ? 1.08 : buildingRegion === 'norcal' ? 0.88 : 0.76);
 
 const carKind = (r: Rnd): 'sedan' | 'suv' | 'pickup' | 'van' => (r() < 0.35 ? 'pickup' : r() < 0.6 ? 'suv' : r() < 0.85 ? 'sedan' : 'van');
 
@@ -213,7 +270,8 @@ function resLow(s: LotSpec, r: Rnd, W: number, D: number): BuildingModel {
   const L = s.level;
   lawn(k, W, D, r, L === 1 && r() < 0.6);
   const siding = col(pick(r, SIDING));
-  const roof = col(pick(r, ROOFS));
+  const roofStyle = residentialRoof(r);
+  const roof = roofStyle.color;
   const trim = col(0xf4f1ea);
   let height = 4;
   let label = '';
@@ -254,7 +312,7 @@ function resLow(s: LotSpec, r: Rnd, W: number, D: number): BuildingModel {
     const hw = narrow ? W - 2.2 : Math.min(W - 5, 12), hd = narrow ? Math.min(D - 9, 12) : Math.min(D * 0.45, 9);
     const hx = narrow ? 0 : -2, hz = D / 2 - 5.5 - hd / 2;
     k.box(hx, hz, hw, hd, 0, 3, [T.HOUSE_WIN, T.SIDING, T.HOUSE_WIN, T.SIDING], siding, null, undefined, { fit: true });
-    k.gable(hx, hz, hw, hd, 3, narrow ? 2.6 : 2.1, !narrow, roof, siding);
+    k.gable(hx, hz, hw, hd, 3, roofRise(narrow ? 2.6 : 2.1), !narrow, roof, siding, T.SIDING, 0.45, roofStyle.tile);
     frontDoor(k, hx, hz + hd / 2, col(pick(r, [0x8a2a2a, 0x2a3a5a, 0x3a3a3a, 0xf2f2f2])));
     k.box(hx + hw / 4, hz - hd / 4, 0.8, 0.8, 3, 5.4, T.BRICK, col(pick(r, BRICK)), T.SOLID, col(0x333333));
     k.emit('smoke', hx + hw / 4, 5.6, hz - hd / 4);
@@ -271,7 +329,7 @@ function resLow(s: LotSpec, r: Rnd, W: number, D: number): BuildingModel {
     }
     k.slab(hx - 0.6, hz + hd / 2, hx + 0.6, D / 2 - 0.3, 0.05, T.CONCRETE, col(0xffffff));
     if (r() < 0.5) flagpole(k, -W / 2 + 1.2, D / 2 - 1.5, r);
-    height = 5.5;
+    height = 3 + roofRise(narrow ? 2.6 : 2.1);
     label = pick(r, ['3-Bed Ranch w/ Truck Nuts', 'Ranch (Flag Visible From Space)', 'Starter Home, Final Home', 'Split-Level Starter']);
   } else if (L === 3) {
     const narrow = W < 13;
@@ -280,7 +338,7 @@ function resLow(s: LotSpec, r: Rnd, W: number, D: number): BuildingModel {
     const brickFront = r() < 0.4;
     k.box(hx, hz, hw, hd, 0, 6, [T.HOUSE_WIN, T.HOUSE_WIN, T.HOUSE_WIN, T.HOUSE_WIN], siding, null, undefined, { fit: true, floors: 2 });
     if (brickFront) k.wall(hx - hw / 2, hz + hd / 2 + 0.02, hx + hw / 2, hz + hd / 2 + 0.02, 0, 3, T.BRICK, col(pick(r, BRICK)));
-    k.gable(hx, hz, hw, hd, 6, 2.6, !narrow, roof, siding);
+    k.gable(hx, hz, hw, hd, 6, roofRise(2.6), !narrow, roof, siding, T.SIDING, 0.45, roofStyle.tile);
     // porch
     k.slab(hx - hw / 2 + 0.5, hz + hd / 2, hx + hw / 2 - 0.5, hz + hd / 2 + 2, 0.35, T.CONCRETE, col(0xd8d4cc));
     for (let i = 0; i < 4; i++) k.box(hx - hw / 2 + 0.8 + (i * (hw - 1.6)) / 3, hz + hd / 2 + 1.8, 0.22, 0.22, 0.35, 2.9, T.SOLID, trim, null);
@@ -289,7 +347,7 @@ function resLow(s: LotSpec, r: Rnd, W: number, D: number): BuildingModel {
     if (!narrow) {
       const gx = hx + hw / 2 + 3.3;
       k.box(gx, hz + 0.5, 6.4, 7, 0, 2.9, [T.SIDING, T.SIDING, T.SIDING, T.SIDING], siding, null);
-      k.gable(gx, hz + 0.5, 6.4, 7, 2.9, 1.8, false, roof, siding);
+      k.gable(gx, hz + 0.5, 6.4, 7, 2.9, roofRise(1.8), false, roof, siding, T.SIDING, 0.45, roofStyle.tile);
       garageDoor(k, gx, hz + 4, 5.6);
       k.slab(gx - 3, hz + 4, gx + 3, D / 2 - 0.3, 0.05, T.CONCRETE, col(0xffffff));
       k.car(gx - 1.4, D / 2 - 4, Math.PI, col(pick(r, CARS)), carKind(r));
@@ -300,7 +358,7 @@ function resLow(s: LotSpec, r: Rnd, W: number, D: number): BuildingModel {
     }
     if (r() < 0.6) fence(k, W, -D / 2 + 0.5, hz - hd / 2, col(0xb89a74));
     if (r() < 0.35) k.cyl(-W / 2 + 3, -D / 2 + 3, 1.8, 0.8, 0.9, 14, T.SOLID, col(0x222222));
-    height = 8.6;
+    height = 6 + roofRise(2.6);
     label = pick(r, ['Colonial (Vinyl)', 'Two-Story w/ Bonus Room', 'Craftsman-ish', 'HOA-Approved Beige Dream']);
   } else {
     // L4 McMansion / L5 compound
@@ -315,17 +373,17 @@ function resLow(s: LotSpec, r: Rnd, W: number, D: number): BuildingModel {
     k.box(hx, hz, hw, hd, 0, H, wallT, wallC, null, undefined, { fit: true, floors });
     // brick on the front only (the classic)
     k.wall(hx - hw / 2, hz + hd / 2 + 0.03, hx + hw / 2, hz + hd / 2 + 0.03, 0, H * 0.55, T.BRICK, col(pick(r, BRICK)));
-    k.hip(hx, hz, hw, hd, H, big ? 4 : 3.2, roof);
+    k.hip(hx, hz, hw, hd, H, roofRise(big ? 4 : 3.2), roof, 0.5, roofStyle.tile);
     // two-story entry tower with its own gable
     k.box(hx - hw / 5, hz + hd / 2 + 1, 3.6, 2.2, 0, H + 1.5, T.STUCCO, col(pick(r, STUCCO)), null);
-    k.gable(hx - hw / 5, hz + hd / 2 + 1, 3.6, 2.2, H + 1.5, 2.2, false, roof, col(0xf0ece2), T.STUCCO, 0.3);
+    k.gable(hx - hw / 5, hz + hd / 2 + 1, 3.6, 2.2, H + 1.5, roofRise(2.2), false, roof, col(0xf0ece2), T.STUCCO, 0.3, roofStyle.tile);
     frontDoor(k, hx - hw / 5, hz + hd / 2 + 2.1, col(0x3a2a1a));
     // 3/4-car garage wing
     const gw = big ? 12.5 : 9.6;
     const gx = hx + hw / 2 + gw / 2 - 0.5;
     if (gx + gw / 2 < W / 2 - 0.3) {
       k.box(gx, hz + 1, gw, 7, 0, 3.2, T.SIDING, wallC, null);
-      k.hip(gx, hz + 1, gw, 7, 3.2, 2, roof);
+      k.hip(gx, hz + 1, gw, 7, 3.2, roofRise(2), roof, 0.5, roofStyle.tile);
       for (let i = 0; i < (big ? 4 : 3); i++) garageDoor(k, gx - gw / 2 + 1.7 + i * 3.05, hz + 4.5, 2.7);
       k.slab(gx - gw / 2, hz + 4.5, gx + gw / 2, D / 2 - 0.3, 0.05, T.CONCRETE, col(0xffffff));
       for (let i = 0; i < (big ? 4 : 3); i++) if (r() < 0.75) k.car(gx - gw / 2 + 1.7 + i * 3.05, D / 2 - 4 - r() * 2, Math.PI, col(pick(r, CARS)), r() < 0.6 ? 'suv' : 'pickup');
@@ -723,6 +781,71 @@ function office(s: LotSpec, r: Rnd, W: number, D: number): BuildingModel {
 }
 
 // ------------------------------------------------------------------ entry points
+/**
+ * Reusable construction dressing for a footprint/height bucket. It is kept in
+ * the same BatchedMesh and uses the same facade material as finished buildings.
+ */
+export function generateConstruction(widthCells: number, depthCells: number, height: number, seed: number): THREE.BufferGeometry {
+  const k = new Kit();
+  const r = mulberry32(seed * 3571 + widthCells * 101 + depthCells * 211);
+  const W = widthCells * CELL, D = depthCells * CELL;
+  const sw = Math.max(4, Math.min(W - 2.2, 22));
+  const sd = Math.max(4, Math.min(D - 2.2, 18));
+  const cz = -Math.max(0, D - sd) * 0.22;
+  const H = Math.max(4, height);
+  const steel = col(0x70787d);
+  const safety = col(0xe09a24);
+  const plank = col(0xb58a58);
+  const x0 = -sw / 2, x1 = sw / 2, z0 = cz - sd / 2, z1 = cz + sd / 2;
+
+  // Corner standards and a bounded number of lifts keep the vertex cost flat
+  // even for skyscrapers. High-rise work gets wider spacing, not more rails.
+  for (const [x, z] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]] as const)
+    k.box(x, z, 0.16, 0.16, 0, H, T.SOLID, steel, T.SOLID, steel, { ao: false });
+  const lifts = Math.max(2, Math.min(6, Math.ceil(H / 5)));
+  let prevY = 0;
+  for (let i = 0; i < lifts; i++) {
+    const y = ((i + 1) / lifts) * Math.min(H, 32);
+    k.box(0, z1, sw, 0.13, y, y + 0.13, T.SOLID, steel, T.SOLID, steel, { ao: false });
+    k.box(0, z0, sw, 0.13, y, y + 0.13, T.SOLID, steel, T.SOLID, steel, { ao: false });
+    k.box(x0, cz, 0.13, sd, y, y + 0.13, T.SOLID, steel, T.SOLID, steel, { ao: false });
+    k.box(x1, cz, 0.13, sd, y, y + 0.13, T.SOLID, steel, T.SOLID, steel, { ao: false });
+    k.slab(x0, z1 - 0.42, x1, z1 + 0.42, y + 0.15, T.WOOD, plank);
+    if (i % 2 === 0) k.slab(x0, z0 - 0.42, x1, z0 + 0.42, y + 0.15, T.WOOD, plank);
+    // Alternating facade braces give the scaffold its unmistakable X rhythm.
+    if (i > 0) {
+      const flip = i % 2 ? 1 : -1;
+      k.tube([flip > 0 ? x0 : x1, prevY + 0.15, z1 + 0.1], [flip > 0 ? x1 : x0, y, z1 + 0.1], 0.055, 3, safety);
+      k.tube([flip > 0 ? x1 : x0, prevY + 0.15, z0 - 0.1], [flip > 0 ? x0 : x1, y, z0 - 0.1], 0.055, 3, safety);
+    }
+    prevY = y;
+  }
+
+  // Pallets and temporary barriers help short builds read as active sites.
+  for (let i = 0; i < 3; i++) {
+    const px = x0 + 1.2 + i * 1.8;
+    k.box(px, z1 + 0.9, 1.45, 0.8, 0, 0.18 + i * 0.09, T.WOOD, plank, T.WOOD, plank, { ao: false });
+  }
+  for (let i = 0; i < Math.max(2, Math.floor(sw / 4)); i++) {
+    const px = x0 + (i + 0.5) * (sw / Math.max(2, Math.floor(sw / 4)));
+    k.box(px, z1 + 1.55, 0.12, 0.12, 0, 1.1, T.SOLID, safety, null, undefined, { ao: false });
+  }
+
+  if (H >= 14) {
+    const mx = (r() < 0.5 ? -1 : 1) * (sw / 2 + 1.3);
+    const mz = z0 + 1.2;
+    const mastH = H + Math.min(12, H * 0.25);
+    k.box(mx, mz, 0.58, 0.58, 0, mastH, T.SOLID, safety, T.SOLID, safety, { ao: false });
+    const boom = Math.min(34, sw + 12);
+    k.box(mx + boom * 0.22, mz, boom, 0.28, mastH - 0.1, mastH + 0.18, T.SOLID, safety, T.SOLID, safety, { ao: false });
+    k.box(mx - boom * 0.24, mz, 2.8, 1.1, mastH - 1, mastH, T.SOLID, col(0x44494d), T.SOLID, steel, { ao: false });
+    const hookX = mx + boom * 0.38;
+    k.tube([hookX, mastH, mz], [hookX, H * 0.55, mz], 0.035, 3, col(0x292b2d));
+    k.box(hookX, mz, 0.38, 0.38, H * 0.55 - 0.25, H * 0.55, T.SOLID, col(0x292b2d), T.SOLID, undefined, { ao: false });
+  }
+  return k.build();
+}
+
 export function generateBuilding(spec: LotSpec): BuildingModel {
   const W = spec.widthCells * CELL, D = spec.depthCells * CELL;
   const r = mulberry32(spec.seed * 2654435761 + spec.level * 97 + (spec.brand ? spec.brand.length * 131 : 0));

@@ -127,7 +127,7 @@ class Precip {
   private snowMat: THREE.ShaderMaterial;
 
   constructor(scene: THREE.Scene, q: Quality) {
-    const N = q.name === 'high' ? 9000 : 3500;
+    const N = q.name === 'ultra' ? 12000 : q.name === 'high' ? 9000 : q.name === 'medium' ? 5500 : 3500;
     // rain: two vertices per streak
     {
       const seed = new Float32Array(N * 2 * 4), end = new Float32Array(N * 2);

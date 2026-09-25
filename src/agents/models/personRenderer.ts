@@ -36,10 +36,23 @@ function markRange(attribute: THREE.BufferAttribute, min: number, max: number): 
   if (max < min) return;
   let range = REUSABLE_UPDATE_RANGES.get(attribute);
   if (!range) { range = { start: 0, count: 0 }; REUSABLE_UPDATE_RANGES.set(attribute, range); }
-  range.start = min * attribute.itemSize;
-  range.count = (max - min + 1) * attribute.itemSize;
-  attribute.updateRanges.length = 0;
-  attribute.updateRanges.push(range);
+  const start = min * attribute.itemSize;
+  const end = (max + 1) * attribute.itemSize;
+  // Several systems can flush the shared renderer before WebGL gets to upload it
+  // (debug/showcase seeding followed by the normal pedestrian tick is one example).
+  // Preserve the union of every pending write; replacing the range here strands the
+  // earlier slots at their old GPU values until those exact handles move again.
+  if (attribute.updateRanges.length > 0) {
+    const pending = attribute.updateRanges[0];
+    const pendingEnd = pending.start + pending.count;
+    pending.start = Math.min(pending.start, start);
+    pending.count = Math.max(pendingEnd, end) - pending.start;
+    attribute.updateRanges.length = 1;
+  } else {
+    range.start = start;
+    range.count = end - start;
+    attribute.updateRanges.push(range);
+  }
   attribute.needsUpdate = true;
 }
 

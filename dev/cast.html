@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SLOPMERICA / Cast & Feed Lot</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Overpass:wght@400;600;800;900&family=Yellowtail&display=swap" rel="stylesheet" />
+    <style>
+      :root { color-scheme: dark; font-family: Overpass, Arial, sans-serif; background: #101310; color: #eee9d8; }
+      * { box-sizing: border-box; }
+      body { margin: 0; overflow: hidden; }
+      button, select { font: inherit; }
+      button { cursor: pointer; }
+      .shell { display: grid; grid-template-columns: minmax(0, 1fr) 380px; grid-template-rows: 64px minmax(0, 1fr); height: 100dvh; }
+      header { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 0 22px; background: #171b17; border-bottom: 1px solid #42483a; z-index: 2; }
+      .brand { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+      .brand strong { font: 29px Anton, Impact, sans-serif; letter-spacing: .06em; color: #c6f432; white-space: nowrap; }
+      .brand span { color: #a9b299; font-size: 12px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; white-space: nowrap; }
+      .head-actions { display: flex; gap: 8px; align-items: center; }
+      .chip, button, select { border: 1px solid #505b44; border-radius: 7px; background: #232a21; color: #f1ecd9; }
+      .chip { padding: 7px 10px; font-size: 11px; font-weight: 800; letter-spacing: .06em; white-space: nowrap; }
+      button { padding: 9px 12px; font-size: 12px; font-weight: 800; transition: background .15s ease, border-color .15s ease; }
+      button:hover, button.active { border-color: #c6f432; background: #354423; }
+      button.primary { background: #c6f432; color: #111; border-color: #c6f432; }
+      button.primary:hover { background: #defc6e; }
+      button:focus-visible, select:focus-visible { outline: 2px solid #c6f432; outline-offset: 2px; }
+      select { padding: 8px 10px; max-width: 100%; }
+      #stage { min-width: 0; min-height: 0; position: relative; overflow: hidden; background: #789492; }
+      #stage canvas { display: block; }
+      .stage-top { pointer-events: none; position: absolute; top: 18px; left: 18px; display: grid; gap: 5px; filter: drop-shadow(0 2px 5px #0009); }
+      .stage-top strong { font: 32px Anton, Impact, sans-serif; letter-spacing: .025em; }
+      .stage-top span { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+      .stage-bottom { position: absolute; left: 18px; right: 18px; bottom: 16px; display: flex; justify-content: space-between; align-items: end; gap: 16px; pointer-events: none; }
+      .focus { pointer-events: auto; display: flex; gap: 7px; }
+      .hint { max-width: 340px; background: #151a16da; border: 1px solid #727a62; border-radius: 8px; padding: 9px 12px; font-size: 12px; line-height: 1.35; }
+      aside { min-height: 0; overflow-y: auto; border-left: 1px solid #41483a; background: #191e19; }
+      .section { padding: 18px 19px; border-bottom: 1px solid #3a4437; }
+      h2 { font: 22px Anton, Impact, sans-serif; letter-spacing: .035em; margin: 0 0 12px; }
+      h3 { font-size: 11px; letter-spacing: .13em; text-transform: uppercase; margin: 0 0 8px; color: #c6f432; }
+      .control-row { display: flex; gap: 8px; flex-wrap: wrap; }
+      .control-row select { flex: 1; min-width: 145px; }
+      .statline { display: flex; gap: 6px; flex-wrap: wrap; margin: 11px 0 0; }
+      .statline span { font-size: 11px; font-weight: 800; border: 1px solid #4d5947; border-radius: 4px; padding: 4px 6px; color: #d2d8c5; }
+      .person-name { font: 23px Anton, Impact, sans-serif; margin: 2px 0; }
+      .person-handle { color: #a3b798; font-size: 12px; font-weight: 800; }
+      .person-bio { margin: 9px 0 0; color: #d8d4c8; font-size: 13px; line-height: 1.4; }
+      .muted { color: #a2ad9b; font-size: 12px; line-height: 1.45; }
+      .feed-head { display: flex; align-items: center; gap: 9px; }
+      .feed-head h2 { margin: 0; }
+      .feed-head small { color: #b0b9a4; font-weight: 800; }
+      .feed-controls { display: flex; gap: 7px; margin: 12px 0; }
+      .feed-controls select { min-width: 0; flex: 1; }
+      #feed { display: grid; gap: 9px; }
+      .post { border: 1px solid #465044; border-radius: 9px; padding: 11px; background: #212821; }
+      .post-head { display: flex; gap: 9px; align-items: center; min-width: 0; }
+      .avatar { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; flex: none; font-size: 19px; border: 1px solid #ffffff50; }
+      .identity { min-width: 0; }
+      .identity strong { font-size: 12px; }
+      .identity .handle { font-size: 11px; color: #aab7a6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .badge { font-size: 11px; margin-left: 3px; }
+      .badge.blue { color: #65adff; } .badge.gold { color: #ffcd52; } .badge.gray { color: #adb6b5; }
+      .post-text { white-space: pre-wrap; font-size: 13px; line-height: 1.42; margin: 10px 0; overflow-wrap: anywhere; }
+      .post-image { padding: 11px; border-radius: 7px; min-height: 74px; display: flex; align-items: end; font-size: 12px; font-weight: 800; background: radial-gradient(circle at 70% 30%, #fae894, transparent 40%), linear-gradient(135deg, #c54895, #263ead 60%, #122220); }
+      .post-image.merch { background: linear-gradient(125deg, #111 0 42%, #c6f432 42% 46%, #eee6d0 46%); color: #111; font-family: Yellowtail, cursive; font-size: 20px; }
+      .post-image.meme { background: linear-gradient(125deg, #5c2e37, #a97644, #283834); }
+      .note { border-radius: 6px; border: 1px solid #536958; padding: 7px; color: #c8d7c4; font-size: 11px; line-height: 1.35; }
+      .note strong { color: #a6d5ff; }
+      .reply { margin: 7px 0 0 15px; padding-left: 9px; border-left: 2px solid #495744; color: #b8c6b2; font-size: 11px; }
+      .reply strong { color: #dce9d3; }
+      .metrics { display: flex; justify-content: space-between; color: #99a698; margin-top: 9px; font-size: 10px; font-weight: 800; }
+      @media (max-width: 800px) {
+        body { overflow: auto; }
+        .shell { display: block; height: auto; }
+        header { min-height: 58px; padding: 8px 12px; }
+        .brand strong { font-size: 23px; } .brand span, .chip { display: none; }
+        #stage { height: 58dvh; min-height: 360px; }
+        aside { border-left: 0; }
+        .section { padding: 15px; }
+        .stage-top strong { font-size: 25px; }
+        .hint { display: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div class="brand"><strong>SLOPMERICA</strong><span>Cast & Feed Lot</span></div>
+        <div class="head-actions"><span class="chip" id="cast-count">Loading cast</span><button id="time-toggle" type="button">☾ Night</button></div>
+      </header>
+      <main id="stage" aria-label="3D cast and vehicle showroom">
+        <div class="stage-top"><strong>EVERYBODY IS HERE</strong><span>Citizens • Cars • Questionable Posts</span></div>
+        <div class="stage-bottom"><div class="focus"><button type="button" id="view-all" class="active">All</button><button type="button" id="view-people">People</button><button type="button" id="view-cars">Cars</button></div><div class="hint">Drag to orbit · Scroll to zoom · Click a person or vehicle</div></div>
+      </main>
+      <aside>
+        <section class="section">
+          <h3>Showroom control</h3>
+          <div class="control-row"><select id="action-select" aria-label="Person action"><option value="auto">Cycle every action</option></select><button id="next-action" type="button">Next action</button></div>
+          <div class="control-row" style="margin-top:8px"><select id="roster-select" aria-label="Choose a person or vehicle"><option value="">Jump to a cast member or vehicle…</option></select></div>
+          <div class="statline"><span id="current-action">Action: walk</span><span id="time-state">Daylight</span><span>400-person pool</span></div>
+        </section>
+        <section class="section" id="selection-panel">
+          <h3>Selected citizen</h3>
+          <div class="person-name" id="selected-name">Click anyone in the lot</div>
+          <div class="person-handle" id="selected-handle">@Slopmerica</div>
+          <p class="person-bio" id="selected-bio">The lineup contains every archetype. They are all practicing their entire action repertoire.</p>
+          <div class="statline" id="selected-tags"></div>
+        </section>
+        <section class="section">
+          <div class="feed-head"><h2>X, formerly Chirper</h2><small>LIVE* </small></div>
+          <div class="muted">*The reply guys are awake at all hours.</div>
+          <div class="feed-controls"><select id="event-select" aria-label="Feed event"></select><button id="fire-event" class="primary" type="button">Post event</button></div>
+          <div class="control-row" style="margin-bottom:12px"><button id="random-event" type="button">Random event</button><button id="ambient-event" type="button">Ambient chatter</button></div>
+          <div id="feed" aria-live="polite"></div>
+        </section>
+      </aside>
+    </div>
+    <script type="module" src="/src/dev/cast.ts"></script>
+  </body>
+</html>

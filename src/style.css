@@ -1380,6 +1380,11 @@ a {
   display: none !important;
 }
 
+/* codex:systems */
+.terra-field { display:flex; align-items:center; gap:8px; min-height:44px; margin:8px 0; }
+.terra-field input { flex:1; min-width:80px; }
+.terra-use { min-height:44px; padding:8px 18px; border:0; border-radius:8px; background:var(--lime); color:#111; font-weight:900; }
+
 .sp-legend {
   display: flex;
   flex-wrap: wrap;

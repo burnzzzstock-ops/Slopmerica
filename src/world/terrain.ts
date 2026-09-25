@@ -337,6 +337,25 @@ if (uInfoOn > 0.0) {
     }
   }
 
+  // codex:terraform begin
+  /** Apply a bounded brush batch. Height changes are visible to h() immediately;
+   * mesh rebuilding is spread across later flush() calls. */
+  editHeights(edits: readonly { id: number; height: number; paint?: Paint }[]) {
+    if (!edits.length) return;
+    this.surfaceVersion++;
+    for (const e of edits) {
+      const j = Math.floor(e.id / HM_N), i = e.id - j * HM_N;
+      if (i < 0 || i >= HM_N || j < 0 || j >= HM_N) continue;
+      const before = this.heights[e.id];
+      if (Math.abs(before - e.height) < 0.001 && (e.paint === undefined || this.paint[e.id] === e.paint)) continue;
+      this.heights[e.id] = e.height;
+      if (e.paint !== undefined) this.paint[e.id] = e.paint;
+      this.markDirty(i, j);
+      this.markTex(j);
+    }
+  }
+  // codex:terraform end
+
   forEachIn(minX: number, minZ: number, maxX: number, maxZ: number, fn: (i: number, j: number, x: number, z: number, id: number) => void) {
     const i0 = clamp(Math.floor((minX + HALF) / HM_STEP), 0, HM_N - 1);
     const i1 = clamp(Math.ceil((maxX + HALF) / HM_STEP), 0, HM_N - 1);
@@ -431,14 +450,16 @@ if (uInfoOn > 0.0) {
   /** Push pending edits to the GPU. Call once per frame. */
   flush() {
     if (this.dirty.size) {
-      for (const k of this.dirty) {
+      // codex:terraform begin - at most two edited chunks rebuild per frame.
+      for (const k of Array.from(this.dirty).slice(0, 2)) {
         const ch = this.chunks[k];
         for (let l = 0; l < 4; l++) { ch.geos[l]?.dispose(); ch.geos[l] = null; }
         const lod = ch.lod;
         ch.lod = -1;
         this.setLod(ch, lod);
+        this.dirty.delete(k);
       }
-      this.dirty.clear();
+      // codex:terraform end
     }
     if (this.texRows) {
       const data = this.heightTex.image.data as Uint16Array;

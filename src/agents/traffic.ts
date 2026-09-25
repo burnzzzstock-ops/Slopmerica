@@ -162,6 +162,10 @@ export class Traffic {
   speedMul = 1;
   crashMul = 1;
   targetCars = 0;
+  // codex:policies begin -- city/district weighted demand and smoking callbacks
+  policyTripMul = 1;
+  policySmokingAllowed?: (b: Bld) => boolean;
+  // codex:policies end
   /** terrain height sampler (set by the game) for cars in lots */
   groundAt?: (x: number, z: number) => number;
   private pop = 0;
@@ -172,6 +176,12 @@ export class Traffic {
   onCrash?: (cars: Car[], seg: RSeg | undefined, drunk: boolean) => void;
   onJam?: (seg: RSeg) => void;
   onEmit?: (kind: 'cigarette' | 'smoke' | 'spark' | 'fire', x: number, y: number, z: number, n: number) => void;
+  // codex:freight begin - real goods scheduler owns freight spawning when set
+  freightTrip?: () => boolean;
+  // codex:freight end
+  // codex:transit begin - true means this local trip chose transit
+  transitModeChoice?: (from: Bld, to: Bld) => boolean;
+  // codex:transit end
   private jamTimer = new Map<number, number>();
 
   constructor(scene: THREE.Scene, private net: RoadNetwork, private b: Buildings, private maxCars: number) {
@@ -340,6 +350,9 @@ export class Traffic {
   }
 
   spawnTrip(hour: number): boolean {
+    // codex:freight begin - give the conserved-goods scheduler a spawn opportunity
+    if (this.freightTrip?.()) return true;
+    // codex:freight end
     const list = [...this.b.list.values()].filter((b) => b.state === 'active' && b.zone !== 'landmark' && b.zone !== 'service');
     const edges = this.edgeAnchors();
     if (list.length < 2 && !edges.length) return false;
@@ -372,7 +385,9 @@ export class Traffic {
         purpose = 'passing through';
         dest = 'the next county';
         if (Math.random() < 0.3) kind = Math.random() < 0.5 ? 'semi' : 'boxTruck';
-      } else if (r < 0.42 && (shops.length || ind.length)) {
+      // codex:freight begin - suppress legacy random cargo when real freight is installed
+      } else if (!this.freightTrip && r < 0.42 && (shops.length || ind.length)) {
+      // codex:freight end
         // freight: imports to shops/industry, exports from industry
         kind = Math.random() < 0.55 ? 'semi' : 'boxTruck';
         if (ind.length && (Math.random() < 0.45 || !shops.length)) {
@@ -390,7 +405,9 @@ export class Traffic {
         // empty county: only through traffic on the old road
         o = edgeO; d = pick(edges); purpose = 'passing through'; dest = 'somewhere with a Waffle Bunker';
       }
-    } else if (ind.length && shops.length && Math.random() < 0.14) {
+    // codex:freight begin - local deliveries come from conserved factory stock
+    } else if (!this.freightTrip && ind.length && shops.length && Math.random() < 0.14) {
+    // codex:freight end
       oB = pick(ind); dB = pick(shops);
       o = this.anchor(oB);
       d = this.anchor(dB);
@@ -411,6 +428,9 @@ export class Traffic {
       d = this.anchor(dB);
     }
     if (!o || !d) return false;
+    // codex:transit begin - mode choice applies only to local person trips
+    if (local && oB && dB && kind !== 'semi' && kind !== 'boxTruck' && this.transitModeChoice?.(oB, dB)) return true;
+    // codex:transit end
     return !!this.launch(o, d, oB, dB, kind, purpose, dest, local, hour);
   }
 
@@ -458,7 +478,9 @@ export class Traffic {
     const car: Car = {
       id: this.nextId++, h, kind, path: rt.steps, pi: 0, s: rt.startS, startS: rt.startS, endS: rt.endS,
       lane: Math.floor(Math.random() * ROAD_TYPES[firstSeg.type].lanesPerDir), v: 4, v0mul: (0.9 + Math.random() * 0.25) * (drunk ? 1.25 : 1),
-      len: spec.length, drunk, reckless: drunk || (!sober && Math.random() < 0.08), smoker: !sober && Math.random() < 0.2, redsRun: 0, wob: Math.random() * 10,
+      // codex:policies begin -- a smoke-free endpoint disables the visible in-car smoking effect
+      len: spec.length, drunk, reckless: drunk || (!sober && Math.random() < 0.08), smoker: !sober && (!oB || this.policySmokingAllowed?.(oB) !== false) && (!dB || this.policySmokingAllowed?.(dB) !== false) && Math.random() < 0.2, redsRun: 0, wob: Math.random() * 10,
+      // codex:policies end
       junction: null, crashed: 0, crashYaw: 0, crashRoll: 0, x: 0, y: 0, z: 0, yaw: 0, purpose, dest,
       driver: Math.floor(Math.random() * ARCHETYPES.length), smokeT: Math.random() * 2, bac: drunk ? 0.09 + Math.random() * 0.2 : 0,
       dep: 0, arr: -1, lotO: null, lotD: null, local,
@@ -503,7 +525,9 @@ export class Traffic {
     const tod = hour < 5 ? 0.25 : hour < 7 ? 0.6 : hour < 10 ? 1.35 : hour < 15.5 ? 0.9 : hour < 19.5 ? 1.4 : hour < 22 ? 0.8 : 0.45;
     const induced = 0.6 + 0.6 * this.flowEma;
     const edgeBoost = Math.min(3, this.edgeAnchors().length) * 12;
-    this.targetCars = Math.min(this.maxCars, Math.round((population * 0.12 + jobs * 0.05 + edgeBoost) * tod * induced));
+    // codex:policies begin -- Free Parking, Ban Bikes, and 4-Day Week move actual trip volume
+    this.targetCars = Math.min(this.maxCars, Math.round((population * 0.12 + jobs * 0.05 + edgeBoost) * tod * induced * this.policyTripMul));
+    // codex:policies end
     if (simSpeed > 0) {
       let spawns = 0;
       while (this.cars.length < this.targetCars && spawns < 12) {

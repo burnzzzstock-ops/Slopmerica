@@ -1,4 +1,4 @@
-// Low-level geometry kit for procedural buildings. Emits NON-INDEXED triangles
+// Low-level geometry kit for procedural buildings. Emits indexed triangles
 // with position / normal / uv / color / tile, where uv is in "tile repeats"
 // (the shader wraps it inside the facade texture array layer `tile`).
 import * as THREE from 'three';
@@ -17,6 +17,7 @@ export class Kit {
   private uv: number[] = [];
   private col: number[] = [];
   private tile: number[] = [];
+  private idx: number[] = [];
   readonly emitters: Emitter[] = [];
   /** Local transform applied to everything added (for rotated sub-parts). */
   private ox = 0;
@@ -62,7 +63,9 @@ export class Kit {
     const l = Math.hypot(n[0], n[1], n[2]) || 1;
     n = [n[0] / l, n[1] / l, n[2] / l];
     const P = [a, b, c, d];
-    for (const i of [0, 1, 2, 0, 2, 3]) this.vert(P[i], n, uvs[i][0], uvs[i][1], color, tile, shades[i]);
+    const base = this.pos.length / 3;
+    for (let i = 0; i < 4; i++) this.vert(P[i], n, uvs[i][0], uvs[i][1], color, tile, shades[i]);
+    this.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
   }
 
   tri(a: V3, b: V3, c: V3, uvs: [number, number][], color: Col, tile: number) {
@@ -71,7 +74,9 @@ export class Kit {
     const l = Math.hypot(n[0], n[1], n[2]) || 1;
     n = [n[0] / l, n[1] / l, n[2] / l];
     const P = [a, b, c];
+    const base = this.pos.length / 3;
     for (let i = 0; i < 3; i++) this.vert(P[i], n, uvs[i][0], uvs[i][1], color, tile);
+    this.idx.push(base, base + 1, base + 2);
   }
 
   /**
@@ -335,6 +340,7 @@ export class Kit {
     g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
     g.setAttribute('tile', new THREE.Float32BufferAttribute(this.tile, 1));
+    g.setIndex(this.idx);
     g.computeBoundingBox();
     g.computeBoundingSphere();
     return g;

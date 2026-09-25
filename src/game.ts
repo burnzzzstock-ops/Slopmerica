@@ -586,8 +586,12 @@ export class Game {
         this.setRenderScale(this.dynamicScale - (ms > 25 ? 0.12 : 0.07));
         this.resolutionCooldown = 3;
       } else if (ms < 15.2 && this.perf.renderMs < 15.2 && this.dynamicScale < 0.99) {
-        this.setRenderScale(this.dynamicScale + 0.04);
-        this.resolutionCooldown = 5;
+        // Recover promptly from startup shader-compilation spikes. A large
+        // performance margin permits a larger step; near the target, climb
+        // slowly so the scale does not bounce between two levels.
+        const headroom = ms < 12.5 && this.perf.renderMs < 12.5;
+        this.setRenderScale(this.dynamicScale + (headroom ? 0.1 : 0.04));
+        this.resolutionCooldown = headroom ? 1.5 : 3;
       } else this.resolutionCooldown = 1.5;
     }
   }

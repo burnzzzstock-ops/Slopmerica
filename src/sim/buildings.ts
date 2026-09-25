@@ -78,6 +78,7 @@ export class Buildings {
   private geoIds = new Map<string, { id: number; model: BuildingModel }>();
   private rng = new Rng(4242);
   private maxVerts = 400_000;
+  private maxIndices = 400_000;
   private maxInst = 4000;
   private m4 = new THREE.Matrix4();
   private q = new THREE.Quaternion();
@@ -143,15 +144,18 @@ export class Buildings {
 
   private addGeometry(g: THREE.BufferGeometry): number {
     const n = g.getAttribute('position').count;
-    const used = this.usedVerts;
-    if (used + n > this.maxVerts) {
-      this.maxVerts = Math.ceil((this.maxVerts + n) * 1.6);
-      this.mesh.setGeometrySize(this.maxVerts, this.maxVerts);
+    const ni = g.getIndex()?.count ?? n;
+    if (this.usedVerts + n > this.maxVerts || this.usedIndices + ni > this.maxIndices) {
+      if (this.usedVerts + n > this.maxVerts) this.maxVerts = Math.ceil((this.maxVerts + n) * 1.6);
+      if (this.usedIndices + ni > this.maxIndices) this.maxIndices = Math.ceil((this.maxIndices + ni) * 1.6);
+      this.mesh.setGeometrySize(this.maxVerts, this.maxIndices);
     }
     this.usedVerts += n;
+    this.usedIndices += ni;
     return this.mesh.addGeometry(g);
   }
   private usedVerts = 0;
+  private usedIndices = 0;
 
   private placeInstance(b: Bld, geoId: number) {
     if (this.list.size * 2 + 8 > this.maxInst) {

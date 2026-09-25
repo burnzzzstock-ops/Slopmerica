@@ -15,20 +15,23 @@ Additional final views: [NorCal day](qa/norcal-after-day-40.jpg), [Florida night
 
 ## Large town performance
 
-The repeatable harness in `scripts/perfTown.mjs` builds a dry 7 × 7 road grid, zones it, advances 270 simulation days, and waits 360 frames for dynamic resolution to settle before collecting 30 frame samples. Measurements below are from Chrome 153 using **ANGLE D3D11 on an AMD Radeon 860M** in the Ryzen AI 7 350 laptop, not SwiftShader. Browser FPS is uncapped. The simulated towns vary slightly between runs because citizen and traffic events are random.
+The repeatable harness in `scripts/perfTown.mjs` builds a dry 7 × 7 road grid, zones it, advances 270 simulation days, waits at least 20 seconds for dynamic resolution to settle, and collects 30 frame samples. Measurements below are from Chrome 153 using **ANGLE D3D11 on an AMD Radeon GPU** in the Ryzen AI 7 350 laptop, not SwiftShader. Both runs reached full preset resolution. Browser FPS is uncapped. The simulated towns vary slightly between runs because citizen and traffic events are random.
 
 | Preset and viewport | Town | FPS | Mean frame | Work | Draw calls | Triangles | Resolution |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| High, 1280 × 800 | 198 buildings, 8,061 people | 62.8 | 15.9 ms | 15.4 ms | 294 | 3,743,518 | 93% |
-| Low, 390 × 844 | 186 buildings, 7,068 people | 102.7 | 9.7 ms | 9.5 ms | 260 | 1,414,088 | 100% |
+| High, 1280 × 800 | 201 buildings, 8,083 people | 66.8 | 15.0 ms | 8.2 ms | 147 | 3,368,874 | 100% |
+| Low, 390 × 844 | 184 buildings, 7,122 people | 129.5 | 7.7 ms | 4.1 ms | 111 | 1,134,400 | 100% |
 
 ![High preset F3 overlay](qa/town-high-overlay.jpg)
 ![Low preset F3 overlay on a phone-size viewport](qa/town-low-overlay.jpg)
 
+Unobstructed game captures: [High town](qa/town-high.jpg) and [Low town](qa/town-low.jpg).
+
 The measured scene costs addressed in this pass were:
 
-1. A distant water tile caused a second scene render in a dry town view. Visibility and distance culling eliminated **186 draw calls and about 2.35 million triangles** there, while retaining planar reflections around nearby water.
-2. Ground-detail placement previously took 3.4 ms median and up to 9.3 ms in a dense town. The incremental refill now measured **0.6 ms median and 0.7 ms maximum** per frame in the final High and Low town runs.
+1. A distant water tile caused a second scene render in a dry town view. Visibility and distance culling eliminated **186 draw calls and about 2.35 million triangles** in that comparison, while retaining planar reflections around nearby water. The final dry-town profile confirms that toggling reflection off saves no additional calls.
+2. Ground-detail placement previously took 3.4 ms median and up to 9.3 ms in a dense town. The incremental refill now measured **0.6 ms median and 0.6 ms maximum** per frame in the final High and Low town runs.
 3. Distant commune fires were adding point lights to the scene. Their light is now active only near the camera; distant flame and bulb geometry remains visible.
+4. The building geometry kit now shares quad corners. The High town uses **188,646 stored building vertices** (201 buildings) and the Low town uses **163,508** (184 buildings), with the same rendered triangles and visual detail. A deterministic 10,800-building generation matrix measured a 32.8% drop in stored vertices.
 
-`scripts/touchtest.mjs` passed at 390 × 844 on Low: the drag created four road segments, Done ended drawing, and Undo restored the original segment count. The departure test confirmed `gone` state, attached burnt remains, scorched terrain paint, and no browser errors. TypeScript and the single-file build passed before the branch push.
+`scripts/touchtest.mjs` passed at 390 × 844 on Low after the agents merge: the drag created four road segments, Done ended drawing, and Undo restored the original segment count. The departure test confirmed `gone` state, attached burnt remains, scorched terrain paint, and no browser errors. The final 36-view commune matrix and 21 additional close-water GL checks across all three maps had no console, shader, or WebGL draw errors. TypeScript and the single-file build passed before the branch push.

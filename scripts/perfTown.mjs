@@ -37,12 +37,12 @@ async function runPreset(preset) {
       try {
         localStorage.setItem('slopmerica.quality', n);
         localStorage.setItem('slopmerica.qualityAuto', '1');
+        localStorage.setItem('slopmerica.onboarded', '1');
       } catch { /* private mode */ }
     }, preset);
     await page.goto(`http://127.0.0.1:${port}/#skip&map=appalachia&mode=sandbox`, { waitUntil: 'load', timeout: 180000 });
     await page.waitForFunction(() => window.__game && window.__dbg, null, { timeout: 180000 });
     await page.evaluate(() => {
-      document.querySelector('.onboard button')?.click();
       window.__game.stop();
       window.__game.sim.speed = 0;
       // The harness deliberately selects a preset; suppress the automatic startup benchmark/reload.
@@ -123,7 +123,9 @@ async function runPreset(preset) {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', code: 'F3', bubbles: true, cancelable: true }));
     }, run.build);
 
-    // Measure after the first-run cost and resolution controller have settled.
+    // Measure after shader compilation and the resolution controller settle.
+    // A frame-count warmup is much shorter in wall time on fast GPUs and can
+    // accidentally capture the scale while it is still climbing back to 100%.
     await page.evaluate(async () => {
       const g = window.__game;
       const originalFrame = g.frame.bind(g);
@@ -135,8 +137,20 @@ async function runPreset(preset) {
       };
       g.start();
       await new Promise(resolve => {
-        let n = 0;
-        const warm = () => { if (++n >= 360) resolve(); else requestAnimationFrame(warm); };
+        const began = performance.now();
+        let stableSince = began;
+        let lastScale = g.perf.resolution;
+        const warm = now => {
+          const scale = g.perf.resolution;
+          if (Math.abs(scale - lastScale) > 0.005) stableSince = now;
+          lastScale = scale;
+          const elapsed = now - began;
+          const settled = scale >= 0.99 ? now - stableSince >= 3000 : now - stableSince >= 8000;
+          if ((elapsed >= 20000 && settled) || elapsed >= 45000) {
+            g.__perfHarnessWarmMs = elapsed;
+            resolve();
+          } else requestAnimationFrame(warm);
+        };
         requestAnimationFrame(warm);
       });
       g.perfWindowMs = 0; g.perfWindowFrames = 0;
@@ -168,7 +182,7 @@ async function runPreset(preset) {
         preset: g.q.name, fps: g.perf.fps, frameMs, medianFrameMs: ordered[Math.floor(ordered.length / 2)], workMs,
         calls: g.perf.calls, triangles: g.perf.triangles, resolution: g.perf.resolution,
         buildings: g.buildings.list.size, usedVerts: g.buildings.usedVerts, sampledFrames: samples.length,
-        totalGameSamples: g.perfSamples, overlay: el?.textContent || null,
+        totalGameSamples: g.perfSamples, warmMs: g.__perfHarnessWarmMs, overlay: el?.textContent || null,
         overlayVisible: !!el && !el.hidden && getComputedStyle(el).display !== 'none',
         groundRefillMs: g.groundDetail.lastRefillMs,
       };
@@ -220,6 +234,7 @@ async function runPreset(preset) {
 
     const canvasPng = await page.evaluate(() => window.__game.renderer.domElement.toDataURL('image/png').split(',')[1]);
     await writeFile(`${out}/town-${preset}-${width}x${height}.png`, Buffer.from(canvasPng, 'base64'));
+    await page.evaluate(() => document.querySelector('.xfeed')?.classList.add('collapsed'));
     await page.screenshot({ path: `${out}/town-${preset}-${width}x${height}-overlay.png`, timeout: 30000 });
     await writeFile(`${out}/town-${preset}-${width}x${height}-overlay.txt`, `${run.result.overlay || ''}\n`);
     console.log(`[${preset}] result`, JSON.stringify(run.result));

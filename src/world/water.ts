@@ -253,7 +253,7 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
           vec4 rc = uReflMat * vec4(vW.x, ${WATER.toFixed(1)}, vW.z, 1.0);
           vec2 ruv = rc.xy / rc.w + n.xz * 0.045 * (1.0 - smoothstep(150.0, 2500.0, camD));
           float inView = step(0.0, ruv.x) * step(ruv.x, 1.0) * step(0.0, ruv.y) * step(ruv.y, 1.0);
-          vec3 tex = texture2D(uRefl, clamp(ruv, 0.001, 0.999)).rgb;
+          vec3 tex = textureLod(uRefl, clamp(ruv, 0.001, 0.999), 0.0).rgb;
           // the mirror sees above the fog, so fade it into the sky tint far away
           inView *= 1.0 - smoothstep(900.0, 3500.0, camD);
           // real water isn't a perfect mirror: a little darker and tinted by the water body

@@ -619,8 +619,10 @@ export class Game {
       weather: this.weather.kind, weatherIntensity: this.weather.intensity, season: this.weather.season,
     });
     if (render) {
-      this.water.reflection?.render(this.renderer, this.scene, this.camera, [this.water.mesh]);
       this.post.render(n);
+      // mirror for the next frame's water (1 frame of lag is invisible). Rendering
+      // it after the main pass guarantees the shadow maps exist and are current.
+      this.water.reflection?.render(this.renderer, this.scene, this.camera, [this.water.mesh]);
     }
   }
 }

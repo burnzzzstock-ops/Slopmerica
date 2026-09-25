@@ -9,6 +9,8 @@ import type { MapData, TreeKind } from './maps';
 import type { Terrain } from './terrain';
 import { createFoliageAtlas, makeTreeModel, padTransparent } from './foliage';
 import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from './atmos';
+import { newSeasonLook, sampleSeason } from './seasons';
+import type { MapId } from './maps';
 
 const KINDS: TreeKind[] = ['decid', 'pine', 'redwood', 'oak', 'palm', 'cypress', 'mangrove', 'shrub'];
 const DECIDUOUS = new Set<TreeKind>(['decid', 'cypress']);
@@ -63,8 +65,9 @@ export class Trees {
   private lastFocus = new THREE.Vector3(1e9, 0, 1e9);
   private lastDist = 0;
   private dirty = true;
-  private season = { day: 0, fall: 0, bare: 0, spring: 0, blossom: 0 };
-  private mapId: string;
+  private season = { day: -1, fall: 0, bare: 0, spring: 0, blossom: 0, dry: 0, dull: 0 };
+  private look = newSeasonLook();
+  private mapId: MapId;
 
   constructor(private terrain: Terrain, map: MapData, private q: Quality, renderer: THREE.WebGLRenderer) {
     this.mapId = map.def.id;
@@ -326,29 +329,21 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
   }
 
   // ------------------------------------------------------------------ seasons
-  /** 0 = Mar 20 (spring). Drives leaf color and leaf density. */
+  /**
+   * 0 = Mar 20 (spring). Drives leaf color and leaf density from the per-map
+   * season curves in seasons.ts. Colors are re-streamed only when the season
+   * has moved a little (they ride along with the instance streaming anyway).
+   */
   setDayOfYear(day: number) {
     const d = ((day % 365) + 365) % 365;
-    const sm = (a: number, b: number, v: number) => Math.min(1, Math.max(0, (v - a) / (b - a)));
-    let fall = 0, bare = 0, spring = 0, blossom = 0;
-    if (this.mapId === 'appalachia') {
-      spring = d < 60 ? 1 - sm(0, 60, d) : 0;
-      blossom = d < 35 ? 1 - sm(10, 35, d) : 0;
-      fall = d > 190 && d < 290 ? sm(190, 225, d) : 0;
-      // leaves drop Nov-Dec, bud out late Feb and are full by the end of March
-      bare = d >= 330 ? 1 - sm(330, 375, d) : d < 10 ? 1 - sm(330, 375, d + 365) : d >= 245 ? sm(245, 285, d) : 0;
-    } else if (this.mapId === 'florida') {
-      fall = d > 230 && d < 320 ? sm(230, 270, d) * 0.4 : 0;
-      bare = d > 280 ? sm(280, 320, d) * 0.3 : 0;
-    } else {
-      fall = d > 200 && d < 300 ? sm(200, 240, d) * 0.25 : 0;
-    }
-    const changed = Math.abs(fall - this.season.fall) + Math.abs(bare - this.season.bare) + Math.abs(spring - this.season.spring) > 0.03;
-    if (changed || this.season.day === 0) {
-      this.season = { day: d, fall, bare, spring, blossom };
+    const L = sampleSeason(this.mapId, d, this.look);
+    const s = this.season;
+    const moved = Math.abs(L.fall - s.fall) + Math.abs(L.bare - s.bare) + Math.abs(L.fresh - s.spring) + Math.abs(L.blossom - s.blossom) + Math.abs(L.dry - s.dry) + Math.abs(L.dull - s.dull);
+    if (moved > 0.03 || s.day < 0) {
+      s.day = d; s.fall = L.fall; s.bare = L.bare; s.spring = L.fresh; s.blossom = L.blossom; s.dry = L.dry; s.dull = L.dull;
       this.dirty = true;
     }
-    this.uniforms.uLeaf.value = 1 - bare * 0.92;
+    this.uniforms.uLeaf.value = 1 - L.bare * 0.92;
   }
 
   private tmpC = new THREE.Color();
@@ -358,12 +353,23 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
     const h = this.Hue[i];
     out.offsetHSL((h - 0.5) * 0.05, (h - 0.5) * 0.12, (h - 0.5) * 0.12);
     const s = this.season;
+    const t = this.tmpC;
     if (DECIDUOUS.has(k) || (this.mapId === 'norcal' && k === 'oak')) {
-      const t = this.tmpC;
       if (s.spring > 0) out.lerp(t.setHex(0x9cc860), s.spring * 0.6);
-      if (s.blossom > 0 && h > 0.93) out.lerp(t.setHex(h > 0.97 ? 0xf6d8e6 : 0xe9a6cc), s.blossom);
-      if (s.fall > 0) out.lerp(t.setHex(k === 'cypress' ? 0xa5602e : FALL[Math.floor(h * FALL.length) % FALL.length]), s.fall * (0.6 + h * 0.4));
-      if (s.bare > 0) out.lerp(t.setHex(0x6b5a48), s.bare * 0.8);
+      // redbud (magenta) and dogwood (white) bloom in the understory before full leaf-out
+      if (s.blossom > 0 && k === 'decid' && h > 0.84) out.lerp(t.setHex(h > 0.92 ? 0xc84f97 : 0xf2eee4), s.blossom);
+      if (s.fall > 0) {
+        // stands share a palette (maples, hickories, oaks); each tree turns on its own schedule
+        const stand = hash2(Math.floor(this.X[i] / 90), Math.floor(this.Z[i] / 90), 3);
+        const pick = (h * 7.13 + stand * 0.65) % 1;
+        const turn = Math.min(1, Math.max(0, (s.fall - h * 0.4) / 0.6));
+        out.lerp(t.setHex(k === 'cypress' ? 0xa5602e : FALL[Math.floor(pick * FALL.length) % FALL.length]), turn * (0.75 + h * 0.25));
+      }
+      if (s.dry > 0) out.lerp(t.setRGB(out.r * 1.3, out.g * 1.02, out.b * 0.5), s.dry * 0.6);
+      // bare: grey twigs; oaks hang on to brown leaves all winter
+      if (s.bare > 0) out.lerp(t.setHex(k === 'decid' && h < 0.2 ? 0x7a4a2a : 0x6b5a48), s.bare * 0.8);
+    } else if (s.dull > 0) {
+      out.multiplyScalar(1 - s.dull * 0.14);
     }
   }
 

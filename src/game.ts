@@ -58,6 +58,10 @@ export interface UiSink {
   ending(kind: 'sprawl' | 'bankrupt'): void;
 }
 
+export type UndoAction =
+  | { kind: 'build'; segIds: number[]; refund: number }
+  | { kind: 'upgrade'; prev: { id: number; type: RoadTypeId }[]; refund: number };
+
 export const LANDMARK_COST: Record<LandmarkId, number> = {
   slopCannon: 25000, slop69Field: 60000, pigCabanaResort: 45000, neuralFlyDatacenter: 80000, propaneParadise: 18000,
   fillErUpMegaStation: 30000, megachurch: 35000, waterTower: 8000,
@@ -96,6 +100,8 @@ export class Game {
   feed: FeedSink = { push: () => {} };
   ui: UiSink = { toast: () => {}, floatText: () => {}, select: () => {}, banner: () => {}, ending: () => {} };
   landmarkPending: LandmarkId | null = null;
+  readonly isTouch = IS_TOUCH;
+  private undoStack: UndoAction[] = [];
   private raf = 0;
   private ray = new THREE.Raycaster();
   private nightWas = false;
@@ -271,6 +277,31 @@ export class Game {
       const s = segs[0].samp.pts[0];
       if (Math.hypot(c.x - s.x, c.z - s.z) < 260 && Math.random() < 0.5) this.feed.push('communeProtest', { commune: c.name, road: segs[0].name });
     }
+  }
+
+  pushUndo(a: UndoAction) {
+    this.undoStack.push(a);
+    if (this.undoStack.length > 30) this.undoStack.shift();
+  }
+
+  get canUndo() {
+    return this.undoStack.length > 0;
+  }
+
+  undo() {
+    const a = this.undoStack.pop();
+    if (!a) return false;
+    if (a.kind === 'build') {
+      // splits may have renumbered segments; remove what's still there
+      for (const id of a.segIds) if (this.net.segs.has(id)) this.net.removeSeg(id);
+    } else {
+      for (const p of a.prev) if (this.net.segs.has(p.id)) this.net.upgrade(p.id, p.type);
+    }
+    this.sim.refund(a.refund);
+    this.tools.cancel();
+    this.audio.play('bulldoze', 0.6);
+    this.toast('Undone. The trees are still gone though.');
+    return true;
   }
 
   onLaneAdded(segs: RSeg[], to: RoadTypeId) {

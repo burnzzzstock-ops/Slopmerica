@@ -45,6 +45,7 @@ export class Hud implements UiSink {
   private inspector!: HTMLElement;
   private toasts!: HTMLElement;
   private tip!: HTMLElement;
+  private actions!: HTMLElement;
   private floats: { el: HTMLElement; p: THREE.Vector3; t: number }[] = [];
   private panel: PanelId = null;
   private domT = 0;
@@ -66,6 +67,11 @@ export class Hud implements UiSink {
     this.toasts = this.mk('div', 'toasts');
     this.tip = this.mk('div', 'cursor-tip');
     this.tip.hidden = true;
+    this.actions = this.mk('div', 'tool-actions');
+    this.actions.innerHTML = `<span class="ta-tip" id="ta-tip"></span><button id="ta-done" class="ta-done">✓ Done</button><button id="ta-undo">↶ Undo</button>`;
+    this.actions.hidden = true;
+    this.actions.querySelector('#ta-done')!.addEventListener('click', () => { game.tools.cancel(); game.audio.play('click', 0.4); });
+    this.actions.querySelector('#ta-undo')!.addEventListener('click', () => game.undo());
     game.feed = this.feed;
     game.ui = this;
     game.tools.onChange = () => this.syncToolbar();
@@ -86,7 +92,7 @@ export class Hud implements UiSink {
       <div class="ob-kicker">A MESSAGE FROM CHAD, ECONOMIC DEVELOPMENT</div>
       <h3>Welcome, Commissioner.</h3>
       <ol>
-        <li><b>Roads</b>: draw one off <em>Old County Road</em>. Click to start, click to end. Stroads are the American way.</li>
+        <li><b>Roads</b>: draw one off <em>Old County Road</em>. ${IS_TOUCH ? 'Drag your finger to draw. Two fingers move the map.' : 'Click to start, click to end.'} Stroads are the American way.</li>
         <li><b>Zoning</b>: paint green (homes), blue (shops) and yellow (industry) along it. Watch the R C I O bars.</li>
         <li><b>▶▶▶</b>: let the slop grow. Widen jammed roads with <b>One More Lane</b>. Hippies can be paid off or sued.</li>
       </ol>
@@ -220,7 +226,7 @@ export class Hud implements UiSink {
     const p = this.panel;
     if (p === 'roads') {
       this.sub.innerHTML = `
-        <div class="sp-title">Roads <small>Click start, click end, keep going. Right-click or Esc stops.</small></div>
+        <div class="sp-title">Roads <small>${IS_TOUCH ? 'Drag to draw. Two fingers move the map. Tap Done to stop.' : 'Click start, click end, keep going. Right-click or Esc stops.'}</small></div>
         <div class="sp-row modes">${(['straight', 'curve', 'freeform'] as const).map((m) => `<button class="chip ${t.roadMode === m ? 'on' : ''}" data-mode="${m}">${m === 'straight' ? '📏 Straight' : m === 'curve' ? '↪️ Curved' : '〰️ Freeform'}</button>`).join('')}</div>
         <div class="sp-grid">${ROAD_ORDER.map((id) => {
           const r = ROAD_TYPES[id];
@@ -340,6 +346,7 @@ export class Hud implements UiSink {
     else if (e.key.toLowerCase() === 'u') this.onTool('upgrade');
     else if (e.key.toLowerCase() === 'z') this.onTool('zones');
     else if (e.key === 'Escape') { this.openPanel(null); this.game.tools.set('inspect'); this.select(null); }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); this.game.undo(); }
     this.refreshTop();
   }
 
@@ -497,6 +504,17 @@ export class Hud implements UiSink {
       if (this.game.selection && (this.game.selection.kind === 'car' || this.game.selection.kind === 'building')) this.renderInspector();
     }
     const tip = this.game.tools.tip;
+    const t = this.game.tools;
+    const showActions = t.active === 'road' || t.active === 'upgrade' || (IS_TOUCH && t.active === 'landmark');
+    this.actions.hidden = !showActions;
+    if (showActions) {
+      const tipEl = this.actions.querySelector('#ta-tip') as HTMLElement;
+      tipEl.textContent = IS_TOUCH ? tip?.text ?? '' : '';
+      tipEl.classList.toggle('bad', !!tip?.bad);
+      tipEl.hidden = !IS_TOUCH || !tip;
+      (this.actions.querySelector('#ta-done') as HTMLElement).hidden = !t.drawing;
+      (this.actions.querySelector('#ta-undo') as HTMLButtonElement).disabled = !this.game.canUndo;
+    }
     if (tip && !IS_TOUCH) {
       this.tip.hidden = false;
       this.tip.textContent = tip.text;

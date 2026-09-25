@@ -9,6 +9,8 @@ import type { Terrain } from '../world/terrain';
 export interface PointerHandlers {
   /** true if the active tool uses one-finger/left drags (zone brush etc.) */
   toolCapturesDrag(): boolean;
+  /** screen px to lift the touch point above the finger (so it isn't hidden) */
+  touchLift?(): number;
   down(p: THREE.Vector3 | null, e: PointerEvent): void;
   move(p: THREE.Vector3 | null, e: PointerEvent, dragging: boolean): void;
   up(p: THREE.Vector3 | null, e: PointerEvent, wasDrag: boolean): void;
@@ -110,7 +112,7 @@ export class RTSCamera {
     if (e.button === 0) {
       const touchPans = this.isTouch(e) && !this.handlers.toolCapturesDrag();
       this.mode = touchPans ? 'pan1' : 'tool';
-      if (this.mode === 'tool') this.handlers.down(this.groundAt(e.clientX, e.clientY), e);
+      if (this.mode === 'tool') this.handlers.down(this.groundAt(e.clientX, e.clientY - this.lift(e)), e);
     }
   }
 
@@ -135,8 +137,8 @@ export class RTSCamera {
     } else if (this.mode === 'pan1') {
       this.panScreen(dx, dy);
     } else if (this.mode === 'tool') {
-      this.hover = this.groundAt(e.clientX, e.clientY);
-      this.handlers.move(this.hover, e, true);
+      this.hover = this.groundAt(e.clientX, e.clientY - this.lift(e));
+      this.handlers.move(this.hover, e, this.moved);
     } else if (this.mode === 'multi' && this.pointers.size >= 2) {
       const [a, b] = [...this.pointers.values()];
       const d = Math.hypot(a.x - b.x, a.y - b.y);
@@ -169,7 +171,7 @@ export class RTSCamera {
     this.pointers.delete(e.pointerId);
     if (this.mode === 'tool') {
       if (cancelled) this.handlers.cancel();
-      else this.handlers.up(this.groundAt(e.clientX, e.clientY), e, this.moved);
+      else this.handlers.up(this.groundAt(e.clientX, e.clientY - this.lift(e)), e, this.moved);
     } else if (this.mode === 'pan1' && !this.moved && !cancelled) {
       // a tap without a drag acts as a click
       const p = this.groundAt(e.clientX, e.clientY);
@@ -181,6 +183,10 @@ export class RTSCamera {
       this.mode = 'pan1';
       this.moved = true;
     }
+  }
+
+  private lift(e: PointerEvent) {
+    return this.isTouch(e) ? (this.handlers.touchLift?.() ?? 0) : 0;
   }
 
   private minPitch() {

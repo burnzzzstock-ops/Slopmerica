@@ -75,8 +75,22 @@ export class Tools implements PointerHandlers {
   }
 
   toolCapturesDrag(): boolean {
-    return this.active === 'zone' || this.active === 'dezone' || this.active === 'bulldoze';
+    return this.active === 'zone' || this.active === 'dezone' || this.active === 'bulldoze' || this.active === 'road' || this.active === 'landmark';
   }
+
+  touchLift(): number {
+    return this.active === 'road' || this.active === 'landmark' ? 64 : 0;
+  }
+
+  /** Is a road stroke in progress? (for the touch Done button) */
+  get drawing() {
+    return this.active === 'road' && !!this.start;
+  }
+
+  private snapR() {
+    return Math.max(this.game.isTouch ? 16 : 10, this.game.rts.distance * (this.game.isTouch ? 0.03 : 0.015));
+  }
+  private startedThisTouch = false;
 
   cancel() {
     this.start = null;
@@ -92,6 +106,17 @@ export class Tools implements PointerHandlers {
   down(p: THREE.Vector3 | null, e: PointerEvent) {
     if (!p) return;
     if (e.button === 2) { this.cancel(); return; }
+    this.hover = p;
+    if (this.active === 'road' && e.pointerType !== 'mouse') {
+      this.startedThisTouch = false;
+      if (!this.start) {
+        this.start = this.game.net.snap(p.x, p.z, this.snapR());
+        this.lastDir = null;
+        this.startedThisTouch = true;
+        this.game.audio.play('click');
+      }
+      return;
+    }
     switch (this.active) {
       case 'zone':
       case 'dezone':
@@ -120,7 +145,15 @@ export class Tools implements PointerHandlers {
     if (e.button === 2) return;
     switch (this.active) {
       case 'road':
-        if (!wasDrag || e.pointerType !== 'mouse') this.roadClick(p);
+        if (e.pointerType === 'mouse') {
+          if (!wasDrag) this.roadClick(p);
+        } else if (this.startedThisTouch && !wasDrag) {
+          // tapped the start point: wait for the next drag or tap
+        } else if (this.roadMode === 'curve' && !this.control) {
+          this.control = { x: p.x, z: p.z };
+          this.game.audio.play('click');
+        } else this.roadClick(p);
+        this.startedThisTouch = false;
         break;
       case 'upgrade':
         if (!wasDrag) this.upgradeAt(p, e.shiftKey);
@@ -154,7 +187,7 @@ export class Tools implements PointerHandlers {
   }
 
   private snapEnd(p: THREE.Vector3): Snap {
-    let s = this.game.net.snap(p.x, p.z, 10);
+    let s = this.game.net.snap(p.x, p.z, this.snapR());
     // angle snapping for straight roads (15° steps) when free
     if (s.kind === 'free' && this.start && this.roadMode === 'straight') {
       const a = { x: this.start.x, z: this.start.z };
@@ -174,7 +207,7 @@ export class Tools implements PointerHandlers {
   private roadClick(p: THREE.Vector3) {
     const net = this.game.net;
     if (!this.start) {
-      this.start = net.snap(p.x, p.z, 10);
+      this.start = net.snap(p.x, p.z, this.snapR());
       this.lastDir = null;
       this.game.audio.play('click');
       return;
@@ -199,6 +232,7 @@ export class Tools implements PointerHandlers {
       if (plan.grant > 0) this.game.sim.earn(plan.grant, 'grants');
       if (plan.grant > 0) this.game.floatText(`+$${plan.grant.toLocaleString()} Federal Slop Grant`, p, '#9dff3c');
       this.game.onRoadBuilt(segs, plan);
+      this.game.pushUndo({ kind: 'build', segIds: segs.map((x) => x.id), refund: plan.cost - plan.grant });
       // continue drawing from the end like Skylines
       const last = segs[segs.length - 1];
       const endNode = net.nodes.get(last.b)!;
@@ -231,7 +265,9 @@ export class Tools implements PointerHandlers {
       this.game.audio.play('error');
       return;
     }
+    const prev = segs.map((s) => ({ id: s.id, type: s.type }));
     for (const s of segs) net.upgrade(s.id, next);
+    this.game.pushUndo({ kind: 'upgrade', prev, refund: Math.round(cost - grant) });
     this.game.sim.spend(Math.round(cost), 'ONE MORE LANE');
     this.game.sim.earn(Math.round(grant), 'grants');
     if (grant > 0) this.game.floatText(`+$${Math.round(grant).toLocaleString()} Federal Slop Grant`, p, '#9dff3c');
@@ -261,7 +297,7 @@ export class Tools implements PointerHandlers {
     this.brushRing.visible = false;
     if (!hov) return;
     if (this.active === 'road') {
-      const s = this.start ? this.snapEnd(hov) : net.snap(hov.x, hov.z, 10);
+      const s = this.start ? this.snapEnd(hov) : net.snap(hov.x, hov.z, this.snapR());
       this.marker.visible = true;
       this.marker.position.set(s.x, this.game.terrain.h(s.x, s.z) + 0.6, s.z);
       (this.marker.material as THREE.MeshBasicMaterial).color.set(s.kind === 'free' ? 0xffffff : 0x9dff3c);
@@ -282,7 +318,7 @@ export class Tools implements PointerHandlers {
         }
       } else {
         this.preview.visible = false;
-        this.tip = { text: `${ROAD_TYPES[this.roadType].name}: click to start` };
+        this.tip = { text: this.game.isTouch ? `${ROAD_TYPES[this.roadType].name}: drag from where the road starts · two fingers move the map` : `${ROAD_TYPES[this.roadType].name}: click to start` };
       }
     } else if (this.active === 'upgrade' || this.active === 'bulldoze') {
       const pick = net.pickSeg(hov.x, hov.z, this.active === 'bulldoze' ? 1 : 3);

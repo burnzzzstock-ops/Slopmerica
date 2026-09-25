@@ -1192,7 +1192,14 @@ a {
   }
   .subpanel {
     bottom: calc(74px + var(--safe-b));
-    max-height: 42vh;
+    max-height: 34vh;
+    padding: 8px;
+  }
+  .sp-title small {
+    display: none;
+  }
+  .card {
+    flex-basis: 118px;
   }
   .xfeed {
     left: 6px;
@@ -1277,4 +1284,52 @@ a {
   background: var(--lime);
   color: #111;
   font-weight: 900;
+}
+
+.tool-actions {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  margin-inline: auto;
+  width: max-content;
+  max-width: calc(100vw - 16px);
+  top: calc(78px + var(--safe-t));
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  backdrop-filter: blur(8px);
+}
+.tool-actions button {
+  border: 0;
+  border-radius: 9px;
+  padding: 9px 14px;
+  background: #2a2640;
+  color: var(--ink);
+  font-weight: 900;
+}
+.tool-actions button:disabled {
+  opacity: 0.4;
+}
+.tool-actions .ta-done {
+  background: var(--lime);
+  color: #111;
+}
+.ta-tip {
+  font-weight: 800;
+  font-size: 13px;
+  padding: 0 6px;
+  max-width: 60vw;
+  white-space: normal;
+}
+.ta-tip.bad {
+  color: #ff8a80;
+}
+@media (max-width: 760px) {
+  .tool-actions {
+    top: calc(100px + var(--safe-t));
+  }
 }

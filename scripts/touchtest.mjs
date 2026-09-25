@@ -21,9 +21,16 @@ await page.waitForTimeout(300);
 await page.screenshot({ path: 'shots/touch-drag.png' });
 await touch('touchEnd', 0, 0);
 await page.waitForTimeout(600);
-console.log('segs after drag', await segs(), 'drawing', await page.evaluate(() => window.__game.tools.drawing));
+console.log('segs after drag (planned, not built)', await segs(), 'pending', await page.evaluate(() => window.__game.tools.pending));
 await page.screenshot({ path: 'shots/touch-after.png' });
-await page.tap('#ta-done');
+await page.tap('#ta-build');
+await page.waitForTimeout(600);
+console.log('segs after Build', await segs(), 'drawing', await page.evaluate(() => window.__game.tools.drawing));
+// a stray tap far from the road's end starts a new road instead of building one
+await touch('touchStart', 130, 200); await touch('touchEnd', 0, 0);
+await page.waitForTimeout(600);
+console.log('segs after stray tap', await segs(), 'pending', await page.evaluate(() => window.__game.tools.pending), 'drawing', await page.evaluate(() => window.__game.tools.drawing));
+await page.tap('#ta-done'); // Stop
 await page.waitForTimeout(200);
 console.log('drawing after done', await page.evaluate(() => window.__game.tools.drawing));
 await page.tap('#ta-undo');
@@ -33,6 +40,8 @@ console.log('segs after undo', await segs());
 await touch('touchStart', 120, 380);
 for (let i = 1; i <= 10; i++) { await touch('touchMove', 120 + i * 18, 380 - i * 10); await page.waitForTimeout(40); }
 await touch('touchEnd', 0, 0);
+await page.waitForTimeout(600);
+await page.tap('#ta-build');
 await page.waitForTimeout(600);
 console.log('drawing again', await page.evaluate(() => window.__game.tools.drawing), 'segs', await segs());
 // Software GL here delivers CDP touches seconds apart (input waits for slow

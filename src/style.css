@@ -1332,9 +1332,10 @@ a {
 .tool-actions button:disabled {
   opacity: 0.4;
 }
-.tool-actions .ta-done {
+.tool-actions .ta-build {
   background: var(--lime);
   color: #111;
+  padding: 11px 16px;
 }
 .ta-tip {
   font-weight: 800;

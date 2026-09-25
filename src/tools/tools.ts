@@ -107,6 +107,25 @@ export class Tools implements PointerHandlers {
     return this.active === 'road' && !!this.start;
   }
 
+  // Touch roads are planned first and built on confirm (no accidental roads).
+  private pendingEnd: THREE.Vector3 | null = null;
+  private touchDown = false;
+  /** net cost of the planned touch road, or null when nothing is waiting */
+  pendingCost: number | null = null;
+  /** A planned (touch) road is waiting for the Build button. */
+  get pending() {
+    return this.active === 'road' && !!this.start && !!this.pendingEnd;
+  }
+  /** Build the planned touch road (the action-bar Build button). */
+  buildPending() {
+    if (!this.pendingEnd || !this.start) return;
+    const p = this.pendingEnd;
+    this.pendingEnd = null;
+    this.pendingCost = null;
+    this.roadClick(p);
+    this.onChange?.();
+  }
+
   private snapR() {
     return Math.max(this.game.isTouch ? 16 : 10, this.game.rts.distance * (this.game.isTouch ? 0.03 : 0.015));
   }
@@ -114,6 +133,8 @@ export class Tools implements PointerHandlers {
 
   cancel() {
     this.ext?.cancel?.(this.game);
+    this.pendingEnd = null;
+    this.pendingCost = null;
     this.start = null;
     this.control = null;
     this.lastDir = null;
@@ -131,9 +152,14 @@ export class Tools implements PointerHandlers {
     if (this.active === 'ext') { this.ext?.down?.(this.game, p, e); return; }
     if (this.active === 'road' && e.pointerType !== 'mouse') {
       this.startedThisTouch = false;
-      if (!this.start) {
+      this.touchDown = true;
+      // After a build the road stays chained to its end, but only a touch near
+      // that end continues it: touching anywhere else starts a fresh road there.
+      const far = !!this.start && !this.pendingEnd && Math.hypot(p.x - this.start.x, p.z - this.start.z) > Math.max(this.snapR() * 2.5, 30);
+      if (!this.start || far) {
         this.start = this.game.net.snap(p.x, p.z, this.snapR());
         this.lastDir = null;
+        this.control = null;
         this.startedThisTouch = true;
         this.game.audio.play('click');
       }
@@ -165,6 +191,7 @@ export class Tools implements PointerHandlers {
   up(p: THREE.Vector3 | null, e: PointerEvent, wasDrag: boolean) {
     const wasPainting = this.painting;
     this.painting = false;
+    if (e.pointerType !== 'mouse') this.touchDown = false;
     if (this.active === 'ext') { if (e.button !== 2) this.ext?.up?.(this.game, p, e, wasDrag); return; }
     if (!p) return;
     if (e.button === 2) return;
@@ -181,8 +208,13 @@ export class Tools implements PointerHandlers {
         } else if (this.roadMode === 'curve' && !this.control) {
           this.control = { x: p.x, z: p.z };
           this.game.audio.play('click');
-        } else this.roadClick(p);
+        } else {
+          // plan it; the Build button makes it real (touch again to re-aim)
+          this.pendingEnd = p.clone();
+          this.game.audio.play('click', 0.5);
+        }
         this.startedThisTouch = false;
+        this.onChange?.();
         break;
       case 'upgrade':
         if (!wasDrag) this.upgradeAt(p, e.shiftKey);
@@ -344,7 +376,8 @@ export class Tools implements PointerHandlers {
     if (this.active === 'ext') { this.tip = this.ext?.tip?.(this.game) ?? null; return; }
     if (!hov) return;
     if (this.active === 'road') {
-      const s = this.start ? this.snapEnd(hov) : net.snap(hov.x, hov.z, this.snapR());
+      const aim = this.pendingEnd && !this.touchDown ? this.pendingEnd : hov;
+      const s = this.start ? this.snapEnd(aim) : net.snap(aim.x, aim.z, this.snapR());
       this.marker.visible = true;
       this.marker.position.set(s.x, this.game.terrain.h(s.x, s.z) + 0.6, s.z);
       (this.marker.material as THREE.MeshBasicMaterial).color.set(s.kind === 'free' ? 0xffffff : 0x9dff3c);
@@ -359,8 +392,9 @@ export class Tools implements PointerHandlers {
           this.preview.visible = true;
           this.previewMat.color.set(plan.ok ? 0x7fd8ff : 0xff4d4d);
           const net$ = plan.cost - plan.grant;
+          this.pendingCost = this.pendingEnd && plan.ok ? net$ : null;
           this.tip = plan.ok
-            ? { text: `${Math.round(plan.length)} m · $${net$.toLocaleString()}${plan.grant ? ` (feds pay $${plan.grant.toLocaleString()})` : ''}${plan.bridgeLen > 5 ? ' · bridge' : ''}` }
+            ? { text: `${Math.round(plan.length)} m · $${net$.toLocaleString()}${plan.grant ? ` (feds pay $${plan.grant.toLocaleString()})` : ''}${plan.bridgeLen > 5 ? ' · bridge' : ''}${this.pendingEnd && !this.touchDown ? ' · tap Build, or drag to re-aim' : ''}` }
             : { text: plan.reason ?? 'Nope', bad: true };
         }
       } else {

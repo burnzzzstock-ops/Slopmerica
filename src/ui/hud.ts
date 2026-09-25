@@ -75,9 +75,10 @@ export class Hud implements UiSink {
     this.actions = this.mk('div', 'tool-actions');
     this.perfEl = this.mk('div', 'perf-overlay');
     this.perfEl.hidden = true;
-    this.actions.innerHTML = `<span class="ta-tip" id="ta-tip"></span><button id="ta-done" class="ta-done">✓ Done</button><button id="ta-undo">↶ Undo</button>`;
+    this.actions.innerHTML = `<span class="ta-tip" id="ta-tip"></span><button id="ta-build" class="ta-build">🔨 Build</button><button id="ta-done" class="ta-done">✕ Stop</button><button id="ta-undo">↶ Undo</button>`;
     this.actions.hidden = true;
     this.actions.querySelector('#ta-done')!.addEventListener('click', () => { game.tools.cancel(); game.audio.play('click', 0.4); });
+    this.actions.querySelector('#ta-build')!.addEventListener('click', () => game.tools.buildPending());
     this.actions.querySelector('#ta-undo')!.addEventListener('click', () => game.undo());
     game.feed = this.feed;
     game.ui = this;
@@ -253,7 +254,7 @@ export class Hud implements UiSink {
     }
     if (p === 'roads') {
       this.sub.innerHTML = `
-        <div class="sp-title">Roads <small>${IS_TOUCH ? 'Drag to draw. Two fingers move the map. Double-tap or Done to stop.' : 'Click start, click end, keep going. Right-click, double-click or Esc stops.'}</small></div>
+        <div class="sp-title">Roads <small>${IS_TOUCH ? 'Drag to plan a road, then tap Build. Drag from its end to keep going. Two fingers move the map. Double-tap or Stop to finish.' : 'Click start, click end, keep going. Right-click, double-click or Esc stops.'}</small></div>
         <div class="sp-row modes">${(['straight', 'curve', 'freeform'] as const).map((m) => `<button class="chip ${t.roadMode === m ? 'on' : ''}" data-mode="${m}">${m === 'straight' ? '📏 Straight' : m === 'curve' ? '↪️ Curved' : '〰️ Freeform'}</button>`).join('')}</div>
         <div class="sp-grid">${ROAD_ORDER.map((id) => {
           const r = ROAD_TYPES[id];
@@ -588,6 +589,11 @@ export class Hud implements UiSink {
       tipEl.classList.toggle('bad', !!tip?.bad);
       tipEl.hidden = !IS_TOUCH || !tip;
       (this.actions.querySelector('#ta-done') as HTMLElement).hidden = !t.drawing;
+      const build = this.actions.querySelector('#ta-build') as HTMLButtonElement;
+      build.hidden = !t.pending;
+      build.disabled = t.pendingCost === null;
+      const label = t.pendingCost !== null ? `🔨 Build $${t.pendingCost.toLocaleString()}` : '🔨 Build';
+      if (build.textContent !== label) build.textContent = label;
       (this.actions.querySelector('#ta-undo') as HTMLButtonElement).disabled = !this.game.canUndo;
     }
     if (tip && !IS_TOUCH) {

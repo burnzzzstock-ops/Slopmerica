@@ -60,6 +60,21 @@ export interface Car {
   local: boolean;
   /** seconds spent waiting to merge from a driveway */
   wait?: number;
+  /** set when the trip reached its destination */
+  arrived?: boolean;
+  /** called once when the car leaves the simulation (arrived, wrecked, or its road was removed) */
+  onDone?: (c: Car, arrived: boolean) => void;
+}
+
+/** Endpoint of a dispatched trip: a building, or 'edge' (an outside connection). */
+export type TripEnd = Bld | 'edge';
+
+export interface DispatchOpts {
+  /** never drunk / reckless / smoking (service vehicles, buses) */
+  sober?: boolean;
+  /** counts as a town car (true) or an out-of-towner (false); default true */
+  local?: boolean;
+  onDone?: (c: Car, arrived: boolean) => void;
 }
 
 const smooth01 = (t: number) => { const u = clamp(t, 0, 1); return u * u * (3 - 2 * u); };
@@ -325,7 +340,7 @@ export class Traffic {
   }
 
   spawnTrip(hour: number): boolean {
-    const list = [...this.b.list.values()].filter((b) => b.state === 'active' && b.zone !== 'landmark');
+    const list = [...this.b.list.values()].filter((b) => b.state === 'active' && b.zone !== 'landmark' && b.zone !== 'service');
     const edges = this.edgeAnchors();
     if (list.length < 2 && !edges.length) return false;
     const res = list.filter((b) => b.zone === 'resLow' || b.zone === 'resHigh');
@@ -396,8 +411,32 @@ export class Traffic {
       d = this.anchor(dB);
     }
     if (!o || !d) return false;
+    return !!this.launch(o, d, oB, dB, kind, purpose, dest, local, hour);
+  }
+
+  /**
+   * Send a specific vehicle between two buildings (or an outside connection).
+   * Used by service systems (garbage trucks, fire trucks, buses, freight).
+   * Returns null when there is no route or the vehicle cap is reached.
+   */
+  dispatch(kind: VehicleKind, from: TripEnd, to: TripEnd, purpose: string, dest: string, hour: number, opts: DispatchOpts = {}): Car | null {
+    const edges = from === 'edge' || to === 'edge' ? this.edgeAnchors() : [];
+    const end = (e: TripEnd) => e === 'edge' ? (edges.length ? edges[Math.floor(Math.random() * edges.length)] : null) : this.anchor(e);
+    const o = end(from), d = end(to);
+    if (!o || !d) return null;
+    const car = this.launch(o, d, from === 'edge' ? null : from, to === 'edge' ? null : to, kind, purpose, dest, opts.local ?? true, hour, opts.sober);
+    if (car && opts.onDone) car.onDone = opts.onDone;
+    return car;
+  }
+
+  /** Outside connections (road ends at the map edge). */
+  outsideConnections(): number {
+    return this.edgeAnchors().length;
+  }
+
+  private launch(o: { seg: RSeg; s: number }, d: { seg: RSeg; s: number }, oB: Bld | null, dB: Bld | null, kind: VehicleKind, purpose: string, dest: string, local: boolean, hour: number, sober = false): Car | null {
     const rt = this.route(o.seg, o.s, d.seg, d.s);
-    if (!rt) return false;
+    if (!rt) return null;
     {
       const st0 = rt.steps[0];
       const seg0 = this.net.segs.get(st0.seg)!;
@@ -408,18 +447,18 @@ export class Traffic {
         if (s < 2 || s > seg0.length - 2 || (rt.steps.length === 1 && s >= rt.endS)) continue;
         if (!busyAt(s)) { rt.startS = s; ok = true; break; }
       }
-      if (!ok && !oB) return false;
+      if (!ok && !oB) return null;
     }
     const spec = VEHICLE_SPECS[kind];
     const h = this.renderer.add(kind, PAINT[Math.floor(Math.random() * PAINT.length)]);
-    if (h < 0) return false;
+    if (h < 0) return null;
     const night = hour > 21 || hour < 4;
-    const drunk = Math.random() < (night ? 0.14 : 0.04);
+    const drunk = !sober && Math.random() < (night ? 0.14 : 0.04);
     const firstSeg = this.net.segs.get(rt.steps[0].seg)!;
     const car: Car = {
       id: this.nextId++, h, kind, path: rt.steps, pi: 0, s: rt.startS, startS: rt.startS, endS: rt.endS,
       lane: Math.floor(Math.random() * ROAD_TYPES[firstSeg.type].lanesPerDir), v: 4, v0mul: (0.9 + Math.random() * 0.25) * (drunk ? 1.25 : 1),
-      len: spec.length, drunk, reckless: drunk || Math.random() < 0.08, smoker: Math.random() < 0.2, redsRun: 0, wob: Math.random() * 10,
+      len: spec.length, drunk, reckless: drunk || (!sober && Math.random() < 0.08), smoker: !sober && Math.random() < 0.2, redsRun: 0, wob: Math.random() * 10,
       junction: null, crashed: 0, crashYaw: 0, crashRoll: 0, x: 0, y: 0, z: 0, yaw: 0, purpose, dest,
       driver: Math.floor(Math.random() * ARCHETYPES.length), smokeT: Math.random() * 2, bac: drunk ? 0.09 + Math.random() * 0.2 : 0,
       dep: 0, arr: -1, lotO: null, lotD: null, local,
@@ -438,7 +477,7 @@ export class Traffic {
     }
     this.cars.push(car);
     this.totalTrips++;
-    return true;
+    return car;
   }
 
   private dropCarsOn(segId: number) {
@@ -568,7 +607,7 @@ export class Traffic {
         if (c.s >= exitS) {
           if (last) {
             if (c.lotD) { c.arr = 0; c.v = 0; } // pull into the lot, then park
-            else c.crashed = -1; // off the map via the highway
+            else { c.arrived = true; c.crashed = -1; } // off the map via the highway
             continue;
           }
           this.enterJunction(c, seg, st);
@@ -619,7 +658,7 @@ export class Traffic {
       if (c.crashed !== 0) continue;
       if (c.arr >= 0) {
         c.arr += dt;
-        if (c.arr >= ARR_T) c.crashed = -1; // parked: off the road
+        if (c.arr >= ARR_T) { c.arrived = true; c.crashed = -1; } // parked: off the road
       } else if (c.dep > 0) {
         const nd = c.dep - dt;
         if (nd <= 0) {
@@ -644,6 +683,7 @@ export class Traffic {
       const c = this.cars[i];
       if (c.crashed === -1 || (c.crashed > 0 && c.crashed <= 0.0001)) {
         this.renderer.remove(c.h);
+        c.onDone?.(c, !!c.arrived);
         this.cars[i] = this.cars[this.cars.length - 1];
         this.cars.pop();
       }

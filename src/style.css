@@ -978,6 +978,24 @@ a {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.in-bind {
+  display: flex;
+  flex-direction: column;
+  margin: 2px 0 8px;
+  padding: 6px 8px;
+  border-left: 3px solid var(--ind);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.in-bind span {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.in-bind b {
+  font-size: 13px;
+}
 .in-prog {
   height: 6px;
   border-radius: 3px;

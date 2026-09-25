@@ -15,6 +15,7 @@ import { MERCH_URL, brandById } from '../art/brands';
 import { IS_TOUCH } from '../config';
 import { QUALITY, type Quality } from '../config';
 import { SPEEDS } from '../sim/sim';
+import { isZoned } from '../sim/buildings';
 import type { ViewMode } from '../render/overlays';
 import { ARCHETYPES } from '../agents/people';
 import { saveGame } from '../sim/save';
@@ -162,10 +163,14 @@ export class Hud implements UiSink {
     netEl.textContent = s.money === Infinity ? 'sandbox' : `${net >= 0 ? '+' : ''}${money(net)}/wk`;
     netEl.className = net >= 0 ? 'pos' : 'neg';
     const d = s.demand;
-    for (const [k, v] of Object.entries(d)) {
+    const names = { res: 'Residential', com: 'Commercial', ind: 'Industrial', off: 'Office' } as const;
+    for (const [k, v] of Object.entries(d) as [keyof typeof names, number][]) {
       const el = $('d-' + k);
       el.style.height = `${Math.max(2, Math.min(100, Math.max(0, v)))}%`;
       el.classList.toggle('neg', v < 0);
+      const bar = el.parentElement as HTMLElement;
+      const tip = `${names[k]} demand ${Math.round(v)}\n• ${s.demandWhy[k].join('\n• ')}`;
+      if (bar.title !== tip) bar.title = tip;
     }
     $('m-nature').style.width = `${Math.round(s.naturePct * 100)}%`;
     $('m-nature-t').textContent = `${Math.round(s.naturePct * 100)}%`;
@@ -411,20 +416,31 @@ export class Hud implements UiSink {
     if (!sel) { this.inspector.hidden = true; return; }
     const g = this.game;
     let html = '';
-    if (sel.kind === 'building') {
+    if (sel.kind === 'building' && !isZoned(sel.b)) {
+      const b = sel.b;
+      const svc = b.zone === 'service';
+      html = `<div class="in-kicker" style="--zc:${svc ? 'var(--off)' : '#ff3ea5'}">${svc ? 'CITY SERVICE' : 'LANDMARK'}</div>
+        <h3>${esc(b.label)}</h3>
+        <div class="in-stats">
+          <div><span>Status</span><b>${b.state === 'building' ? `🚧 ${Math.round(b.progress * 100)}%` : 'Open'}</b></div>
+        </div>
+        <div class="in-actions"><button class="danger" id="in-bulldoze">💣 Bulldoze</button></div>`;
+    } else if (sel.kind === 'building' && isZoned(sel.b)) {
       const b = sel.b;
       const brand = brandById(b.brand);
       const isRes = b.zone === 'resLow' || b.zone === 'resHigh';
-      const max = b.zone === 'landmark' ? 1 : MAX_LEVEL[b.zone];
-      html = `<div class="in-kicker" style="--zc:#${b.zone === 'landmark' ? 'ff3ea5' : ZONE_COLORS[b.zone].toString(16).padStart(6, '0')}">${b.zone === 'landmark' ? 'LANDMARK' : esc(ZONE_LABEL[b.zone])}</div>
+      const max = MAX_LEVEL[b.zone];
+      const bind = g.sim.bindingConstraint(b);
+      html = `<div class="in-kicker" style="--zc:#${ZONE_COLORS[b.zone].toString(16).padStart(6, '0')}">${esc(ZONE_LABEL[b.zone])}${b.abandoned !== undefined ? ' · ABANDONED' : ''}</div>
         <h3>${esc(b.label)}</h3>
         ${brand?.blurb ? `<p class="in-blurb">${esc(brand.blurb)}</p>` : ''}
         <div class="in-stats">
           <div><span>Level</span><b>${'★'.repeat(b.level)}${'☆'.repeat(Math.max(0, max - b.level))}</b></div>
           <div><span>${isRes ? 'Residents' : 'Workers'}</span><b>${b.occ}/${b.cap}</b></div>
           <div><span>Land value</span><b>${Math.round(b.lv)}</b></div>
-          <div><span>Status</span><b>${b.state === 'building' ? `🚧 ${Math.round(b.progress * 100)}%` : 'Open'}</b></div>
+          <div><span>Status</span><b>${b.state === 'building' ? `🚧 ${Math.round(b.progress * 100)}%` : b.abandoned !== undefined ? '🏚️ Abandoned' : 'Open'}</b></div>
         </div>
+        ${bind ? `<div class="in-bind"><span>Holding it back</span><b>${esc(bind)}</b></div>` : ''}
         ${b.level < max && b.state === 'active' ? `<div class="in-prog"><span style="width:${Math.round(b.levelProgress * 100)}%"></span></div><small>Leveling up with land value. Denser neighbors = more value.</small>` : ''}
         ${brand?.merch ? `<a class="in-merch" href="${MERCH_URL}" target="_blank" rel="noopener">Shop the real ${esc(brand.name)} at imaginesupply.co →</a>` : ''}
         <div class="in-actions"><button class="danger" id="in-bulldoze">💣 Bulldoze</button></div>`;
@@ -475,9 +491,11 @@ export class Hud implements UiSink {
         </div>
         <div class="in-actions">${t.next ? `<button id="in-lane">➕ ONE MORE LANE</button>` : '<button disabled>MAX LANES</button>'}<button class="danger" id="in-bulldoze">💣 Bulldoze</button></div>`;
     }
-    for (const f of EXT.inspector) {
-      const extra = f(sel, g);
-      if (extra) html += extra;
+    let extra = '';
+    for (const f of EXT.inspector) extra += f(sel, g) ?? '';
+    if (extra) {
+      const at = html.indexOf('<div class="in-actions">');
+      html = at >= 0 ? html.slice(0, at) + extra + html.slice(at) : html + extra;
     }
     this.inspector.innerHTML = `<button class="in-close" id="in-close" aria-label="Close">×</button>${html}`;
     this.inspector.querySelector('#in-close')?.addEventListener('click', () => g.select(null));

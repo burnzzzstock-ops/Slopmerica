@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SLOPMERICA · buildings gallery</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Bungee&family=Overpass:wght@400;600;800;900&family=Permanent+Marker&family=Titan+One&family=Yellowtail&display=swap" rel="stylesheet" />
+    <style>
+      html, body { margin: 0; height: 100%; background: #0e0f12; color: #eee; font: 13px/1.4 Overpass, sans-serif; overflow: hidden; }
+      #app { position: absolute; inset: 0; }
+      #hud { position: absolute; left: 10px; top: 10px; background: rgba(0,0,0,0.6); padding: 8px 10px; border-radius: 6px; max-width: 420px; z-index: 2; }
+      #hud button, #hud select { font: inherit; margin: 2px; background: #222; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 3px 7px; cursor: pointer; }
+      #hud button.on { background: #c6f432; color: #111; }
+      #info { position: absolute; right: 10px; bottom: 10px; background: rgba(0,0,0,0.6); padding: 6px 10px; border-radius: 6px; z-index: 2; white-space: pre; font-size: 12px; }
+      #atlasView { position: absolute; inset: 0; overflow: auto; display: none; background: #333; z-index: 1; }
+      #atlasView canvas { display: block; }
+      .lbl { position: absolute; color: #fff; font: 11px Overpass, sans-serif; background: rgba(0,0,0,0.55); padding: 1px 4px; border-radius: 3px; white-space: nowrap; pointer-events: none; transform: translate(-50%, 0); }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="atlasView"></div>
+    <div id="hud"></div>
+    <div id="info"></div>
+    <script type="module" src="/src/dev/buildings.ts"></script>
+  </body>
+</html>

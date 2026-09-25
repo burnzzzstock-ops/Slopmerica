@@ -260,7 +260,7 @@ diffuseColor.rgb *= 0.86 + dn*0.26;`,
       }
       if (mapId === 'florida' && z > 250 && h < 2.2) out.lerp(P.sand, 0.6 * smoothstep(2.2, 0.8, h));
       // rock on steep slopes
-      out.lerp(P.rock, smoothstep(0.45, 0.9, slope));
+      out.lerp(P.rock, smoothstep(0.7, 1.25, slope) * 0.85);
       // ground paint from development
       const p = this.paint[id];
       if (p === Paint.Dirt) out.lerp(tmpA.setHex(0x8a7355), 0.7);

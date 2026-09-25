@@ -183,18 +183,27 @@ float gPuddle;`,
   // wildflowers: a Golden Coast superbloom, phlox and daisies in the hollers,
   // tickseed in the Florida grass. Dots up close, a haze of color from afar.
   if (uFlowers > 0.003) {
-    float dens = uFlowers * smoothstep(0.55, 0.9, w.x) * smoothstep(0.3, 0.7, tn(vWPos.xz * 0.012 + 7.0)) * smoothstep(0.3, 1.2, vWPos.y);
+    float dens = uFlowers * smoothstep(0.55, 0.9, w.x) * smoothstep(0.3, 1.2, vWPos.y)
+               * smoothstep(0.32, 0.72, tn(vWPos.xz * 0.012 + 7.0) * 0.72 + tn(vWPos.xz * 0.061 + 2.0) * 0.28);
+    // each drift is mostly one flower, so from afar a field reads poppy-orange or
+    // lupine-purple instead of averaging out to brown
+    float fdrift = mix(0.1, 0.9, smoothstep(0.36, 0.64, tn(vWPos.xz * 0.021 + 3.0) * 0.8 + tn(vWPos.xz * 0.083 + 1.0) * 0.2));
+    vec3 fA, fB, fC;
+    if (uFlowerMap < 0.5) { fA = vec3(0.62, 0.3, 0.7); fB = vec3(0.95, 0.8, 0.12); fC = vec3(0.94, 0.92, 0.86); } // phlox, buttercups, daisies
+    else if (uFlowerMap < 1.5) { fA = vec3(1.0, 0.42, 0.02); fB = vec3(0.36, 0.26, 0.86); fC = vec3(0.95, 0.8, 0.1); } // poppies, lupine, goldfields
+    else { fA = vec3(0.95, 0.78, 0.1); fB = vec3(0.55, 0.3, 0.75); fC = fA; } // tickseed, blazing star
     vec2 fp = vWPos.xz / 1.1;
     vec2 fcell = floor(fp);
     float fh = th(fcell), fk = th(fcell + 17.3);
     vec2 fo = fract(fp) - 0.5 - (vec2(th(fcell + 3.1), th(fcell + 5.7)) - 0.5) * 0.5;
-    vec3 fcol = uFlowerMap < 0.5 ? (fk < 0.4 ? vec3(0.62, 0.3, 0.7) : fk < 0.75 ? vec3(0.92, 0.9, 0.84) : vec3(0.95, 0.75, 0.08))
-              : uFlowerMap < 1.5 ? (fk < 0.55 ? vec3(1.0, 0.4, 0.02) : fk < 0.85 ? vec3(0.36, 0.22, 0.78) : vec3(0.95, 0.8, 0.1))
-              : (fk < 0.6 ? vec3(0.95, 0.78, 0.1) : vec3(0.55, 0.3, 0.75));
+    vec3 fcol = fk > 0.9 ? fC : th(fcell + 9.1) < fdrift ? fB : fA;
+    vec3 ffarCol = mix(mix(fA, fB, fdrift), fC, 0.1);
     fcol *= fcol;
+    ffarCol *= ffarCol;
     float fdot = step(1.0 - dens * 0.85, fh) * smoothstep(0.42, 0.24, length(fo));
     float ffar = smoothstep(0.25, 0.9, fwidth(vWPos.x));
-    diffuseColor.rgb = mix(diffuseColor.rgb, fcol, mix(fdot, dens * 0.55, ffar));
+    float fmott = clamp(0.3 + 0.95 * tn(vWPos.xz * 0.11 + 5.0), 0.0, 1.0); // clumps, so far fields aren't flat paint
+    diffuseColor.rgb = mix(diffuseColor.rgb, mix(fcol, ffarCol, ffar), mix(fdot, dens * 0.42 * fmott, ffar));
   }
   // snow settles on flat-ish ground above the snow line, patchy at the edges
   vec3 wN = gWN;

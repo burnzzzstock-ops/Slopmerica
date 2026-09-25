@@ -8,7 +8,7 @@ import type { MapId } from '../world/maps';
 import type { Terrain } from '../world/terrain';
 import { Paint } from '../world/terrain';
 import type { Emitter } from '../contracts';
-import { buildingMaterial } from '../buildings/generator';
+import { kitMaterial } from '../buildings/kitGenerator';
 import { Kit, col } from '../buildings/kit';
 import { T } from '../buildings/atlas';
 import { buildCommune } from './communeBuilder';
@@ -105,14 +105,14 @@ export class Communes {
     };
     const L = buildCommune(c.name, c.r, c.members, rng.int(1, 1e9), ground, mapId, level,
       (lx, lz) => this.terrain.coverAt(c.x + lx, c.z + lz));
-    const mesh = new THREE.Mesh(L.geometry, buildingMaterial());
+    const mesh = new THREE.Mesh(L.geometry, kitMaterial());
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     c.group.add(mesh);
-    c.flameMesh = new THREE.Mesh(L.flameGeometry, buildingMaterial());
+    c.flameMesh = new THREE.Mesh(L.flameGeometry, kitMaterial());
     c.flameMesh.castShadow = false;
     c.group.add(c.flameMesh);
-    c.bulbMesh = new THREE.Mesh(L.bulbGeometry, buildingMaterial());
+    c.bulbMesh = new THREE.Mesh(L.bulbGeometry, kitMaterial());
     c.bulbMesh.castShadow = false;
     c.group.add(c.bulbMesh);
     c.emitters = L.emitters;
@@ -129,7 +129,7 @@ export class Communes {
     c.fire.position.set(L.fire[0], L.fire[1] + 0.8, L.fire[2]);
     c.group.add(c.fire);
     c.group.position.set(c.x, y0, c.z);
-    c.remains = new THREE.Mesh(this.remainsGeometry(L.fire[1] - 1.2), buildingMaterial());
+    c.remains = new THREE.Mesh(this.remainsGeometry(L.fire[1] - 1.2), kitMaterial());
     c.remains.position.set(c.x, y0, c.z);
     c.remains.receiveShadow = true;
   }

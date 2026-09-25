@@ -43,13 +43,13 @@ export class Overlays {
 
   /** Tint every building (null = no tint). For info views. */
   tintBuildings(colorFor: (b: import('../sim/buildings').Bld) => THREE.Color | null) {
-    const B = this.game.buildings, base = new THREE.Color();
-    for (const b of B.list.values()) if (b.inst >= 0) B.mesh.setColorAt(b.inst, colorFor(b) ?? B.baseTint(b, base));
+    const B = this.game.buildings;
+    for (const b of B.list.values()) B.setTint(b, colorFor(b));
   }
 
   resetBuildingColors() {
-    const B = this.game.buildings, base = new THREE.Color();
-    for (const b of B.list.values()) if (b.inst >= 0) B.mesh.setColorAt(b.inst, B.baseTint(b, base));
+    const B = this.game.buildings;
+    for (const b of B.list.values()) B.setTint(b, null);
   }
 
   update(dt: number) {
@@ -65,7 +65,7 @@ export class Overlays {
         if (b.inst < 0) continue;
         const v = b.lv / 100;
         c.copy(C_BAD).lerp(C_MID, Math.min(1, v * 2)).lerp(C_GOOD, Math.max(0, v * 2 - 1));
-        this.game.buildings.mesh.setColorAt(b.inst, c);
+        this.game.buildings.setTint(b, c);
       }
     }
   }

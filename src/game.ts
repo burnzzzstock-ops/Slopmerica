@@ -30,6 +30,7 @@ import { setBuildingNight, loadArt, landmarkFootprint } from './buildings/genera
 import { lineCubic, V2 } from './core/math';
 import { Overlays } from './render/overlays';
 import { buildingMaterial } from './buildings/generator';
+import { loadKitArt, setKitNight } from './buildings/kitGenerator';
 import { applySave, type SaveData } from './sim/save';
 
 export type GameMode = Mode;
@@ -226,7 +227,7 @@ export class Game {
 
   /** Art (fonts/atlases) must be ready before buildings spawn. */
   static async create(container: HTMLElement, opts: GameOptions) {
-    await loadArt();
+    await Promise.all([loadArt(), loadKitArt()]);
     return new Game(container, opts);
   }
 
@@ -712,6 +713,7 @@ export class Game {
     const n = this.env.night;
     this.env.lightPollution = Math.min(1, this.buildings.list.size / 900);
     setBuildingNight(n);
+    setKitNight(n);
     this.roads.setNight(n);
     this.zones.setNight(n);
     this.traffic.setNight(n);

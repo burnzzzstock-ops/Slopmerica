@@ -6,6 +6,7 @@ import type { ZoneType } from '../contracts';
 import { saveGame } from '../sim/save';
 import { EXT } from '../ext/registry';
 import { CUSTOM_BUILDINGS } from '../sim/buildings';
+import { kitMaterial } from '../buildings/kitGenerator';
 import * as THREE from 'three';
 import { buildingMaterial, generateBuilding, generateLandmark, landmarkFootprint } from '../buildings/generator';
 import type { LandmarkId } from '../contracts';
@@ -81,7 +82,7 @@ export function debugApi(g: Game) {
       const defs = [...CUSTOM_BUILDINGS.entries()];
       defs.forEach(([, def], i) => {
         const m = def.model();
-        const mesh = new THREE.Mesh(m.geometry, buildingMaterial());
+        const mesh = new THREE.Mesh(m.geometry, kitMaterial());
         const w = def.w * 8;
         const row = i < 9 ? 0 : 1;
         if (i === 9) cx = x;

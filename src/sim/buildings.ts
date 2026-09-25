@@ -6,7 +6,10 @@ import { CELL } from '../config';
 import { MAX_LEVEL, type BuildingModel, type LandmarkId, type ZoneType } from '../contracts';
 import { SpatialHash, V2 } from '../core/math';
 import { Rng } from '../core/rng';
-import { buildingMaterial, generateBuilding, generateConstruction, generateLandmark, landmarkFootprint, setBuildingRegion } from '../buildings/generator';
+import { buildingMaterial, generateBuilding, generateLandmark, landmarkFootprint, setArtMap, VARIANTS } from '../buildings/generator';
+import { generateConstruction, kitMaterial } from '../buildings/kitGenerator';
+import { applyAtmosphere } from '../world/seasons';
+import type { MapId } from '../world/maps';
 import { BRANDS, type Brand } from '../art/brands';
 import type { Terrain } from '../world/terrain';
 import { Paint } from '../world/terrain';
@@ -45,12 +48,61 @@ export interface Bld {
   levelProgress: number;
   born: number;
   inst: number; // BatchedMesh instance id
-  buildInst: number; // temporary scaffold/crane instance in the same batch
+  buildInst: number; // temporary scaffold/crane instance (always in the Kit batch)
   buildH: number; // source height of the reusable construction model
   emitT: number;
 }
 
-const VARIANTS = 6;
+/**
+ * One BatchedMesh plus its growable geometry/instance budgets. Buildings live in
+ * two batches because the two geometry formats can't share one: the atlas
+ * buildings from generator.ts (non-indexed) and Kit geometry (indexed, with a
+ * facade `tile` attribute): city service buildings and construction scaffolds.
+ */
+class Batch {
+  readonly mesh: THREE.BatchedMesh;
+  private maxVerts: number;
+  private maxIndices: number;
+  private maxInst: number;
+  usedVerts = 0;
+  private usedIndices = 0;
+  private count = 0;
+  constructor(scene: THREE.Scene, material: THREE.Material, verts: number, inst: number) {
+    this.maxVerts = this.maxIndices = verts;
+    this.maxInst = inst;
+    this.mesh = new THREE.BatchedMesh(inst, verts, verts, material);
+    this.mesh.castShadow = true;
+    this.mesh.receiveShadow = true;
+    this.mesh.perObjectFrustumCulled = true;
+    this.mesh.sortObjects = false;
+    this.mesh.frustumCulled = false;
+    scene.add(this.mesh);
+  }
+  addGeometry(g: THREE.BufferGeometry): number {
+    const n = g.getAttribute('position').count;
+    const ni = g.getIndex()?.count ?? n;
+    if (this.usedVerts + n > this.maxVerts || this.usedIndices + ni > this.maxIndices) {
+      if (this.usedVerts + n > this.maxVerts) this.maxVerts = Math.ceil((this.maxVerts + n) * 1.6);
+      if (this.usedIndices + ni > this.maxIndices) this.maxIndices = Math.ceil((this.maxIndices + ni) * 1.6);
+      this.mesh.setGeometrySize(this.maxVerts, this.maxIndices);
+    }
+    this.usedVerts += n;
+    this.usedIndices += ni;
+    return this.mesh.addGeometry(g);
+  }
+  addInstance(geoId: number): number {
+    if (this.count + 8 > this.maxInst) {
+      this.maxInst = Math.ceil(this.maxInst * 1.6);
+      this.mesh.setInstanceCount(this.maxInst);
+    }
+    this.count++;
+    return this.mesh.addInstance(geoId);
+  }
+  deleteInstance(i: number) {
+    this.mesh.deleteInstance(i);
+    this.count--;
+  }
+}
 
 /** A zoned (growable) building, not a landmark or city service. */
 export const isZoned = (b: Bld): b is Bld & { zone: ZoneType } => b.zone !== 'landmark' && b.zone !== 'service';
@@ -93,12 +145,14 @@ export class Buildings {
   list = new Map<number, Bld>();
   private nextId = 1;
   private hash = new SpatialHash<Bld>(32);
+  /** atlas buildings (zoned, landmarks) */
+  private main: Batch;
+  /** Kit geometry: service buildings + construction scaffolds */
+  private kit: Batch;
   readonly mesh: THREE.BatchedMesh;
+  readonly kitMesh: THREE.BatchedMesh;
   private geoIds = new Map<string, { id: number; model: BuildingModel }>();
   private rng = new Rng(4242);
-  private maxVerts = 400_000;
-  private maxIndices = 400_000;
-  private maxInst = 4000;
   private m4 = new THREE.Matrix4();
   private q = new THREE.Quaternion();
   private v = new THREE.Vector3();
@@ -109,14 +163,11 @@ export class Buildings {
   day = 0;
 
   constructor(scene: THREE.Scene, private terrain: Terrain, private trees: Trees, private zones: Zoning, private net: RoadNetwork) {
-    setBuildingRegion(terrain.map.def.id);
-    this.mesh = new THREE.BatchedMesh(this.maxInst, this.maxVerts, this.maxVerts, buildingMaterial());
-    this.mesh.castShadow = true;
-    this.mesh.receiveShadow = true;
-    this.mesh.perObjectFrustumCulled = true;
-    this.mesh.sortObjects = false;
-    this.mesh.frustumCulled = false;
-    scene.add(this.mesh);
+    setArtMap(terrain.map.def.id as MapId);
+    this.main = new Batch(scene, applyAtmosphere(buildingMaterial()), 400_000, 4000);
+    this.kit = new Batch(scene, kitMaterial(), 150_000, 600);
+    this.mesh = this.main.mesh;
+    this.kitMesh = this.kit.mesh;
     zones.onCellsLost = (cells) => {
       const ids = new Set(cells.map((c) => c.bld).filter(Boolean));
       for (const id of ids) {
@@ -141,7 +192,7 @@ export class Buildings {
       const t0 = performance.now();
       const model = generateBuilding({ zone, level, widthCells: w, depthCells: d, seed: variant * 7919 + level * 131 + w * 17 + d, brand });
       (window as unknown as { __genMs?: number }).__genMs = ((window as unknown as { __genMs?: number }).__genMs ?? 0) + performance.now() - t0;
-      e = { id: this.addGeometry(model.geometry), model };
+      e = { id: this.main.addGeometry(model.geometry), model };
       this.geoIds.set(key, e);
     }
     return e;
@@ -155,53 +206,57 @@ export class Buildings {
     if (!e) {
       const geometry = generateConstruction(w, d, h, w * 97 + d * 193 + h);
       const model: BuildingModel = { geometry, height: h, label: 'Construction', emitters: [] };
-      e = { id: this.addGeometry(geometry), model };
+      e = { id: this.kit.addGeometry(geometry), model };
       this.geoIds.set(key, e);
     }
     return { id: e.id, height: h };
   }
 
-  private addGeometry(g: THREE.BufferGeometry): number {
-    const n = g.getAttribute('position').count;
-    const ni = g.getIndex()?.count ?? n;
-    if (this.usedVerts + n > this.maxVerts || this.usedIndices + ni > this.maxIndices) {
-      if (this.usedVerts + n > this.maxVerts) this.maxVerts = Math.ceil((this.maxVerts + n) * 1.6);
-      if (this.usedIndices + ni > this.maxIndices) this.maxIndices = Math.ceil((this.maxIndices + ni) * 1.6);
-      this.mesh.setGeometrySize(this.maxVerts, this.maxIndices);
-    }
-    this.usedVerts += n;
-    this.usedIndices += ni;
-    return this.mesh.addGeometry(g);
+  /** Vertices uploaded to the atlas-building batch (perf budget checks). */
+  get usedVerts() {
+    return this.main.usedVerts;
   }
-  private usedVerts = 0;
-  private usedIndices = 0;
+
+  /** The batch a building's own instance lives in. */
+  private batchOf(b: Bld): Batch {
+    return b.zone === 'service' ? this.kit : this.main;
+  }
+
+  /** Per-instance tint (info views); null restores the normal look. */
+  setTint(b: Bld, c: THREE.Color | null) {
+    if (b.inst >= 0) this.batchOf(b).mesh.setColorAt(b.inst, c ?? this.baseTint(b, this.tint));
+  }
+  private tint = new THREE.Color();
 
   private placeInstance(b: Bld, geoId: number) {
-    if (this.list.size * 2 + 8 > this.maxInst) {
-      this.maxInst = Math.ceil(this.maxInst * 1.6);
-      this.mesh.setInstanceCount(this.maxInst);
-    }
-    b.inst = this.mesh.addInstance(geoId);
+    b.inst = this.batchOf(b).addInstance(geoId);
     b.buildInst = -1;
     b.buildH = 1;
     if (b.state === 'building') {
       const build = this.constructionFor(b.w, b.d, b.model.height);
-      b.buildInst = this.mesh.addInstance(build.id);
+      b.buildInst = this.kit.addInstance(build.id);
       b.buildH = build.height;
     }
     this.writeMatrix(b, b.state === 'building' ? 0.04 : 1);
+  }
+
+  private dropScaffold(b: Bld) {
+    if (b.buildInst >= 0) {
+      this.kit.deleteInstance(b.buildInst);
+      b.buildInst = -1;
+    }
   }
 
   private writeMatrix(b: Bld, grow: number) {
     this.q.setFromAxisAngle(this.v.set(0, 1, 0), b.yaw);
     this.s.set(1, Math.max(0.02, grow), 1);
     this.m4.compose(this.v.set(b.x, b.y, b.z), this.q, this.s);
-    this.mesh.setMatrixAt(b.inst, this.m4);
+    this.batchOf(b).mesh.setMatrixAt(b.inst, this.m4);
     if (b.buildInst >= 0) {
       const constructionGrow = Math.max(0.18, grow) * (b.model.height / Math.max(1, b.buildH));
       this.s.set(1, constructionGrow, 1);
       this.m4.compose(this.v.set(b.x, b.y, b.z), this.q, this.s);
-      this.mesh.setMatrixAt(b.buildInst, this.m4);
+      this.kit.mesh.setMatrixAt(b.buildInst, this.m4);
     }
   }
 
@@ -262,7 +317,7 @@ export class Buildings {
     const model = generateLandmark(id, 1);
     const key = `landmark|${id}`;
     let e = this.geoIds.get(key);
-    if (!e) this.geoIds.set(key, (e = { id: this.addGeometry(model.geometry), model }));
+    if (!e) this.geoIds.set(key, (e = { id: this.main.addGeometry(model.geometry), model }));
     const y = this.terrain.h(x, z);
     const b: Bld = {
       id: this.nextId++, zone: 'landmark', landmark: id, level: 1, w: fp.widthCells, d: fp.depthCells, x, z, y, yaw,
@@ -284,7 +339,7 @@ export class Buildings {
     if (!def) return null;
     const key = `custom|${kind}`;
     let e = this.geoIds.get(key);
-    if (!e) { const model = def.model(); this.geoIds.set(key, (e = { id: this.addGeometry(model.geometry), model })); }
+    if (!e) { const model = def.model(); this.geoIds.set(key, (e = { id: this.kit.addGeometry(model.geometry), model })); }
     const y = this.terrain.h(x, z);
     const pick = this.net.pickSeg(x, z, (Math.max(def.w, def.d) * CELL) / 2 + 40);
     const b: Bld = {
@@ -310,7 +365,7 @@ export class Buildings {
   setAbandoned(b: Bld, on: boolean) {
     if (on === (b.abandoned !== undefined)) return;
     if (on) { b.abandoned = 0; b.occ = 0; } else delete b.abandoned;
-    if (b.inst >= 0) this.mesh.setColorAt(b.inst, this.baseTint(b, new THREE.Color()));
+    this.setTint(b, null);
   }
 
   // ------------------------------------------------------------------ save / load
@@ -329,7 +384,7 @@ export class Buildings {
         b.progress = Math.min(1, prog);
         if (b.progress >= 1) {
           b.state = 'active';
-          if (b.buildInst >= 0) { this.mesh.deleteInstance(b.buildInst); b.buildInst = -1; }
+          this.dropScaffold(b);
         }
         this.writeMatrix(b, b.state === 'active' ? 1 : easeGrow(b.progress));
         continue;
@@ -338,10 +393,7 @@ export class Buildings {
         const b = this.placeLandmark(landmark as LandmarkId, x, z, yaw);
         b.state = 'active';
         b.progress = 1;
-        if (b.buildInst >= 0) {
-          this.mesh.deleteInstance(b.buildInst);
-          b.buildInst = -1;
-        }
+        this.dropScaffold(b);
         this.writeMatrix(b, 1);
         continue;
       }
@@ -444,8 +496,8 @@ export class Buildings {
     this.hash.remove(b, b.x - b.hw - b.hd, b.z - b.hw - b.hd, b.x + b.hw + b.hd, b.z + b.hw + b.hd);
     for (const c of b.cells) if (c.bld === b.id) c.bld = 0;
     for (const c of this.zones.cellsNear(b.x, b.z, b.hw + b.hd + 6)) if (c.bld === b.id) c.bld = 0;
-    if (b.inst >= 0) this.mesh.deleteInstance(b.inst);
-    if (b.buildInst >= 0) this.mesh.deleteInstance(b.buildInst);
+    if (b.inst >= 0) this.batchOf(b).deleteInstance(b.inst);
+    this.dropScaffold(b);
     this.terrain.paintCircle(b.x, b.z, Math.min(b.hw, b.hd), Paint.Dirt);
     this.zones.markOverlayDirty();
     this.onDemolish?.(b, reason);
@@ -462,13 +514,13 @@ export class Buildings {
     b.label = e.model.label;
     b.cap = capacityFor(b.zone, b.level, b.w * b.d);
     b.levelProgress = 0;
-    this.mesh.setGeometryIdAt(b.inst, e.id);
+    this.main.mesh.setGeometryIdAt(b.inst, e.id);
     b.state = 'building';
     b.progress = 0.35;
     b.buildDays = 4 + b.level;
-    if (b.buildInst >= 0) this.mesh.deleteInstance(b.buildInst);
+    this.dropScaffold(b);
     const build = this.constructionFor(b.w, b.d, b.model.height);
-    b.buildInst = this.mesh.addInstance(build.id);
+    b.buildInst = this.kit.addInstance(build.id);
     b.buildH = build.height;
     this.writeMatrix(b, b.progress);
     this.onLevel?.(b);
@@ -482,10 +534,7 @@ export class Buildings {
       this.writeMatrix(b, easeGrow(b.progress));
       if (b.progress >= 1) {
         b.state = 'active';
-        if (b.buildInst >= 0) {
-          this.mesh.deleteInstance(b.buildInst);
-          b.buildInst = -1;
-        }
+        this.dropScaffold(b);
         this.onComplete?.(b);
       }
     }

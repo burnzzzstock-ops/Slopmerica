@@ -18,7 +18,7 @@ const GRID_N = Math.ceil(WORLD / CELL);
 const SPRITE_W = 256, SPRITE_H = 512;
 
 const BASE_COLOR: Record<TreeKind, number> = {
-  decid: 0x6f9a45, pine: 0x557f48, redwood: 0x527a45, oak: 0x6a8045, palm: 0x7aa84a, cypress: 0x7a9a50, mangrove: 0x55803e, shrub: 0x7a9448,
+  decid: 0x6f9a45, pine: 0x557f48, redwood: 0x527a45, oak: 0x7f9852, palm: 0x7aa84a, cypress: 0x7a9a50, mangrove: 0x55803e, shrub: 0x7a9448,
 };
 // Alpha test for card foliage. Mip levels average alpha down, which makes
 // distant canopies go see-through, so alpha is boosted per mip level. Deciduous

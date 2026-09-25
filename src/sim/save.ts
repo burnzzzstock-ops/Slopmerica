@@ -59,6 +59,26 @@ export function loadSave(): SaveData | null {
   }
 }
 
+/** The save exactly as stored (for a bug report's city file), or null. */
+export function rawSave(): string | null {
+  try {
+    return localStorage.getItem(KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** A save that crashes the game on load: keep a copy aside, then clear it. */
+export function shelveBrokenSave() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) localStorage.setItem(`${KEY}.broken`, raw);
+  } catch {
+    /* storage full or blocked: clearing still unblocks the player */
+  }
+  clearSave();
+}
+
 export function clearSave() {
   try {
     localStorage.removeItem(KEY);

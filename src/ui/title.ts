@@ -3,6 +3,8 @@ import { MAPS, MapId } from '../world/maps';
 import type { Mode } from '../sim/sim';
 import { MERCH_URL } from '../art/brands';
 import { loadSave, type SaveData } from '../sim/save';
+import { BUILD } from './bugreport';
+import { IS_TOUCH } from '../config';
 
 export interface StartChoice {
   map: MapId;
@@ -365,7 +367,7 @@ export function showTitle(parent: HTMLElement): Promise<StartChoice> {
             <div class="tagline rm-tag">Land of the Free Parking</div>
           </div>
         </div>
-        ${saved ? `<button class="rm-ticket" id="continue"><span class="rm-t-lbl">Resume trip</span><b>${saved.city}</b><small>${MAPS.find((m) => m.id === saved.map)?.name ?? saved.map} · pop ${saved.pop.toLocaleString()} · saved ${ago(saved.savedAt)}</small></button>` : ''}
+        ${saved ? `<button class="rm-ticket" id="continue"><span class="rm-t-lbl">Resume trip</span><b>${saved.city}</b><small>${MAPS.find((m) => m.id === saved.map)?.name ?? saved.map} · pop ${(saved.pop ?? 0).toLocaleString()} · saved ${ago(saved.savedAt)}</small></button>` : ''}
         <section class="rm-sec">
           <h2><i>1</i>${saved ? 'Or pick a new county' : 'Pick your county'}</h2>
           <div class="rm-maps">${MAPS.map((m) => `
@@ -385,8 +387,9 @@ export function showTitle(parent: HTMLElement): Promise<StartChoice> {
             <input id="cityname" class="rm-name" maxlength="28" value="${CITY_NAMES[map][0]}" aria-label="City name" />
             <button class="rm-go" id="go">Start paving <span>➜</span></button>
           </div>
+          <div class="rm-playtest"><span class="rm-stamp">Playtest edition</span><p>Things will break. When they do, tap <b>🐞 Report bug</b> in the game${IS_TOUCH ? ' (under More)' : ''}.</p></div>
         </section>
-        <footer class="rm-fine">Not responsible for sprawl, induced demand or Florida Man. Slop is a real clothing brand: <a href="${MERCH_URL}" target="_blank" rel="noopener">imaginesupply.co</a></footer>
+        <footer class="rm-fine">Not responsible for sprawl, induced demand or Florida Man. Slop is a real clothing brand: <a href="${MERCH_URL}" target="_blank" rel="noopener">imaginesupply.co</a><br>Playtest build ${BUILD}</footer>
       </div>`;
     parent.appendChild(el);
     const art = el.querySelector('.rm-art') as HTMLCanvasElement;

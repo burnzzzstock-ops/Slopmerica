@@ -9,6 +9,7 @@ import type { LandmarkId, ZoneType } from '../contracts';
 import { landmarkFootprint } from '../buildings/generator';
 import { LANDMARK_COST, type Game } from '../game';
 import { EXT, type ExtTool } from '../ext/registry';
+import { crumb } from '../ui/bugreport';
 
 export type ToolId = 'inspect' | 'road' | 'upgrade' | 'bulldoze' | 'zone' | 'dezone' | 'landmark' | 'ext';
 export type RoadMode = 'straight' | 'curve' | 'freeform';
@@ -99,6 +100,7 @@ export class Tools implements PointerHandlers {
   }
 
   set(tool: ToolId) {
+    if (tool !== this.active) crumb(`tool ${tool}`);
     this.cancel();
     // a finger's last spot isn't a hover: don't carry it into the next tool
     if (this.game.isTouch) this.hover = null;
@@ -144,7 +146,7 @@ export class Tools implements PointerHandlers {
   /** Build the planned touch road or landmark (the action-bar Build button). */
   buildPending() {
     if (this.active === 'landmark') {
-      if (this.landmarkAt && this.game.placeLandmark(this.landmark, this.landmarkAt)) this.set('inspect');
+      if (this.landmarkAt && this.game.placeLandmark(this.landmark, this.landmarkAt)) { crumb(`placed landmark ${this.landmark}`); this.set('inspect'); }
       return;
     }
     if (!this.pendingEnd || !this.start) return;
@@ -263,7 +265,7 @@ export class Tools implements PointerHandlers {
         break;
       case 'landmark':
         if (e.pointerType === 'mouse') {
-          if (!wasDrag && this.game.placeLandmark(this.landmark, p)) this.set('inspect');
+          if (!wasDrag && this.game.placeLandmark(this.landmark, p)) { crumb(`placed landmark ${this.landmark}`); this.set('inspect'); }
         } else {
           // touch: plan it (a tap goes under the finger, a drag where the
           // lifted footprint was); the Build button makes it real
@@ -338,6 +340,7 @@ export class Tools implements PointerHandlers {
       if (plan.grant > 0) this.game.floatText(`+$${plan.grant.toLocaleString()} Federal Slop Grant`, p, '#9dff3c');
       this.game.onRoadBuilt(segs, plan);
       this.game.pushUndo({ kind: 'build', segIds: segs.map((x) => x.id), refund: plan.cost - plan.grant });
+      crumb(`built ${ROAD_TYPES[this.roadType].name} ${Math.round(plan.length)} m ($${plan.cost - plan.grant})`);
       // continue drawing from the end like Skylines
       const last = segs[segs.length - 1];
       const endNode = net.nodes.get(last.b)!;
@@ -378,12 +381,15 @@ export class Tools implements PointerHandlers {
     this.game.sim.earn(Math.round(grant), 'grants');
     if (grant > 0) this.game.floatText(`+$${Math.round(grant).toLocaleString()} Federal Slop Grant`, p, '#9dff3c');
     this.game.onLaneAdded(segs, next);
+    crumb(`one more lane: ${segs.length} block(s) → ${ROAD_TYPES[next].name}`);
   }
 
   private bulldozeAt(p: THREE.Vector3) {
-    if (this.game.bulldozeAt(p)) return;
+    const what = this.game.buildingAt(p);
+    if (this.game.bulldozeAt(p)) { crumb(`bulldozed ${what}`); return; }
     const pick = this.game.net.pickSeg(p.x, p.z, 1);
     if (!pick) return;
+    crumb(`bulldozed road ${pick.seg.name ?? pick.seg.id}`);
     this.game.net.removeSeg(pick.seg.id);
     this.game.sim.refund(Math.round(pick.seg.length * ROAD_TYPES[pick.seg.type].costPerM * 0.2));
     this.game.audio.play('bulldoze');
@@ -394,6 +400,7 @@ export class Tools implements PointerHandlers {
     const zones = this.game.zones;
     const before = zones.skipped;
     zones.paint(p.x, p.z, this.brushRadius(), this.active === 'dezone' ? null : this.zoneType);
+    crumb(this.active === 'dezone' ? 'dezoned' : `zoned ${this.zoneType}`);
     if (zones.skipped > before && !this.warnedZoned) {
       this.warnedZoned = true;
       this.game.toast('Already zoned. Use Dezone first to change it.');

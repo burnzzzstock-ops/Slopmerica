@@ -25,6 +25,7 @@ import { ProblemIcons, type Problem } from './serviceIcons';
 import type { FeedContext, FeedEventKind, VehicleKind, ZoneType } from '../contracts';
 import type { DemandKey } from './sim';
 import { POLICY } from './policyEffects';
+import { crumb } from '../ui/bugreport';
 
 type ZB = Bld & { zone: ZoneType };
 
@@ -1175,6 +1176,7 @@ export function placeService(g: Game, id: ServiceModelId, x: number, z: number):
   const b = g.buildings.placeCustom(d.id, x, z, chk.yaw);
   if (!b) return null;
   g.sim.spend(d.cost, d.name, 'construction');
+  crumb(`placed ${d.name}`);
   S.graphDirty = true;
   g.audio.play('build');
   g.particles.emit('dust', b.x, b.y + 2, b.z, { count: 40, spread: b.hw });

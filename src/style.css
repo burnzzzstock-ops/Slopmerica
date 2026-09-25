@@ -2241,3 +2241,283 @@ a {
     font-size: 26px;
   }
 }
+
+/* ---------------------------------------------------------------- playtest */
+.bug {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  background: rgba(8, 7, 14, 0.55);
+  color: var(--ink);
+  font-family: 'Overpass', system-ui, sans-serif;
+}
+.bug-sheet {
+  width: min(520px, 100%);
+  max-height: calc(100vh - 24px - var(--safe-t, 0px) - var(--safe-b, 0px));
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  background: var(--panel-2);
+  border: 2px solid var(--lime);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.bug-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: 'Bungee', Impact, sans-serif;
+  font-size: 18px;
+}
+.bug-x {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 22px;
+  padding: 4px 8px;
+}
+.bug-lede {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.bug-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.bug-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.bug-field em {
+  font-weight: 400;
+  color: var(--muted);
+}
+.bug-field textarea,
+.bug-field input,
+.bug-peek textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #110f1a;
+  color: var(--ink);
+  font: 15px/1.35 'Overpass', system-ui, sans-serif;
+  resize: vertical;
+}
+.bug-field textarea:focus,
+.bug-field input:focus {
+  outline: 2px solid var(--lime);
+  outline-offset: 0;
+}
+.bug-chk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.bug-actions,
+.bf-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.bug-actions button,
+.bf-actions button,
+.crash-toast button,
+.ctx-lost button {
+  flex: 0 0 auto;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #1a1726;
+  color: var(--ink);
+  font-weight: 800;
+  font-size: 14px;
+}
+.bug .bug-primary,
+.boot-fail .bug-primary,
+.crash-toast .bug-primary,
+.ctx-lost .bug-primary {
+  background: var(--lime);
+  border-color: var(--lime);
+  color: #111;
+}
+.bug-status {
+  min-height: 1.2em;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--lime);
+}
+.bug-status.bad {
+  color: #ffb36b;
+}
+.bug-peek summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+}
+.bug-peek textarea {
+  margin-top: 6px;
+  font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--ink-2);
+}
+.bug-fine {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.crash-toast,
+.ctx-lost {
+  position: absolute;
+  z-index: 40;
+  left: 8px;
+  right: 8px;
+  margin-inline: auto;
+  width: max-content;
+  max-width: calc(100vw - 16px);
+  top: calc(140px + var(--safe-t));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border: 2px solid #ff7a59;
+  border-radius: 12px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+.crash-toast button,
+.ctx-lost button {
+  padding: 7px 11px;
+  font-size: 13px;
+}
+.crash-toast {
+  flex-wrap: nowrap;
+}
+.crash-toast span {
+  min-width: 0;
+}
+.crash-toast .ct-x {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px;
+}
+.ctx-lost {
+  position: fixed;
+  top: 40%;
+}
+.ob-playtest {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(198, 244, 50, 0.1);
+  font-size: 13px;
+}
+.boot-fail {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: #efe3c4;
+  color: #1f2b45;
+  font-family: 'Overpass', system-ui, sans-serif;
+}
+.bf-card {
+  width: min(520px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 22px;
+  border: 3px solid #1f2b45;
+  border-radius: 6px;
+  background: #f7eed6;
+  box-shadow: 6px 6px 0 #c23a24;
+}
+.bf-kicker {
+  align-self: flex-start;
+  padding: 4px 10px;
+  border: 2px solid #c23a24;
+  color: #c23a24;
+  font: 14px 'Anton', Impact, sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transform: rotate(-2deg);
+}
+.bf-card h2 {
+  margin: 0;
+  font: 30px/1.05 'Anton', Impact, sans-serif;
+  text-transform: uppercase;
+}
+.bf-card p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+}
+.bf-card code {
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: rgba(31, 43, 69, 0.08);
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+.bf-card small {
+  color: #5b4436;
+  font-size: 12px;
+}
+.boot-fail .bf-actions button {
+  background: #1f2b45;
+  border-color: #1f2b45;
+  color: #efe3c4;
+}
+.boot-fail .bf-actions .bug-primary {
+  background: #c23a24;
+  border-color: #c23a24;
+  color: #fff6e6;
+}
+/* title: playtest stamp */
+.rm-playtest {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.rm-stamp {
+  display: inline-block;
+  padding: 6px 12px 4px;
+  border: 3px double var(--rm-red);
+  border-radius: 4px;
+  color: var(--rm-red);
+  font: 18px/1 'Anton', Impact, sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transform: rotate(-4deg);
+  opacity: 0.88;
+  mix-blend-mode: multiply;
+}
+.rm-playtest p {
+  margin: 0;
+  flex: 1 1 220px;
+  font-size: 14px;
+  color: var(--rm-navy);
+}

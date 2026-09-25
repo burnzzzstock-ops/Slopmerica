@@ -12,6 +12,7 @@ import { MAX_LEVEL } from '../contracts';
 import type { ToolId } from '../tools/tools';
 import { FeedPanel } from './feedPanel';
 import { MERCH_URL, brandById } from '../art/brands';
+import { BUILD, crumb, onCapturedError, openBugReport } from './bugreport';
 import { IS_TOUCH } from '../config';
 import { QUALITY, type Quality } from '../config';
 import { SPEEDS } from '../sim/sim';
@@ -97,6 +98,19 @@ export class Hud implements UiSink {
     this.actions.querySelector('#ta-undo')!.addEventListener('click', () => game.undo());
     game.feed = this.feed;
     game.ui = this;
+    // playtest: when something throws, offer the report right there
+    let lastCrash = -1e9;
+    onCapturedError((e) => {
+      const now = performance.now();
+      if (now - lastCrash < 45000 || document.querySelector('.bug')) return;
+      lastCrash = now;
+      this.root.querySelector('.crash-toast')?.remove();
+      const el = this.mk('div', 'crash-toast');
+      el.innerHTML = `<span>Something broke behind the scenes.</span><button class="bug-primary">🐞 Report it</button><button class="ct-x" aria-label="Dismiss">✕</button>`;
+      el.querySelector('.bug-primary')!.addEventListener('click', () => { el.remove(); this.reportBug(`Something broke (the game said: "${e.msg.slice(0, 120)}"). I was `); });
+      el.querySelector('.ct-x')!.addEventListener('click', () => el.remove());
+      setTimeout(() => el.remove(), 12000);
+    });
     game.tools.onChange = () => this.syncToolbar();
     window.addEventListener('keydown', (e) => this.hotkey(e));
     game.renderer.domElement.addEventListener('pointermove', (e) => {
@@ -120,6 +134,7 @@ export class Hud implements UiSink {
         <li><b>▶▶▶</b>: let the slop grow. Widen jammed roads with <b>One More Lane</b>. Hippies can be paid off or sued.</li>
       </ol>
       <p>Goal: pave every inch and max every building. Tokyo × Delhi or bust.</p>
+      <p class="ob-playtest">🐞 <b>This is a playtest.</b> When something breaks, looks wrong or confuses you, tap <b>Report bug</b>${IS_TOUCH ? ' (under More)' : ''}.</p>
       <button id="ob-go">Let's pave</button>`;
     el.querySelector('#ob-go')!.addEventListener('click', () => {
       try { localStorage.setItem('slopmerica.onboarded', '1'); } catch { /* ignore */ }
@@ -215,6 +230,7 @@ export class Hud implements UiSink {
       ['communes', '☮️', 'Communes'],
       ['feed', '𝕏', 'Feed'],
       ['help', '⚙️', 'Settings'],
+      ['bug', '🐞', 'Report bug'],
     ];
     // extension panels slot in by `order` (core buttons sit at 10, 20, 30, ...)
     const withOrder = items.map((it, i) => ({ it, o: (i + 1) * 10 }));
@@ -226,7 +242,8 @@ export class Hud implements UiSink {
       // phones: a short toolbar; the rest opens from More
       const short: Record<string, string> = { views: 'Views' };
       const primary = (PHONE_PRIMARY.map((id) => all.find((x) => x[0] === id)).filter(Boolean) as [string, string, string][]).map(([id, icon, label]) => [id, icon, short[id] ?? label] as [string, string, string]);
-      this.moreItems = all.filter((x) => !PHONE_PRIMARY.includes(x[0]));
+      // playtest: the bug button leads the More grid so testers find it
+      this.moreItems = all.filter((x) => !PHONE_PRIMARY.includes(x[0])).sort((a, b) => Number(b[0] === 'bug') - Number(a[0] === 'bug'));
       this.bar.innerHTML = primary.map(btn).join('') + btn(['more', '<i class="more-dots"><b></b><b></b><b></b></i>', 'More']);
       this.bar.classList.add('compact');
     } else {
@@ -271,6 +288,8 @@ export class Hud implements UiSink {
     g.audio.unlock();
     g.audio.play('click', 0.4);
     if (id === 'feed') { this.feed.setCollapsed(!this.feed.collapsed); return; }
+    if (id === 'bug') { if (this.panel === 'more') this.openPanel(null); this.reportBug(); return; }
+    crumb(`${this.panel === id ? 'closed' : 'opened'} ${id}`);
     if (id === 'inspect' || id === 'upgrade' || id === 'bulldoze') {
       this.openPanel(null);
       g.tools.set(g.tools.active === id && id !== 'inspect' ? 'inspect' : (id as ToolId));
@@ -288,8 +307,14 @@ export class Hud implements UiSink {
     else if (pid !== 'landmarks' || g.tools.active !== 'landmark') g.tools.set('inspect');
   }
 
+  /** Open the playtest bug report sheet. */
+  reportBug(prefill?: string) {
+    openBugReport(this.root, this.game, { prefill });
+  }
+
   /** Put the current map tool away: back to Select with no panel open. */
   private exitTool() {
+    crumb('tapped Done');
     this.game.tools.finishExt();
     this.openPanel(null);
     this.game.tools.set('inspect');
@@ -444,9 +469,11 @@ export class Hud implements UiSink {
           <div><b>Tools</b> B bulldoze · U one more lane · Z zoning · Esc cancel</div>
           <div><b>Performance</b> F3 shows FPS, frame time, draw calls and triangles</div>`}
         </div>
-        <div class="sp-row"><button class="chip" id="save-now">💾 Save now</button><button class="chip" id="new-city">🆕 New city</button><small>Autosaves every 30 seconds in this browser.</small></div>`;
+        <div class="sp-row"><button class="chip" id="save-now">💾 Save now</button><button class="chip" id="new-city">🆕 New city</button><small>Autosaves every 30 seconds in this browser.</small></div>
+        <div class="sp-row"><button class="chip on" id="report-bug">🐞 Report a bug</button><small>Playtest build ${BUILD}</small></div>`;
       this.sub.querySelector('#save-now')?.addEventListener('click', () => { const ok = saveGame(g); this.toast(ok ? 'Saved.' : 'Could not save in this browser', !ok); });
       this.sub.querySelector('#new-city')?.addEventListener('click', () => { saveGame(g); location.hash = ''; location.reload(); });
+      this.sub.querySelector('#report-bug')?.addEventListener('click', () => this.reportBug());
       this.sub.querySelector('#quality-preset')?.addEventListener('change', (e) => {
         const reload = g.requestQuality((e.target as HTMLSelectElement).value as Quality['name']);
         this.renderPanel();
@@ -625,6 +652,7 @@ export class Hud implements UiSink {
 
   // ------------------------------------------------------------------ transient UI
   toast(msg: string, bad = false) {
+    crumb(`${bad ? 'warning' : 'toast'}: ${msg}`);
     const t = document.createElement('div');
     t.className = 'toast' + (bad ? ' bad' : '');
     t.textContent = msg;

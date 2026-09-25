@@ -36,6 +36,11 @@ await page.addInitScript(() => {
 await page.goto(`http://127.0.0.1:5173/#skip&map=${map}&mode=sandbox`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.__game, null, { timeout: 120000 });
 await page.waitForTimeout(6000);
+// optional: GL_JS='...' runs in the page (g = game) before the error sample, e.g. to enable an info view
+if (process.env.GL_JS) {
+  await page.evaluate(`(() => { const g = window.__game; window.__glHits.length = 0; ${process.env.GL_JS}; for (let i = 0; i < 3; i++) g.frame(0.016); })()`);
+  await page.waitForTimeout(2000);
+}
 const hits = await page.evaluate(() => window.__glHits);
 const seen = new Set();
 for (const h of hits) {

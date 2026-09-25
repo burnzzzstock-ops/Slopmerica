@@ -132,7 +132,7 @@ export class Game {
     this.terrain = new Terrain(this.map, this.renderer, this.q);
     this.scene.add(this.terrain.group);
     lap('terrain');
-    this.water = createWater(this.terrain, this.map.def.water);
+    this.water = createWater(this.terrain, this.map.def.water, this.q.name === 'high', opts.map);
     this.scene.add(this.water.mesh);
     this.trees = new Trees(this.terrain, this.map, this.q, this.renderer);
     this.scene.add(this.trees.group);
@@ -606,7 +606,10 @@ export class Game {
       construction: Math.min(1, this.buildings.counts().building / 20), people: Math.min(1, this.peds.peds.length / 150), night: n,
       weather: this.weather.kind, weatherIntensity: this.weather.intensity, season: this.weather.season,
     });
-    if (render) this.post.render(n);
+    if (render) {
+      this.water.reflection?.render(this.renderer, this.scene, this.camera, [this.water.mesh]);
+      this.post.render(n);
+    }
   }
 }
 

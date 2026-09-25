@@ -351,6 +351,11 @@ export class Zoning {
     if (this.overlayMesh.instanceColor) this.overlayMesh.instanceColor.needsUpdate = true;
   }
 
+  /** Painted zone cells are unlit paint: dim them after dark unless the overlay is up. */
+  setNight(n: number) {
+    (this.overlayMesh.material as THREE.MeshBasicMaterial).color.setScalar(this.overlayOn ? 1 : 1 - n * 0.8);
+  }
+
   markOverlayDirty() {
     this.overlayDirty = true;
   }

@@ -4,6 +4,9 @@ import { lineCubic, quadCubic } from '../core/math';
 import type { RoadTypeId } from '../roads/roadTypes';
 import type { ZoneType } from '../contracts';
 import { saveGame } from '../sim/save';
+import * as THREE from 'three';
+import { buildingMaterial, generateBuilding, generateLandmark, landmarkFootprint } from '../buildings/generator';
+import type { LandmarkId } from '../contracts';
 
 export function debugApi(g: Game) {
   const api = {
@@ -37,6 +40,35 @@ export function debugApi(g: Game) {
     },
     save() {
       return saveGame(g);
+    },
+    /** Lay out every zone x level (and the landmarks) in a grid for eyeballing. */
+    showcase(x: number, z: number, variant = 0) {
+      const zones: ZoneType[] = ['resLow', 'resHigh', 'comLow', 'comHigh', 'industry', 'office'];
+      const dims: Record<ZoneType, [number, number]> = { resLow: [2, 3], resHigh: [3, 3], comLow: [4, 3], comHigh: [4, 4], industry: [4, 4], office: [3, 3] };
+      const grp = new THREE.Group();
+      const y = g.terrain.h(x, z);
+      zones.forEach((zone, zi) => {
+        for (let lv = 1; lv <= 5; lv++) {
+          const [w, d] = dims[zone];
+          const m = generateBuilding({ zone, level: lv, widthCells: w, depthCells: d, seed: 11 + variant * 7 + lv * 3 + zi });
+          const mesh = new THREE.Mesh(m.geometry, buildingMaterial());
+          mesh.position.set(x + (lv - 3) * 42, y, z + (zi - 2.5) * 44);
+          mesh.castShadow = mesh.receiveShadow = true;
+          grp.add(mesh);
+        }
+      });
+      const lms: LandmarkId[] = ['slopCannon', 'slop69Field', 'pigCabanaResort', 'neuralFlyDatacenter', 'propaneParadise', 'fillErUpMegaStation', 'megachurch', 'waterTower'];
+      lms.forEach((id, i) => {
+        const m = generateLandmark(id, 1);
+        const mesh = new THREE.Mesh(m.geometry, buildingMaterial());
+        const fp = landmarkFootprint(id);
+        mesh.position.set(x - 130 + i * 62, y, z + 3.5 * 44 + fp.depthCells * 4);
+        mesh.castShadow = mesh.receiveShadow = true;
+        grp.add(mesh);
+      });
+      g.scene.add(grp);
+      g.trees.cut(x - 180, z - 150, x + 340, z + 260, () => true);
+      return grp.children.length;
     },
     info() {
       return { segs: g.net.segs.size, nodes: g.net.nodes.size, cells: g.zones.cells.size, counts: g.zones.counts(), trees: g.trees.alive, communes: g.communes.list.map((c) => [c.name, Math.round(c.x), Math.round(c.z)]) };

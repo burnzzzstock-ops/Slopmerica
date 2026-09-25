@@ -32,7 +32,7 @@ const out = await page.evaluate(async () => {
     const r = d.run(45);
     const c = g.buildings.counts();
     const lv = [...g.buildings.list.values()].reduce((a, b) => a + b.level, 0) / Math.max(1, g.buildings.list.size);
-    log.push({ day: Math.round(r.day), pop: r.pop, bld: c.total, maxed: c.maxed, avgLv: +lv.toFixed(2), cars: r.cars, money: Math.round(g.sim.money), net: Math.round(g.sim.weeklyNet()), dem: Object.values(r.demand).map((v) => Math.round(v)).join('/'), sprawl: +(g.sim.sprawlPct * 100).toFixed(1), cov: +(g.sim.coverage * 100).toFixed(1), nature: +(g.sim.naturePct * 100).toFixed(1), crashes: g.traffic.crashes, flow: +g.traffic.flowEma.toFixed(2), st: JSON.stringify(g.traffic.stats()), blockedSegs: [...g.net.segs.values()].filter(s=>s.blocked>0).length });
+    log.push({ day: Math.round(r.day), pop: r.pop, bld: c.total, maxed: c.maxed, avgLv: +lv.toFixed(2), cars: r.cars, money: Math.round(g.sim.money), net: Math.round(g.sim.weeklyNet()), dem: Object.values(r.demand).map((v) => Math.round(v)).join('/'), sprawl: +(g.sim.sprawlPct * 100).toFixed(1), cov: +(g.sim.coverage * 100).toFixed(1), nature: +(g.sim.naturePct * 100).toFixed(1), crashes: g.traffic.crashes, flow: +g.traffic.flowEma.toFixed(2), st: JSON.stringify(g.traffic.stats()), blockedSegs: [...g.net.segs.values()].filter(s=>s.blocked>0).length, geos: g.buildings.geoIds.size, verts: g.buildings.usedVerts, genMs: Math.round(window.__genMs || 0) });
   }
   return { res, log, ledger: g.sim.lastWeek };
 });

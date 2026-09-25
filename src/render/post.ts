@@ -189,7 +189,7 @@ export class PostFX {
     const aw = Math.max(1, w >> 1), ah = Math.max(1, h >> 1);
     this.aoRT = new THREE.WebGLRenderTarget(aw, ah, { type: THREE.UnsignedByteType, depthBuffer: false });
     this.aoRT2 = this.aoRT.clone();
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.25, 0.55, 0.92);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.25, 0.3, 0.92);
   }
 
   setSize(cssW: number, cssH: number) {
@@ -254,8 +254,8 @@ export class PostFX {
 
     const bl = this.bloom!;
     // HDR input: only real light sources and sun glints should bloom
-    bl.strength = 0.12 + night * 0.7;
-    bl.threshold = 1.6 + (1 - night) * 3.4;
+    bl.strength = 0.1 + night * 0.35;
+    bl.threshold = 0.9 + (1 - night) * 4;
     bl.render(r, this.hdrRT!, this.hdrRT!, 0, false);
 
     const g = this.gradeM.uniforms;

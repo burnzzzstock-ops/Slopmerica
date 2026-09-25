@@ -573,6 +573,7 @@ export class Game {
     this.env.lightPollution = Math.min(1, this.buildings.list.size / 900);
     setBuildingNight(n);
     this.roads.setNight(n);
+    this.zones.setNight(n);
     this.traffic.setNight(n);
     this.peds.setNight(n);
     if (n > 0.6 && !this.nightWas) { this.nightWas = true; if (Math.random() < 0.5) this.feed.push('nightfall'); }

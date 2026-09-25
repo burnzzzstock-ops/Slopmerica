@@ -115,7 +115,9 @@ export class Buildings {
     const key = `${zone}|${level}|${w}|${d}|${variant}|${brand ?? ''}`;
     let e = this.geoIds.get(key);
     if (!e) {
+      const t0 = performance.now();
       const model = generateBuilding({ zone, level, widthCells: w, depthCells: d, seed: variant * 7919 + level * 131 + w * 17 + d, brand });
+      (window as unknown as { __genMs?: number }).__genMs = ((window as unknown as { __genMs?: number }).__genMs ?? 0) + performance.now() - t0;
       e = { id: this.addGeometry(model.geometry), model };
       this.geoIds.set(key, e);
     }

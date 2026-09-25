@@ -105,7 +105,7 @@ class Lab {
 
     this.terrain = new Terrain(this.map, this.renderer, this.q);
     this.scene.add(this.terrain.group);
-    this.water = createWater(this.terrain, this.map.def.water);
+    this.water = createWater(this.terrain, this.map.def.water, this.q.name === 'high', this.mapId);
     this.scene.add(this.water.mesh);
     this.trees = new Trees(this.terrain, this.map, this.q, this.renderer);
     this.scene.add(this.trees.group);
@@ -271,6 +271,7 @@ class Lab {
     m.season = this.weather.season;
     this.audio.update(dt, m);
 
+    this.water.reflection?.render(this.renderer, this.scene, this.camera, [this.water.mesh]);
     this.post.render(n);
     this.onTick?.();
   }

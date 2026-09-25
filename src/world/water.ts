@@ -1,5 +1,8 @@
-// One big water plane at y = WATER. The terrain height texture gives depth, so
-// shallows glow turquoise, deep water goes navy and shorelines get foam.
+// One big water plane at y = WATER (+ storm surge). The terrain height texture
+// gives depth, so shallows glow turquoise, deep water goes navy and shorelines
+// get foam. Weather adds wind chop, rain rings, ice creeping out from the banks
+// in a hard freeze, a surge that floods the lowlands, a moon path at night and
+// lightning flashes; the water body takes on the light of the hour.
 import * as THREE from 'three';
 import { HALF, WATER, WORLD } from '../config';
 import type { Terrain } from './terrain';
@@ -21,6 +24,13 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
       uNight: { value: 0 },
       uRain: { value: 0 },
       uWindAmp: { value: 1 },
+      // atmosphere extras (WeatherSystem keeps these current)
+      uIce: { value: 0 },
+      uLevel: { value: 0 },
+      uLight: { value: 1 },
+      uMoonDir: { value: new THREE.Vector3(0, -1, 0) },
+      uMoonLight: { value: 0 },
+      uFlash: { value: 0 },
     },
   ]);
   uniforms.uHeight.value = terrain.heightTex;
@@ -45,9 +55,9 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
     fragmentShader: /* glsl */ `
       #include <common>
       #include <fog_pars_fragment>
-      uniform float uTime, uPollution, uNight, uRain, uWindAmp;
+      uniform float uTime, uPollution, uNight, uRain, uWindAmp, uIce, uLevel, uLight, uMoonLight, uFlash;
       uniform sampler2D uHeight;
-      uniform vec3 uShallow, uDeep, uMurk, uSunDir, uSunColor, uSky, uSkyTop;
+      uniform vec3 uShallow, uDeep, uMurk, uSunDir, uSunColor, uSky, uSkyTop, uMoonDir;
       varying vec3 vW;
       float h1(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
       float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
@@ -74,7 +84,7 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
         float inside = step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
         float ground = texture2D(uHeight, clamp(uv, 0.0, 1.0)).r;
         float outsideDepth = 30.0;
-        float depth = mix(outsideDepth, ${WATER.toFixed(1)} - ground, inside);
+        float depth = mix(outsideDepth, ${WATER.toFixed(1)} + uLevel - ground, inside);
         if (depth < -0.02) discard;
         float camD = length(cameraPosition - vW);
         // widen the sampling footprint and calm the normals with distance so
@@ -93,6 +103,10 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
         float dT = smoothstep(0.0, 9.0, depth);
         vec3 base = mix(uShallow, uDeep, dT);
         base = mix(base, uMurk, uPollution);
+        // the water body is lit like everything else: dim and warm at dusk, dark at night
+        float light = min(uLight, 1.0);
+        vec3 sunTint = uSunColor / max(max(uSunColor.r, uSunColor.g), max(uSunColor.b, 1e-3));
+        base *= light * mix(vec3(1.0), sunTint, 0.55 * (1.0 - uNight));
         // sky reflection: horizon haze to zenith blue along the reflected ray
         vec3 rd = reflect(-viewDir, n);
         vec3 skyR = mix(uSky, uSkyTop, smoothstep(0.02, 0.6, rd.y));
@@ -100,16 +114,30 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
         vec3 h = normalize(uSunDir + viewDir);
         float spec = pow(max(dot(n, h), 0.0), mix(420.0, 80.0, smoothstep(300.0, 3000.0, camD))) * (1.0 - uNight);
         col += uSunColor * spec * mix(2.2, 0.7, smoothstep(300.0, 3000.0, camD)) * (1.0 - uRain * 0.7);
+        // a silver moon path at night
+        vec3 hm = normalize(uMoonDir + viewDir);
+        col += vec3(0.72, 0.8, 1.0) * pow(max(dot(n, hm), 0.0), 140.0) * uMoonLight * 5.0 * step(0.0, uMoonDir.y) * uNight;
         // surf: foam lines rolling in over the shallows (bigger on open coast)
         float shore = 1.0 - smoothstep(0.0, 2.2, depth);
         float roll = sin(depth * 5.5 - uTime * 1.6 + vn(vW.xz * 0.05) * 6.0);
         float surf = smoothstep(0.55, 0.95, roll) * shore * smoothstep(0.02, 0.25, depth) * (0.4 + 0.6 * vn(vW.xz * 0.2 + uTime * 0.2));
         float edge = (1.0 - smoothstep(0.0, 0.45, depth)) * smoothstep(0.3, 0.75, vn(vW.xz*0.5 + uTime*0.3));
         float foam = max(edge, surf * uWindAmp);
-        col = mix(col, vec3(0.93), foam * 0.7 * (1.0 - uPollution*0.5));
-        col *= mix(1.0, 0.28, uNight);
+        col = mix(col, vec3(0.93) * max(light, 0.25), foam * 0.7 * (1.0 - uPollution*0.5));
+        col *= mix(1.0, 0.45, uNight);
+        // winter ice creeping in from the banks
+        float ice = 0.0;
+        if (uIce > 0.001) {
+          float iceN = vn(vW.xz * 0.07) * 0.6 + vn(vW.xz * 0.5) * 0.4;
+          ice = uIce * (1.0 - smoothstep(0.2, 0.35 + uIce * 2.4, depth + (iceN - 0.5) * 1.2));
+          float crack = smoothstep(0.025, 0.0, abs(vn(vW.xz * 0.35) - 0.5)) * 0.35;
+          vec3 iceCol = vec3(0.72, 0.8, 0.88) * max(light, 0.15) * (0.85 + 0.15 * vn(vW.xz * 2.0)) * (1.0 - crack);
+          col = mix(col, iceCol + skyR * 0.12, ice);
+        }
+        col += vec3(0.55, 0.6, 0.85) * uFlash * (0.25 + fres);
         float alpha = mix(0.5, 0.95, smoothstep(0.0, 3.5, depth));
         alpha = max(alpha, foam*0.8);
+        alpha = mix(alpha, 0.97, ice);
         gl_FragColor = vec4(col, alpha);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>

@@ -1,0 +1,31 @@
+// Simulated phone: drag-to-draw a road with one finger, then Done, then Undo.
+import { chromium } from 'playwright-core';
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+const page = await ctx.newPage();
+page.on('pageerror', (e) => console.log('pageerror', e.message));
+await page.goto('http://127.0.0.1:5173/#skip&map=appalachia&mode=sandbox', { waitUntil: 'load' });
+await page.waitForTimeout(8000);
+const cdp = await ctx.newCDPSession(page);
+const touch = async (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] });
+const segs = () => page.evaluate(() => window.__game.net.segs.size);
+console.log('segs start', await segs(), 'touch?', await page.evaluate(() => window.__game.isTouch));
+await page.tap('#ob-go');
+await page.waitForTimeout(300);
+await page.tap('button.card[data-road="stroad4"]');
+await page.waitForTimeout(300);
+await touch('touchStart', 120, 380);
+for (let i = 1; i <= 10; i++) { await touch('touchMove', 120 + i * 18, 380 - i * 10); await page.waitForTimeout(40); }
+await page.waitForTimeout(300);
+await page.screenshot({ path: 'shots/touch-drag.png' });
+await touch('touchEnd', 0, 0);
+await page.waitForTimeout(600);
+console.log('segs after drag', await segs(), 'drawing', await page.evaluate(() => window.__game.tools.drawing));
+await page.screenshot({ path: 'shots/touch-after.png' });
+await page.tap('#ta-done');
+await page.waitForTimeout(200);
+console.log('drawing after done', await page.evaluate(() => window.__game.tools.drawing));
+await page.tap('#ta-undo');
+await page.waitForTimeout(400);
+console.log('segs after undo', await segs());
+await browser.close();

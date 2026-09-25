@@ -9,5 +9,5 @@ export default defineConfig(({ mode }) => ({
     target: 'es2020',
     chunkSizeWarningLimit: 4000,
   },
-  server: { host: '127.0.0.1', port: 5173 },
+  server: { host: '127.0.0.1', port: 5173, watch: { ignored: ['**/shots/**', '**/dist/**', '**/dist-single/**', '**/scripts/**'] } },
 }));

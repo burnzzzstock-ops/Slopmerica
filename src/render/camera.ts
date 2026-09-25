@@ -9,6 +9,8 @@ import type { Terrain } from '../world/terrain';
 export interface PointerHandlers {
   /** true if the active tool uses one-finger/left drags (zone brush etc.) */
   toolCapturesDrag(): boolean;
+  /** screen px to lift the touch point above the finger (so it isn't hidden) */
+  touchLift?(): number;
   down(p: THREE.Vector3 | null, e: PointerEvent): void;
   move(p: THREE.Vector3 | null, e: PointerEvent, dragging: boolean): void;
   up(p: THREE.Vector3 | null, e: PointerEvent, wasDrag: boolean): void;
@@ -77,7 +79,7 @@ export class RTSCamera {
 
   private zoomAt(f: number, cx: number, cy: number) {
     const before = this.goal.distance;
-    const next = clamp(before * f, 25, 2600);
+    const next = clamp(before * f, 25, 6500);
     const p = this.groundAt(cx, cy);
     if (p && next < before) {
       const k = 1 - next / before;
@@ -110,7 +112,7 @@ export class RTSCamera {
     if (e.button === 0) {
       const touchPans = this.isTouch(e) && !this.handlers.toolCapturesDrag();
       this.mode = touchPans ? 'pan1' : 'tool';
-      if (this.mode === 'tool') this.handlers.down(this.groundAt(e.clientX, e.clientY), e);
+      if (this.mode === 'tool') this.handlers.down(this.groundAt(e.clientX, e.clientY - this.lift(e)), e);
     }
   }
 
@@ -135,8 +137,8 @@ export class RTSCamera {
     } else if (this.mode === 'pan1') {
       this.panScreen(dx, dy);
     } else if (this.mode === 'tool') {
-      this.hover = this.groundAt(e.clientX, e.clientY);
-      this.handlers.move(this.hover, e, true);
+      this.hover = this.groundAt(e.clientX, e.clientY - this.lift(e));
+      this.handlers.move(this.hover, e, this.moved);
     } else if (this.mode === 'multi' && this.pointers.size >= 2) {
       const [a, b] = [...this.pointers.values()];
       const d = Math.hypot(a.x - b.x, a.y - b.y);
@@ -169,7 +171,7 @@ export class RTSCamera {
     this.pointers.delete(e.pointerId);
     if (this.mode === 'tool') {
       if (cancelled) this.handlers.cancel();
-      else this.handlers.up(this.groundAt(e.clientX, e.clientY), e, this.moved);
+      else this.handlers.up(this.groundAt(e.clientX, e.clientY - this.lift(e)), e, this.moved);
     } else if (this.mode === 'pan1' && !this.moved && !cancelled) {
       // a tap without a drag acts as a click
       const p = this.groundAt(e.clientX, e.clientY);
@@ -181,6 +183,10 @@ export class RTSCamera {
       this.mode = 'pan1';
       this.moved = true;
     }
+  }
+
+  private lift(e: PointerEvent) {
+    return this.isTouch(e) ? (this.handlers.touchLift?.() ?? 0) : 0;
   }
 
   private minPitch() {
@@ -203,7 +209,7 @@ export class RTSCamera {
 
   update(dt: number) {
     const k = this.keys;
-    const sp = this.distance * 1.1 * dt * (k.has('shift') ? 2.5 : 1);
+    const sp = Math.max(120, this.distance) * 1.1 * dt * (k.has('shift') ? 2.5 : 1);
     const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
     let mx = 0, mz = 0;
     if (k.has('w') || k.has('arrowup')) { mx -= fx; mz -= fz; }
@@ -219,8 +225,8 @@ export class RTSCamera {
     if (k.has('e')) this.goal.yaw -= dt * 1.4;
     if (k.has('r')) this.goal.pitch = clamp(this.goal.pitch + dt, this.minPitch(), 1.48);
     if (k.has('f')) this.goal.pitch = clamp(this.goal.pitch - dt, this.minPitch(), 1.48);
-    if (k.has('=') || k.has('+')) this.goal.distance = clamp(this.goal.distance * (1 - dt * 1.5), 25, 2600);
-    if (k.has('-')) this.goal.distance = clamp(this.goal.distance * (1 + dt * 1.5), 25, 2600);
+    if (k.has('=') || k.has('+')) this.goal.distance = clamp(this.goal.distance * (1 - dt * 1.5), 25, 6500);
+    if (k.has('-')) this.goal.distance = clamp(this.goal.distance * (1 + dt * 1.5), 25, 6500);
 
     const s = 1 - Math.pow(0.0001, dt);
     this.goal.target.y = Math.max(WATER, this.terrain.h(this.goal.target.x, this.goal.target.z));
@@ -236,7 +242,7 @@ export class RTSCamera {
     if (pos.y < ground) pos.y = ground;
     this.camera.lookAt(this.target);
     this.camera.near = clamp(this.distance * 0.004, 0.5, 8);
-    this.camera.far = 16000;
+    this.camera.far = 50000;
     this.camera.updateProjectionMatrix();
   }
 }

@@ -1,0 +1,99 @@
+// Save / load to localStorage (per browser). Autosaves every 30s and when the
+// tab is hidden. The world is regenerated from its seed; only edits are saved.
+import type { Game } from '../game';
+import type { MapId } from '../world/maps';
+import type { Mode } from './sim';
+
+const KEY = 'slopmerica.save.v1';
+
+export interface SaveData {
+  v: 1;
+  savedAt: number;
+  map: MapId;
+  mode: Mode;
+  city: string;
+  day: number;
+  hour: number;
+  money: number | null;
+  tax: number;
+  loans: { amount: number; weekly: number; weeksLeft: number }[];
+  pop: number;
+  nature: number;
+  sprawl: number;
+  roads: ReturnType<Game['net']['serialize']>;
+  zones: ReturnType<Game['zones']['serialize']>;
+  buildings: ReturnType<Game['buildings']['serialize']>;
+  communes: [number, string, number, number, number][];
+}
+
+export function snapshot(g: Game): SaveData {
+  return {
+    v: 1, savedAt: Date.now(), map: g.map.def.id, mode: g.sim.mode, city: g.cityName, day: g.sim.day, hour: g.hour,
+    money: g.sim.money === Infinity ? null : g.sim.money, tax: g.sim.taxRate, loans: g.sim.loans, pop: g.sim.population,
+    nature: g.sim.naturePct, sprawl: g.sim.sprawlPct, roads: g.net.serialize(), zones: g.zones.serialize(), buildings: g.buildings.serialize(),
+    communes: g.communes.list.map((c) => [c.id, c.state === 'leaving' ? 'gone' : c.state, c.stubborn, c.suitDays, c.suitOdds]),
+  };
+}
+
+export function saveGame(g: Game): boolean {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(snapshot(g)));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function loadSave(): SaveData | null {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw) as SaveData;
+    return d && d.v === 1 ? d : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearSave() {
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function applySave(g: Game, d: SaveData) {
+  for (const [id, state, stubborn, suitDays, suitOdds] of d.communes) {
+    const c = g.communes.list.find((x) => x.id === id);
+    if (!c) continue;
+    c.stubborn = stubborn;
+    c.suitDays = suitDays;
+    c.suitOdds = suitOdds;
+    if (state === 'gone') {
+      c.state = 'gone';
+      g.communes.group.remove(c.group);
+    } else c.state = state as typeof c.state;
+  }
+  g.syncBlockers();
+  g.net.restore(d.roads);
+  g.zones.update();
+  g.zones.restore(d.zones);
+  g.buildings.restore(d.buildings);
+  g.hour = d.hour;
+  g.sim.restoreState(d.day, d.money, d.tax, d.loans, d.pop, d.nature, d.sprawl);
+}
+
+export function autosave(g: Game) {
+  let t = 0;
+  g.onFrame.push((dt) => {
+    t += dt;
+    if (t > 30) {
+      t = 0;
+      saveGame(g);
+    }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') saveGame(g);
+  });
+}

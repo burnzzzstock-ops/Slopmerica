@@ -1,211 +1,274 @@
-// Post-processing. High quality: MSAA HDR render -> threshold bloom (only the
-// sun, lightning and night emissives clear the bar) -> one final pass that tone
-// maps (same ACES as the renderer), grades per season/weather, and adds a
-// vignette, optional tilt-shift, heat shimmer and the lightning flash.
-// Low quality renders straight to the screen with no post at all.
+// Post-processing. High quality renders the scene into a multisampled HDR
+// target, adds screen-space ambient occlusion (half-res, depth-aware blur),
+// bloom for lights and glints, then a filmic grade + ACES tone map + vignette.
+// Low quality (phones) renders straight to the canvas.
 import * as THREE from 'three';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import type { Quality } from '../config';
 
-/** The grade the weather wants. WeatherSystem writes it; PostFX reads it every frame. */
-export interface GradeParams {
-  exposure: number;
-  contrast: number;
-  saturation: number;
-  warmth: number; // -1 cool .. +1 warm
-  tint: number; // -1 green .. +1 magenta
-  lift: THREE.Color; // added to the shadows
-  vignette: number;
-  shimmer: number; // heat haze distortion 0..1
-  flash: number; // lightning 0..1
-  bloom: number; // bloom strength multiplier
-  night: number;
-}
+const AO_SAMPLES = 12;
+const FSQ_VERT = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
 
-export function newGrade(): GradeParams {
-  return { exposure: 1, contrast: 1.04, saturation: 1.06, warmth: 0, tint: 0, lift: new THREE.Color(0, 0, 0), vignette: 0.28, shimmer: 0, flash: 0, bloom: 1, night: 0 };
-}
-
-const FinalShader = {
-  uniforms: {
-    tDiffuse: { value: null as THREE.Texture | null },
-    uRes: { value: new THREE.Vector2(1, 1) },
-    uToneExposure: { value: 1 },
-    uExposure: { value: 1 },
-    uContrast: { value: 1 },
-    uSat: { value: 1 },
-    uWarm: { value: 0 },
-    uTint: { value: 0 },
-    uLift: { value: new THREE.Color() },
-    uVig: { value: 0.3 },
-    uShimmer: { value: 0 },
-    uFlash: { value: 0 },
-    uTime: { value: 0 },
-    uTilt: { value: 0 },
-    uTiltFocus: { value: 0.45 },
-  },
-  vertexShader: /* glsl */ `
-    varying vec2 vUv;
-    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-  fragmentShader: /* glsl */ `
-    uniform sampler2D tDiffuse;
-    uniform vec2 uRes;
-    uniform float uToneExposure, uExposure, uContrast, uSat, uWarm, uTint, uVig, uShimmer, uFlash, uTime, uTilt, uTiltFocus;
-    uniform vec3 uLift;
-    varying vec2 vUv;
-    // Same ACES fit three.js uses, so post and no-post look alike.
-    vec3 postRRTFit(vec3 v) {
-      vec3 a = v * (v + 0.0245786) - 0.000090537;
-      vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081;
-      return a / b;
-    }
-    vec3 postAces(vec3 color) {
-      const mat3 ACESInputMat = mat3(vec3(0.59719, 0.07600, 0.02840), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
-      const mat3 ACESOutputMat = mat3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
-      color *= uToneExposure / 0.6;
-      color = ACESInputMat * color;
-      color = postRRTFit(color);
-      color = ACESOutputMat * color;
-      return clamp(color, 0.0, 1.0);
-    }
-    vec3 postSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
-    float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
-    void main() {
-      vec2 uv = vUv;
-      if (uShimmer > 0.001) {
-        float s = uShimmer * (0.35 + 0.65 * smoothstep(0.75, 0.3, uv.y));
-        uv += vec2(sin(uv.y * 160.0 + uTime * 7.0) + sin(uv.y * 57.0 - uTime * 4.0), cos(uv.x * 110.0 + uTime * 6.0)) * 0.0007 * s;
+const aoMat = () =>
+  new THREE.ShaderMaterial({
+    defines: { SAMPLES: AO_SAMPLES },
+    uniforms: {
+      tDepth: { value: null },
+      uProj: { value: new THREE.Matrix4() },
+      uInvProj: { value: new THREE.Matrix4() },
+      uFull: { value: new THREE.Vector2(1, 1) },
+      uRadius: { value: 4 },
+      uIntensity: { value: 1 },
+      uFade: { value: new THREE.Vector2(1500, 4000) },
+    },
+    vertexShader: FSQ_VERT,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D tDepth;
+      uniform mat4 uProj, uInvProj;
+      uniform vec2 uFull, uFade;
+      uniform float uRadius, uIntensity;
+      varying vec2 vUv;
+      vec3 viewPos(vec2 uv) {
+        float d = texture2D(tDepth, uv).r;
+        vec4 v = uInvProj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+        return v.xyz / v.w;
       }
-      vec3 c = texture2D(tDiffuse, uv).rgb;
-      if (uTilt > 0.001) {
-        float r = smoothstep(0.07, 0.4, abs(uv.y - uTiltFocus)) * uTilt * 10.0;
-        if (r > 0.35) {
-          vec3 acc = c; float wsum = 1.0;
-          for (int i = 1; i < 14; i++) {
-            float fi = float(i);
-            float a = fi * 2.39996;
-            vec2 o = vec2(cos(a), sin(a)) * sqrt(fi / 13.0) * r / uRes;
-            acc += texture2D(tDiffuse, uv + o).rgb; wsum += 1.0;
-          }
-          c = acc / wsum;
+      float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+      void main() {
+        float d0 = texture2D(tDepth, vUv).r;
+        if (d0 >= 0.99999) { gl_FragColor = vec4(1.0); return; }
+        vec3 P = viewPos(vUv);
+        vec2 px = 1.0 / uFull;
+        vec3 Pr = viewPos(vUv + vec2(px.x, 0.0)), Pl = viewPos(vUv - vec2(px.x, 0.0));
+        vec3 Pu = viewPos(vUv + vec2(0.0, px.y)), Pd = viewPos(vUv - vec2(0.0, px.y));
+        vec3 dx = abs(Pr.z - P.z) < abs(P.z - Pl.z) ? Pr - P : P - Pl;
+        vec3 dy = abs(Pu.z - P.z) < abs(P.z - Pd.z) ? Pu - P : P - Pd;
+        vec3 N = normalize(cross(dx, dy));
+        if (N.z < 0.0) N = -N;
+        float r = uRadius;
+        float rPx = r * uProj[1][1] * 0.5 * uFull.y / -P.z;
+        if (rPx < 1.5) { gl_FragColor = vec4(1.0); return; }
+        rPx = min(rPx, 90.0);
+        float a0 = hash(gl_FragCoord.xy) * 6.2831853;
+        float sum = 0.0;
+        float r2 = r * r;
+        for (int i = 0; i < SAMPLES; i++) {
+          float t = (float(i) + 0.5) / float(SAMPLES);
+          float ang = a0 + t * 7.0 * 6.2831853;
+          vec2 off = vec2(cos(ang), sin(ang)) * t * rPx * px;
+          vec3 S = viewPos(vUv + off);
+          vec3 v = S - P;
+          float vv = dot(v, v);
+          float vn = dot(v, N);
+          float f = max(r2 - vv, 0.0);
+          sum += f * f * f * max((vn - 0.0002 * -P.z) / (0.01 + vv), 0.0);
         }
-      }
-      c += c * uFlash * 1.4 + vec3(0.02, 0.025, 0.045) * uFlash;
-      c *= uExposure;
-      c *= vec3(1.0 + uWarm * 0.25, 1.0 + uWarm * 0.04 - uTint * 0.12, 1.0 - uWarm * 0.3);
-      c = postAces(max(c, vec3(0.0)));
-      float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-      c = max(mix(vec3(l), c, uSat), vec3(0.0));
-      c = postSRGB(clamp(c, 0.0, 1.0));
-      c = clamp((c - 0.5) * uContrast + 0.5, 0.0, 1.0);
-      c += uLift * (1.0 - c);
-      vec2 q = vUv - 0.5;
-      q.x *= uRes.x / uRes.y * 0.75;
-      c *= 1.0 - smoothstep(0.2, 0.95, length(q)) * uVig;
-      c += (hash(gl_FragCoord.xy + fract(uTime) * 91.0) - 0.5) / 255.0;
-      gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
-    }`,
-};
+        float ao = max(0.0, 1.0 - sum * uIntensity * 5.0 / (float(SAMPLES) * r2 * r2 * r2));
+        ao = mix(1.0, ao, 1.0 - smoothstep(uFade.x, uFade.y, -P.z));
+        gl_FragColor = vec4(ao, ao, ao, 1.0);
+      }`,
+    depthTest: false,
+    depthWrite: false,
+  });
+
+const blurMat = () =>
+  new THREE.ShaderMaterial({
+    uniforms: { tAO: { value: null }, tDepth: { value: null }, uDir: { value: new THREE.Vector2(1, 0) }, uNear: { value: 1 }, uFar: { value: 1000 } },
+    vertexShader: FSQ_VERT,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D tAO, tDepth;
+      uniform vec2 uDir;
+      uniform float uNear, uFar;
+      varying vec2 vUv;
+      float lin(float d) { float z = d * 2.0 - 1.0; return 2.0 * uNear * uFar / (uFar + uNear - z * (uFar - uNear)); }
+      void main() {
+        float z0 = lin(texture2D(tDepth, vUv).r);
+        float acc = 0.0, wsum = 0.0;
+        for (int i = -4; i <= 4; i++) {
+          vec2 uv = vUv + uDir * float(i);
+          float z = lin(texture2D(tDepth, uv).r);
+          float w = exp(-float(i * i) / 12.0) * exp(-abs(z - z0) / (0.03 * z0 + 0.1));
+          acc += texture2D(tAO, uv).r * w;
+          wsum += w;
+        }
+        float a = acc / wsum;
+        gl_FragColor = vec4(a, a, a, 1.0);
+      }`,
+    depthTest: false,
+    depthWrite: false,
+  });
+
+const compositeMat = () =>
+  new THREE.ShaderMaterial({
+    uniforms: { tColor: { value: null }, tAO: { value: null }, uAO: { value: 1 } },
+    vertexShader: FSQ_VERT,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D tColor, tAO;
+      uniform float uAO;
+      varying vec2 vUv;
+      void main() {
+        vec4 c = texture2D(tColor, vUv);
+        float ao = mix(1.0, texture2D(tAO, vUv).r, uAO);
+        gl_FragColor = vec4(c.rgb * ao, 1.0);
+      }`,
+    depthTest: false,
+    depthWrite: false,
+  });
+
+const gradeMat = () =>
+  new THREE.ShaderMaterial({
+    uniforms: {
+      tColor: { value: null },
+      uExposure: { value: 1 },
+      uTint: { value: new THREE.Color(1, 1, 1) },
+      uSat: { value: 1.08 },
+      uContrast: { value: 1.06 },
+      uVignette: { value: 0.28 },
+      uLift: { value: new THREE.Color(0, 0, 0) },
+      uTime: { value: 0 },
+    },
+    vertexShader: FSQ_VERT,
+    fragmentShader: /* glsl */ `
+      // three prepends the tone mapping + color space helpers to ShaderMaterials
+      uniform sampler2D tColor;
+      uniform vec3 uTint, uLift;
+      uniform float uSat, uContrast, uVignette, uTime, uExposure;
+      varying vec2 vUv;
+      void main() {
+        vec3 c = texture2D(tColor, vUv).rgb * uTint * uExposure;
+        c = ACESFilmicToneMapping(c);
+        // grade in display space so contrast doesn't crush the shadows
+        c = sRGBTransferOETF(vec4(clamp(c, 0.0, 1.0), 1.0)).rgb;
+        float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+        c = mix(vec3(l), c, uSat);
+        c = (c - 0.5) * uContrast + 0.5;
+        c = max(c, 0.0) + uLift * (1.0 - c);
+        vec2 q = vUv - 0.5;
+        c *= 1.0 - uVignette * smoothstep(0.2, 0.85, dot(q, q) * 2.2);
+        vec4 o = vec4(clamp(c, 0.0, 1.0), 1.0);
+        // a whisper of grain so gradients (sky, fog) don't band
+        o.rgb += (fract(sin(dot(gl_FragCoord.xy + uTime, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;
+        gl_FragColor = o;
+      }`,
+    depthTest: false,
+    depthWrite: false,
+  });
 
 export class PostFX {
-  /** Grade inputs (WeatherSystem writes these when it's given this PostFX). */
-  readonly grade: GradeParams = newGrade();
-  /** Optional looks. */
-  vignette = true;
-  tiltShift = false;
-  /** Screen height (0 bottom .. 1 top) of the in-focus band for tilt-shift. */
-  tiltFocus = 0.45;
   readonly enabled: boolean;
-  private composer?: EffectComposer;
+  private ao: boolean;
+  private sceneRT?: THREE.WebGLRenderTarget;
+  private aoRT?: THREE.WebGLRenderTarget;
+  private aoRT2?: THREE.WebGLRenderTarget;
+  private hdrRT?: THREE.WebGLRenderTarget;
   private bloom?: UnrealBloomPass;
-  private final?: ShaderPass;
-  private size = new THREE.Vector2();
-  private lastW = 0;
-  private lastH = 0;
-  private lastPR = 0;
-  private time = 0;
-  private lastNow = 0;
+  private quad = new FullScreenQuad();
+  private aoM = aoMat();
+  private blurM = blurMat();
+  private compM = compositeMat();
+  private gradeM = gradeMat();
+  /** Weather/season look, set by the weather system each frame. */
+  readonly look = { tint: new THREE.Color(1, 1, 1), sat: 1.0, contrast: 1.06, lift: new THREE.Color(0, 0, 0), exposure: 1 };
+  /** World-space AO radius; the game scales it with zoom. */
+  aoRadius = 4;
 
-  constructor(private renderer: THREE.WebGLRenderer, private scene: THREE.Scene, private camera: THREE.Camera, q: Quality) {
-    this.enabled = q.post;
-    if (!q.post) return;
-    const samples = Math.min(4, renderer.capabilities.maxSamples || 0);
-    const rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples });
-    this.composer = new EffectComposer(renderer, rt);
-    this.composer.addPass(new RenderPass(scene, camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.3, 0.5, 1.6);
-    this.composer.addPass(this.bloom);
-    this.final = new ShaderPass(FinalShader);
-    this.final.renderToScreen = true;
-    // this pass does its own tone mapping + sRGB; keep three from adding another
-    (this.final.material as THREE.ShaderMaterial).toneMapped = false;
-    this.composer.addPass(this.final);
-    this.syncSize();
+  constructor(private renderer: THREE.WebGLRenderer, private scene: THREE.Scene, private camera: THREE.PerspectiveCamera, q: Quality) {
+    this.enabled = q.post && renderer.capabilities.isWebGL2;
+    this.ao = q.ao;
+    if (!this.enabled) return;
+    const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+    const w = Math.max(1, size.x), h = Math.max(1, size.y);
+    this.sceneRT = new THREE.WebGLRenderTarget(w, h, {
+      type: THREE.HalfFloatType,
+      samples: 4,
+      depthTexture: new THREE.DepthTexture(w, h, THREE.UnsignedIntType),
+    });
+    this.sceneRT.depthTexture!.minFilter = this.sceneRT.depthTexture!.magFilter = THREE.NearestFilter;
+    this.hdrRT = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, depthBuffer: false });
+    const aw = Math.max(1, w >> 1), ah = Math.max(1, h >> 1);
+    this.aoRT = new THREE.WebGLRenderTarget(aw, ah, { type: THREE.UnsignedByteType, depthBuffer: false });
+    this.aoRT2 = this.aoRT.clone();
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.25, 0.3, 0.92);
   }
 
-  private syncSize() {
-    if (!this.composer) return;
-    this.renderer.getSize(this.size);
+  setSize(cssW: number, cssH: number) {
+    if (!this.enabled) return;
     const pr = this.renderer.getPixelRatio();
-    if (this.size.x === this.lastW && this.size.y === this.lastH && pr === this.lastPR) return;
-    this.lastW = this.size.x;
-    this.lastH = this.size.y;
-    this.lastPR = pr;
-    this.composer.setPixelRatio(pr);
-    this.composer.setSize(this.size.x, this.size.y);
-    (this.final!.uniforms.uRes.value as THREE.Vector2).set(this.size.x * pr, this.size.y * pr);
-  }
-
-  setSize(w: number, h: number) {
-    if (!this.composer) return;
-    this.renderer.getSize(this.size);
-    this.lastW = w;
-    this.lastH = h;
-    this.lastPR = this.renderer.getPixelRatio();
-    this.composer.setPixelRatio(this.lastPR);
-    this.composer.setSize(w, h);
-    (this.final!.uniforms.uRes.value as THREE.Vector2).set(w * this.lastPR, h * this.lastPR);
+    const w = Math.max(1, Math.floor(cssW * pr)), h = Math.max(1, Math.floor(cssH * pr));
+    this.sceneRT!.setSize(w, h);
+    this.hdrRT!.setSize(w, h);
+    this.aoRT!.setSize(Math.max(1, w >> 1), Math.max(1, h >> 1));
+    this.aoRT2!.setSize(Math.max(1, w >> 1), Math.max(1, h >> 1));
+    this.bloom!.setSize(w, h);
   }
 
   /** night: 0 day .. 1 night (bloom strength etc.) */
   render(night: number) {
-    if (!this.composer) {
-      this.renderer.render(this.scene, this.camera);
+    const r = this.renderer;
+    if (!this.enabled) {
+      r.setRenderTarget(null);
+      r.render(this.scene, this.camera);
       return;
     }
-    this.syncSize();
-    const now = performance.now() / 1000;
-    const dt = this.lastNow ? Math.min(0.1, now - this.lastNow) : 0;
-    this.lastNow = now;
-    this.time += dt;
-    const g = this.grade;
-    const n = Math.max(night, g.night);
-    const b = this.bloom!;
-    b.threshold = THREE.MathUtils.lerp(1.6, 0.55, n);
-    b.strength = THREE.MathUtils.lerp(0.22, 0.85, n) * g.bloom + g.flash * 0.4;
-    b.radius = THREE.MathUtils.lerp(0.35, 0.6, n);
-    const u = this.final!.uniforms;
-    u.uToneExposure.value = this.renderer.toneMappingExposure;
-    u.uExposure.value = g.exposure;
-    u.uContrast.value = g.contrast;
-    u.uSat.value = g.saturation;
-    u.uWarm.value = g.warmth;
-    u.uTint.value = g.tint;
-    (u.uLift.value as THREE.Color).copy(g.lift);
-    u.uVig.value = this.vignette ? g.vignette : 0;
-    u.uShimmer.value = g.shimmer;
-    u.uFlash.value = g.flash;
-    u.uTime.value = this.time;
-    u.uTilt.value = this.tiltShift ? 1 : 0;
-    u.uTiltFocus.value = this.tiltFocus;
-    this.composer.render(dt);
-  }
+    const cam = this.camera;
+    r.setRenderTarget(this.sceneRT!);
+    r.render(this.scene, cam);
 
-  dispose() {
-    this.composer?.dispose();
-    this.bloom?.dispose();
+    let aoTex: THREE.Texture | null = null;
+    if (this.ao) {
+      const u = this.aoM.uniforms;
+      u.tDepth.value = this.sceneRT!.depthTexture;
+      u.uProj.value.copy(cam.projectionMatrix);
+      u.uInvProj.value.copy(cam.projectionMatrixInverse);
+      u.uFull.value.set(this.sceneRT!.width, this.sceneRT!.height);
+      u.uRadius.value = this.aoRadius;
+      u.uIntensity.value = 1.35;
+      u.uFade.value.set(this.aoRadius * 120, this.aoRadius * 320);
+      this.quad.material = this.aoM;
+      r.setRenderTarget(this.aoRT!);
+      this.quad.render(r);
+      const b = this.blurM.uniforms;
+      b.tDepth.value = this.sceneRT!.depthTexture;
+      b.uNear.value = cam.near;
+      b.uFar.value = cam.far;
+      this.quad.material = this.blurM;
+      b.tAO.value = this.aoRT!.texture;
+      b.uDir.value.set(1 / this.aoRT!.width, 0);
+      r.setRenderTarget(this.aoRT2!);
+      this.quad.render(r);
+      b.tAO.value = this.aoRT2!.texture;
+      b.uDir.value.set(0, 1 / this.aoRT!.height);
+      r.setRenderTarget(this.aoRT!);
+      this.quad.render(r);
+      aoTex = this.aoRT!.texture;
+    }
+
+    const c = this.compM.uniforms;
+    c.tColor.value = this.sceneRT!.texture;
+    c.tAO.value = aoTex ?? this.sceneRT!.texture;
+    c.uAO.value = aoTex ? 1 : 0;
+    this.quad.material = this.compM;
+    r.setRenderTarget(this.hdrRT!);
+    this.quad.render(r);
+
+    const bl = this.bloom!;
+    // HDR input: only real light sources and sun glints should bloom
+    bl.strength = 0.1 + night * 0.35;
+    bl.threshold = 0.9 + (1 - night) * 4;
+    bl.render(r, this.hdrRT!, this.hdrRT!, 0, false);
+
+    const g = this.gradeM.uniforms;
+    g.tColor.value = this.hdrRT!.texture;
+    g.uExposure.value = this.look.exposure;
+    g.uTint.value.copy(this.look.tint);
+    g.uSat.value = this.look.sat;
+    g.uContrast.value = this.look.contrast;
+    g.uLift.value.copy(this.look.lift);
+    g.uVignette.value = 0.26;
+    g.uTime.value = (g.uTime.value + 1.37) % 1000;
+    this.quad.material = this.gradeM;
+    r.setRenderTarget(null);
+    this.quad.render(r);
   }
 }

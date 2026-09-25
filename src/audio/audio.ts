@@ -19,7 +19,7 @@ export class AudioEngine {
   private ambBus?: GainNode;
   private revIn?: GainNode;
   private amb?: Ambience;
-  private volume = 0.7;
+  private volume = 0.8;
   private wasMuted = false;
   private lastPlay: Partial<Record<SfxKind, number>> = {};
 
@@ -31,7 +31,12 @@ export class AudioEngine {
     }
     const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctx) return;
-    const c = (this.ctx = new Ctx({ latencyHint: 'interactive' }));
+    let c: AudioContext;
+    try {
+      c = this.ctx = new Ctx({ latencyHint: 'interactive' });
+    } catch {
+      return;
+    }
     const s = (this.synth = new Synth(c));
     const comp = c.createDynamicsCompressor();
     comp.threshold.value = -16;
@@ -42,6 +47,7 @@ export class AudioEngine {
     comp.connect(c.destination);
     this.master = c.createGain();
     this.master.gain.value = this.muted ? 0 : this.volume;
+    this.wasMuted = this.muted;
     this.master.connect(comp);
     this.sfxBus = c.createGain();
     this.sfxBus.gain.value = 0.9;
@@ -63,15 +69,18 @@ export class AudioEngine {
 
   setVolume(v: number) {
     this.volume = Math.max(0, Math.min(1, v));
-    if (this.master && this.ctx && !this.muted) this.master.gain.setTargetAtTime(this.volume, this.ctx.currentTime, 0.05);
+    if (this.master && this.ctx) this.master.gain.setTargetAtTime(this.muted ? 0 : this.volume, this.ctx.currentTime, 0.05);
+  }
+
+  setMuted(m: boolean) {
+    this.muted = m;
+    this.wasMuted = m;
+    this.setVolume(this.volume);
   }
 
   update(dt: number, mix: SoundMix) {
     if (!this.ctx || !this.amb || !this.master) return;
-    if (this.muted !== this.wasMuted) {
-      this.wasMuted = this.muted;
-      this.master.gain.setTargetAtTime(this.muted ? 0 : this.volume, this.ctx.currentTime, 0.05);
-    }
+    if (this.muted !== this.wasMuted) this.setMuted(this.muted);
     if (this.muted || this.ctx.state !== 'running') return;
     this.amb.mapId = this.mapId;
     this.amb.update(Math.min(dt, 0.1), mix);

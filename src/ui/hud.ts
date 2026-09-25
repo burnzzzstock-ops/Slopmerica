@@ -253,7 +253,7 @@ export class Hud implements UiSink {
     }
     if (p === 'roads') {
       this.sub.innerHTML = `
-        <div class="sp-title">Roads <small>${IS_TOUCH ? 'Drag to draw. Two fingers move the map. Tap Done to stop.' : 'Click start, click end, keep going. Right-click or Esc stops.'}</small></div>
+        <div class="sp-title">Roads <small>${IS_TOUCH ? 'Drag to draw. Two fingers move the map. Double-tap or Done to stop.' : 'Click start, click end, keep going. Right-click, double-click or Esc stops.'}</small></div>
         <div class="sp-row modes">${(['straight', 'curve', 'freeform'] as const).map((m) => `<button class="chip ${t.roadMode === m ? 'on' : ''}" data-mode="${m}">${m === 'straight' ? '📏 Straight' : m === 'curve' ? '↪️ Curved' : '〰️ Freeform'}</button>`).join('')}</div>
         <div class="sp-grid">${ROAD_ORDER.map((id) => {
           const r = ROAD_TYPES[id];

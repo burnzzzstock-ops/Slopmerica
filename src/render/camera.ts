@@ -28,6 +28,7 @@ export class RTSCamera {
   private ndc = new THREE.Vector2();
   private pointers = new Map<number, { x: number; y: number; sx: number; sy: number }>();
   private mode: 'none' | 'orbit' | 'tool' | 'pan1' | 'multi' = 'none';
+  private orbitButton = -1;
   private moved = false;
   private last = { x: 0, y: 0 };
   private multiStart: { d: number; a: number; cx: number; cy: number } | null = null;
@@ -107,6 +108,7 @@ export class RTSCamera {
     }
     if (!this.isTouch(e) && (e.button === 2 || e.button === 1)) {
       this.mode = 'orbit';
+      this.orbitButton = e.button;
       return;
     }
     if (e.button === 0) {
@@ -172,6 +174,9 @@ export class RTSCamera {
     if (this.mode === 'tool') {
       if (cancelled) this.handlers.cancel();
       else this.handlers.up(this.groundAt(e.clientX, e.clientY - this.lift(e)), e, this.moved);
+    } else if (this.mode === 'orbit' && this.orbitButton === 2 && !this.moved && !cancelled) {
+      // right-click (no drag) = stop: ends the road being drawn; right-drag still orbits
+      this.handlers.cancel();
     } else if (this.mode === 'pan1' && !this.moved && !cancelled) {
       // a tap without a drag acts as a click
       const p = this.groundAt(e.clientX, e.clientY);

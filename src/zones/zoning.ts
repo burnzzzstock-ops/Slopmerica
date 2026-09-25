@@ -220,11 +220,16 @@ export class Zoning {
   /** land the player may zone (null = everywhere); see sim/land.ts */
   allowed: ((x: number, z: number) => boolean) | null = null;
 
+  /** cells a zoning stroke skipped because they already had another zone */
+  skipped = 0;
+
   paint(x: number, z: number, r: number, zone: ZoneType | null) {
     let n = 0;
     for (const c of this.hash.query(x - r, z - r, x + r, z + r)) {
       if (!c.valid || c.bld) continue;
       if (zone && this.allowed && !this.allowed(c.x, c.z)) continue;
+      // zoned land keeps its zone: dezone it first to change it
+      if (zone && c.zone && c.zone !== zone) { if (Math.hypot(c.x - x, c.z - z) <= r) this.skipped++; continue; }
       if (Math.hypot(c.x - x, c.z - z) > r) continue;
       if (c.zone !== zone) { c.zone = zone; n++; }
     }

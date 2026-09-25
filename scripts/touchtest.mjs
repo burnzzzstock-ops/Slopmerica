@@ -29,4 +29,23 @@ console.log('drawing after done', await page.evaluate(() => window.__game.tools.
 await page.tap('#ta-undo');
 await page.waitForTimeout(400);
 console.log('segs after undo', await segs());
+// double-tap ends a road: draw again, then tap twice quickly on one spot
+await touch('touchStart', 120, 380);
+for (let i = 1; i <= 10; i++) { await touch('touchMove', 120 + i * 18, 380 - i * 10); await page.waitForTimeout(40); }
+await touch('touchEnd', 0, 0);
+await page.waitForTimeout(600);
+console.log('drawing again', await page.evaluate(() => window.__game.tools.drawing), 'segs', await segs());
+// Software GL here delivers CDP touches seconds apart (input waits for slow
+// frames), so feed the tool two real-time taps directly: 60 ms apart, like a phone.
+await page.evaluate(async () => {
+  const g = window.__game, t = g.tools;
+  const S = g.startView();
+  const p = { x: S.x + 60, y: 0, z: S.z + 40 };
+  const tap = () => { const e = new PointerEvent('pointerup', { pointerType: 'touch', button: 0 }); t.down(p, e); t.up(p, e, false); };
+  tap();
+  await new Promise((r) => setTimeout(r, 60));
+  tap();
+});
+await page.waitForTimeout(300);
+console.log('after double-tap: drawing', await page.evaluate(() => window.__game.tools.drawing), 'segs', await segs());
 await browser.close();

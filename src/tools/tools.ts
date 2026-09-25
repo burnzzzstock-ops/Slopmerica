@@ -143,6 +143,7 @@ export class Tools implements PointerHandlers {
       case 'zone':
       case 'dezone':
         this.painting = true;
+        this.warnedZoned = false;
         this.paint(p);
         break;
       case 'bulldoze':
@@ -169,7 +170,11 @@ export class Tools implements PointerHandlers {
     if (e.button === 2) return;
     switch (this.active) {
       case 'road':
-        if (e.pointerType === 'mouse') {
+        if (!wasDrag && this.doubleTap(p, e) && this.start) {
+          // double-tap / double-click: stop drawing this road
+          this.cancel();
+          this.game.audio.play('click', 0.4);
+        } else if (e.pointerType === 'mouse') {
           if (!wasDrag) this.roadClick(p);
         } else if (this.startedThisTouch && !wasDrag) {
           // tapped the start point: wait for the next drag or tap
@@ -309,7 +314,24 @@ export class Tools implements PointerHandlers {
   }
 
   private paint(p: THREE.Vector3) {
-    this.game.zones.paint(p.x, p.z, this.brushRadius(), this.active === 'dezone' ? null : this.zoneType);
+    const zones = this.game.zones;
+    const before = zones.skipped;
+    zones.paint(p.x, p.z, this.brushRadius(), this.active === 'dezone' ? null : this.zoneType);
+    if (zones.skipped > before && !this.warnedZoned) {
+      this.warnedZoned = true;
+      this.game.toast('Already zoned. Use Dezone first to change it.');
+    }
+  }
+  private warnedZoned = false;
+  private lastTap = { t: -1e9, x: 0, z: 0 };
+
+  /** Second tap/click on the same spot right after the first: ends the road. */
+  private doubleTap(p: THREE.Vector3, e: PointerEvent): boolean {
+    // event time, not handling time: building the first tap's road can be slow
+    const now = e.timeStamp || performance.now();
+    const dbl = now - this.lastTap.t < 380 && Math.hypot(p.x - this.lastTap.x, p.z - this.lastTap.z) < this.snapR() * 1.5;
+    this.lastTap = dbl ? { t: -1e9, x: 0, z: 0 } : { t: now, x: p.x, z: p.z };
+    return dbl;
   }
 
   // ------------------------------------------------------------------ per frame

@@ -115,6 +115,7 @@ export class TransitSystem {
 
   get unlocked() { return this.g.sim.population >= 300; }
   get drawing() { return this.draft.length > 0; }
+  get draftStops() { return this.draft.length; }
 
   depots() {
     return [...this.g.buildings.list.values()].filter((b) => b.zone === 'service' && b.kind === 'busDepot' && b.state === 'active');
@@ -597,14 +598,30 @@ export class TransitSystem {
   }
 }
 
+// touch: a tap marks the depot spot; the action-bar Build places it
+let depotSpot: { x: number; z: number } | null = null;
+
 registerTool({
   id: 'transit-depot', touchLift: 64,
-  up(g, p, _e, wasDrag) { if (!wasDrag && p) transitFor(g)?.placeDepot(p.x, p.z); },
+  up(g, p, e, wasDrag) {
+    if (wasDrag || !p) return;
+    if (e.pointerType !== 'mouse') { depotSpot = { x: p.x, z: p.z }; return; }
+    transitFor(g)?.placeDepot(p.x, p.z);
+  },
+  pending(g) {
+    if (!depotSpot) return null;
+    const ok = transitFor(g)?.canPlaceDepot(depotSpot.x, depotSpot.z).ok;
+    return { cost: ok ? DEPOT_COST : null };
+  },
+  confirm(g) {
+    if (depotSpot && transitFor(g)?.placeDepot(depotSpot.x, depotSpot.z)) depotSpot = null;
+  },
+  cancel() { depotSpot = null; },
   tip(g) {
-    const t = transitFor(g), p = g.tools.hoverPoint;
-    if (!t || !p) return { text: `Place bus depot · ${money(DEPOT_COST)}` };
+    const t = transitFor(g), p = depotSpot ?? g.tools.hoverPoint;
+    if (!t || !p || (g.isTouch && !depotSpot)) return { text: `Place bus depot · ${money(DEPOT_COST)}${g.isTouch ? ' · tap where it goes' : ''}` };
     const c = t.canPlaceDepot(p.x, p.z);
-    return c.ok ? { text: `Place bus depot · ${money(DEPOT_COST)}` } : { text: c.reason ?? 'Nope', bad: true };
+    return c.ok ? { text: `Place bus depot · ${money(DEPOT_COST)}${depotSpot ? ' · tap Build, or tap elsewhere to move it' : ''}` } : { text: c.reason ?? 'Nope', bad: true };
   },
 });
 
@@ -612,6 +629,8 @@ registerTool({
   id: 'transit-line', touchLift: 52,
   up(g, p, _e, wasDrag) { if (!wasDrag && p) transitFor(g)?.addDraftPoint(p.x, p.z); },
   cancel(g) { transitFor(g)?.cancelDraft(); },
+  // phone Done: keep a line with enough stops instead of throwing it away
+  done(g) { const t = transitFor(g); if (t && t.draftStops >= 2) t.finishDraft(); },
   tip(g) {
     const t = transitFor(g);
     if (!t?.drawing) return { text: 'Tap a road to place the first stop' };

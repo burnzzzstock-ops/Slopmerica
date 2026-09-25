@@ -59,6 +59,11 @@ export class Zoning {
   blockers: { x: number; z: number; r: number }[] = [];
   /** Called when cells lose validity or zone (buildings may need to go). */
   onCellsLost?: (cells: ZCell[]) => void;
+  /** Id of the building at x,z that a new cell of this road should belong to (0 if none). */
+  occupantAt?: (x: number, z: number, segId: number) => number;
+  /** A road was rebuilt (widened): its buildings keep their lots unless the new road runs into them. */
+  onRelink?: (buildingIds: number[]) => void;
+  private relink = new Set<number>();
   version = 0;
 
   constructor(private net: RoadNetwork, private terrain: Terrain, scene: THREE.Scene) {
@@ -72,7 +77,9 @@ export class Zoning {
     scene.add(this.overlayMesh);
 
     net.events.on('segAdded', (s) => this.dirtySegs.add(s.id));
-    net.events.on('segChanged', (s) => { this.remember(s.id); this.dropSeg(s.id); this.dirtySegs.add(s.id); });
+    // a widened road rebuilds its cells; the buildings on them are re-linked
+    // after the rebuild instead of being bulldozed with the old cells
+    net.events.on('segChanged', (s) => { this.remember(s.id); this.dropSeg(s.id, true); this.dirtySegs.add(s.id); });
     net.events.on('segRemoved', (s) => { this.remember(s.id); this.dropSeg(s.id); });
   }
 
@@ -96,7 +103,7 @@ export class Zoning {
     return null;
   }
 
-  private dropSeg(segId: number) {
+  private dropSeg(segId: number, relink = false) {
     const blocks = this.bySeg.get(segId);
     if (!blocks) return;
     const lost: ZCell[] = [];
@@ -105,7 +112,7 @@ export class Zoning {
         for (const c of col) {
           this.cells.delete(c.id);
           this.hash.remove(c, c.x, c.z, c.x, c.z);
-          if (c.bld) lost.push(c);
+          if (c.bld) { if (relink) this.relink.add(c.bld); else lost.push(c); }
           this.markNeighborsForRevalidation(c);
         }
     this.bySeg.delete(segId);
@@ -150,7 +157,11 @@ export class Zoning {
       }
     }
     this.bySeg.set(seg.id, blocks);
-    for (const side of blocks) for (const col of side) for (const c of col) { this.cells.set(c.id, c); this.hash.insert(c, c.x, c.z, c.x, c.z); }
+    for (const side of blocks) for (const col of side) for (const c of col) {
+      c.bld = this.occupantAt?.(c.x, c.z, seg.id) ?? 0;
+      this.cells.set(c.id, c);
+      this.hash.insert(c, c.x, c.z, c.x, c.z);
+    }
     this.validateSeg(seg.id);
     for (const side of blocks) for (const col of side) for (const c of col) {
       if (c.valid) {
@@ -331,6 +342,11 @@ export class Zoning {
     if (this.revalidate.size) {
       for (const id of this.revalidate) this.validateSeg(id);
       this.revalidate.clear();
+    }
+    if (this.relink.size) {
+      const ids = [...this.relink];
+      this.relink.clear();
+      this.onRelink?.(ids);
     }
     if (this.overlayDirty) this.rebuildOverlay();
   }

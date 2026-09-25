@@ -23,6 +23,12 @@ export interface ExtTool {
   cancel?(g: Game): void;
   /** hover tip shown next to the cursor (desktop) or in the action bar (touch) */
   tip?(g: Game): ToolTipLike | null;
+  /** touch: a placement planned by a tap, waiting for the action-bar Build button (cost null = can't build there) */
+  pending?(g: Game): { cost: number | null } | null;
+  /** touch: build the planned placement (the Build button) */
+  confirm?(g: Game): void;
+  /** the action-bar Done button, just before the tool is put away (finish drafts here) */
+  done?(g: Game): void;
 }
 
 /** A toolbar button with a sub-panel. */

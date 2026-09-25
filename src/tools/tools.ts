@@ -7,7 +7,7 @@ import type { Snap } from '../roads/network';
 import { ROAD_TYPES, RoadTypeId } from '../roads/roadTypes';
 import type { LandmarkId, ZoneType } from '../contracts';
 import { landmarkFootprint } from '../buildings/generator';
-import type { Game } from '../game';
+import { LANDMARK_COST, type Game } from '../game';
 import { EXT, type ExtTool } from '../ext/registry';
 
 export type ToolId = 'inspect' | 'road' | 'upgrade' | 'bulldoze' | 'zone' | 'dezone' | 'landmark' | 'ext';
@@ -31,6 +31,19 @@ export class Tools implements PointerHandlers {
   extTool: string | null = null;
   private get ext(): ExtTool | undefined {
     return this.active === 'ext' && this.extTool ? EXT.tools.get(this.extTool) : undefined;
+  }
+
+  /** touch: the extension tool's planned placement waiting for Build, if any */
+  get extPending(): { cost: number | null } | null {
+    return this.ext?.pending?.(this.game) ?? null;
+  }
+  confirmExt() {
+    this.ext?.confirm?.(this.game);
+    this.onChange?.();
+  }
+  /** the action-bar Done: let an extension tool finish its draft first */
+  finishExt() {
+    this.ext?.done?.(this.game);
   }
 
   /** Activate a registered extension tool (see src/ext/registry.ts). */
@@ -87,6 +100,8 @@ export class Tools implements PointerHandlers {
 
   set(tool: ToolId) {
     this.cancel();
+    // a finger's last spot isn't a hover: don't carry it into the next tool
+    if (this.game.isTouch) this.hover = null;
     if (tool !== 'ext') this.extTool = null;
     this.active = tool;
     this.game.zones?.setOverlay(tool === 'zone' || tool === 'dezone');
@@ -119,12 +134,19 @@ export class Tools implements PointerHandlers {
   private touchDown = false;
   /** net cost of the planned touch road, or null when nothing is waiting */
   pendingCost: number | null = null;
-  /** A planned (touch) road is waiting for the Build button. */
+  /** touch: where a landmark is planned, waiting for the Build button */
+  private landmarkAt: THREE.Vector3 | null = null;
+  /** A planned (touch) road or landmark is waiting for the Build button. */
   get pending() {
+    if (this.active === 'landmark') return !!this.landmarkAt;
     return this.active === 'road' && !!this.start && !!this.pendingEnd;
   }
-  /** Build the planned touch road (the action-bar Build button). */
+  /** Build the planned touch road or landmark (the action-bar Build button). */
   buildPending() {
+    if (this.active === 'landmark') {
+      if (this.landmarkAt && this.game.placeLandmark(this.landmark, this.landmarkAt)) this.set('inspect');
+      return;
+    }
     if (!this.pendingEnd || !this.start) return;
     const p = this.pendingEnd;
     this.pendingEnd = null;
@@ -140,6 +162,7 @@ export class Tools implements PointerHandlers {
 
   cancel() {
     this.ext?.cancel?.(this.game);
+    this.landmarkAt = null;
     this.pendingEnd = null;
     this.pendingCost = null;
     this.chained = false;
@@ -239,7 +262,15 @@ export class Tools implements PointerHandlers {
         if (!wasDrag) this.game.inspect(p, e);
         break;
       case 'landmark':
-        if (!wasDrag && this.game.placeLandmark(this.landmark, p)) this.set('inspect');
+        if (e.pointerType === 'mouse') {
+          if (!wasDrag && this.game.placeLandmark(this.landmark, p)) this.set('inspect');
+        } else {
+          // touch: plan it (a tap goes under the finger, a drag where the
+          // lifted footprint was); the Build button makes it real
+          const at = wasDrag ? p : this.game.rts.groundAt(e.clientX, e.clientY) ?? p;
+          this.landmarkAt = at.clone();
+          this.hover = this.landmarkAt;
+        }
         break;
     }
   }
@@ -391,7 +422,11 @@ export class Tools implements PointerHandlers {
     // road rings stay a readable size on screen at any zoom (bigger on phones)
     this.marker.scale.setScalar(Math.max(1, this.game.rts.distance * (this.game.isTouch ? 0.009 : 0.005)));
     if (this.active === 'ext') { this.tip = this.ext?.tip?.(this.game) ?? null; return; }
-    if (!hov) return;
+    if (!hov) {
+      // phones have no hover before the first touch: say how to start
+      if (this.game.isTouch) this.tip = this.idleTouchTip();
+      return;
+    }
     if (this.active === 'road') {
       const aim = this.pendingEnd && !this.touchDown ? this.pendingEnd : hov;
       const s = this.start ? this.snapEnd(aim) : net.snap(aim.x, aim.z, this.snapR());
@@ -455,7 +490,13 @@ export class Tools implements PointerHandlers {
       this.highlight.geometry = g;
       this.highlight.visible = true;
       (this.highlight.material as THREE.MeshBasicMaterial).color.set(chk.ok ? 0x9dff3c : 0xff4d4d);
-      this.tip = chk.ok ? { text: 'Click to place (faces the nearest road)' } : { text: chk.reason ?? 'Nope', bad: true };
+      const cost = LANDMARK_COST[this.landmark];
+      this.pendingCost = this.landmarkAt && chk.ok && cost <= this.game.sim.spendable() ? cost : null;
+      if (!chk.ok) this.tip = { text: chk.reason ?? 'Nope', bad: true };
+      else if (!this.game.isTouch) this.tip = { text: 'Click to place (faces the nearest road)' };
+      else this.tip = this.landmarkAt
+        ? cost > this.game.sim.spendable() ? { text: 'Not enough money', bad: true } : { text: 'Faces the nearest road · tap Build, or drag to move it' }
+        : { text: 'Tap or drag to where it goes' };
     } else if (this.active === 'zone' || this.active === 'dezone') {
       const r = this.brushRadius();
       this.brushRing.visible = true;
@@ -463,6 +504,16 @@ export class Tools implements PointerHandlers {
       this.brushRing.position.set(hov.x, hov.y + 0.8, hov.z);
       this.tip = null;
     } else this.tip = null;
+  }
+
+  private idleTouchTip(): { text: string; bad?: boolean } | null {
+    switch (this.active) {
+      case 'road': return { text: `Drag to draw a ${ROAD_TYPES[this.roadType].name} · Done when finished` };
+      case 'landmark': return { text: 'Tap or drag to where it goes' };
+      case 'bulldoze': return { text: 'Tap or drag over what to bulldoze', bad: true };
+      case 'upgrade': return { text: 'Tap a road to add a lane' };
+      default: return null;
+    }
   }
 
   private drawRibbon(mesh: THREE.Mesh, c: Cubic, width: number) {

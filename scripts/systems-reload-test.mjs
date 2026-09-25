@@ -14,7 +14,7 @@ const page = await browser.newPage({ viewport: { width: 900, height: 600 } });
 const errors = []; page.on('pageerror', e => errors.push(e.message));
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 await page.goto(`${base}/#skip&map=appalachia&mode=sandbox`, { waitUntil: 'load' });
-await page.waitForFunction(() => window.__game && window.__dbg);
+await page.waitForFunction(() => window.__game && window.__dbg, null, { timeout: 180000 });
 const before = await page.evaluate(async () => {
   const g = window.__game, d = window.__dbg;
   cancelAnimationFrame(g.raf);

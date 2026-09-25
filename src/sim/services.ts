@@ -1172,9 +1172,9 @@ export function placeService(g: Game, id: ServiceModelId, x: number, z: number):
   const d = SERVICE_DEFS.get(id)!;
   const chk = canPlaceService(g, id, x, z);
   if (!chk.ok) { g.toast(chk.reason ?? 'Nope', true); g.audio.play('error'); return null; }
-  g.sim.spend(d.cost, d.name, 'construction');
   const b = g.buildings.placeCustom(d.id, x, z, chk.yaw);
   if (!b) return null;
+  g.sim.spend(d.cost, d.name, 'construction');
   S.graphDirty = true;
   g.audio.play('build');
   g.particles.emit('dust', b.x, b.y + 2, b.z, { count: 40, spread: b.hw });
@@ -1182,21 +1182,37 @@ export function placeService(g: Game, id: ServiceModelId, x: number, z: number):
   return b;
 }
 
+// touch: a tap previews the building there; the action-bar Build places it
+let planned: THREE.Vector3 | null = null;
+
 registerTool({
   id: 'svcPlace',
   touchLift: 64,
-  move: (g, p) => updateGhost(g, p),
-  up: (g, p, _e, wasDrag) => {
+  move: (g, p) => { if (!planned) updateGhost(g, p); },
+  up: (g, p, e, wasDrag) => {
     if (!p || wasDrag) return;
+    if (e.pointerType !== 'mouse') {
+      planned = p.clone();
+      updateGhost(g, planned);
+      return;
+    }
     const spot = spotFor(g, placing, p.x, p.z);
     if (placeService(g, placing, spot.x, spot.z)) spotCache = null;
     updateGhost(g, p);
   },
-  cancel: () => { if (ghost) ghost.visible = false; lastCheck = null; },
-  tip: () => {
+  pending: () => (planned ? { cost: lastCheck?.ok ? SERVICE_DEFS.get(placing)!.cost : null } : null),
+  confirm: (g) => {
+    if (!planned) return;
+    const spot = spotFor(g, placing, planned.x, planned.z);
+    if (placeService(g, placing, spot.x, spot.z)) { spotCache = null; planned = null; if (ghost) ghost.visible = false; lastCheck = null; }
+    else updateGhost(g, planned);
+  },
+  cancel: () => { planned = null; if (ghost) ghost.visible = false; lastCheck = null; },
+  tip: (g) => {
     const d = SERVICE_DEFS.get(placing)!;
     if (lastCheck && !lastCheck.ok) return { text: `${d.name}: ${lastCheck.reason}`, bad: true };
-    return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} · $${d.upkeep}/wk${lastCheck?.snapped ? ' · 📍 snapped to the nearest good spot' : ''}` };
+    if (g.isTouch && !planned) return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} · tap where it goes` };
+    return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} · $${d.upkeep}/wk${lastCheck?.snapped ? ' · 📍 snapped to the nearest good spot' : ''}${planned ? ' · tap Build, or tap elsewhere to move it' : ''}` };
   },
 });
 

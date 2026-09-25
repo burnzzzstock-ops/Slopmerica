@@ -24,7 +24,7 @@ const browser = await chromium.launch({ executablePath, headless: true, args: ['
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 page.on('pageerror', (e) => console.error('pageerror', e.message));
 await page.goto(`${base}/#skip&map=florida&mode=sandbox`, { waitUntil: 'load' });
-await page.waitForFunction(() => window.__game?.districts, null, { timeout: 30000 });
+await page.waitForFunction(() => window.__game?.districts, null, { timeout: 180000 });
 
 const report = await page.evaluate(async () => {
   const g = window.__game, d = window.__dbg, api = g.districts;

@@ -508,6 +508,15 @@ a {
 .toolbar::-webkit-scrollbar {
   display: none;
 }
+.toolbar.more-right {
+  mask-image: linear-gradient(90deg, #000 calc(100% - 44px), transparent);
+}
+.toolbar.more-left {
+  mask-image: linear-gradient(90deg, transparent, #000 44px);
+}
+.toolbar.more-left.more-right {
+  mask-image: linear-gradient(90deg, transparent, #000 44px, #000 calc(100% - 44px), transparent);
+}
 .tbtn {
   position: relative;
   flex: 0 0 auto;
@@ -533,6 +542,23 @@ a {
 .ti {
   font-size: 20px;
   line-height: 1.1;
+}
+/* drawn dots: the ⋯ glyph renders as two faint dots in some phone fonts */
+.more-dots {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  height: 22px;
+}
+.more-dots b {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.tbtn[data-t='more'] .badge {
+  top: -2px;
+  right: 2px;
 }
 .tl {
   font-size: 10px;
@@ -579,6 +605,13 @@ a {
   border-radius: 14px;
   backdrop-filter: blur(8px);
   touch-action: pan-y;
+}
+/* desktop: with the X feed open on the left, bottom panels sit beside it */
+@media (min-width: 900px) {
+  .hud:has(.xfeed:not(.collapsed)) .subpanel {
+    left: 350px;
+    width: min(880px, calc(100vw - 360px));
+  }
 }
 .sp-title {
   font-family: 'Bungee', Impact, sans-serif;

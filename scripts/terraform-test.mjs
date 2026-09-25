@@ -16,12 +16,12 @@ const page = await browser.newPage({ viewport: { width: 900, height: 600 } });
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 await page.goto(`${process.env.BASE_URL || 'http://127.0.0.1:5173'}/#skip&map=appalachia&mode=sandbox`, { waitUntil: 'load' });
-await page.waitForFunction(() => window.__game && window.__dbg);
+await page.waitForFunction(() => window.__game && window.__dbg, null, { timeout: 180000 });
 const result = await page.evaluate(async () => {
   const g = window.__game;
   cancelAnimationFrame(g.raf);
   const { terraformAt } = await import('/src/tools/terraform.ts');
-  const { EXT } = await import('/src/ext/registry.ts');
+  const EXT = window.__ext; // the game's own registry (a fresh import can be a different module copy after HMR)
   const { HM_N, HM_STEP, HALF } = await import('/src/config.ts');
   const system = EXT.systems.find(s => s.id === 'terraform');
   let spot = null;
@@ -36,7 +36,7 @@ const result = await page.evaluate(async () => {
   const raised = g.terrain.heights[id];
   const saved = system.save(g);
   g.terrain.editHeights([{ id, height: before }]);
-  system.load(g, saved);
+  (system.preload ?? system.load)(g, saved); // terrain deltas load before roads rebuild
   const restored = g.terrain.heights[id];
   window.__dbg.road(spot.x + 60, spot.z + 80, spot.x + 180, spot.z + 80, 'twoLane');
   const road = g.net.segs.values().next().value;

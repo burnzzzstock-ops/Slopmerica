@@ -51,6 +51,7 @@ export class Hud implements UiSink {
   private sub!: HTMLElement;
   private inspector!: HTMLElement;
   private toasts!: HTMLElement;
+  private remeasureToasts = true;
   private tip!: HTMLElement;
   private actions!: HTMLElement;
   private perfEl!: HTMLElement;
@@ -89,7 +90,10 @@ export class Hud implements UiSink {
       game.tools.cancel();
       game.audio.play('click', 0.4);
     });
-    this.actions.querySelector('#ta-build')!.addEventListener('click', () => game.tools.buildPending());
+    this.actions.querySelector('#ta-build')!.addEventListener('click', () => {
+      if (game.tools.active === 'ext') game.tools.confirmExt();
+      else game.tools.buildPending();
+    });
     this.actions.querySelector('#ta-undo')!.addEventListener('click', () => game.undo());
     game.feed = this.feed;
     game.ui = this;
@@ -223,13 +227,28 @@ export class Hud implements UiSink {
       const short: Record<string, string> = { views: 'Views' };
       const primary = (PHONE_PRIMARY.map((id) => all.find((x) => x[0] === id)).filter(Boolean) as [string, string, string][]).map(([id, icon, label]) => [id, icon, short[id] ?? label] as [string, string, string]);
       this.moreItems = all.filter((x) => !PHONE_PRIMARY.includes(x[0]));
-      this.bar.innerHTML = primary.map(btn).join('') + btn(['more', '⋯', 'More']);
+      this.bar.innerHTML = primary.map(btn).join('') + btn(['more', '<i class="more-dots"><b></b><b></b><b></b></i>', 'More']);
       this.bar.classList.add('compact');
     } else {
       this.bar.innerHTML = all.map(btn).join('') +
         `<a class="tbtn merch" href="${MERCH_URL}" target="_blank" rel="noopener" title="Real Slop merch"><span class="ti slop-mini">Slop</span><span class="tl">Merch</span></a>`;
     }
     this.bar.querySelectorAll<HTMLButtonElement>('button.tbtn').forEach((b) => b.addEventListener('click', () => this.onTool(b.dataset.t!)));
+    // narrow desktop windows: the bar scrolls sideways; let the mouse wheel do
+    // it and fade the edge that has more tools past it
+    const edges = () => {
+      const bar = this.bar, more = bar.scrollWidth - bar.clientWidth;
+      bar.classList.toggle('more-right', more > 2 && bar.scrollLeft < more - 2);
+      bar.classList.toggle('more-left', more > 2 && bar.scrollLeft > 2);
+    };
+    this.bar.addEventListener('wheel', (e) => {
+      if (this.bar.scrollWidth <= this.bar.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      e.preventDefault();
+      this.bar.scrollLeft += e.deltaY;
+    }, { passive: false });
+    this.bar.addEventListener('scroll', edges, { passive: true });
+    window.addEventListener('resize', edges);
+    requestAnimationFrame(edges);
   }
   private moreItems: [string, string, string][] = [];
 
@@ -255,7 +274,7 @@ export class Hud implements UiSink {
     if (id === 'inspect' || id === 'upgrade' || id === 'bulldoze') {
       this.openPanel(null);
       g.tools.set(g.tools.active === id && id !== 'inspect' ? 'inspect' : (id as ToolId));
-      if (id === 'upgrade') this.toast('ONE MORE LANE: click a road to widen it. Shift-click widens the whole street.');
+      if (id === 'upgrade') this.toast(IS_TOUCH ? 'ONE MORE LANE: tap a road to widen that block.' : 'ONE MORE LANE: click a road to widen it. Shift-click widens the whole street.');
       return;
     }
     const pid = id as PanelId;
@@ -271,6 +290,7 @@ export class Hud implements UiSink {
 
   /** Put the current map tool away: back to Select with no panel open. */
   private exitTool() {
+    this.game.tools.finishExt();
     this.openPanel(null);
     this.game.tools.set('inspect');
     this.game.audio.play('click', 0.4);
@@ -408,15 +428,21 @@ export class Hud implements UiSink {
           ${g.pendingQuality ? '<button class="chip on" id="quality-reload">Reload to finish applying</button>' : ''}
         </div>
         <small>Resolution and shadows change immediately. Reload applies scenery, traffic, and post-processing budgets.</small>
-        <div class="help">
-          <div><b>Move</b> WASD / arrows · drag with one finger</div>
-          <div><b>Rotate</b> right-drag · Q/E · twist two fingers</div>
-          <div><b>Tilt</b> right-drag up/down · R/F · two-finger drag</div>
-          <div><b>Zoom</b> wheel · pinch</div>
+        <div class="help">${IS_TOUCH ? `
+          <div><b>Move</b> drag with one finger (two fingers while a tool is on)</div>
+          <div><b>Zoom</b> pinch</div>
+          <div><b>Rotate</b> twist two fingers</div>
+          <div><b>Tilt</b> drag two fingers up or down</div>
+          <div><b>Roads</b> drag to plan, tap Build. Double-tap ends a road. Done puts the tool away.</div>
+          <div><b>Placing</b> services and landmarks: tap to preview, then Build</div>` : `
+          <div><b>Move</b> WASD / arrows · drag</div>
+          <div><b>Rotate</b> right-drag · Q/E</div>
+          <div><b>Tilt</b> right-drag up/down · R/F</div>
+          <div><b>Zoom</b> wheel</div>
           <div><b>Roads</b> click start, click end. Keeps chaining. Esc / right-click stops.</div>
           <div><b>Speed</b> Space pause · 1 2 3</div>
           <div><b>Tools</b> B bulldoze · U one more lane · Z zoning · Esc cancel</div>
-          <div><b>Performance</b> F3 shows FPS, frame time, draw calls and triangles</div>
+          <div><b>Performance</b> F3 shows FPS, frame time, draw calls and triangles</div>`}
         </div>
         <div class="sp-row"><button class="chip" id="save-now">💾 Save now</button><button class="chip" id="new-city">🆕 New city</button><small>Autosaves every 30 seconds in this browser.</small></div>`;
       this.sub.querySelector('#save-now')?.addEventListener('click', () => { const ok = saveGame(g); this.toast(ok ? 'Saved.' : 'Could not save in this browser', !ok); });
@@ -470,6 +496,24 @@ export class Hud implements UiSink {
     if (!sel) { this.inspector.hidden = true; return; }
     this.inspector.hidden = false;
     this.renderInspector();
+    if (COMPACT) requestAnimationFrame(() => this.keepSelectionVisible());
+  }
+
+  /** Phones: the inspector is a bottom sheet, so slide the map until the
+   * thing you tapped sits above it instead of hiding underneath. */
+  private keepSelectionVisible() {
+    const sel = this.game.selection;
+    if (!sel || this.inspector.hidden) return;
+    // roads are left alone: a segment can be hundreds of meters long, and
+    // centering its middle would throw the view away from where you tapped
+    const at = sel.kind === 'building' ? sel.b : sel.kind === 'commune' || sel.kind === 'car' ? sel.c : null;
+    if (!at) return;
+    const top = this.inspector.getBoundingClientRect().top;
+    this.v.set(at.x, this.game.terrain.h(at.x, at.z), at.z).project(this.game.camera);
+    const sy = (-this.v.y * 0.5 + 0.5) * window.innerHeight;
+    if (sy > 100 && sy < top - 30) return;
+    const want = this.game.rts.groundAt(window.innerWidth / 2, Math.max(120, top * 0.55));
+    if (want) this.game.rts.nudge(at.x - want.x, at.z - want.z);
   }
 
   private renderInspector() {
@@ -632,6 +676,7 @@ export class Hud implements UiSink {
     this.domT -= dt;
     if (this.domT <= 0) {
       this.domT = 0.25;
+      this.remeasureToasts = true;
       this.refreshTop();
       if (this.perfVisible) {
         const p = this.game.perf;
@@ -641,8 +686,17 @@ export class Hud implements UiSink {
     }
     const tip = this.game.tools.tip;
     const t = this.game.tools;
-    const showActions = t.active === 'road' || t.active === 'upgrade' || (IS_TOUCH && t.active === 'landmark');
+    // phones: every map tool gets the bar (hint + Done), since there's no hover tip
+    const showActions = t.active === 'road' || t.active === 'upgrade' || (IS_TOUCH && t.active !== 'inspect');
+    const barChanged = this.actions.hidden === showActions;
     this.actions.hidden = !showActions;
+    if (barChanged || this.remeasureToasts) {
+      // toasts drop below the action bar instead of printing over it
+      // (measured when the bar appears and 4x a second, not every frame)
+      this.remeasureToasts = false;
+      const toastTop = showActions ? `${Math.round(this.actions.getBoundingClientRect().bottom + 6)}px` : '';
+      if (this.toasts.style.top !== toastTop) this.toasts.style.top = toastTop;
+    }
     if (showActions) {
       const tipEl = this.actions.querySelector('#ta-tip') as HTMLElement;
       tipEl.textContent = IS_TOUCH ? tip?.text ?? '' : '';
@@ -650,11 +704,14 @@ export class Hud implements UiSink {
       tipEl.hidden = !IS_TOUCH || !tip;
       (this.actions.querySelector('#ta-done') as HTMLElement).hidden = IS_TOUCH ? false : !t.drawing;
       const build = this.actions.querySelector('#ta-build') as HTMLButtonElement;
-      build.hidden = !t.pending;
-      build.disabled = t.pendingCost === null;
-      const label = t.pendingCost !== null ? `🔨 Build $${t.pendingCost.toLocaleString()}` : '🔨 Build';
+      const plan = t.active === 'ext' ? t.extPending : t.pending ? { cost: t.pendingCost } : null;
+      build.hidden = !plan;
+      build.disabled = !plan || plan.cost === null;
+      const label = plan && plan.cost !== null ? `🔨 Build $${plan.cost.toLocaleString()}` : '🔨 Build';
       if (build.textContent !== label) build.textContent = label;
-      (this.actions.querySelector('#ta-undo') as HTMLButtonElement).disabled = !this.game.canUndo;
+      const undo = this.actions.querySelector('#ta-undo') as HTMLButtonElement;
+      undo.hidden = t.active !== 'road' && t.active !== 'upgrade'; // only roads and lanes are on the undo stack
+      undo.disabled = !this.game.canUndo;
     }
     if (tip && !IS_TOUCH) {
       this.tip.hidden = false;

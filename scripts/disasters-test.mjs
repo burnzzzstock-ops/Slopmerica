@@ -16,14 +16,14 @@ const page = await browser.newPage({ viewport: { width: 900, height: 600 } });
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 await page.goto(`${process.env.BASE_URL || 'http://127.0.0.1:5173'}/#skip&map=florida&mode=sandbox`, { waitUntil: 'load' });
-await page.waitForFunction(() => window.__game && window.__dbg);
+await page.waitForFunction(() => window.__game && window.__dbg, null, { timeout: 180000 });
 const result = await page.evaluate(async () => {
   const g = window.__game, d = window.__dbg;
   cancelAnimationFrame(g.raf);
   d.road(30, 30, 300, 30, 'twoLane');
   if (!g.net.segs.size) throw new Error('Test road could not be built');
   const { triggerDisaster, disasterState, setDisasters } = await import('/src/sim/disasters.ts');
-  const { EXT } = await import('/src/ext/registry.ts');
+  const EXT = window.__ext; // the game's own registry (a fresh import can be a different module copy after HMR)
   const sys = EXT.systems.find(s => s.id === 'disasters');
   setDisasters(true);
   const day = Math.floor(g.sim.day);

@@ -207,6 +207,13 @@ export class RTSCamera {
     this.clampTarget();
   }
 
+  /** Slide the view by a world offset (smoothly, like a pan). */
+  nudge(dx: number, dz: number) {
+    this.goal.target.x += dx;
+    this.goal.target.z += dz;
+    this.clampTarget();
+  }
+
   private clampTarget() {
     this.goal.target.x = clamp(this.goal.target.x, -HALF - 200, HALF + 200);
     this.goal.target.z = clamp(this.goal.target.z, -HALF - 200, HALF + 200);

@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { CELL } from '../config';
 import { MAX_LEVEL, type BuildingModel, type LandmarkId, type ZoneType } from '../contracts';
-import { SpatialHash, V2 } from '../core/math';
+import { closestOnSampled, SpatialHash, V2 } from '../core/math';
 import { Rng } from '../core/rng';
 import { buildingMaterial, generateBuilding, generateLandmark, landmarkFootprint, setArtMap, VARIANTS } from '../buildings/generator';
 import { generateConstruction, kitMaterial } from '../buildings/kitGenerator';
@@ -16,6 +16,7 @@ import { Paint } from '../world/terrain';
 import type { Trees } from '../world/trees';
 import type { ZCell, Zoning } from '../zones/zoning';
 import type { RoadNetwork } from '../roads/network';
+import { ROAD_TYPES } from '../roads/roadTypes';
 
 export interface Bld {
   id: number;
@@ -172,9 +173,76 @@ export class Buildings {
       const ids = new Set(cells.map((c) => c.bld).filter(Boolean));
       for (const id of ids) {
         const b = this.list.get(id);
-        if (b) this.demolish(b, 'road');
+        // services and landmarks sit on their own pads: zone cells vanishing
+        // under them (a nearby road removed) is no reason to bulldoze them
+        if (b && isZoned(b)) this.demolish(b, 'road');
       }
     };
+    // a new cell under a service/landmark pad, or under a building of this
+    // same road (rebuilt after widening), starts occupied. Other streets'
+    // buildings keep their own cells, so bulldozing this road can't take them.
+    zones.occupantAt = (x, z, segId) => {
+      const b = this.at(x, z);
+      return b && (!isZoned(b) || b.seg === segId) ? b.id : 0;
+    };
+    zones.onRelink = (ids) => {
+      for (const id of ids) {
+        const b = this.list.get(id);
+        if (b) this.settleAfterWiden(b);
+      }
+    };
+  }
+
+  /** Is any road's pavement on this footprint? Returns that road. */
+  private roadOn(b: Bld) {
+    const r = b.hw + b.hd + 40;
+    for (const s of this.net.segsNear(b.x - r, b.z - r, b.x + r, b.z + r)) {
+      const pad = ROAD_TYPES[s.type].width / 2 + 0.3;
+      for (const p of s.samp.pts) if (this.contains(b, p.x, p.z, pad)) return s;
+    }
+    return null;
+  }
+
+  /**
+   * ONE MORE LANE widened the road in front of this building. Its zone grid
+   * was rebuilt further back by the same amount, so slide the building back
+   * off the new pavement; only bulldoze it when there's no room behind.
+   */
+  private settleAfterWiden(b: Bld) {
+    const hit = this.roadOn(b);
+    if (!hit) return; // clear of the wider road: keeps its lot
+    const c = closestOnSampled({ x: b.x, z: b.z }, hit.samp);
+    const dl = Math.hypot(b.x - c.pt.x, b.z - c.pt.z) || 1;
+    const ux = (b.x - c.pt.x) / dl, uz = (b.z - c.pt.z) / dl;
+    const ox = b.x, oz = b.z, pad = b.hw + b.hd;
+    let moved = false;
+    for (let push = 0.5; push <= 9; push += 0.5) {
+      b.x = ox + ux * push;
+      b.z = oz + uz * push;
+      if (!this.roadOn(b)) { moved = true; break; }
+    }
+    const blocked = !moved || this.near(b.x, b.z, pad + 40).some((o) => o !== b && (
+      this.corners(b).some((p) => this.contains(o, p.x, p.z)) || this.corners(o).some((p) => this.contains(b, p.x, p.z)) || this.contains(o, b.x, b.z)));
+    if (blocked || !this.terrain.inBounds(b.x, b.z, 4)) {
+      b.x = ox;
+      b.z = oz;
+      this.demolish(b, 'road');
+      return;
+    }
+    this.hash.remove(b, ox - pad, oz - pad, ox + pad, oz + pad);
+    this.hash.insert(b, b.x - pad, b.z - pad, b.x + pad, b.z + pad);
+    b.y = this.terrain.h(b.x, b.z);
+    this.terrain.flattenLot(this.corners(b), b.y, b.zone === 'resLow' || b.zone === 'resHigh' ? Paint.Lawn : Paint.Paved);
+    this.trees.cut(b.x - pad - 4, b.z - pad - 4, b.x + pad + 4, b.z + pad + 4, (tx, tz) => this.contains(b, tx, tz, 2));
+    const cells = this.zones.cellsNear(b.x, b.z, pad + 8);
+    const mine = (cell: { seg: number }) => !isZoned(b) || cell.seg === b.seg;
+    for (const cell of cells) {
+      if (cell.bld === b.id && !this.contains(b, cell.x, cell.z, 0.5)) cell.bld = 0;
+      else if (!cell.bld && mine(cell) && this.contains(b, cell.x, cell.z, 0.5)) cell.bld = b.id;
+    }
+    b.cells = cells.filter((cell) => cell.bld === b.id);
+    if (b.inst >= 0) this.writeMatrix(b, b.state === 'active' ? 1 : easeGrow(b.progress));
+    this.zones.markOverlayDirty();
   }
 
   // ------------------------------------------------------------------ models

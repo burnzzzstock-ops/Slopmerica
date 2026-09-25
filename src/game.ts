@@ -115,7 +115,8 @@ export class Game {
     lap('map');
     this.cityName = opts.cityName || defaultCityName(opts.map);
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: !IS_TOUCH || this.q.name === 'high', powerPreference: 'high-performance' });
+    // with post-processing the scene is multisampled offscreen, so the canvas itself needn't be
+    this.renderer = new THREE.WebGLRenderer({ antialias: this.q.post ? false : !IS_TOUCH, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.q.pixelRatio));
     this.renderer.setSize(container.clientWidth, container.clientHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -136,11 +137,12 @@ export class Game {
     this.trees = new Trees(this.terrain, this.map, this.q, this.renderer);
     this.scene.add(this.trees.group);
     lap('trees');
-    this.env = new Environment(this.scene, this.map.def, this.q);
+    this.env = new Environment(this.scene, this.map.def, this.q, this.q.name === 'high' ? this.renderer : undefined);
     this.env.hour = this.hour;
     this.weather = new WeatherSystem({ scene: this.scene, renderer: this.renderer, env: this.env, terrain: this.terrain, trees: this.trees, water: this.water, quality: this.q, mapId: opts.map });
     this.post = new PostFX(this.renderer, this.scene, this.camera, this.q);
     this.particles = new Particles(this.scene, this.q);
+    this.particles.pxH = this.renderer.getDrawingBufferSize(new THREE.Vector2()).y;
 
     // city
     this.net = new RoadNetwork(this.terrain, this.trees);
@@ -284,6 +286,10 @@ export class Game {
     };
     this.traffic.onJam = (seg) => this.feed.push('trafficJam', { road: seg.name });
     this.traffic.onEmit = (kind, x, y, z, n) => this.particles.emit(kind, x, y, z, { count: n, spread: kind === 'cigarette' ? 0.2 : 1.5 });
+    this.post.look && (this.weather.look = this.post.look);
+    this.weather.onThunder = (delay, dist) => {
+      setTimeout(() => this.audio.play('thunder', Math.max(0.15, 1 - dist / 2500)), delay * 1000);
+    };
     this.weather.onChange = (kind, season) => {
       if (season !== this.lastSeason) { this.lastSeason = season; this.feed.push('seasonChange'); }
       else this.feed.push('weatherChange');
@@ -480,6 +486,7 @@ export class Game {
     const w = this.container.clientWidth, h = this.container.clientHeight;
     this.renderer.setSize(w, h);
     this.post.setSize(w, h);
+    this.particles.pxH = this.renderer.getDrawingBufferSize(new THREE.Vector2()).y;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
@@ -507,10 +514,16 @@ export class Game {
     this.rts.update(dt);
     this.hour = (this.hour + (dt * spd * 24) / 360) % 24;
     this.env.hour = this.hour;
-    this.env.update(0, this.rts.target, this.rts.distance);
+    // tighter near plane when zoomed in, deeper when zoomed out (depth precision)
+    const nearWant = THREE.MathUtils.clamp(this.rts.distance * 0.008, 1, 10);
+    if (Math.abs(this.camera.near - nearWant) > 0.05) {
+      this.camera.near = nearWant;
+      this.camera.updateProjectionMatrix();
+    }
+    this.env.update(0, this.rts.target, this.rts.distance, this.camera.position);
     this.sim.update(dt);
     const t = this.sim.time(this.hour);
-    this.weather.update(dt * Math.max(spd, 0.0001), t, this.camera);
+    this.weather.update(dt, t, this.camera, spd, this.rts.distance);
     const fxs = this.weather.effects();
     this.traffic.speedMul = fxs.speedMul;
     this.traffic.crashMul = fxs.crashMul;
@@ -549,6 +562,8 @@ export class Game {
     }
     this.tools.update();
     this.overlays.update(dt);
+    this.particles.night = this.env.night;
+    this.particles.wind.copy(this.weather.wind);
     this.particles.update(dt, this.camera);
     for (const f of this.onFrame) f(dt);
     this.terrain.flush();
@@ -568,6 +583,10 @@ export class Game {
     wu.uSunDir.value.copy(this.env.sunDirection);
     wu.uNight.value = n;
     wu.uSky.value.copy(this.env.fog.color);
+    wu.uSunColor.value.copy(this.env.sunColor);
+    wu.uSkyTop.value.copy(this.env.hemi.color).multiplyScalar(0.55 * (1 - n * 0.9)).lerp(this.env.fog.color, this.env.overcast * 0.8);
+    this.roads.setWet(this.weather.wet);
+    this.post.aoRadius = THREE.MathUtils.clamp(this.rts.distance * 0.011, 2.2, 16);
     wu.uPollution.value = Math.min(0.7, (1 - this.sim.naturePct) * 0.6 + this.buildings.counts().active / 4000);
 
     this.audio.update(dt, {

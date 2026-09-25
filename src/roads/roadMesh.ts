@@ -106,7 +106,7 @@ function roadTexture(t: RoadType, maxAniso: number): THREE.CanvasTexture {
     ctx.fillStyle = 'rgba(90,72,52,0.35)';
     for (const x of [0.28, 0.72]) ctx.fillRect(W * x - 14, 0, 28, H); // tire ruts
   } else {
-    noiseFill(ctx, W, H, [58, 58, 62], 22);
+    noiseFill(ctx, W, H, [84, 84, 88], 22);
     const half = t.width / 2;
     const sw = t.sidewalk;
     if (sw > 0) {
@@ -171,7 +171,7 @@ function asphaltTexture(maxAniso: number) {
   const c = document.createElement('canvas');
   c.width = c.height = 256;
   const ctx = c.getContext('2d')!;
-  noiseFill(ctx, 256, 256, [74, 73, 76], 22);
+  noiseFill(ctx, 256, 256, [84, 84, 88], 22);
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.anisotropy = maxAniso;
@@ -206,7 +206,7 @@ export class RoadRenderer {
   constructor(private net: RoadNetwork, renderer: THREE.WebGLRenderer) {
     const aniso = renderer.capabilities.getMaxAnisotropy();
     for (const id of ROAD_ORDER) {
-      const mat = new THREE.MeshStandardMaterial({ map: roadTexture(ROAD_TYPES[id], aniso), roughness: 0.92, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+      const mat = new THREE.MeshStandardMaterial({ map: roadTexture(ROAD_TYPES[id], aniso), roughness: 0.92, metalness: 0, envMapIntensity: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
       this.typeMats.set(id, mat);
       const m = new THREE.Mesh(new THREE.BufferGeometry(), mat);
       m.receiveShadow = true;
@@ -254,6 +254,18 @@ export class RoadRenderer {
 
   setNight(n: number) {
     this.lampMat.emissiveIntensity = n * 4;
+  }
+
+  private wetWas = -1;
+  /** Rain makes asphalt dark and glossy. */
+  setWet(w: number) {
+    if (Math.abs(w - this.wetWas) < 0.02) return;
+    this.wetWas = w;
+    const mats = [...this.typeMats.values(), this.junctionMesh.material as THREE.MeshStandardMaterial];
+    for (const m of mats) {
+      m.roughness = 0.92 - w * 0.55;
+      m.color.setScalar(1 - w * 0.35);
+    }
   }
 
   update() {

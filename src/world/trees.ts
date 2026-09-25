@@ -8,6 +8,7 @@ import { hash2, Rng } from '../core/rng';
 import type { MapData, TreeKind } from './maps';
 import type { Terrain } from './terrain';
 import { createFoliageAtlas, makeTreeModel, padTransparent } from './foliage';
+import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from './atmos';
 
 const KINDS: TreeKind[] = ['decid', 'pine', 'redwood', 'oak', 'palm', 'cypress', 'mangrove', 'shrub'];
 const DECIDUOUS = new Set<TreeKind>(['decid', 'cypress']);
@@ -17,7 +18,7 @@ const GRID_N = Math.ceil(WORLD / CELL);
 const SPRITE_W = 256, SPRITE_H = 512;
 
 const BASE_COLOR: Record<TreeKind, number> = {
-  decid: 0x6f9a45, pine: 0x3f6a3a, redwood: 0x3c6238, oak: 0x6a8045, palm: 0x7aa84a, cypress: 0x7a9a50, mangrove: 0x55803e, shrub: 0x7a9448,
+  decid: 0x6f9a45, pine: 0x557f48, redwood: 0x527a45, oak: 0x6a8045, palm: 0x7aa84a, cypress: 0x7a9a50, mangrove: 0x55803e, shrub: 0x7a9448,
 };
 // Alpha test for card foliage. Mip levels average alpha down, which makes
 // distant canopies go see-through, so alpha is boosted per mip level. Deciduous
@@ -74,14 +75,23 @@ export class Trees {
     const share = counts.map((c) => c / Math.max(1, this.n));
 
     // soft, non-shimmering foliage edges when the canvas is multisampled
-    const msaa = renderer.getContext().getContextAttributes()?.antialias === true;
+    const msaa = q.post || renderer.getContext().getContextAttributes()?.antialias === true;
     const mkNearMat = (decid: boolean) => {
-      const m = new THREE.MeshStandardMaterial({ map: atlas, vertexColors: true, alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.82, metalness: 0, alphaToCoverage: msaa });
+      const m = new THREE.MeshStandardMaterial({ map: atlas, vertexColors: true, alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.9, metalness: 0, alphaToCoverage: msaa, envMapIntensity: 0.35 });
       m.onBeforeCompile = (sh) => {
         sh.uniforms.uTime = this.uniforms.uTime;
         sh.uniforms.uLeaf = decid ? this.uniforms.uLeaf : { value: 1 };
+        bindAtmos(sh);
         sh.vertexShader = sh.vertexShader
-          .replace('#include <common>', '#include <common>\nattribute float canopy;\nuniform float uTime;\nvarying float vCanopy;')
+          .replace('#include <common>', '#include <common>\nattribute float canopy;\nuniform float uTime, uWind;\nvarying float vCanopy;\nvarying vec3 vTWPos;')
+          .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
+{
+  vec4 twp = vec4(transformed, 1.0);
+#ifdef USE_INSTANCING
+  twp = instanceMatrix * twp;
+#endif
+  vTWPos = (modelMatrix * twp).xyz;
+}`)
           .replace('#include <color_vertex>', `
 #if defined( USE_COLOR ) || defined( USE_COLOR_ALPHA ) || defined( USE_INSTANCING_COLOR ) || defined( USE_BATCHING_COLOR )
   vColor = vec4( 1.0 );
@@ -96,13 +106,20 @@ vCanopy = canopy;`)
           .replace('#include <begin_vertex>', `#include <begin_vertex>
 #ifdef USE_INSTANCING
   vec3 ip = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
-  float sway = sin(uTime * 1.3 + ip.x * 0.05 + ip.z * 0.07) + 0.4 * sin(uTime * 3.1 + ip.z * 0.2);
-  transformed.x += sway * 0.02 * transformed.y * canopy;
-  transformed.z += sway * 0.012 * transformed.y * canopy;
+  float sway = sin(uTime * (1.3 + uWind * 0.6) + ip.x * 0.05 + ip.z * 0.07) + 0.4 * sin(uTime * 3.1 * (0.8 + uWind * 0.4) + ip.z * 0.2);
+  transformed.x += sway * 0.02 * uWind * transformed.y * canopy + 0.012 * (uWind - 1.0) * transformed.y * canopy;
+  transformed.z += sway * 0.012 * uWind * transformed.y * canopy;
 #endif`);
         sh.fragmentShader = sh.fragmentShader
-          .replace('#include <common>', '#include <common>\nuniform float uLeaf;\nvarying float vCanopy;')
+          .replace('#include <common>', `#include <common>\nuniform float uLeaf, uSnow, uSnowLine;\nvarying float vCanopy;\nvarying vec3 vTWPos;\n${CLOUD_GLSL}`)
           .replace('#include <alphatest_fragment>', LEAF_ALPHA)
+          .replace('#include <color_fragment>', `#include <color_fragment>
+{
+  vec3 wN = normalize((vec4(vNormal, 0.0) * viewMatrix).xyz);
+  float sn = uSnow * smoothstep(0.1, 0.75, wN.y) * smoothstep(uSnowLine - 30.0, uSnowLine + 60.0, vTWPos.y);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.9, 0.95), sn * (0.35 + 0.45 * vCanopy));
+}`)
+          .replace('#include <lights_fragment_end>', cloudShadowChunk('vTWPos'))
           // leaf cards carry bent "crown" normals: don't flip them on back faces
           .replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', 'normal *= mix(faceDirection, 1.0, step(0.5, vCanopy));'));
       };
@@ -117,8 +134,15 @@ vCanopy = canopy;`)
           .replace('#include <common>', '#include <common>\nattribute float canopy;\nvarying float vCanopy;')
           .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCanopy = canopy;');
         sh.fragmentShader = sh.fragmentShader
-          .replace('#include <common>', '#include <common>\nuniform float uLeaf;\nvarying float vCanopy;')
-          .replace('#include <alphatest_fragment>', LEAF_ALPHA);
+          .replace('#include <common>', `#include <common>\nuniform float uLeaf, uSnow, uSnowLine;\nvarying float vCanopy;\nvarying vec3 vTWPos;\n${CLOUD_GLSL}`)
+          .replace('#include <alphatest_fragment>', LEAF_ALPHA)
+          .replace('#include <color_fragment>', `#include <color_fragment>
+{
+  vec3 wN = normalize((vec4(vNormal, 0.0) * viewMatrix).xyz);
+  float sn = uSnow * smoothstep(0.1, 0.75, wN.y) * smoothstep(uSnowLine - 30.0, uSnowLine + 60.0, vTWPos.y);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.9, 0.95), sn * (0.35 + 0.45 * vCanopy));
+}`)
+          .replace('#include <lights_fragment_end>', cloudShadowChunk('vTWPos'));
       };
       m.customProgramCacheKey = () => 'treeDepth';
       return m;
@@ -146,10 +170,15 @@ vCanopy = canopy;`)
     const farMat = new THREE.MeshLambertMaterial({ map: spriteTex, alphaTest: 0.5, side: THREE.DoubleSide, alphaToCoverage: msaa });
     farMat.onBeforeCompile = (sh) => {
       sh.uniforms.uLeaf = { value: 1 };
+      bindAtmos(sh);
       sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\nuniform float uLeaf;\nconst float vCanopy = 0.0;')
-        .replace('#include <alphatest_fragment>', LEAF_ALPHA.replace('0.42', '0.5'));
+        .replace('#include <common>', `#include <common>\nuniform float uLeaf, uSnow, uSnowLine;\nconst float vCanopy = 0.0;\nvarying vec3 vTWPos;\nvarying float vTop;\n${CLOUD_GLSL}`)
+        .replace('#include <alphatest_fragment>', LEAF_ALPHA.replace('0.42', '0.5'))
+        .replace('#include <color_fragment>', `#include <color_fragment>
+diffuseColor.rgb *= cloudShade(vTWPos);
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.88, 0.93), uSnow * 0.55 * vTop * smoothstep(uSnowLine - 30.0, uSnowLine + 60.0, vTWPos.y));`);
       sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vTWPos;\nvarying float vTop;')
         .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = vec3(0.0, 1.0, 0.0);')
         .replace('#include <project_vertex>', `
 vec4 instP = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
@@ -157,7 +186,9 @@ float sc = length(instanceMatrix[0].xyz);
 vec3 camR = normalize(vec3(viewMatrix[0][0], 0.0, viewMatrix[2][0]));
 vec3 wp = instP.xyz + camR * position.x * sc + vec3(0.0, position.y * sc, 0.0);
 vec4 mvPosition = viewMatrix * vec4(wp, 1.0);
-gl_Position = projectionMatrix * mvPosition;`);
+gl_Position = projectionMatrix * mvPosition;
+vTWPos = wp;
+vTop = smoothstep(0.35, 1.0, uv.y);`);
     };
     KINDS.forEach((kind, ki) => {
       const sz = this.spriteSize[ki];

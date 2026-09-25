@@ -238,7 +238,8 @@ export class Communes {
   update(dt: number, night: number, time: number) {
     for (const c of this.list) {
       if (c.state === 'gone') continue;
-      c.fire.intensity = (0.6 + night * 5) * (0.8 + Math.sin(time * 13 + c.id) * 0.2);
+      c.fire.intensity = night * 40 * (0.8 + Math.sin(time * 13 + c.id) * 0.2);
+      c.fire.visible = night > 0.05;
       const f = c.group.getObjectByName('flame');
       if (f) f.scale.setScalar(0.85 + Math.sin(time * 11 + c.id * 3) * 0.15);
       if (c.state === 'leaving') {

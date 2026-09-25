@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { HALF, HM_N, HM_STEP, Quality, WATER, WORLD } from '../config';
 import { clamp, lerp, smoothstep, V2 } from '../core/math';
+import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from './atmos';
 import { hash2 } from '../core/rng';
 import type { MapData } from './maps';
 import { createGroundTextures } from './groundTextures';
@@ -93,6 +94,7 @@ export class Terrain {
     const detail = this.detail;
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.tDetail = { value: detail };
+      bindAtmos(sh);
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nattribute vec4 mats;\nvarying vec4 vMats;\nvarying vec3 vWPos;')
         .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvMats = mats;\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
@@ -115,13 +117,20 @@ vec4 detailAt(vec2 uv, vec4 w) {
   if (w.w > 0.01) d += w.w * texture(tDetail, vec3(uv, 3.0));
   return d;
 }
-float gDetailH;`,
+float gDetailH;
+${CLOUD_GLSL}
+uniform float uSnow, uSnowLine, uWet;
+uniform vec3 uGrassTint;
+float gSnow;`,
         )
         .replace(
           '#include <color_fragment>',
           `#include <color_fragment>
 {
-  vec4 w = vMats / max(0.001, dot(vMats, vec4(1.0)));
+  // MSAA evaluates edge pixels at the pixel center, extrapolating varyings;
+  // keep the weights sane so silhouettes cannot blow up to HDR sparkles
+  vec4 mm = max(vMats, vec4(0.0));
+  vec4 w = mm / max(0.5, dot(mm, vec4(1.0)));
   float dist = length(vWPos - cameraPosition);
   float fadeNear = 1.0 - smoothstep(140.0, 700.0, dist);
   float fadeMid = 1.0 - smoothstep(600.0, 2600.0, dist);
@@ -132,8 +141,20 @@ float gDetailH;`,
   gDetailH = mix(b.a, a.a, 0.65) * fadeNear;
   float macro = tn(vWPos.xz * 0.004) * 0.6 + tn(vWPos.xz * 0.017) * 0.4;
   diffuseColor.rgb *= 0.88 + macro * 0.22;
+  // seasons: grass browns in winter, NorCal hills green up in the rainy season
+  diffuseColor.rgb *= mix(vec3(1.0), uGrassTint, w.x);
+  // snow settles on flat-ish ground above the snow line, patchy at the edges
+  vec3 wN = normalize((vec4(vNormal, 0.0) * viewMatrix).xyz);
+  float patchy = tn(vWPos.xz * 0.05) * 0.5 + macro * 0.5;
+  gSnow = uSnow * smoothstep(0.5, 0.82, wN.y) * smoothstep(uSnowLine - 30.0, uSnowLine + 60.0, vWPos.y)
+        * smoothstep(0.15, 0.6, vWPos.y) * smoothstep(0.0, 0.35, uSnow * 1.2 - (1.0 - patchy) * 0.6);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.92, 0.97), gSnow);
+  gDetailH *= 1.0 - gSnow * 0.8;
+  diffuseColor.rgb *= 1.0 - uWet * 0.3 * (1.0 - gSnow);
 }`,
         )
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.45, uWet * 0.7 * (1.0 - gSnow));')
+        .replace('#include <lights_fragment_end>', cloudShadowChunk('vWPos'))
         .replace(
           '#include <normal_fragment_maps>',
           `#include <normal_fragment_maps>

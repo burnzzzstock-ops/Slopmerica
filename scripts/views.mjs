@@ -25,5 +25,5 @@ for (const [name, js] of views) {
 }
 const fps = await page.evaluate(async () => { const t0 = performance.now(); let n = 0; await new Promise((res) => { const f = () => { n++; if (performance.now() - t0 < 3000) requestAnimationFrame(f); else res(0); }; requestAnimationFrame(f); }); return n / 3; });
 console.log('fps(headless swiftshader)', fps.toFixed(1));
-console.log(logs.slice(-30).join('\n'));
+console.log(logs.filter((l) => !l.includes("useProgram")).slice(-30).join('\n'));
 await browser.close();

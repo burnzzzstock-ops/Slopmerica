@@ -194,11 +194,13 @@ function crosswalkTexture(maxAniso: number) {
     for (let x = 0; x < 64; x++) {
       const i = (y * 64 + x) * 4;
       const bar = x >= 6 && x < 40;
-      // worn paint: a little grime and a few bare flecks
-      const wear = Math.random();
-      const v = 228 - Math.random() * 26;
-      img.data[i] = v; img.data[i + 1] = v; img.data[i + 2] = v - 6;
-      img.data[i + 3] = bar && wear > 0.06 ? 255 : 0;
+      // worn paint on the road's own asphalt: opaque, so the lane lines and
+      // centre line underneath don't show between the bars (the review's
+      // 'stripe lattice' at street level)
+      const paint = bar && Math.random() > 0.06;
+      const v = paint ? 228 - Math.random() * 26 : 84 + (Math.random() - 0.5) * 22;
+      img.data[i] = v; img.data[i + 1] = v; img.data[i + 2] = paint ? v - 6 : v + 4;
+      img.data[i + 3] = 255;
     }
   ctx.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(c);

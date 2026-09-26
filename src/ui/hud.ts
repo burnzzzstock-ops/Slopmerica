@@ -1042,13 +1042,21 @@ export class Hud implements UiSink {
 
   // ------------------------------------------------------------------ transient UI
   toast(msg: string, bad = false) {
+    // the same message again while it's still showing: keep one, refreshed
+    for (const el of this.toasts.children) {
+      if (el.textContent !== msg || el.classList.contains('out')) continue;
+      const t0 = el as HTMLElement & { _t?: number[] };
+      t0._t?.forEach((h) => clearTimeout(h));
+      t0._t = [window.setTimeout(() => t0.classList.add('out'), 2600), window.setTimeout(() => t0.remove(), 3200)];
+      t0.classList.remove('again'); void t0.offsetWidth; t0.classList.add('again');
+      return;
+    }
     crumb(`${bad ? 'warning' : 'toast'}: ${msg}`);
-    const t = document.createElement('div');
+    const t = document.createElement('div') as HTMLDivElement & { _t?: number[] };
     t.className = 'toast' + (bad ? ' bad' : '');
     t.textContent = msg;
     this.toasts.appendChild(t);
-    setTimeout(() => t.classList.add('out'), 2600);
-    setTimeout(() => t.remove(), 3200);
+    t._t = [window.setTimeout(() => t.classList.add('out'), 2600), window.setTimeout(() => t.remove(), 3200)];
     while (this.toasts.children.length > 3) this.toasts.firstChild?.remove();
   }
 

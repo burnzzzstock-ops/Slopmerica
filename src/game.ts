@@ -745,7 +745,16 @@ export class Game {
     this.perf.resolution = this.dynamicScale;
     const pr = Math.min(window.devicePixelRatio || 1, presetRatio) * this.dynamicScale;
     if (Math.abs(this.renderer.getPixelRatio() - pr) < 0.035) return;
-    this.renderer.setPixelRatio(pr);
+    // Resizing the canvas clears it. Done after a frame was drawn, the page
+    // showed an empty world under the HUD until the next frame (the review's
+    // one-frame blackout at 1:33), so apply it right before the next render.
+    this.pendingRatio = pr;
+  }
+  private pendingRatio: number | null = null;
+  private applyPendingRatio() {
+    if (this.pendingRatio === null) return;
+    this.renderer.setPixelRatio(this.pendingRatio);
+    this.pendingRatio = null;
     this.resize();
   }
 
@@ -993,6 +1002,7 @@ export class Game {
     });
     P.lap('lighting+audio');
     if (render) {
+      this.applyPendingRatio();
       this.renderer.info.reset();
       wu.uReflOn.value = this.water.reflection?.shouldRender(this.camera) ? 1 : 0;
       // Low quality renders straight to the canvas: same night exposure as the grade

@@ -3072,3 +3072,5 @@ a {
 .quality-controls .ql { font-weight: 800; font-size: 12px; }
 .seg { display: inline-flex; gap: 3px; padding: 2px; border-radius: 999px; background: #14121c; }
 .seg .chip { border-color: transparent; }
+.toast.again { animation: toastAgain 0.25s ease-out; }
+@keyframes toastAgain { from { transform: scale(1.05); } to { transform: scale(1); } }

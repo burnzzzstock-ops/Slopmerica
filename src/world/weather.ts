@@ -950,6 +950,9 @@ export class WeatherSystem {
     this.rainU.uPixel.value = this.snowU.uPixel.value = this.ashU.uPixel.value = pixel;
     const time = this.realT % 1000;
     const light = THREE.MathUtils.clamp(env.lightLevel * 0.9 + this.flash * 1.5, 0.08, 2);
+    // unlit particles take the scene's light, less the grade's night lift (bright
+    // rain streaks after dark read as a glowing snowfall)
+    const lift = 1 + NIGHT_EXPOSURE * env.night;
     const wd = this.windDir;
     const ws = THREE.MathUtils.clamp((c.wind - 0.6) / 4, 0.05, 1.2);
 
@@ -967,8 +970,8 @@ export class WeatherSystem {
       u.uLen.value = S * 0.035;
       u.uWidth.value = S * 0.0011;
       u.uLevel.value = this.surge;
-      (u.uColor.value as THREE.Color).setRGB(0.7, 0.75, 0.82).multiplyScalar(Math.max(0.35, light));
-      u.uOpacity.value = 0.16 + rainAmt * 0.16;
+      (u.uColor.value as THREE.Color).setRGB(0.7, 0.75, 0.82).multiplyScalar(Math.max(0.12, light) / lift);
+      u.uOpacity.value = (0.16 + rainAmt * 0.16) * (1 - 0.45 * env.night);
     }
     // snow
     const snowAmt = this.ctx.mapId === 'florida' ? 0 : Math.min(1, c.snow);
@@ -986,7 +989,7 @@ export class WeatherSystem {
       u.uSwirl.value = S * 0.012;
       u.uLevel.value = this.surge;
       u.uOpacity.value = 0.75;
-      (u.uColor.value as THREE.Color).setRGB(0.95, 0.97, 1).multiplyScalar(light * 1.1);
+      (u.uColor.value as THREE.Color).setRGB(0.95, 0.97, 1).multiplyScalar((light * 1.1) / lift);
     }
     // wildfire ash (with a few glowing embers)
     this.ash.visible = c.ash > 0.01;
@@ -1000,7 +1003,7 @@ export class WeatherSystem {
       u.uLen.value = 0;
       u.uWidth.value = S * 0.0012;
       u.uSwirl.value = S * 0.02;
-      (u.uColor.value as THREE.Color).setRGB(0.42, 0.38, 0.35).multiplyScalar(Math.max(0.3, light));
+      (u.uColor.value as THREE.Color).setRGB(0.42, 0.38, 0.35).multiplyScalar(Math.max(0.12, light) / lift);
     }
     // fireflies around where the camera looks, only when zoomed right in
     const ff = this.fireflies * 0.6 * (1 - THREE.MathUtils.smoothstep(alt, 90, 220));

@@ -151,10 +151,31 @@ export class Hud implements UiSink {
     };
     window.addEventListener('keydown', (e) => this.hotkey(e));
     game.renderer.domElement.addEventListener('pointermove', (e) => {
-      this.tip.style.transform = `translate(${e.clientX + 16}px, ${e.clientY + 18}px)`;
+      this.tipAt = { x: e.clientX, y: e.clientY };
+      this.placeTip();
     });
     setTimeout(() => game.feed.push('gameStart'), 1500);
     if (!game.opts.restore) setTimeout(() => this.onboarding(), 900);
+  }
+
+  private tipAt = { x: 0, y: 0 };
+  /**
+   * The cursor tip stays inside the game: below-right of the cursor, flipping
+   * to the other side at the right and bottom edges, and wrapping long text
+   * (a placement reason ran off the right edge in the playtest recording).
+   */
+  private placeTip() {
+    const t = this.tip;
+    if (t.hidden) return;
+    const W = window.innerWidth, H = window.innerHeight, M = 6, { x, y } = this.tipAt;
+    t.style.maxWidth = `${Math.max(180, Math.min(520, W - 2 * M))}px`;
+    const r = t.getBoundingClientRect();
+    let tx = x + 16, ty = y + 18;
+    if (tx + r.width > W - M) tx = x - 12 - r.width; // flip to the cursor's left
+    if (tx < M) tx = Math.max(M, Math.min(W - M - r.width, x - r.width / 2));
+    if (ty + r.height > H - M) ty = y - 12 - r.height; // above the cursor
+    if (ty < M) ty = M;
+    t.style.transform = `translate(${Math.round(tx)}px, ${Math.round(ty)}px)`;
   }
 
   private onboarding() {
@@ -677,16 +698,15 @@ export class Hud implements UiSink {
       this.sub.innerHTML = `
         <div class="sp-title">Roads <small>${IS_TOUCH ? 'Drag to plan a road, then tap Build. Drag from its end to keep going. Two fingers move the map. Double-tap or Stop to finish.' : 'Click start, click end, keep going. Right-click, double-click or Esc stops.'}</small></div>
         <div class="sp-row modes">${(['straight', 'curve', 'freeform'] as const).map((m) => `<button class="chip ${t.roadMode === m ? 'on' : ''}" data-mode="${m}">${m === 'straight' ? '📏 Straight' : m === 'curve' ? '↪️ Curved' : '〰️ Freeform'}</button>`).join('')}</div>
-        <div class="sp-grid">${ROAD_ORDER.map((id) => {
+        <div class="sp-grid roads-grid">${ROAD_ORDER.map((id) => {
           const r = ROAD_TYPES[id];
           const locked = !g.sim.isUnlocked({ road: id });
           return `<button class="card ${t.roadType === id && t.active === 'road' ? 'on' : ''} ${this.fresh.has(`road:${id}`) ? 'new' : ''}" data-road="${id}" ${locked ? 'disabled' : ''} title="${esc(r.blurb)}">
             <span class="ci">${r.icon}</span><b>${esc(r.name)}</b><small>${locked ? `🔒 Pop ${r.unlockPop.toLocaleString()}` : `$${r.costPerM}/m · ${r.lanesPerDir * 2} lanes${r.centerTurn ? ' + turn' : ''}`}</small></button>`;
-        }).join('')}</div>
-        <div class="sp-grid layouts"><span class="sp-lbl">Interchanges</span>${LAYOUT_ORDER.map((id) => {
+        }).join('')}<span class="sp-sep" aria-hidden="true"></span>${LAYOUT_ORDER.map((id) => {
           const l = LAYOUTS[id];
           const locked = g.sim.mode !== 'sandbox' && g.sim.population < l.unlockPop;
-          return `<button class="card ${currentLayout(g) === id ? 'on' : ''}" data-layout="${id}" ${locked ? 'disabled' : ''} title="${esc(l.blurb)}"><span class="ci">${l.icon}</span><b>${esc(l.name)}</b><small>${locked ? `🔒 Pop ${l.unlockPop.toLocaleString()}` : id === 'diamond' ? 'Overpass + 4 ramps' : 'Ring + 4 stubs'}</small></button>`;
+          return `<button class="card layout ${currentLayout(g) === id ? 'on' : ''}" data-layout="${id}" ${locked ? 'disabled' : ''} title="${esc(l.blurb)}"><span class="ci">${l.icon}</span><b>${esc(l.name)}</b><small>${locked ? `🔒 Pop ${l.unlockPop.toLocaleString()}` : id === 'diamond' ? 'Interchange · overpass' : 'Roundabout'}</small></button>`;
         }).join('')}${currentLayout(g) ? `<button class="chip" id="layout-rotate" title="Rotate (, and .)">↻ Rotate</button>` : ''}</div>`;
       this.sub.querySelectorAll<HTMLButtonElement>('[data-layout]').forEach((b) => b.addEventListener('click', () => { selectLayout(g, b.dataset.layout as LayoutId); this.renderPanel(); }));
       this.sub.querySelector('#layout-rotate')?.addEventListener('click', () => rotateLayout(g));
@@ -1145,9 +1165,11 @@ export class Hud implements UiSink {
       if (undo.title !== utitle) { undo.title = utitle; undo.setAttribute('aria-label', utitle); }
     }
     if (tip && !IS_TOUCH) {
+      const was = this.tip.hidden, text = this.tip.textContent;
       this.tip.hidden = false;
-      this.tip.textContent = tip.text;
+      if (text !== tip.text) this.tip.textContent = tip.text;
       this.tip.classList.toggle('bad', !!tip.bad);
+      if (was || text !== tip.text) this.placeTip();
     } else this.tip.hidden = true;
     // floating texts
     const cam = this.game.camera;

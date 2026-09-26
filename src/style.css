@@ -1516,10 +1516,13 @@ a {
   padding: 5px 9px;
   border-radius: 8px;
   background: rgba(10, 9, 16, 0.9);
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 800;
+  line-height: 1.35;
   pointer-events: none !important;
-  white-space: nowrap;
+  white-space: normal;
+  width: max-content;
+  z-index: 40;
 }
 .cursor-tip.bad {
   color: #ff8a80;
@@ -3005,7 +3008,7 @@ a {
   .toolbar:not(.compact) .tl { font-size: 9px; }
   .toolbar:not(.compact) .slop-mini { font-size: 17px; }
 
-  .subpanel { bottom: calc(56px + var(--safe-b)); padding: 7px 10px; width: min(1040px, calc(100vw - 16px)); }
+  .subpanel { bottom: calc(56px + var(--safe-b)); padding: 7px 10px; width: min(1440px, calc(100vw - 16px)); }
   /* a tool drawer: title and mode chips on one row when they fit */
   .subpanel:has(> .sp-title + .sp-row) { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; row-gap: 5px; }
   .subpanel:has(> .sp-title + .sp-row) > * { flex: 1 1 100%; min-width: 0; margin: 0; }
@@ -3028,7 +3031,7 @@ a {
   .banner b { font-size: clamp(14px, 1.4vw, 18px); }
 }
 @media (min-width: 900px) {
-  .hud:has(.xfeed:not(.collapsed)) .subpanel { width: min(1040px, calc(100vw - 360px)); }
+  .hud:has(.xfeed:not(.collapsed)) .subpanel { width: min(1440px, calc(100vw - 360px)); }
 }
 .fov-ctl { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; }
 .fov-ctl input { width: 110px; accent-color: var(--lime); }
@@ -3062,5 +3065,7 @@ a {
   .card small { font-size: 10.5px; }
   .svc-stat { font-size: 11px; line-height: 1.25; padding: 3px 7px; }
 }
-.sp-grid.layouts { align-items: center; margin-top: 5px; }
-.sp-lbl { flex: 0 0 auto; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); writing-mode: vertical-rl; transform: rotate(180deg); }
+/* roads and prebuilt interchanges share one scrolling row (the playtest saw a
+   second row that was mostly empty space over the map) */
+.sp-sep { flex: 0 0 1px; align-self: stretch; margin: 2px 3px; background: var(--line); }
+.card.layout { border-style: dashed; }

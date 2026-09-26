@@ -8,7 +8,7 @@ import { Trees } from './world/trees';
 import { GroundDetail } from './world/groundDetail';
 import { createWater } from './world/water';
 import { Environment } from './world/sky';
-import { WeatherSystem } from './world/weather';
+import { NIGHT_EXPOSURE, WeatherSystem } from './world/weather';
 import { PointerHandlers, RTSCamera } from './render/camera';
 import { PostFX } from './render/post';
 import { Particles } from './render/particles';
@@ -930,6 +930,8 @@ export class Game {
     if (render) {
       this.renderer.info.reset();
       wu.uReflOn.value = this.water.reflection?.shouldRender(this.camera) ? 1 : 0;
+      // Low quality renders straight to the canvas: same night exposure as the grade
+      this.renderer.toneMappingExposure = 0.95 * (this.post.active ? 1 : 1 + NIGHT_EXPOSURE * n);
       this.post.render(n);
       P.lap('render');
       if (this.blackChecks.length && performance.now() >= this.blackChecks[0] && !document.hidden) {

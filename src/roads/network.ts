@@ -5,7 +5,7 @@ import { WATER } from '../config';
 import { Emitter } from '../core/events';
 import {
   bezPoint, clamp, closestOnSampled, Cubic, dist, lerp, lineCubic, norm, Sampled, sampleCubic, segIntersect,
-  smoothstep, SpatialHash, splitCubic, sub, tangentAt, V2,
+  smoothstep, SpatialHash, splitCubic, sub, tAt, tangentAt, V2,
 } from '../core/math';
 import type { Terrain } from '../world/terrain';
 import type { Trees } from '../world/trees';
@@ -45,6 +45,9 @@ export interface RSeg {
   vc: number;
   blocked: number; // seconds a lane is blocked (crash, protest)
 }
+
+/** Roads meeting at a node must be at least this far apart (radians). */
+export const MIN_JUNCTION_ANGLE = (15 * Math.PI) / 180;
 
 export type Snap =
   | { kind: 'node'; id: number; x: number; z: number }
@@ -142,6 +145,26 @@ export class RoadNetwork {
     return { kind: 'free', x, z };
   }
 
+  /** Directions of the roads leaving a snapped point (a node's arms, or both ways along a road). */
+  private armDirs(s: Snap): V2[] {
+    if (s.kind === 'node') {
+      const n = this.nodes.get(s.id);
+      if (!n) return [];
+      return n.segs.map((id) => {
+        const seg = this.segs.get(id)!, pts = seg.samp.pts;
+        return seg.a === n.id ? norm(sub(pts[Math.min(3, pts.length - 1)], pts[0])) : norm(sub(pts[Math.max(0, pts.length - 4)], pts[pts.length - 1]));
+      });
+    }
+    if (s.kind === 'seg') {
+      const seg = this.segs.get(s.id);
+      if (!seg) return [];
+      const a = bezPoint(seg.curve, Math.max(0, s.t - 0.01)), b = bezPoint(seg.curve, Math.min(1, s.t + 0.01));
+      const d = norm(sub(b, a));
+      return [d, { x: -d.x, z: -d.z }];
+    }
+    return [];
+  }
+
   /** Direction a snapped road would continue in (for freeform/curve tools). */
   continueDir(s: Snap): V2 | null {
     if (s.kind !== 'node') return null;
@@ -179,6 +202,22 @@ export class RoadNetwork {
           if (da > 0.5) return { ...res, ok: false, reason: 'Curve too tight' };
         }
         prevAng = ang;
+      }
+    }
+    // junction angle: a road meeting another almost parallel leaves a long
+    // sliver of overlapping asphalt with crossed lane lines (the playtest's odd
+    // intersections)
+    {
+      const pe = samp.pts[samp.pts.length - 1];
+      const ends: [Snap, V2][] = [
+        [start, norm(sub(samp.pts[Math.min(3, samp.pts.length - 1)], samp.pts[0]))],
+        [this.snap(pe.x, pe.z, 6), norm(sub(samp.pts[Math.max(0, samp.pts.length - 4)], pe))],
+      ];
+      for (const [sn, d] of ends) {
+        for (const a of this.armDirs(sn)) {
+          const cos = d.x * a.x + d.z * a.z;
+          if (cos > Math.cos(MIN_JUNCTION_ANGLE)) return { ...res, ok: false, reason: `Too sharp a junction (${Math.round((Math.acos(Math.min(1, cos)) * 180) / Math.PI)}°). Roads need to meet at ${Math.round((MIN_JUNCTION_ANGLE * 180) / Math.PI)}° or more: curve it in, or meet at a wider angle.` };
+        }
       }
     }
     // overlap with existing roads running alongside (not just crossing)
@@ -275,6 +314,16 @@ export class RoadNetwork {
     const cross: { p: V2; tNew: number }[] = [];
     for (const seg of this.segsNear(Math.min(curve.p0.x, curve.p3.x, curve.p1.x, curve.p2.x) - 20, Math.min(curve.p0.z, curve.p3.z, curve.p1.z, curve.p2.z) - 20, Math.max(curve.p0.x, curve.p3.x, curve.p1.x, curve.p2.x) + 20, Math.max(curve.p0.z, curve.p3.z, curve.p1.z, curve.p2.z) + 20)) {
       cross.push(...this.crossingsWith(samp, seg));
+    }
+    // a dead end the new road runs over or touches joins it (a T junction):
+    // otherwise its capped stub sat on top of the new road, unconnected (the
+    // playtest's odd junction at the old county road's end)
+    const hwNew = this.type(typeId).width / 2;
+    for (const n of this.nodes.values()) {
+      if (n.segs.length !== 1) continue;
+      const c = closestOnSampled({ x: n.x, z: n.z }, samp);
+      if (c.d > hwNew + 2 || c.s < 10 || c.s > samp.length - 10) continue;
+      cross.push({ p: { x: n.x, z: n.z }, tNew: tAt(samp, c.s) });
     }
     const startNode = this.resolve(start);
     const endNode = this.resolve(end);

@@ -181,6 +181,33 @@ function asphaltTexture(maxAniso: number) {
   return tex;
 }
 
+/** Zebra bars for crosswalks: u runs across the road in metres (one bar per metre). */
+function crosswalkTexture(maxAniso: number) {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 32;
+  const ctx = c.getContext('2d')!;
+  ctx.clearRect(0, 0, 64, 32);
+  const img = ctx.createImageData(64, 32);
+  for (let y = 0; y < 32; y++)
+    for (let x = 0; x < 64; x++) {
+      const i = (y * 64 + x) * 4;
+      const bar = x >= 6 && x < 40;
+      // worn paint: a little grime and a few bare flecks
+      const wear = Math.random();
+      const v = 228 - Math.random() * 26;
+      img.data[i] = v; img.data[i + 1] = v; img.data[i + 2] = v - 6;
+      img.data[i + 3] = bar && wear > 0.06 ? 255 : 0;
+    }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.anisotropy = maxAniso;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 // ------------------------------------------------------------------ renderer
 interface SegGeo {
   surf: Buf;
@@ -219,7 +246,8 @@ function visualTrim(net: RoadNetwork, seg: RSeg, nodeId: number) {
 export class RoadRenderer {
   readonly group = new THREE.Group();
   private segGeo = new Map<number, SegGeo>();
-  private nodeGeo = new Map<number, Buf>();
+  private nodeGeo = new Map<number, { j: Buf; cw: Buf }>();
+  private crosswalkMesh: THREE.Mesh;
   private typeMeshes = new Map<RoadTypeId, THREE.Mesh>();
   private junctionMesh: THREE.Mesh;
   private concMesh: THREE.Mesh;
@@ -241,9 +269,14 @@ export class RoadRenderer {
       this.group.add(m);
     }
     const jt = asphaltTexture(aniso);
-    this.junctionMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ map: jt, roughness: 0.92, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 }));
+    // the same asphalt as the roads (sky reflection included): with the default
+    // env intensity junctions read as lighter grey discs
+    this.junctionMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ map: jt, roughness: 0.92, metalness: 0, envMapIntensity: 0.5, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 }));
     this.junctionMesh.receiveShadow = true;
     this.group.add(this.junctionMesh);
+    this.crosswalkMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ map: crosswalkTexture(aniso), alphaTest: 0.5, roughness: 0.8, metalness: 0, envMapIntensity: 0.5, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 }));
+    this.crosswalkMesh.receiveShadow = true;
+    this.group.add(this.crosswalkMesh);
     this.concMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, side: THREE.DoubleSide }));
     this.concMesh.castShadow = true;
     this.concMesh.receiveShadow = true;
@@ -305,7 +338,7 @@ export class RoadRenderer {
   setWet(w: number) {
     if (Math.abs(w - this.wetWas) < 0.02) return;
     this.wetWas = w;
-    const mats = [...this.typeMats.values(), this.junctionMesh.material as THREE.MeshStandardMaterial];
+    const mats = [...this.typeMats.values(), this.junctionMesh.material as THREE.MeshStandardMaterial, this.crosswalkMesh.material as THREE.MeshStandardMaterial];
     for (const m of mats) {
       m.roughness = 0.92 - w * 0.55;
       m.color.setScalar(1 - w * 0.35);
@@ -329,10 +362,12 @@ export class RoadRenderer {
       conc.push(g.conc);
       lights.push(...g.lights);
     }
+    const walks: Buf[] = [];
     for (const n of this.net.nodes.values()) {
       let b = this.nodeGeo.get(n.id);
       if (!b) this.nodeGeo.set(n.id, (b = this.buildNode(n)));
-      if (b.count) junc.push(b);
+      if (b.j.count) junc.push(b.j);
+      if (b.cw.count) walks.push(b.cw);
     }
     for (const [id, mesh] of this.typeMeshes) {
       mesh.geometry.dispose();
@@ -341,6 +376,8 @@ export class RoadRenderer {
     }
     this.junctionMesh.geometry.dispose();
     this.junctionMesh.geometry = junc.length ? concat(junc, false, true) : new THREE.BufferGeometry();
+    this.crosswalkMesh.geometry.dispose();
+    this.crosswalkMesh.geometry = walks.length ? concat(walks, false, true) : new THREE.BufferGeometry();
     this.concMesh.geometry.dispose();
     this.concMesh.geometry = conc.length ? concat(conc, true, true) : new THREE.BufferGeometry();
 
@@ -494,10 +531,11 @@ export class RoadRenderer {
     return { surf, conc, lights };
   }
 
-  private buildNode(n: RNode): Buf {
-    const b = new Buf();
+  private buildNode(n: RNode): { j: Buf; cw: Buf } {
+    const b = new Buf(), cw = new Buf();
+    const out = { j: b, cw };
     const segs = n.segs.map((id) => this.net.segs.get(id)!).filter(Boolean);
-    if (!segs.length) return b;
+    if (!segs.length) return out;
     const y = n.y + 0.08;
     if (segs.length === 1) {
       // dead end: round cap; residential roads get a cul-de-sac bulb
@@ -513,10 +551,10 @@ export class RoadRenderer {
         ids.push(b.v(px, y, pz, 0, 1, 0, px / 8, pz / 8));
       }
       for (let k = 0; k < N; k++) b.tri(c, ids[(k + 1) % N], ids[k]);
-      return b;
+      return out;
     }
     const trims = segs.map((s) => (s.a === n.id ? s.trimA : s.trimB));
-    if (trims.every((t) => t < 0.01)) return b;
+    if (trims.every((t) => t < 0.01)) return out;
     const pts: V2[] = [{ x: n.x, z: n.z }];
     const edgeHeights: { p: V2; y: number }[] = [];
     for (const s of segs) {
@@ -540,7 +578,7 @@ export class RoadRenderer {
       area += p.x * q.z - q.x * p.z;
     }
     if (area > 0) hull = hull.reverse();
-    const c = b.v(n.x, y, n.z, 0, 1, 0, n.x / 8, n.z / 8);
+    const c = b.v(n.x, y, n.z, 0, 1, 0, n.x / 14, n.z / 14);
     // Approach profiles can differ noticeably on hills. Keep the center pinned
     // to the averaged node height, but meet each road at its sampled edge height.
     const ids = hull.map((p) => {
@@ -549,10 +587,32 @@ export class RoadRenderer {
         const dx = p.x - edge.p.x, dz = p.z - edge.p.z, dd = dx * dx + dz * dz;
         if (dd < d2) { best = edge; d2 = dd; }
       }
-      return b.v(p.x, best?.y ?? y, p.z, 0, 1, 0, p.x / 8, p.z / 8);
+      return b.v(p.x, best?.y ?? y, p.z, 0, 1, 0, p.x / 14, p.z / 14);
     });
     for (let k = 0; k < ids.length; k++) b.tri(c, ids[k], ids[(k + 1) % ids.length]);
-    return b;
+    // crosswalks where each street enters a real junction (not highways or
+    // gravel, not bends): the edge of the junction reads as intended
+    if (segs.length >= 3) {
+      for (const s of segs) {
+        const t = ROAD_TYPES[s.type];
+        if (t.sidewalk <= 0) continue;
+        const atA = s.a === n.id;
+        const trim = visualTrim(this.net, s, n.id);
+        const d0 = trim + 0.7, d1 = trim + 3.5;
+        if (d1 > s.length * 0.45) continue;
+        const hw = carriageHalf(t) - 0.5;
+        const row = (d: number, v: number) => {
+          const F = RoadRenderer.frame(s, atA ? d : s.length - d);
+          const r = { x: -F.t.z, z: F.t.x };
+          const y = F.y + 0.075;
+          return [cw.v(F.p.x - r.x * hw, y, F.p.z - r.z * hw, 0, 1, 0, 0, v), cw.v(F.p.x + r.x * hw, y, F.p.z + r.z * hw, 0, 1, 0, hw * 2, v)];
+        };
+        const [a0, b0] = row(d0, 0), [a1, b1] = row(d1, 1);
+        cw.tri(a0, b0, a1);
+        cw.tri(b0, b1, a1);
+      }
+    }
+    return out;
   }
 }
 

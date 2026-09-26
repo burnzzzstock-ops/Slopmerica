@@ -318,7 +318,8 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
         vec3 rd = reflect(-viewDir, n);
         vec3 skyR = mix(uSky, uSkyTop, smoothstep(0.02, 0.6, rd.y)) * mix(1.0, 0.28, uNight);
         // the water body is lit like everything else: dim and warm at dusk, dark at night
-        float light = min(uLight, mix(1.0, 0.35, uNight));
+        // the night grade lifts exposure, so the water body stays properly dark
+        float light = min(uLight, mix(1.0, 0.2, uNight));
         vec3 sunTint = uSunColor / max(max(uSunColor.r, uSunColor.g), max(uSunColor.b, 1e-3));
         base *= light * mix(vec3(1.0), sunTint, 0.55 * (1.0 - uNight));
         vec3 refl = skyR;
@@ -350,7 +351,7 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
         float surf = smoothstep(0.55, 0.95, roll) * shore * smoothstep(0.02, 0.25, depth) * (0.4 + 0.6 * vn(vW.xz * 0.2 + uTime * 0.2));
         float edge = (1.0 - smoothstep(0.0, 0.45, depth)) * smoothstep(0.3, 0.75, vn(vW.xz*0.5 + uTime*0.3));
         float foam = max(edge, surf * uWindAmp);
-        col = mix(col, vec3(0.93) * mix(1.0, 0.3, uNight), foam * 0.7 * (1.0 - uPollution*0.5));
+        col = mix(col, vec3(0.93) * mix(1.0, 0.16, uNight), foam * 0.7 * (1.0 - uPollution*0.5));
         // winter ice creeping in from the banks
         float ice = 0.0;
         if (uIce > 0.001) {

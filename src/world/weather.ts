@@ -54,6 +54,8 @@ interface Look {
   exposure: number;
 }
 
+/** How much brighter the night is exposed than the day (post effects and Low alike). */
+export const NIGHT_EXPOSURE = 0.85;
 const L = (o: Partial<Look>): Look => ({
   cover: 0.3, overcast: 0, fog: 1, mist: 0, mistH: 30, rain: 0, snow: 0, ash: 0, wind: 1, dark: 0, whiteout: 0, smoke: 0, haze: 0, storm: 0, surge: 0, lightning: 0,
   tint: [1, 1, 1], sat: 1.0, contrast: 1.05, exposure: 1, ...o,
@@ -232,7 +234,8 @@ void main() {
   float d = length(vec2(vUv.x, vUv.y * 2.0 - 1.0));
   float a = exp(-d * d * 9.0) * vA;
   if (a < 0.004) discard;
-  gl_FragColor = vec4(vec3(1.1, 1.6, 0.35) * a * 5.0, 1.0);
+  // warm and small: bright lime glows read as UI markers across the town
+  gl_FragColor = vec4(vec3(1.0, 0.92, 0.38) * a * 1.8, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
@@ -743,8 +746,13 @@ export class WeatherSystem {
       lk.tint.setRGB(c.tint[0] * (1 + warm * 0.25), c.tint[1] * (1 + warm * 0.04), c.tint[2] * (1 - warm * 0.3));
       lk.sat = c.sat * sat * (1 - night * 0.12);
       lk.contrast = c.contrast;
-      lk.exposure = c.exposure;
+      // night: the eye adapts (the playtest found the town unreadable after dark),
+      // and blacks lift to a moonlit blue; lit windows and street lights still pop
+      lk.exposure = c.exposure * (1 + NIGHT_EXPOSURE * night);
       lk.lift.setRGB(0.03, 0.03, 0.035).multiplyScalar(Math.min(1, (c.fog - 1) / 8 + c.mist * 0.05));
+      lk.lift.r += 0.006 * night;
+      lk.lift.g += 0.01 * night;
+      lk.lift.b += 0.022 * night;
       lk.lift.r += 0.02 * c.haze + 0.02 * c.smoke;
       lk.lift.g += 0.008 * c.haze + 0.008 * c.smoke + 0.006 * c.storm;
       lk.shimmer = c.haze * (1 - night);
@@ -994,8 +1002,8 @@ export class WeatherSystem {
       u.uSwirl.value = S * 0.02;
       (u.uColor.value as THREE.Color).setRGB(0.42, 0.38, 0.35).multiplyScalar(Math.max(0.3, light));
     }
-    // fireflies around where the camera looks, when zoomed in
-    const ff = this.fireflies * (1 - THREE.MathUtils.smoothstep(alt, 250, 600));
+    // fireflies around where the camera looks, only when zoomed right in
+    const ff = this.fireflies * 0.6 * (1 - THREE.MathUtils.smoothstep(alt, 90, 220));
     this.flies.visible = ff > 0.01;
     if (this.flies.visible) {
       const u = this.flyU;
@@ -1004,7 +1012,7 @@ export class WeatherSystem {
       u.uTime.value = time;
       u.uAmount.value = ff;
       u.uRadius.value = THREE.MathUtils.clamp(alt * 0.45, 40, 160);
-      u.uSize.value = THREE.MathUtils.clamp(alt * 0.005, 0.35, 1.7);
+      u.uSize.value = THREE.MathUtils.clamp(alt * 0.003, 0.2, 0.55);
     }
     // Florida snow: exactly one flake, drifting down in front of the lens
     this.flake.visible = this.flakeAmt > 0.02;

@@ -443,8 +443,12 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
     const s = this.season;
     const moved = Math.abs(L.fall - s.fall) + Math.abs(L.bare - s.bare) + Math.abs(L.fresh - s.spring) + Math.abs(L.blossom - s.blossom) + Math.abs(L.dry - s.dry) + Math.abs(L.dull - s.dull);
     if (moved > 0.03 || s.day < 0) {
+      // the first time streams everything; after that only colours change,
+      // and they're repainted a slice per frame (a full re-stream on every new
+      // day was a 90-130 ms hitch about once a second at top speed on Ultra)
+      if (s.day < 0) this.dirty = true;
+      else { this.recolor = true; this.recolorMesh = 0; this.recolorSlot = 0; }
       s.day = d; s.fall = L.fall; s.bare = L.bare; s.spring = L.fresh; s.blossom = L.blossom; s.dry = L.dry; s.dull = L.dull;
-      this.dirty = true;
     }
     this.uniforms.uLeaf.value = 1 - L.bare * 0.92;
   }
@@ -479,13 +483,78 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
   }
 
   // ------------------------------------------------------------------ per-frame
+  /** which tree each instance slot shows, per mesh (near meshes, then far) */
+  private slots: Int32Array[] = [];
+  /** where each tree is drawn: (mesh << 20) | slot, or -1 when it isn't */
+  private slotOf?: Int32Array;
+
+  /**
+   * Edit the drawn instances of some trees in place (hide a cut tree, move one
+   * to new ground) instead of re-streaming every tree on the map: that was a
+   * 50-130 ms hitch each time a building went up in the woods.
+   */
+  private editDrawn(ids: Iterable<number>, fn: (e: Float32Array, o: number, i: number) => void) {
+    const map = this.slotOf;
+    if (!map) return;
+    const meshes = [...this.near, ...this.far];
+    const lo = new Map<number, [number, number]>();
+    for (const i of ids) {
+      const v = map[i];
+      if (v < 0) continue;
+      const m = v >>> 20, slot = v & 0xfffff, im = meshes[m];
+      if (!im || slot >= im.count) continue;
+      fn(im.instanceMatrix.array as Float32Array, slot * 16, i);
+      const r = lo.get(m);
+      if (!r) lo.set(m, [slot, slot]); else { r[0] = Math.min(r[0], slot); r[1] = Math.max(r[1], slot); }
+    }
+    for (const [m, [a, b]] of lo) {
+      const im = meshes[m];
+      im.instanceMatrix.addUpdateRange(a * 16, (b - a + 1) * 16);
+      im.instanceMatrix.needsUpdate = true;
+    }
+  }
+  private recolor = false;
+  private recolorMesh = 0;
+  private recolorSlot = 0;
+
+  /** Repaint up to `budget` instances' colours for the season, continuing next frame. */
+  private recolorStep(budget: number) {
+    const meshes = [...this.near, ...this.far];
+    const col = new THREE.Color();
+    while (budget > 0 && this.recolorMesh < meshes.length) {
+      const m = this.recolorMesh, im = meshes[m], map = this.slots[m];
+      const far = m >= this.near.length;
+      const from = this.recolorSlot, to = Math.min(im.count, from + budget);
+      if (map && im.instanceColor && to > from) {
+        const ca = im.instanceColor.array as Float32Array;
+        const k = far ? 1.08 : 1;
+        for (let slot = from; slot < to; slot++) {
+          this.colorOf(map[slot], col);
+          ca[slot * 3] = col.r * k; ca[slot * 3 + 1] = col.g * k; ca[slot * 3 + 2] = col.b * k;
+        }
+        im.instanceColor.addUpdateRange(from * 3, (to - from) * 3);
+        im.instanceColor.needsUpdate = true;
+      }
+      budget -= Math.max(1, to - from);
+      if (to >= im.count) { this.recolorMesh++; this.recolorSlot = 0; } else this.recolorSlot = to;
+    }
+    if (this.recolorMesh >= meshes.length) this.recolor = false;
+  }
+
   update(time: number, focus: THREE.Vector3, camDist: number) {
     this.uniforms.uTime.value = time;
     this.wind.value = time;
     const nearR = Math.min(this.q.treeNear, Math.max(160, camDist * 0.85));
     const moved = Math.hypot(focus.x - this.lastFocus.x, focus.z - this.lastFocus.z);
-    if (!this.dirty && moved < nearR * 0.2 && Math.abs(camDist - this.lastDist) < this.lastDist * 0.2) return;
+    if (!this.dirty && moved < nearR * 0.2 && Math.abs(camDist - this.lastDist) < this.lastDist * 0.2) {
+      if (this.recolor) this.recolorStep(8000);
+      return;
+    }
     this.dirty = false;
+    this.recolor = false; // a full stream paints every colour anyway
+    if (this.slots.length !== this.near.length + this.far.length) this.slots = [...this.near, ...this.far].map((im) => new Int32Array(im.instanceMatrix.count));
+    (this.slotOf ??= new Int32Array(this.n)).fill(-1);
+    const nearN = this.near.length;
     this.lastFocus.copy(focus);
     this.lastDist = camDist;
     const farR = Math.min(9000, camDist * 3.2 + 1800);
@@ -514,6 +583,8 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
             const slot = nearCounts[mi];
             if (slot >= im.instanceMatrix.count) continue;
             nearCounts[mi]++;
+            this.slots[mi][slot] = i;
+            this.slotOf[i] = (mi << 20) | slot;
             this.colorOf(i, col);
             const s = this.S[i], cs = Math.cos(this.Rt[i]) * s, sn = Math.sin(this.Rt[i]) * s;
             const e = im.instanceMatrix.array as Float32Array;
@@ -531,6 +602,8 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
             const slot = farCounts[k];
             if (slot >= im.instanceMatrix.count) continue;
             farCounts[k]++;
+            this.slots[nearN + k][slot] = i;
+            this.slotOf[i] = ((nearN + k) << 20) | slot;
             this.colorOf(i, col);
             const s = this.S[i] * (d > thinStart ? 1.25 : 1);
             const e = im.instanceMatrix.array as Float32Array;
@@ -608,16 +681,20 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
   cut(minX: number, minZ: number, maxX: number, maxZ: number, inside: (x: number, z: number) => boolean): number {
     let n = 0;
     let ref = 0;
+    const gone: number[] = [];
     this.forCells(minX, minZ, maxX, maxZ, (i) => {
       if (!this.A[i] || !inside(this.X[i], this.Z[i])) return;
       this.A[i] = 0;
       this.cutLog?.push(i);
+      gone.push(i);
       n++;
       if (this.W[i] <= REF_DENSITY) ref++;
     });
     if (n) {
       this.alive -= ref;
-      this.dirty = true;
+      // collapse their instances where they're drawn; the next re-stream drops them
+      this.editDrawn(gone, (e, o) => { for (let k = 0; k < 15; k++) e[o + k] = 0; });
+      for (const i of gone) if (this.slotOf) this.slotOf[i] = -1;
     }
     return ref;
   }
@@ -629,7 +706,8 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
    * slope were left floating over the cut or buried in the fill.
    */
   resettle(minX: number, minZ: number, maxX: number, maxZ: number) {
-    let moved = false, ref = 0;
+    let ref = 0;
+    const moved: number[] = [], drowned: number[] = [];
     this.forCells(minX, minZ, maxX, maxZ, (i) => {
       if (!this.A[i]) return;
       const x = this.X[i], z = this.Z[i];
@@ -637,11 +715,12 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
       // planted 0.25 m into the ground; gone where it's now deeper than a cypress stands
       const h = this.terrain.h(x, z);
       if (Math.abs(h - 0.25 - this.Y[i]) < 0.12) return;
-      if (h < WATER - 1.2) { this.A[i] = 0; if (this.W[i] <= REF_DENSITY) ref++; }
-      else this.Y[i] = h - 0.25;
-      moved = true;
+      if (h < WATER - 1.2) { this.A[i] = 0; if (this.W[i] <= REF_DENSITY) ref++; drowned.push(i); }
+      else { this.Y[i] = h - 0.25; moved.push(i); }
     });
-    if (moved) { this.alive -= ref; this.dirty = true; }
+    this.alive -= ref;
+    this.editDrawn(moved, (e, o, i) => { e[o + 13] = this.Y[i]; });
+    this.editDrawn(drowned, (e, o) => { for (let k = 0; k < 15; k++) e[o + k] = 0; });
   }
 
   /** Trees near x,z in the simulation's reference set (same on every preset). */

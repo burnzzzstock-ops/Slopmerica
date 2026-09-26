@@ -481,7 +481,8 @@ export class Sim {
     if (d % 3 === 0) this.landValueAndLevels(3);
 
     // ---- stats
-    if (d % 5 === 0) this.updateSprawl();
+    // a fifth of the county's sample points a day (the whole sweep in one frame was a ~14 ms hitch)
+    this.updateSprawl(0.2);
     this.naturePct = this.trees.naturePct;
     this.checkMilestones();
     this.events.emit('day', d);
@@ -570,14 +571,26 @@ export class Sim {
     return list.length - 1;
   }
 
-  private updateSprawl() {
-    let covered = 0;
-    for (const p of this.buildable) {
-      if (this.b.at(p.x, p.z) || this.b.near(p.x, p.z, 10).some((b) => this.b.contains(b, p.x, p.z, 5))) { covered++; continue; }
-      const s = this.net.pickSeg(p.x, p.z, 5);
-      if (s) covered++;
+  private sprawlSeen?: Uint8Array;
+  private sprawlCovered = 0;
+  private sprawlCursor = 0;
+
+  /** Re-check a share of the sample points (1 = all of them) and update the meter. */
+  private updateSprawl(share = 1) {
+    const pts = this.buildable, n = pts.length;
+    // the first sweep (a new game or a load) covers everything, so the meter never dips
+    const first = !this.sprawlSeen;
+    const seen = (this.sprawlSeen ??= new Uint8Array(n));
+    let todo = first ? n : Math.min(n, Math.ceil(n * share));
+    while (todo-- > 0 && n) {
+      const i = this.sprawlCursor;
+      this.sprawlCursor = (i + 1) % n;
+      const p = pts[i];
+      const was = seen[i];
+      const now = this.b.at(p.x, p.z) || this.b.near(p.x, p.z, 10).some((b) => this.b.contains(b, p.x, p.z, 5)) || this.net.pickSeg(p.x, p.z, 5) ? 1 : 0;
+      if (now !== was) { seen[i] = now; this.sprawlCovered += now - was; }
     }
-    this.coverage = this.buildable.length ? covered / this.buildable.length : 0;
+    this.coverage = n ? this.sprawlCovered / n : 0;
     const c = this.b.counts();
     this.maxedPct = c.total ? c.maxed / c.total : 0;
     this.sprawlPct = clamp(this.coverage / 0.9, 0, 1) * 0.6 + this.maxedPct * 0.4 * clamp(this.coverage / 0.9, 0, 1);

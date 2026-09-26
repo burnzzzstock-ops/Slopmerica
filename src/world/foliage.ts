@@ -374,14 +374,14 @@ export function makeTreeModel(kind: TreeKind, variant: number): THREE.BufferGeom
         const lc = top ? crown.clone().add(V((rnd() - 0.5) * 0.8, 1.9, (rnd() - 0.5) * 0.8))
           : crown.clone().add(V(Math.cos(a) * (2.1 + rnd() * 0.8), -0.5 + rnd() * 1.6, Math.sin(a) * (2.1 + rnd() * 0.8)));
         const lr = 1.9 + rnd() * 0.7;
-        for (let k = 0; k < 9; k++) {
+        for (let k = 0; k < 6; k++) {
           const u = rnd() * Math.PI * 2, e = -0.5 + rnd() * 2.0;
           const c = V(Math.cos(u) * Math.cos(e) * lr, Math.sin(e) * lr * 0.8, Math.sin(u) * Math.cos(e) * lr).add(lc);
-          randomCard(b, rnd, c, crown, 2.5 + rnd() * 1.0, rnd() < 0.5 ? reg.leafA : reg.leafB, crownShade(c, crown, R), 0.85);
+          randomCard(b, rnd, c, crown, 2.9 + rnd() * 1.1, rnd() < 0.5 ? reg.leafA : reg.leafB, crownShade(c, crown, R), 0.85);
         }
       }
       // fill the heart so there's no see-through hole between lobes
-      for (let k = 0; k < 5; k++) {
+      for (let k = 0; k < 4; k++) {
         const c = crown.clone().add(V((rnd() - 0.5) * 2.2, (rnd() - 0.2) * 1.8, (rnd() - 0.5) * 2.2));
         randomCard(b, rnd, c, crown.clone().setY(crown.y - 1), 2.6 + rnd() * 0.8, rnd() < 0.5 ? reg.leafA : reg.leafB, crownShade(c, crown, R), 0.85);
       }
@@ -395,11 +395,11 @@ export function makeTreeModel(kind: TreeKind, variant: number): THREE.BufferGeom
         b.limb(V(0, th - 0.2, 0), V(Math.cos(a) * 3.8, th + 2.2, Math.sin(a) * 3.8), 0.3, 0.12, 6, bark, reg.bark);
       }
       const crown = V(0, th + 3.2, 0);
-      for (let k = 0; k < 58; k++) {
+      for (let k = 0; k < 42; k++) {
         const a = rnd() * Math.PI * 2, r = Math.sqrt(rnd()) * 5.8;
         // a spreading dome: higher in the middle, drooping at the rim
         const c = V(Math.cos(a) * r, (rnd() - 0.3) * 2.0 + 1.2 * (1 - (r / 5.8) ** 2), Math.sin(a) * r).add(crown);
-        randomCard(b, rnd, c, crown.clone().setY(crown.y - 1.5), 2.4 + rnd() * 1.0, rnd() < 0.5 ? reg.leafA : reg.leafB, crownShade(c, crown, 5.8), 0.85);
+        randomCard(b, rnd, c, crown.clone().setY(crown.y - 1.5), 2.8 + rnd() * 1.1, rnd() < 0.5 ? reg.leafA : reg.leafB, crownShade(c, crown, 5.8), 0.85);
       }
       break;
     }

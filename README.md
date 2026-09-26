@@ -55,6 +55,17 @@ node scripts/aotest.mjs          # ambient occlusion leaves open ground alone (n
 node scripts/junctiontest.mjs    # roads over a dead end join it; no near-parallel junctions; crosswalks
 node scripts/interchangetest.mjs # roundabout and diamond interchange (overpass, ramps, save, undo)
 node scripts/townshots.mjs tag   # builds a ~250-person river town and screenshots day, night, a junction, a factory
+node scripts/treelod.mjs         # distant trees match near ones in brightness, colour and cover (MAP=, VIEWS=)
+node scripts/roadthrough.mjs     # a road through homes bulldozes them (and says so first); services refuse it
+node scripts/tiptest.mjs         # placement tooltips stay inside the window at every edge
+node scripts/needtest.mjs        # hovering a building's need icon says what it needs
+node scripts/nightglow.mjs       # at night lights stay lights: no multiplied emissives or glowing dust
+node scripts/aacompare.mjs       # MSAA vs TAA, still and panning (error, edge energy, shimmer)
+node scripts/restest.mjs         # automatic resolution drops only when it helps, and recovers
+node scripts/rescheck.mjs        # render resolution vs the screen, per preset
+node scripts/musictest.mjs       # ambient piano renders offline: plays, never clips, stays in key
+node scripts/placetest.mjs       # services, depots and landmarks front the street on level pads; ghost = final
+node scripts/playtest3.mjs       # county road is the state's; road previews; undo replants; demand next step; goals
 ```
 
 `BASE_URL=http://127.0.0.1:5174` points any of them at another server (handy for running the suite against a frozen copy while you keep editing). Scripts that assert exit nonzero on failure.

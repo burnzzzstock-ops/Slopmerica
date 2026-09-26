@@ -107,7 +107,10 @@ export class PeopleRendererCore {
     const material = createPersonMaterial(this.faceAtlas, far);
     const mesh = new THREE.InstancedMesh(geometry, material.material, this.max);
     mesh.name = far ? 'people-far' : 'people-near';
-    mesh.count = this.max;
+    // draw only up to the highest handle in use: drawing every slot (hidden
+    // ones included, in the shadow pass too) cost ~2M triangles a frame on
+    // Ultra in a town of zero people
+    mesh.count = 0;
     mesh.frustumCulled = false;
     mesh.castShadow = !far;
     mesh.receiveShadow = true;
@@ -129,6 +132,7 @@ export class PeopleRendererCore {
   add(archetype: number, seed: number): number {
     const h = this.free.length ? this.free.pop()! : this.used < this.max ? this.used++ : -1;
     if (h < 0 || this.archetypes.length === 0) return -1;
+    if (this.near.mesh.count < this.used) this.near.mesh.count = this.far.mesh.count = this.used;
     const ai = ((archetype % this.archetypes.length) + this.archetypes.length) % this.archetypes.length;
     const a = this.archetypes[ai];
     const s = seed >>> 0;

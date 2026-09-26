@@ -93,6 +93,28 @@ inside the browser frame), which changed several conclusions.
 - **Freedom Circle:** a roundabout with four stubs.
 - **Diamond Interchange:** the cross street bridges the highway on an overpass (a raised deck with approach ramps; roads it crosses pass under; nothing joins or zones along it mid-span; saved with the city), four ramps join the two. Placed on a Slopway it lines up with it and uses it. `,` and `.` rotate. **Script:** scripts/interchangetest.mjs.
 
+## Reference shots 145605 and the placement notes (2026-09-26)
+
+- **Special buildings "don't snap to roads, janky; not cutting the earth":** services, bus depots and landmarks now sit square to the nearest road, facing it with a 2.5 m apron, sliding along it to the nearest spot that fits. The preview is the building's own model, its footprint and an entrance arrow, at exactly the transform it's built with. Pads are cut to the road's grade with a 1:2 embankment (6-24 m) that leaves road beds alone. **Before/after (scripts/placetest.mjs, a fire station on an 8 m hillside):** the building sat 1.4 m above the street on a pad 0.17 m out of level, 5.6 m back from the curb, and a landmark next to the road was refused as "Overlaps a road"; now 2.5 m back, level to 0, entrance at street grade, ghost = final.
+- **Trees floating over cuts or buried in fill:** trees follow any regrading (roads, pads, terraforming). 19 of 879 trees near that street were off by up to 2.5 m; now 0.
+- **"Weird circle of trees":** round crowns had no leaves above ~50 degrees, so a close tree seen from above was a hollow ring. Crowns are closed on top.
+- **Neon magenta trees (spring):** redbud and dogwood are muted rose and off-white.
+- **Big white hoop while zoning:** the brush ring is draped on the ground and hidden behind trees and buildings.
+- **Shore plant said "Needs a road" at the water's edge:** it now says to run a road down to the shore.
+
+## Graphics (user: "we need the graphics to improve")
+
+- **Distant forest was a lime carpet:** impostors were lit as one sunny face while detailed broadleaf crowns shade themselves. **Before/after (scripts/treelod.mjs):** Holler County far/near brightness 1.34-1.53 → 1.05-1.12, cover 46-66% → 70-79%; Golden Coast 0.97-1.05.
+- Broadleaf crowns are lobes of smaller cards with baked self-shadowing and rounder normals; oaks are fuller; leaves glow faintly when backlit.
+
+## Playtest 3 (Growth Ponzi, Holler County, bankrupt at 190 residents)
+
+- **The budget couldn't be balanced:** the pre-built 2.3 km Old County Road (4 lanes) was billed to the town: $814/wk on day one, ~$1,420 by year two, nearly all of the $1,498 road bill at game over, while 190 residents pay ~$170/wk. It's the state's now (you pay only for widening it). The county trash contract is $12/t (was $22, nearly all the residential tax of a 400-person town). **Simulated compact town (1.5 km of two-lane streets, homes, a shop street, industry), two game years:** before, −$989/wk at day 90 and bankrupt by day 720; after, −$180 to +$160/wk with ~$120k in the bank throughout.
+- **Road commitments:** the preview gives length, cost, upkeep now and once aged, trees cleared, buildings bulldozed, and what it joins (or that it connects to nothing). Undo replants the trees, for roads and buildings.
+- **Demand as a next action:** the demand card counts buildings, homes or jobs filled, empty zoned lots and jobs vs workers, and says one next step (zone X, build a street, wait for builders, or what's dragging demand); the bars' tooltip too.
+- **Runway and goal:** the budget shows road upkeep now, in a year and in four, and roughly how many more residents break even takes. The meters card lists nearer goals; the sprawl meter shows tenths of a percent early on, with marks at 1%, 2.5% and 5%.
+- **Sluggish on Ultra past 150 residents:** (a) every new day in spring and autumn recoloured the trees by re-streaming every tree on the map, and every building going up in the woods did the same: 90-130 ms hitches about once a second at top speed. Now colours repaint a slice per frame and cuts/regrades edit the drawn instances in place; the worst frames while a town grows are 16-35 ms. (b) Pedestrians drew their whole capacity, hidden people included, in the shadow pass too: 2.1M of Ultra's 4.8M triangles a frame in an empty county. Now 2.6M in all. (c) The sprawl sweep runs a fifth of the county a day instead of all of it every fifth day (a ~14 ms hitch).
+
 ## Remaining (ranked)
 
 1. Cities saved before this build keep any dead end that was built over (a disc on a through road, unconnected): bulldoze and redraw that stub. A load-time repair would move road endpoints that zoning and buildings refer to, so it wasn't done blind.

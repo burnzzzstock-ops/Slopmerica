@@ -49,7 +49,9 @@ async function boot() {
     game.start();
   } catch (err) {
     loading.done();
-    showBootFailure(document.body, err, { restoring: !!choice.restore, savedJSON: choice.restore ? rawSave() : null, shelveSave: shelveBrokenSave });
+    // a loaded file that won't start must not cost the player their own save
+    const own = !!choice.restore && !choice.imported;
+    showBootFailure(document.body, err, { restoring: own, savedJSON: own ? rawSave() : null, shelveSave: shelveBrokenSave });
     return;
   }
   loading.done();
@@ -57,8 +59,8 @@ async function boot() {
   game.renderer.domElement.addEventListener('webglcontextlost', (e) => {
     e.preventDefault();
     crumb('WebGL context lost');
-    saveGame(game);
-    showContextLost(document.body, () => openBugReport(document.body, game, { kind: 'Broken', prefill: 'The graphics crashed (screen froze or went black).' }));
+    const saved = saveGame(game);
+    showContextLost(document.body, saved, () => openBugReport(document.body, game, { kind: 'Broken', prefill: 'The graphics crashed (screen froze or went black).' }));
   });
   const unlock = () => {
     game.audio.unlock();

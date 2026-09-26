@@ -288,11 +288,11 @@ export function showBootFailure(parent: HTMLElement, err: unknown, opts: { resto
 }
 
 /** The GPU dropped the WebGL context: nothing renders until a reload. */
-export function showContextLost(parent: HTMLElement, onReport: () => void) {
+export function showContextLost(parent: HTMLElement, saved: boolean, onReport: () => void) {
   if (parent.querySelector('.ctx-lost')) return;
   const el = document.createElement('div');
   el.className = 'ctx-lost';
-  el.innerHTML = `<b>The graphics crashed.</b> <span>Your city was saved. Reload to keep playing.</span>
+  el.innerHTML = `<b>The graphics crashed.</b> <span>${saved ? 'Your city was saved. Reload to keep playing.' : "Saving failed (storage full or blocked), so a reload may lose recent changes. Report it to save a city file first."}</span>
     <button class="bug-primary" id="cl-reload">↻ Reload</button><button id="cl-report">🐞 Report</button>`;
   parent.appendChild(el);
   el.querySelector('#cl-reload')!.addEventListener('click', () => location.reload());

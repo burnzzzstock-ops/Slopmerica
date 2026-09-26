@@ -55,6 +55,14 @@ const info = await page.evaluate(async ({ mode, resumed }) => {
       return false;
     };
     for (const id of ['school', 'clinic', 'fireStation', 'sheriff', 'park', 'park', 'college']) place(id, [140, 200, 260, 320]);
+    // utilities out of frame, so the key art town is healthy (no dark, abandoned blocks)
+    for (const id of ['coalPlant', 'wellTower', 'wellTower', 'wellTower', 'treatmentPlant', 'landfill', 'incinerator']) {
+      if (place(id, [420, 520, 640, 760])) continue;
+      for (const r of [420, 600, 800]) {
+        const spot = SV.findSpot?.(g, id, cx + r, cz);
+        if (spot && !spot.reason && SV.place(g, id, spot.x, spot.z)) break;
+      }
+    }
     for (const [id, x, z] of [['slopCannon', 150, 40], ['fillErUpMegaStation', -150, -45], ['waterTower', 45, 150]]) {
       const p = g.rts.target.clone().set(cx + x, 0, cz + z);
       for (let k = 0; k < 12 && !g.placeLandmark(id, p); k++) p.x += 12;
@@ -63,6 +71,7 @@ const info = await page.evaluate(async ({ mode, resumed }) => {
     for (let i = 0; i < 12; i++) d.run(20);
   }
   g.weather.force('clear', 30);
+  g.zones.setOverlay(false);
   g.sim.speed = 1;
   for (let i = 0; i < 160; i++) g.frame(0.1, false); // cars out on the roads
   return { cx, cz, pop: g.sim.population, bld: g.buildings.list.size, levels: [...g.buildings.list.values()].reduce((a, b) => { a[b.level] = (a[b.level] ?? 0) + 1; return a; }, {}) };
@@ -71,16 +80,22 @@ console.log(JSON.stringify(info));
 if (mode === 'town') writeFileSync(savePath, await page.evaluate(() => { window.__dbg.save(); return localStorage.getItem('slopmerica.save.v1'); }));
 
 // yaw, pitch, distance, hour, look-at offset
-const shots = mode !== 'land'
-  ? [[0.7, 0.3, 430, 18.3, 0, 0], [2.3, 0.26, 480, 18.1, 0, 0], [3.9, 0.34, 520, 7.4, 0, 0], [5.4, 0.28, 460, 18.5, 0, 0], [1.4, 0.5, 950, 17.6, 0, 0], [0.2, 0.2, 300, 18.4, 40, 20]]
-  : [[0.7, 0.32, 1400, 17.9, 0, 0], [2.4, 0.3, 1600, 18.2, 0, 0], [4.0, 0.36, 1500, 7.6, 0, 0], [5.5, 0.3, 1400, 18.0, 0, 0]];
+const shots = process.env.SHOTS ? JSON.parse(process.env.SHOTS) : mode !== 'land'
+  ? [[0.7, 0.3, 430, 17.0, 0, 0], [2.3, 0.26, 480, 16.8, 0, 0], [3.9, 0.34, 520, 8.2, 0, 0], [5.4, 0.28, 460, 17.2, 0, 0], [1.4, 0.5, 950, 16.5, 0, 0], [0.2, 0.2, 300, 17.1, 40, 20]]
+  : [[0.7, 0.32, 1400, 17.0, 0, 0], [2.4, 0.3, 1600, 16.8, 0, 0], [4.0, 0.36, 1500, 8.2, 0, 0], [5.5, 0.3, 1400, 17.2, 0, 0]];
 let n = 0;
 for (const [yaw, pitch, dist, hour, ox, oz] of shots) {
   const png = await page.evaluate(({ yaw, pitch, dist, hour, ox, oz, cx, cz }) => {
     const g = window.__game;
     g.rts.setView(cx + ox, cz + oz, dist, yaw, pitch, true);
     g.sim.speed = 1;
-    for (let i = 0; i < 6; i++) { g.hour = hour; g.frame(0.05, true); }
+    g.zones.setOverlay(false);
+    for (let i = 0; i < 6; i++) {
+      g.hour = hour;
+      if (window.__services?.S.icons) window.__services.S.icons.mesh.visible = false; // no problem bubbles in key art
+      g.zones.overlayMesh.visible = false; // nor zoning paint on empty lots
+      g.frame(0.05, true);
+    }
     // read the drawing buffer in the same task it was rendered
     return g.renderer.domElement.toDataURL('image/png');
   }, { yaw, pitch, dist, hour, ox, oz, cx: info.cx, cz: info.cz });

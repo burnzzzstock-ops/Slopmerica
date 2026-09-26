@@ -11,22 +11,27 @@ const page = await ctx.newPage();
 const pageErrors = [];
 page.on('pageerror', (e) => pageErrors.push(e.message));
 await page.addInitScript(() => { try { localStorage.setItem('slopmerica.quality', 'low'); } catch { /* */ } });
-const ok = (label, cond, extra = '') => console.log(`${cond ? 'OK  ' : 'FAIL'} ${label}${extra ? ' · ' + extra : ''}`);
+let failures = 0;
+// screenshots are for a human to look at; a slow software GPU must not fail the check
+const shot = (path) => page.screenshot({ path, timeout: 60000 }).catch((e) => console.log('(screenshot skipped:', path, e.message.split('\n')[0] + ')'));
+const ok = (label, cond, extra = '') => { if (!cond) failures++; console.log(`${cond ? 'OK  ' : 'FAIL'} ${label}${extra ? ' · ' + extra : ''}`); };
 
 // 1. title: stamp + build
 await page.goto(`${base}/`, { waitUntil: 'load' });
-await page.waitForSelector('.rm-stamp', { timeout: 60000 });
-const build = await page.textContent('.rm-fine');
-ok('title shows the playtest stamp and build', /Playtest build \S+/.test(build ?? ''), (build ?? '').split('Playtest build ')[1]);
-await page.locator('.rm-playtest').scrollIntoViewIfNeeded();
-await page.screenshot({ path: 'shots/playtest/title-stamp.png' });
+await page.waitForSelector('.aaa-foot', { timeout: 60000 });
+const badge = await page.textContent('.aaa-badge');
+const build = await page.textContent('.aaa-build');
+ok('title shows the playtest badge and build', /Playtest/.test(badge ?? '') && /Build \S+/.test(build ?? ''), build ?? '');
+await shot('shots/playtest/title-stamp.png');
 
 // 2. start a game: onboarding mentions reporting
+await page.tap('#new');
+await page.waitForSelector('#go', { state: 'visible', timeout: 10000 });
 await page.tap('#go');
 await page.waitForFunction(() => window.__game && window.__dbg, null, { timeout: 180000 });
 await page.waitForSelector('.onboard', { timeout: 30000 });
 ok('onboarding tells testers how to report', (await page.textContent('.onboard')).includes('Report bug'));
-await page.screenshot({ path: 'shots/playtest/onboarding.png' });
+await shot('shots/playtest/onboarding.png');
 await page.tap('#ob-go');
 await page.waitForTimeout(500);
 await page.evaluate(() => { const d = window.__dbg, g = window.__game; const S = g.startView(); d.road(S.x - 100, S.z + 40, S.x + 100, S.z + 40, 'twoLane'); });
@@ -52,7 +57,7 @@ const report = clip || (await page.inputValue('#bug-preview'));
 for (const [label, re] of [['kind', /Looks wrong/], ['description', /road vanished/], ['build', /Build: \S+/], ['device', /Device: .*touch/], ['GPU', /GPU: /], ['city', /City: .*day \d+ · pop/], ['actions', /Recent actions:[\s\S]*(built|tool|opened)/]])
   ok(`report has ${label}`, re.test(report));
 await page.evaluate(() => { const p = document.querySelector('.bug-peek'); p.open = true; });
-await page.screenshot({ path: 'shots/playtest/report-sheet.png' });
+await shot('shots/playtest/report-sheet.png');
 console.log('---- report ----\n' + report.split('\n').slice(0, 16).join('\n') + '\n----');
 await page.tap('.bug-x');
 
@@ -60,7 +65,7 @@ await page.tap('.bug-x');
 await page.evaluate(() => setTimeout(() => { throw new Error('playtest boom'); }, 0));
 await page.waitForSelector('.crash-toast', { timeout: 10000 }).catch(() => {});
 ok('crash toast appears after an error', await page.isVisible('.crash-toast'));
-await page.screenshot({ path: 'shots/playtest/crash-toast.png' });
+await shot('shots/playtest/crash-toast.png');
 if (await page.isVisible('.crash-toast')) {
   await page.tap('.crash-toast .bug-primary');
   await page.waitForSelector('.bug-sheet', { timeout: 10000 });
@@ -74,7 +79,7 @@ await page.evaluate(() => { localStorage.removeItem('slopmerica.save.v1'); windo
 await page.waitForSelector('.ctx-lost', { timeout: 10000 }).catch(() => {});
 ok('context loss shows the reload banner', await page.isVisible('.ctx-lost'));
 ok('context loss saved the city', await page.evaluate(() => !!localStorage.getItem('slopmerica.save.v1')));
-await page.screenshot({ path: 'shots/playtest/context-lost.png' });
+await shot('shots/playtest/context-lost.png');
 
 // 6. a save that breaks loading lands on the rescue screen, not a frozen loader.
 // Corrupt it from the title screen: leaving the game autosaves over it.
@@ -90,13 +95,14 @@ await page.waitForSelector('#continue', { timeout: 60000 });
 await page.tap('#continue');
 await page.waitForSelector('.boot-fail', { timeout: 120000 }).catch(() => {});
 ok('broken save shows the rescue screen', await page.isVisible('.boot-fail'));
-await page.screenshot({ path: 'shots/playtest/rescue.png' });
+await shot('shots/playtest/rescue.png');
 if (await page.isVisible('#bf-fresh')) {
   await page.tap('#bf-fresh');
-  await page.waitForSelector('.rm-stamp', { timeout: 60000 });
+  await page.waitForSelector('.aaa-home', { timeout: 60000 });
   const st = await page.evaluate(() => ({ save: !!localStorage.getItem('slopmerica.save.v1'), shelved: !!localStorage.getItem('slopmerica.save.v1.broken'), ticket: !!document.querySelector('#continue') }));
   ok('Start a new city shelves the broken save and returns to the title', !st.save && st.shelved && !st.ticket, JSON.stringify(st));
 }
 const unexpected = pageErrors.filter((m) => !m.includes('playtest boom'));
 ok('no unexpected page errors', unexpected.length === 0, unexpected.slice(0, 3).join(' | '));
 await browser.close();
+process.exit(failures ? 1 : 0);

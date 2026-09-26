@@ -34,7 +34,7 @@ const aoMat = () =>
         vec4 v = uInvProj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
         return v.xyz / v.w;
       }
-      float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+      float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
       void main() {
         float d0 = texture2D(tDepth, vUv).r;
         if (d0 >= 0.99999) { gl_FragColor = vec4(1.0); return; }
@@ -165,6 +165,7 @@ const gradeMat = () =>
       uniform vec3 uTint, uLift;
       uniform float uSat, uContrast, uVignette, uTime, uExposure, uShimmer, uFlash, uTilt, uFocus;
       uniform vec2 uRes;
+      float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
       varying vec2 vUv;
       void main() {
         vec2 uv = vUv;
@@ -202,7 +203,7 @@ const gradeMat = () =>
         c *= 1.0 - uVignette * smoothstep(0.2, 0.85, dot(q, q) * 2.2);
         vec4 o = vec4(clamp(c, 0.0, 1.0), 1.0);
         // a whisper of grain so gradients (sky, fog) don't band
-        o.rgb += (fract(sin(dot(gl_FragCoord.xy + uTime, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;
+        o.rgb += (hash(gl_FragCoord.xy + fract(uTime * 0.618) * 97.0) - 0.5) / 255.0;
         gl_FragColor = o;
       }`,
     depthTest: false,

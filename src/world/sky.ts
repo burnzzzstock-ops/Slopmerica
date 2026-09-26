@@ -169,7 +169,7 @@ uniform float uSunSize, uSunVis, uMoonPhase, uMoonBright, uStars, uCloudCover, u
 uniform vec2 uCloudOffset;
 varying vec3 vDir;
 
-float sh2(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+float sh2(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 float sn2(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
   return mix(mix(sh2(i),sh2(i+vec2(1,0)),f.x), mix(sh2(i+vec2(0,1)),sh2(i+vec2(1,1)),f.x), f.y); }
 float sfbm(vec2 p){ float a=0.5, s=0.0; for(int i=0;i<5;i++){ s+=a*sn2(p); p=p*2.07+vec2(1.7,9.2); a*=0.5; } return s; }

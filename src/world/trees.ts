@@ -71,7 +71,7 @@ export class Trees {
   private cellItems!: Int32Array;
   private near: THREE.InstancedMesh[] = [];
   private far: THREE.InstancedMesh[] = [];
-  private spriteSize: { w: number; h: number; y0: number }[] = [];
+  private spriteSize: { w: number; h: number; y0: number; yc: number }[] = [];
   private uniforms = { uTime: { value: 0 }, uLeaf: { value: 1 } };
   private lastFocus = new THREE.Vector3(1e9, 0, 1e9);
   private lastDist = 0;
@@ -187,19 +187,34 @@ vCanopy = canopy;`)
       sh.uniforms.uLeaf = { value: 1 };
       bindAtmos(sh);
       sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', `#include <common>\nuniform float uLeaf, uSnow, uSnowLine;\nconst float vCanopy = 0.0;\nvarying vec3 vTWPos;\nvarying float vTop;\n${CLOUD_GLSL}`)
+        .replace('#include <common>', `#include <common>\nuniform float uLeaf, uSnow, uSnowLine;\nconst float vCanopy = 0.0;\nvarying vec3 vTWPos;\nvarying float vTop;\nvarying float vK;\n${CLOUD_GLSL}`)
+        // two baked views: the side (row 0) and from above (row 1), blended by
+        // how steeply the camera looks down at the tree
+        .replace('#include <map_fragment>', `#ifdef USE_MAP
+  vec4 sprSide = texture2D(map, vec2(vMapUv.x, vMapUv.y * 0.5));
+  vec4 sprTop = texture2D(map, vec2(vMapUv.x, 0.5 + vMapUv.y * 0.5));
+  diffuseColor *= mix(sprSide, sprTop, vK);
+#endif`)
         .replace('#include <alphatest_fragment>', LEAF_ALPHA.replace('0.42', '0.5'))
         .replace('#include <color_fragment>', `#include <color_fragment>
 diffuseColor.rgb *= cloudShade(vTWPos);
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.88, 0.93), uSnow * 0.55 * vTop * smoothstep(uSnowLine - 30.0, uSnowLine + 60.0, vTWPos.y));`);
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vTWPos;\nvarying float vTop;')
+        .replace('#include <common>', '#include <common>\nvarying vec3 vTWPos;\nvarying float vTop;\nvarying float vK;\nattribute vec2 aSprite;')
         .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = vec3(0.0, 1.0, 0.0);')
         .replace('#include <project_vertex>', `
 vec4 instP = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
 float sc = length(instanceMatrix[0].xyz);
 vec3 camR = normalize(vec3(viewMatrix[0][0], 0.0, viewMatrix[2][0]));
-vec3 wp = instP.xyz + camR * position.x * sc + vec3(0.0, position.y * sc, 0.0);
+vec3 camU = normalize(vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]));
+// looking down on a tree shows its canopy, not its trunk (the side view read
+// as dark flags on poles from the usual camera angle)
+vec3 toCam = cameraPosition - instP.xyz;
+vK = smoothstep(0.34, 0.7, toCam.y / max(length(toCam), 1e-3));
+// side view stands on the base; the top view faces the camera around the canopy centre
+vec3 sideP = instP.xyz + camR * position.x * sc + vec3(0.0, position.y * sc, 0.0);
+vec3 topP = instP.xyz + camR * position.x * sc + camU * (position.y - aSprite.x) * sc + vec3(0.0, aSprite.y * sc, 0.0);
+vec3 wp = mix(sideP, topP, vK);
 vec4 mvPosition = viewMatrix * vec4(wp, 1.0);
 gl_Position = projectionMatrix * mvPosition;
 vTWPos = wp;
@@ -211,6 +226,10 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
       g.translate(0, sz.y0 + sz.h / 2, 0);
       const uv = g.getAttribute('uv') as THREE.BufferAttribute;
       for (let i = 0; i < uv.count; i++) uv.setX(i, (ki + uv.getX(i)) / KINDS.length);
+      // the quad's middle and the canopy centre, for the top view
+      const spr = new Float32Array(uv.count * 2);
+      for (let i = 0; i < uv.count; i++) { spr[i * 2] = sz.y0 + sz.h / 2; spr[i * 2 + 1] = sz.yc; }
+      g.setAttribute('aSprite', new THREE.BufferAttribute(spr, 2));
       const cap = Math.max(100, Math.ceil(share[ki] * q.treeFarCap * 1.3));
       const im = new THREE.InstancedMesh(g, farMat, share[ki] > 0 ? cap : 1);
       im.count = 0;
@@ -284,13 +303,16 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
 
   // ------------------------------------------------------------------ impostor sprites
   private bakeSprites(renderer: THREE.WebGLRenderer, geos: THREE.BufferGeometry[], atlas: THREE.Texture): THREE.Texture {
-    const rt = new THREE.WebGLRenderTarget(SPRITE_W * KINDS.length, SPRITE_H);
+    // two rows: the side view (bottom) and the view from 55 degrees up (top)
+    const rt = new THREE.WebGLRenderTarget(SPRITE_W * KINDS.length, SPRITE_H * 2);
     rt.texture.generateMipmaps = true;
     rt.texture.minFilter = THREE.LinearMipmapLinearFilter;
     rt.texture.colorSpace = THREE.SRGBColorSpace;
     const scene = new THREE.Scene();
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x6a6a5a, 2.0));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.3);
+    // the impostor is lit again in the scene, so bake about its albedo (a dim
+    // bake made far trees darker than near ones)
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8a7a, 2.6));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.2);
     sun.position.set(0.4, 1, 0.8);
     scene.add(sun);
     const mat = new THREE.MeshLambertMaterial({ map: atlas, vertexColors: true, alphaTest: 0.42, side: THREE.DoubleSide });
@@ -314,16 +336,25 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
       const w = Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z, (bb.max.y - bb.min.y) / 2) * 1.04;
       const h = w * 2;
       const y0 = bb.min.y;
-      this.spriteSize[i] = { w, h, y0 };
-      const cam = new THREE.OrthographicCamera(-w / 2, w / 2, y0 + h, y0, 0.1, 400);
-      cam.position.set(0, 0, 150);
-      cam.lookAt(0, 0, 0);
+      const yc = (bb.min.y + bb.max.y) / 2;
+      this.spriteSize[i] = { w, h, y0, yc };
       const mesh = new THREE.Mesh(g, mat);
       scene.add(mesh);
-      renderer.setViewport(i * SPRITE_W, 0, SPRITE_W, SPRITE_H);
-      renderer.setScissor(i * SPRITE_W, 0, SPRITE_W, SPRITE_H);
-      renderer.clear();
-      renderer.render(scene, cam);
+      // side view: the frame stands on the base
+      const side = new THREE.OrthographicCamera(-w / 2, w / 2, y0 + h, y0, 0.1, 400);
+      side.position.set(0, 0, 150);
+      side.lookAt(0, 0, 0);
+      // from above (55 deg): the frame is centred on the canopy
+      const el = THREE.MathUtils.degToRad(55);
+      const top = new THREE.OrthographicCamera(-w / 2, w / 2, h / 2, -h / 2, 0.1, 400);
+      top.position.set(0, yc + Math.sin(el) * 150, Math.cos(el) * 150);
+      top.lookAt(0, yc, 0);
+      [side, top].forEach((cam, row) => {
+        renderer.setViewport(i * SPRITE_W, row * SPRITE_H, SPRITE_W, SPRITE_H);
+        renderer.setScissor(i * SPRITE_W, row * SPRITE_H, SPRITE_W, SPRITE_H);
+        renderer.clear();
+        renderer.render(scene, cam);
+      });
       scene.remove(mesh);
     });
     renderer.setScissorTest(false);
@@ -334,12 +365,12 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
     renderer.setViewport(0, 0, size.x, size.y);
     // Read back and pad the transparent texels so mips don't halo the impostors
     // black; a data texture also survives render-target churn.
-    const W = SPRITE_W * KINDS.length;
-    const px = new Uint8Array(W * SPRITE_H * 4);
-    renderer.readRenderTargetPixels(rt, 0, 0, W, SPRITE_H, px);
+    const W = SPRITE_W * KINDS.length, H = SPRITE_H * 2;
+    const px = new Uint8Array(W * H * 4);
+    renderer.readRenderTargetPixels(rt, 0, 0, W, H, px);
     rt.dispose();
-    padTransparent(px, W, SPRITE_H, 8);
-    const tex = new THREE.DataTexture(px, W, SPRITE_H, THREE.RGBAFormat);
+    padTransparent(px, W, H, 8);
+    const tex = new THREE.DataTexture(px, W, H, THREE.RGBAFormat);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.generateMipmaps = true;
     tex.magFilter = THREE.LinearFilter;

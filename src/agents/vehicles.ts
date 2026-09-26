@@ -99,7 +99,7 @@ ${shell ? '' : 'uniform sampler2D tVehicleAtlas; varying float vVehZone; varying
 varying float vVehDirt, vVehDamage, vVehLocalY;
 varying vec3 vVehWorld, vVehWorldNormal;
 ${CLOUD_GLSL}
-float vehicleHash(vec3 p) { return fract(sin(dot(p, vec3(17.13, 71.7, 39.4))) * 43758.54); }`)
+float vehicleHash(vec3 p) { vec3 p3 = fract(p * 0.1031); p3 += dot(p3, p3.zyx + 31.32); return fract((p3.x + p3.y) * p3.z); }`)
       .replace('#include <color_fragment>', `#include <color_fragment>
 {
 ${shell ? '' : `  if (vVehZone > 3.5) {

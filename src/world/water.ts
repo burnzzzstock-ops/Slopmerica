@@ -267,7 +267,7 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
       uniform mat4 uReflMat;
       uniform vec3 uShallow, uDeep, uMurk, uSunDir, uSunColor, uSky, uSkyTop, uMoonDir;
       varying vec3 vW;
-      float h1(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+      float h1(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
       float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
         return mix(mix(h1(i),h1(i+vec2(1,0)),f.x), mix(h1(i+vec2(0,1)),h1(i+vec2(1,1)),f.x), f.y); }
       float wave(vec2 p){
@@ -340,7 +340,7 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
         vec3 col = mix(base, refl, clamp(fres * 1.1, 0.0, rk));
         vec3 h = normalize(uSunDir + viewDir);
         float spec = pow(max(dot(n, h), 0.0), mix(420.0, 80.0, smoothstep(300.0, 3000.0, camD))) * (1.0 - uNight);
-        col += uSunColor * spec * mix(2.2, 0.7, smoothstep(300.0, 3000.0, camD)) * (1.0 - uRain * 0.7);
+        col += uSunColor * spec * mix(1.5, 0.55, smoothstep(300.0, 3000.0, camD)) * (1.0 - uRain * 0.7);
         // a silver moon path at night
         vec3 hm = normalize(uMoonDir + viewDir);
         col += vec3(0.72, 0.8, 1.0) * pow(max(dot(n, hm), 0.0), 140.0) * uMoonLight * 5.0 * step(0.0, uMoonDir.y) * uNight;

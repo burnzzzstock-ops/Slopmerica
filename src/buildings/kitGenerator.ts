@@ -48,7 +48,7 @@ varying vec3 vBW;
 ${CLOUD_GLSL}
 float gGlass, gGlow, gSign;
 vec3 gTex;
-float bh(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }`,
+float bh(vec3 p) { vec3 p3 = fract(p * 0.1031); p3 += dot(p3, p3.zyx + 31.32); return fract((p3.x + p3.y) * p3.z); }`,
       )
       .replace(
         '#include <color_fragment>',

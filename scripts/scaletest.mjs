@@ -38,13 +38,23 @@ const r = await page.evaluate(() => {
   g.hour = 17.5;
   g.rts.setView(S.x + 60, S.z - 150, 420, undefined, undefined, true);
   const samples = [];
+  // departures: who walks out of which building when (a conga line is several within seconds)
+  const seen = new Set(g.peds.peds), leaves = new Map();
+  let clock = 0;
   for (let k = 0; k < 8; k++) {
-    for (let i = 0; i < 60; i++) g.frame(0.05, false);
+    for (let i = 0; i < 60; i++) {
+      g.frame(0.05, false); clock += 0.05;
+      for (const p of g.peds.peds) if (!seen.has(p)) { seen.add(p); if (p.fromBld !== undefined) { if (!leaves.has(p.fromBld)) leaves.set(p.fromBld, []); leaves.get(p.fromBld).push(clock); } }
+    }
     const out = new Map();
     for (const p of g.peds.peds) if (p.fromBld !== undefined) out.set(p.fromBld, (out.get(p.fromBld) ?? 0) + 1);
     const kinds = {}; for (const p of g.peds.peds) kinds[p.kind] = (kinds[p.kind] ?? 0) + 1;
     samples.push({ small, water: !!W, kinds, pop: g.sim.population, peds: g.peds.peds.length, town: g.peds.peds.filter((p) => p.kind !== 'commune').length, maxFromOne: Math.max(0, ...out.values()), cars: g.traffic.count, target: g.traffic.targetCars });
   }
+  let burst = 0;
+  for (const ts of leaves.values()) for (let a = 0; a < ts.length; a++) { let n = 0; for (let b = a; b < ts.length && ts[b] - ts[a] < 5; b++) n++; burst = Math.max(burst, n); }
+  samples[samples.length - 1].burst = burst;
+  samples[samples.length - 1].departures = [...leaves.values()].reduce((n, t) => n + t.length, 0);
   return samples;
 });
 if (trace) for (const s of r) console.log(JSON.stringify(s));
@@ -53,6 +63,7 @@ let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra)); if (!ok) bad++; };
 check(`people outside stay in proportion (at most ${peak('town')} of ${last.pop} residents, ≤ 12%)`, peak('town') <= Math.max(6, last.pop * 0.12), r);
 check(`no building empties out at once (at most ${peak('maxFromOne')} people from one building)`, peak('maxFromOne') <= 8, r);
+check(`people leave a building one at a time (at most ${last.burst} from one building within 5 s, of ${last.departures} departures)`, last.burst <= 1, { burst: last.burst, departures: last.departures });
 check(`rush-hour cars stay in proportion (${last.target} for ${last.pop} people, ≤ 20%)`, last.target <= Math.max(8, last.pop * 0.2), r);
 check(`boats fit the town (${last.small.boats} at ${last.small.pop} people${last.water ? '' : ', no water found'})`, last.water && last.small.boats <= 3, last.small);
 check('no page errors', errs.length === 0, errs.slice(0, 3));

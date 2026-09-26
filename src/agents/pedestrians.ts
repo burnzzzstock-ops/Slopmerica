@@ -45,6 +45,9 @@ const hippies = () => ARCHETYPES.map((a, i) => (a.hippie ? i : -1)).filter((i) =
 const normies = () => ARCHETYPES.map((a, i) => (!a.hippie ? i : -1)).filter((i) => i >= 0);
 const merchHeads = () => ARCHETYPES.map((a, i) => (a.merch ? i : -1)).filter((i) => i >= 0);
 
+/** seconds between people leaving the same building (plus 0-4 s by building) */
+const DOOR_GAP = 6;
+
 export class Pedestrians {
   peds: Ped[] = [];
   readonly renderer: PeopleRenderer;
@@ -84,7 +87,13 @@ export class Pedestrians {
     this.peds.push({ ...p, h });
   }
 
+  /** seconds of pedestrian time (for per-building departure spacing) */
+  private clock = 0;
+  /** when each building last let someone out */
+  private lastOut = new Map<number, number>();
+
   update(dtReal: number, simSpeed: number, cam: THREE.Vector3, camDist: number, time: number) {
+    this.clock += dtReal;
     const near = camDist < 900;
     const R = Math.min(520, camDist * 0.9 + 120);
     // despawn far or expired
@@ -259,12 +268,16 @@ export class Pedestrians {
   /** a building picked in proportion to its occupants, among those with room for one more outside */
   private pickBuilding(list: Bld[]): Bld | null {
     const out = this.outFrom();
-    const ok = list.filter((b) => (out.get(b.id) ?? 0) < Math.max(1, Math.ceil(b.occ * 0.12)));
+    // one person out of a door every several seconds: people leaving together
+    // walked off single file (the playtest's lines outside a factory)
+    const ok = list.filter((b) => (out.get(b.id) ?? 0) < Math.max(1, Math.ceil(b.occ * 0.12)) && this.clock - (this.lastOut.get(b.id) ?? -1e9) >= DOOR_GAP + (b.id % 5));
     let total = 0;
     for (const b of ok) total += Math.max(1, b.occ);
     let r = Math.random() * total;
-    for (const b of ok) { r -= Math.max(1, b.occ); if (r <= 0) return b; }
-    return ok[ok.length - 1] ?? null;
+    let pick: Bld | null = ok[ok.length - 1] ?? null;
+    for (const b of ok) { r -= Math.max(1, b.occ); if (r <= 0) { pick = b; break; } }
+    if (pick) this.lastOut.set(pick.id, this.clock);
+    return pick;
   }
 
   private trySpawn(cam: THREE.Vector3, R: number, town = true, communeOk = true) {
@@ -356,7 +369,8 @@ export class Pedestrians {
     const seg: RSeg | undefined = this.net.segs.get(bld.seg);
     if (!seg || seg.type === 'highway') return;
     const c = closestOnSampled({ x: bld.x, z: bld.z }, seg.samp);
-    const sAt = clamp(c.s, 1, seg.length - 1);
+    // anywhere along the frontage, not all from the same spot
+    const sAt = clamp(c.s + (Math.random() - 0.5) * Math.min(10, bld.hw * 1.6), 1, seg.length - 1);
     const { i, f } = locate(seg.samp, sAt);
     const a = seg.samp.pts[i], b = seg.samp.pts[i + 1];
     const tan = norm(sub(b, a));

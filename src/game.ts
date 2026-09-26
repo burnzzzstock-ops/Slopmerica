@@ -13,7 +13,7 @@ import { PointerHandlers, RTSCamera } from './render/camera';
 import { PostFX } from './render/post';
 import { Particles } from './render/particles';
 import { AudioEngine } from './audio/audio';
-import { RoadNetwork, RSeg, Plan } from './roads/network';
+import { COUNTY_ROAD, RoadNetwork, RSeg, Plan } from './roads/network';
 import { RoadRenderer } from './roads/roadMesh';
 import { ROAD_TYPES, RoadTypeId } from './roads/roadTypes';
 import { Zoning, type ZCell } from './zones/zoning';
@@ -74,9 +74,9 @@ export interface UiSink {
  * what was built and refunds exactly what it cost (net of any grant).
  */
 export type UndoAction =
-  | { kind: 'build'; segIds: number[]; refund: number; label: string }
+  | { kind: 'build'; segIds: number[]; refund: number; label: string; trees?: number[] }
   | { kind: 'upgrade'; prev: { id: number; type: RoadTypeId }[]; refund: number; label: string }
-  | { kind: 'place'; bldId: number; refund: number; label: string };
+  | { kind: 'place'; bldId: number; refund: number; label: string; trees?: number[] };
 
 /** landmark names and icons (Landmarks panel, the "Placing …" badge) */
 export const LANDMARKS: { id: LandmarkId; name: string; icon: string }[] = [
@@ -350,7 +350,7 @@ export class Game {
       const c = lineCubic({ x: prev.x, z: prev.z }, pts[k]);
       const plan = this.net.plan(prev, c, 'stroad4');
       if (!plan.ok) break;
-      const segs = this.net.build(prev, end, c, 'stroad4', 'Old County Road');
+      const segs = this.net.build(prev, end, c, 'stroad4', COUNTY_ROAD);
       if (!segs.length) break;
       const last = segs[segs.length - 1];
       const node = this.net.nodes.get(last.b)!;
@@ -479,6 +479,7 @@ export class Game {
     if (a.kind === 'build') {
       // splits may have renumbered segments; remove what's still there
       for (const id of a.segIds) if (this.net.segs.has(id)) this.net.removeSeg(id);
+      if (a.trees) this.trees.replant(a.trees);
     } else if (a.kind === 'upgrade') {
       for (const p of a.prev) if (this.net.segs.has(p.id)) this.net.upgrade(p.id, p.type);
     } else {
@@ -486,12 +487,13 @@ export class Game {
       // already gone (burned, bulldozed): nothing to take back, nothing to refund
       if (!b) { this.toast(`Can't undo ${a.label}: it's already gone.`, true); this.tools.cancel(); return true; }
       this.buildings.demolish(b, 'undone');
+      if (a.trees) this.trees.replant(a.trees);
     }
     this.sim.refund(a.refund, `Undo: ${a.label}`);
     crumb(`undo ${a.label}`);
     this.tools.cancel();
     this.audio.play('bulldoze', 0.6);
-    this.toast(`Undone: ${a.label}, ${usd(a.refund)} back.${a.kind === 'build' ? ' The trees are still gone though.' : ''}`);
+    this.toast(`Undone: ${a.label}, ${usd(a.refund)} back${'trees' in a && a.trees?.length ? ', trees replanted' : ''}.`);
     return true;
   }
 
@@ -615,8 +617,9 @@ export class Game {
     const cost = LANDMARK_COST[id];
     const name = LANDMARKS.find((l) => l.id === id)?.name ?? 'Landmark';
     this.sim.spend(cost, name);
+    this.trees.recordCuts();
     const b = this.buildings.placeLandmark(id, spot.x, spot.z, spot.yaw);
-    this.pushUndo({ kind: 'place', bldId: b.id, refund: cost, label: name });
+    this.pushUndo({ kind: 'place', bldId: b.id, refund: cost, label: name, trees: this.trees.takeCuts() });
     this.feed.push('buildingOpened', { building: b.label, brand: id });
     this.audio.play(id === 'slopCannon' ? 'cannon' : 'build');
     return true;

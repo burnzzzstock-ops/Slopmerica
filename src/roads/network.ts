@@ -679,15 +679,28 @@ export class RoadNetwork {
   }
 
   /** Weekly upkeep. Age makes it worse: the Growth Ponzi's bill coming due. */
-  upkeep(): number {
+  /**
+   * The town's weekly road bill, `ahead` days from now (roads cost more as
+   * they age: a third for the first year, full price by year four, up to
+   * 2.5x after that). The Old County Road is the state's: the town pays only
+   * for widening it.
+   */
+  upkeep(ahead = 0): number {
     let c = 0;
     for (const s of this.segs.values()) {
-      const ageYears = (this.day - s.builtDay) / 365;
+      const ageYears = (this.day + ahead - s.builtDay) / 365;
       const ageMul = ageYears < 1 ? 0.35 : ageYears < 4 ? 0.35 + (ageYears - 1) * 0.22 : 1 + Math.min(1.5, (ageYears - 4) * 0.12);
-      c += s.length * this.type(s.type).upkeepPerM * ageMul;
+      const perM = this.type(s.type).upkeepPerM - (isCountyRoad(s) ? ROAD_TYPES.stroad4.upkeepPerM : 0);
+      if (perM > 0) c += s.length * perM * ageMul;
     }
     return c;
   }
+}
+
+/** The county road the map starts with: the state maintains it. */
+export const COUNTY_ROAD = 'Old County Road';
+export function isCountyRoad(s: RSeg): boolean {
+  return s.name === COUNTY_ROAD;
 }
 
 export function straightTo(a: V2, b: V2): Cubic {

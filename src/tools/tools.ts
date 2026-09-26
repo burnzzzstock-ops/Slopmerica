@@ -147,6 +147,32 @@ export class Tools implements PointerHandlers {
     this.onChange?.();
   }
 
+  private impactKey = '';
+  private impact = { upkeep: 0, upkeepLater: 0, trees: 0, joins: '' as string };
+  /** Upkeep, trees cleared and connection for the road being drawn (cached per shape). */
+  private roadImpact(curve: Cubic, end: V2) {
+    const key = `${this.roadType}|${curve.p0.x.toFixed(1)},${curve.p0.z.toFixed(1)}|${curve.p1.x.toFixed(1)},${curve.p1.z.toFixed(1)}|${curve.p2.x.toFixed(1)},${curve.p2.z.toFixed(1)}|${end.x.toFixed(1)},${end.z.toFixed(1)}`;
+    if (key === this.impactKey) return this.impact;
+    this.impactKey = key;
+    const net = this.game.net, t = ROAD_TYPES[this.roadType];
+    const samp = sampleCubic(curve, 4);
+    const perWk = samp.length * t.upkeepPerM;
+    const name = (s: Snap | null) => {
+      if (!s) return '';
+      if (s.kind === 'seg') return net.segs.get(s.id)?.name ?? 'a road';
+      if (s.kind === 'node') { const n = net.nodes.get(s.id); const sg = n && n.segs.length ? net.segs.get(n.segs[0]) : null; return sg?.name ?? ''; }
+      return '';
+    };
+    const joins = name(this.start) || name(net.snap(end.x, end.z, 6));
+    this.impact = {
+      upkeep: Math.max(1, Math.round(perWk * 0.35)),
+      upkeepLater: Math.max(1, Math.round(perWk)),
+      trees: this.game.trees.countAlong(samp.pts, t.width / 2 + 4),
+      joins,
+    };
+    return this.impact;
+  }
+
   brushRadius() {
     return [10, 22, 44][this.brush];
   }
@@ -392,13 +418,15 @@ export class Tools implements PointerHandlers {
       if (c) this.game.select({ kind: 'commune', c });
       return;
     }
+    this.game.trees.recordCuts();
     const segs = net.build(this.start, end, curve, this.roadType);
+    const trees = this.game.trees.takeCuts();
     if (segs.length) {
       this.game.sim.spend(plan.cost, 'Road construction');
       if (plan.grant > 0) this.game.sim.earn(plan.grant, 'grants');
       if (plan.grant > 0) this.game.floatText(`+$${plan.grant.toLocaleString()} Federal Slop Grant`, p, '#9dff3c');
       this.game.onRoadBuilt(segs, plan);
-      this.game.pushUndo({ kind: 'build', segIds: segs.map((x) => x.id), refund: plan.cost - plan.grant, label: ROAD_TYPES[this.roadType].name });
+      this.game.pushUndo({ kind: 'build', segIds: segs.map((x) => x.id), refund: plan.cost - plan.grant, label: ROAD_TYPES[this.roadType].name, trees });
       crumb(`built ${ROAD_TYPES[this.roadType].name} ${Math.round(plan.length)} m ($${plan.cost - plan.grant})`);
       // continue drawing from the end like Skylines
       const last = segs[segs.length - 1];
@@ -513,9 +541,20 @@ export class Tools implements PointerHandlers {
           this.previewMat.color.set(plan.ok ? 0x7fd8ff : 0xff4d4d);
           const net$ = plan.cost - plan.grant;
           this.pendingCost = this.pendingEnd && plan.ok ? net$ : null;
-          this.tip = plan.ok
-            ? { text: `${Math.round(plan.length)} m · $${net$.toLocaleString()}${plan.grant ? ` (feds pay $${plan.grant.toLocaleString()})` : ''}${plan.bridgeLen > 5 ? ' · bridge' : ''}${plan.demolish ? ` · bulldozes ${plan.demolish} building${plan.demolish === 1 ? '' : 's'}` : ''}${this.pendingEnd && !this.touchDown ? ' · tap Build, or drag to re-aim' : ''}`, bad: !!plan.demolish }
-            : { text: plan.reason ?? 'Nope', bad: true };
+          if (plan.ok) {
+            // what the road commits you to, before you click: the forever cost, the
+            // trees, the homes, and whether anything can drive to it
+            const im = this.roadImpact(curve, end);
+            const bits = [
+              `${Math.round(plan.length)} m · $${net$.toLocaleString()}${plan.grant ? ` (feds pay $${plan.grant.toLocaleString()})` : ''}`,
+              `+$${im.upkeep}/wk upkeep (→ $${im.upkeepLater}/wk as it ages)`,
+              plan.bridgeLen > 5 ? 'bridge' : '',
+              plan.demolish ? `bulldozes ${plan.demolish} building${plan.demolish === 1 ? '' : 's'}` : '',
+              im.trees ? `clears ~${im.trees} tree${im.trees === 1 ? '' : 's'}` : '',
+              im.joins ? `joins ${im.joins}` : '⚠️ not connected to any road',
+            ].filter(Boolean);
+            this.tip = { text: bits.join(' · ') + (this.pendingEnd && !this.touchDown ? ' · tap Build, or drag to re-aim' : ''), bad: !!plan.demolish || !im.joins };
+          } else this.tip = { text: plan.reason ?? 'Nope', bad: true };
         }
       } else {
         this.preview.visible = false;

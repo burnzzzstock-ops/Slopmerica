@@ -169,7 +169,8 @@ export class Sim {
   private lastWhole = 0;
   private popMarks = [50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000, 250000];
   private natureMarks = [0.9, 0.75, 0.5, 0.25, 0.1, 0.01];
-  private sprawlMarks = [0.1, 0.25, 0.5, 0.75, 0.9, 1];
+  // small early marks: the county is huge, and a first town is a sliver of it
+  private sprawlMarks = [0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 1];
   private unlocked = new Set<string>();
   private buildable: { x: number; z: number }[] = [];
   private cand: ZCell[] = [];
@@ -584,6 +585,12 @@ export class Sim {
       this.ended = true;
       this.events.emit('ending', undefined);
     }
+  }
+
+  /** The nearest things to aim for: the next population mark, unlock and sprawl mark. */
+  nextGoals() {
+    const unlock = UNLOCKS.filter((u) => !this.unlocked.has(u.what)).sort((a, b) => a.pop - b.pop)[0];
+    return { pop: this.popMarks[0] ?? null, unlock: unlock ? { pop: unlock.pop, what: unlock.what } : null, sprawl: this.sprawlMarks[0] ?? null };
   }
 
   private checkMilestones() {

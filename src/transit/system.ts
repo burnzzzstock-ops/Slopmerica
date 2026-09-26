@@ -161,10 +161,12 @@ export class TransitSystem {
   placeDepot(x: number, z: number) {
     const spot = this.depotSpotAt(x, z);
     if (!spot.ok) { this.g.toast(spot.reason ?? 'Nope', true); this.g.audio.play('error'); return false; }
+    this.g.trees.recordCuts();
     const b = this.g.buildings.placeCustom('busDepot', spot.x, spot.z, spot.yaw);
+    const trees = this.g.trees.takeCuts();
     if (!b) return false;
     this.g.sim.spend(DEPOT_COST, 'Bus depot', 'construction');
-    this.g.pushUndo({ kind: 'place', bldId: b.id, refund: DEPOT_COST, label: 'Bus depot' });
+    this.g.pushUndo({ kind: 'place', bldId: b.id, refund: DEPOT_COST, label: 'Bus depot', trees });
     this.g.audio.play('build');
     this.g.toast("Bus depot ordered. The sign's confidence exceeds the timetable's.");
     return true;

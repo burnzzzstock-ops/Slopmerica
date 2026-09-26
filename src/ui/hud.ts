@@ -29,11 +29,11 @@ const money = (n: number) => (n === Infinity ? '∞' : (n < 0 ? '-$' : '$') + Ma
 
 const ZONE_ICON: Record<ZoneType, string> = { resLow: '🏡', resHigh: '🏢', comLow: '🛒', comHigh: '🏬', industry: '🏭', office: '💻' };
 const DEMAND_KEYS: DemandKey[] = ['res', 'com', 'ind', 'off'];
-const DEM: Record<DemandKey, { name: string; letter: string; noun: string; zones: [ZoneType, ZoneType?] }> = {
-  res: { name: 'Residential', letter: 'R', noun: 'homes', zones: ['resLow', 'resHigh'] },
-  com: { name: 'Commercial', letter: 'C', noun: 'shops', zones: ['comLow', 'comHigh'] },
-  ind: { name: 'Industrial', letter: 'I', noun: 'factories', zones: ['industry'] },
-  off: { name: 'Office', letter: 'O', noun: 'offices', zones: ['office'] },
+const DEM: Record<DemandKey, { name: string; letter: string; noun: string; one: string; zones: [ZoneType, ZoneType?] }> = {
+  res: { name: 'Residential', letter: 'R', noun: 'homes', one: 'home', zones: ['resLow', 'resHigh'] },
+  com: { name: 'Commercial', letter: 'C', noun: 'shops', one: 'shop', zones: ['comLow', 'comHigh'] },
+  ind: { name: 'Industrial', letter: 'I', noun: 'factories', one: 'factory', zones: ['industry'] },
+  off: { name: 'Office', letter: 'O', noun: 'offices', one: 'office', zones: ['office'] },
 };
 /** +12 / −7 / 0, with a real minus sign */
 const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
@@ -70,6 +70,7 @@ export class Hud implements UiSink {
   private demandKey: DemandKey | null = null;
   private demandHtml = '';
   private demandCells: ZCell[] = [];
+  private nextStepT = -99;
   private domT = 0;
   private v = new THREE.Vector3();
 
@@ -190,7 +191,7 @@ export class Hud implements UiSink {
       <div class="ob-kicker">A MESSAGE FROM CHAD, ECONOMIC DEVELOPMENT</div>
       <h3>Welcome, Commissioner.</h3>
       <ol>
-        <li><b>Roads</b>: draw one off <em>Old County Road</em>. ${IS_TOUCH ? 'Drag your finger to draw. Two fingers move the map.' : 'Click to start, click to end.'} Stroads are the American way.</li>
+        <li><b>Roads</b>: draw one off <em>Old County Road</em>. ${IS_TOUCH ? 'Drag your finger to draw. Two fingers move the map.' : 'Click to start, click to end.'} Stroads are the American way (and the dearest to maintain: short gravel and two-lane streets pay for themselves sooner).</li>
         <li><b>Zoning</b>: paint green (homes), blue (shops) and yellow (industry) along it. Watch the R C I O bars.</li>
         <li><b>▶▶▶</b>: let the slop grow. Widen jammed roads with <b>One More Lane</b>. Hippies can be paid off or sued.</li>
       </ol>
@@ -254,6 +255,25 @@ export class Hud implements UiSink {
   }
 
   // ------------------------------------------------------------------ budget
+  /**
+   * Where the budget is heading: road upkeep as today's roads age (a third
+   * of full price the first year, full by year four), and how far the town is
+   * from paying its own way at today's tax per resident.
+   */
+  private budgetOutlook(fc: { net: number; lines: { amount: number; kind: string }[] }): string {
+    const g = this.game, s = g.sim;
+    const now = g.net.upkeep(), y1 = g.net.upkeep(365), y4 = g.net.upkeep(365 * 4);
+    const rows: string[] = [];
+    if (now > 1) rows.push(`🛣️ Roads cost more as they age: <b>${usd(now)}/wk</b> now → <b>${usd(y1)}/wk</b> in a year → <b>${usd(y4)}/wk</b> in four (today's roads; the state maintains Old County Road unless you widen it).`);
+    const tax = fc.lines.filter((l) => /Tax$/.test(l.kind)).reduce((a, l) => a + l.amount, 0);
+    const perHead = s.population > 0 && tax > 0 ? tax / s.population : 1.2;
+    if (fc.net < 0) {
+      const more = Math.ceil(-fc.net / perHead / 10) * 10;
+      rows.push(`⚖️ To break even at today's costs: about <b>${more.toLocaleString()} more residents</b> with jobs to match (you make ${usd(perHead)}/wk a head in taxes), or less upkeep. Short, busy streets pay; long empty ones don't.`);
+    } else rows.push(`⚖️ The town pays its own way: <b class="pos">+${usd(fc.net)}/wk</b> at today's rates. Aging roads will eat into it${y1 > now + 1 ? ` (${usd(y1 - now)}/wk more in a year)` : ''}.`);
+    return `<div class="bg-outlook">${rows.map((r) => `<p>${r}</p>`).join('')}</div>`;
+  }
+
   /** the budget's numbers: next week's bill, this week's one-time money, last week, the log */
   private budgetLive(): string {
     const g = this.game, s = g.sim;
@@ -292,6 +312,7 @@ export class Hud implements UiSink {
         <tr><td colspan="2" class="muted">Taxes and upkeep are billed when the week ends.</td></tr>
       </table>
       ${growth ? `<p class="bg-growth">Growth money: new buildings' impact fees and grants brought <b class="pos">+${usd(growth / weeks)}/wk</b> on average lately. It stops when growth stops; upkeep doesn't.</p>` : ''}
+      ${this.budgetOutlook(fc)}
       <details class="bg-more"><summary>Last week: ${usd(lc.from)} → ${usd(lc.to)} (${last.total >= 0 ? '+' : ''}${usd(last.total)})</summary>
         <table>
           ${RECURRING.filter((k) => Math.round(s.lastWeek[k])).map((k) => row(LEDGER_LABEL[k], s.lastWeek[k])).join('')}
@@ -389,12 +410,24 @@ export class Hud implements UiSink {
   private renderMeters() {
     if (!this.meterPop || this.meterPop.hidden) return;
     const s = this.game.sim, pct = (v: number) => `${Math.round(v * 100)}%`;
+    const fine = (v: number) => (v > 0 && v < 0.1 ? `${(v * 100).toFixed(1)}%` : pct(v));
+    const G = s.nextGoals(), goals: string[] = [];
+    if (G.pop) goals.push(`👥 Reach <b>${G.pop.toLocaleString()} people</b> (${s.population.toLocaleString()} now)`);
+    if (G.unlock && G.unlock.pop !== G.pop) goals.push(`🔓 At ${G.unlock.pop.toLocaleString()} people: <b>${esc(G.unlock.what)}</b>`);
+    else if (G.unlock) goals[goals.length - 1] += `: unlocks <b>${esc(G.unlock.what)}</b>`;
+    if (s.money !== Infinity) {
+      const net = s.forecastWeek().net;
+      goals.push(net >= 0 ? `⚖️ <b>Paying its own way</b> (+${usd(net)}/wk). Keep it there as roads age.` : `⚖️ <b>Break even</b>: ${usd(-net)}/wk short. Budget shows how far.`);
+    }
+    if (G.sprawl) goals.push(`🏙️ <b>${fine(G.sprawl)} Endless Sprawl</b> (${fine(s.sprawlPct)} now)`);
     const html = `
       <div class="dp-head"><b>Nature &amp; sprawl</b><button class="dp-x" data-act="close" aria-label="Close">✕</button></div>
       <div class="dp-title" style="--c:var(--good)"><span class="dp-name">🌲 Nature left</span><span class="dp-val">${pct(s.naturePct)}</span></div>
       <p class="dp-status">The county's original trees still standing. Roads, buildings and terraforming cut them down, and they don't grow back.</p>
       <div class="dp-title" style="--c:var(--slop)"><span class="dp-name">🏙️ Endless Sprawl</span><span class="dp-val">${pct(s.sprawlPct)}</span></div>
-      <p class="dp-status">Your win meter. ${pct(s.coverage)} of buildable land is paved or built on; ${pct(s.maxedPct)} of buildings are maxed out. Pave 90% of it with 98% maxed to win.</p>`;
+      <p class="dp-status">Your win meter. ${fine(s.coverage)} of buildable land is paved or built on; ${pct(s.maxedPct)} of buildings are maxed out. Pave 90% of it with 98% maxed to win: a long game, so aim for the steps below.</p>
+      <div class="dp-title" style="--c:var(--accent, #ffd23f)"><span class="dp-name">🎯 Next goals</span></div>
+      <ul class="dp-goals">${goals.map((x) => `<li>${x}</li>`).join('')}</ul>`;
     if (this.meterPop.innerHTML !== html) this.meterPop.innerHTML = html;
   }
 
@@ -433,6 +466,50 @@ export class Hud implements UiSink {
   }
 
   /** the zone a player should paint for this demand right now (null = locked) */
+  /**
+   * The one thing to do next, from all four demands at once: zone what
+   * builders want where there's no lot left, open new street frontage when
+   * every lot along the roads is spoken for, or wait while builders work.
+   */
+  nextStep(): string {
+    const g = this.game, s = g.sim, cells: ZCell[] = [];
+    const free = [...g.zones.cells.values()].filter((c) => c.row === 0 && c.valid && !c.zone && !c.bld && (!g.net.allowed || g.net.allowed(c.x, c.z))).length;
+    const ranked = DEMAND_KEYS.map((k) => {
+      const zone = this.demandZone(k);
+      const open = zone ? DEM[k].zones.reduce((n, z) => n + (z && s.isUnlocked({ zone: z }) ? g.zones.candidates(z, cells).length : 0), 0) : 0;
+      return { k, v: Math.round(s.demand[k]), zone, open };
+    }).sort((a, b) => b.v - a.v);
+    for (const r of ranked) {
+      if (r.v < 5) break;
+      const D = DEM[r.k];
+      if (!r.zone) continue;
+      if (r.open > 0) return `Wait: builders are putting up ${D.noun} on ${r.open} empty lot${r.open === 1 ? '' : 's'} (${D.letter} ${signed(r.v)}).`;
+      if (free > 0) return `Zone ${D.noun}: builders want them (${D.letter} ${signed(r.v)}) and every ${D.one} lot is taken. ${free} empty lots line your roads.`;
+      return `Build a street: builders want ${D.noun} (${D.letter} ${signed(r.v)}) but every lot along your roads is zoned. Short streets off existing ones are cheapest.`;
+    }
+    const locked = ranked.find((r) => r.v >= 5 && !r.zone);
+    if (locked) { const u = UNLOCKS.find((x) => x.zone === DEM[locked.k].zones[0]); return `Grow: builders want ${DEM[locked.k].noun}, which unlock at ${u?.pop.toLocaleString() ?? 'a bigger'} people. Zone what's in demand meanwhile.`; }
+    const worst = DEMAND_KEYS.flatMap((k) => s.demandParts[k].filter((p) => !p.base && p.v !== null && p.v < -3)).sort((a, b) => a.v! - b.v!)[0];
+    return `Wait: nothing wants building right now${worst ? ` (biggest drag: ${worst.text})` : ''}. Taxes, services and jobs move demand.`;
+  }
+
+  /** occupied, vacant and open lots for one demand type, and jobs against workers */
+  private townGlance(k: DemandKey): string {
+    const g = this.game, s = g.sim, D = DEM[k];
+    let n = 0, cap = 0, occ = 0;
+    for (const b of g.buildings.list.values()) if (isZoned(b) && (b.zone === D.zones[0] || b.zone === D.zones[1]) && b.abandoned === undefined && b.state === 'active') { n++; cap += b.cap; occ += b.occ; }
+    const cells: ZCell[] = [];
+    const open = D.zones.reduce((m, z) => m + (z && s.isUnlocked({ zone: z }) ? g.zones.candidates(z, cells).length : 0), 0);
+    const jobs = s.jobsCap.comLow + s.jobsCap.comHigh + s.jobsCap.industry + s.jobsCap.office;
+    const unit = k === 'res' ? 'homes' : 'jobs';
+    return `<div class="dp-glance">
+      <div><span>${D.noun[0].toUpperCase() + D.noun.slice(1)}</span><b>${n}</b></div>
+      <div><span>${unit} filled</span><b>${occ.toLocaleString()} / ${cap.toLocaleString()}</b></div>
+      <div><span>Empty zoned lots</span><b>${open}</b></div>
+      <div><span>Jobs · workers</span><b>${jobs.toLocaleString()} · ${s.workers.toLocaleString()}</b></div>
+    </div>`;
+  }
+
   private demandZone(k: DemandKey): ZoneType | null {
     const s = this.game.sim, P = s.population;
     const [low, high] = DEM[k].zones;
@@ -481,6 +558,8 @@ export class Hud implements UiSink {
         <span class="dp-trend ${trend > 3 ? 'up' : trend < -3 ? 'down' : ''}">${hist.length < 2 ? 'new' : trend > 3 ? `▲ ${signed(trend)} in ${days}d` : trend < -3 ? `▼ ${signed(trend)} in ${days}d` : 'steady'}</span></div>
       ${raw !== v ? `<div class="dp-cap">Maxed out at ${signed(v)} (would be ${signed(raw)})</div>` : ''}
       <p class="dp-status">${status}</p>
+      ${this.townGlance(k)}
+      <p class="dp-next">👉 <b>Next:</b> ${esc(this.nextStep())}</p>
       ${up.length ? `<div class="dp-h">Pushing up</div><ul>${up.map((p) => row(p, 'up')).join('')}</ul>` : ''}
       ${down.length ? `<div class="dp-h">Holding back</div><ul>${down.map((p) => row(p, 'down')).join('')}</ul>` : ''}
       ${other.length ? `<div class="dp-h">Also</div><ul>${other.map((p) => row(p, 'na')).join('')}</ul>` : ''}
@@ -534,14 +613,21 @@ export class Hud implements UiSink {
       const bar = el.closest('.dbar') as HTMLElement;
       bar.classList.toggle('neg', v < 0);
       const label = `${DEM[k].name} demand ${signed(Math.round(v))}. Show why.`;
-      if (bar.getAttribute('aria-label') !== label) { bar.setAttribute('aria-label', label); bar.title = label; }
+      if (bar.getAttribute('aria-label') !== label) bar.setAttribute('aria-label', label);
+    }
+    // hovering the bars says what to do about them (refreshed every couple of seconds)
+    if (this.game.time - this.nextStepT > 2) {
+      this.nextStepT = this.game.time;
+      const t = `Next: ${this.nextStep()} Click a bar for why.`;
+      for (const b of this.top.querySelectorAll<HTMLElement>('.dbar')) if (b.title !== t) b.title = t;
     }
     if (this.demandKey) this.renderDemand();
     this.renderMeters();
     $('m-nature').style.width = `${Math.round(s.naturePct * 100)}%`;
     $('m-nature-t').textContent = `${Math.round(s.naturePct * 100)}%`;
     $('m-sprawl').style.width = `${Math.round(s.sprawlPct * 100)}%`;
-    $('m-sprawl-t').textContent = `${Math.round(s.sprawlPct * 100)}%`;
+    // a first town is a sliver of the county: show tenths below 10% so progress is visible
+    $('m-sprawl-t').textContent = s.sprawlPct < 0.1 && s.sprawlPct > 0 ? `${(s.sprawlPct * 100).toFixed(1)}%` : `${Math.round(s.sprawlPct * 100)}%`;
     const w = g.weather;
     const icon = { clear: '☀️', cloudy: '☁️', rain: '🌧️', storm: '⛈️', snow: '🌨️', blizzard: '❄️', fog: '🌫️', heatwave: '🥵', hurricane: '🌀', wildfireSmoke: '🔥' }[w.kind];
     $('tb-weather').innerHTML = `<span>${icon}</span><small>${w.season}</small>`;

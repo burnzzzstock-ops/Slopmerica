@@ -1053,6 +1053,14 @@ a {
   color: var(--ink-2);
   white-space: normal;
 }
+.bg-outlook { margin: 8px 0; display: grid; gap: 6px; }
+.dp-glance { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin: 6px 0; font-size: 12px; }
+.dp-glance div { display: flex; justify-content: space-between; gap: 6px; border-bottom: 1px solid rgba(255,255,255,0.06); padding: 2px 0; }
+.dp-glance span { color: var(--ink-2); }
+.dp-next { margin: 6px 0; font-size: 12px; line-height: 1.4; white-space: normal; }
+.dp-goals { margin: 4px 0 0; padding-left: 18px; font-size: 12px; line-height: 1.45; }
+.dp-goals li { margin: 2px 0; }
+.bg-outlook p { margin: 0; font-size: 12px; line-height: 1.4; color: var(--ink-2); white-space: normal; }
 .bg-more summary {
   cursor: pointer;
   font-size: 12px;

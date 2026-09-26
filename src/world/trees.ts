@@ -570,6 +570,40 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
       }
   }
 
+  /** while set, cut() records the trees it removes (so an undo can put them back) */
+  private cutLog: number[] | null = null;
+  recordCuts() { this.cutLog = []; }
+  takeCuts(): number[] { const l = this.cutLog ?? []; this.cutLog = null; return l; }
+
+  /** Put back trees an undone road or building cut (standing on today's ground). */
+  replant(ids: readonly number[]) {
+    let ref = 0;
+    for (const i of ids) {
+      if (i < 0 || i >= this.n || this.A[i]) continue;
+      const h = this.terrain.h(this.X[i], this.Z[i]);
+      if (h < WATER - 1.2) continue;
+      this.A[i] = 1;
+      this.Y[i] = h - 0.25;
+      if (this.W[i] <= REF_DENSITY) ref++;
+    }
+    if (ids.length) { this.alive += ref; this.dirty = true; }
+    return ref;
+  }
+
+  /** How many trees (of the simulation's reference set) a path of half-width hw would clear. */
+  countAlong(pts: readonly { x: number; z: number }[], hw: number): number {
+    const seen = new Set<number>();
+    const hw2 = hw * hw;
+    for (let k = 0; k < pts.length; k += 2) {
+      const p = pts[k];
+      this.forCells(p.x - hw, p.z - hw, p.x + hw, p.z + hw, (i) => {
+        if (!this.A[i] || this.W[i] > REF_DENSITY || seen.has(i)) return;
+        if ((this.X[i] - p.x) ** 2 + (this.Z[i] - p.z) ** 2 < hw2) seen.add(i);
+      });
+    }
+    return seen.size;
+  }
+
   /** Remove trees inside the predicate within a box. Returns count cut. */
   cut(minX: number, minZ: number, maxX: number, maxZ: number, inside: (x: number, z: number) => boolean): number {
     let n = 0;
@@ -577,6 +611,7 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
     this.forCells(minX, minZ, maxX, maxZ, (i) => {
       if (!this.A[i] || !inside(this.X[i], this.Z[i])) return;
       this.A[i] = 0;
+      this.cutLog?.push(i);
       n++;
       if (this.W[i] <= REF_DENSITY) ref++;
     });

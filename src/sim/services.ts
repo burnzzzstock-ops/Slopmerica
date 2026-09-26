@@ -106,7 +106,8 @@ const IMPORT_CAP: Record<Util, number> = { power: 2.2, water: 450, sewage: 420 }
 const IMPORT_PRICE: Record<Util, number> = { power: 16, water: 0.045, sewage: 0.04 };
 const UNIT: Record<Util, string> = { power: 'MW', water: 'kL/day', sewage: 'kL/day' };
 /** Trash the county waste contractor hauls away through outside connections (t/day, $/t). */
-const TRASH_EXPORT = 3.5, TRASH_PRICE = 22;
+// $12/t: at $22 the contract for a 400-person town cost nearly all its residential tax
+const TRASH_EXPORT = 3.5, TRASH_PRICE = 12;
 /** Days of uncollected trash: icon / sickness+fire risk / critical (nobody moves in). */
 const TRASH_ICON = 8, TRASH_BAD = 16, TRASH_CRIT = 30;
 
@@ -1206,10 +1207,12 @@ export function placeService(g: Game, id: ServiceModelId, x: number, z: number, 
   const d = SERVICE_DEFS.get(id)!;
   const chk = canPlaceService(g, id, x, z, yaw);
   if (!chk.ok) { g.toast(chk.reason ?? 'Nope', true); g.audio.play('error'); return null; }
+  g.trees.recordCuts();
   const b = g.buildings.placeCustom(d.id, x, z, chk.yaw);
+  const trees = g.trees.takeCuts();
   if (!b) return null;
   g.sim.spend(d.cost, d.name, 'construction');
-  g.pushUndo({ kind: 'place', bldId: b.id, refund: d.cost, label: d.name });
+  g.pushUndo({ kind: 'place', bldId: b.id, refund: d.cost, label: d.name, trees });
   crumb(`placed ${d.name}`);
   S.graphDirty = true;
   g.audio.play('build');

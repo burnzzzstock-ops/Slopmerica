@@ -3062,3 +3062,5 @@ a {
   .card small { font-size: 10.5px; }
   .svc-stat { font-size: 11px; line-height: 1.25; padding: 3px 7px; }
 }
+.sp-grid.layouts { align-items: center; margin-top: 5px; }
+.sp-lbl { flex: 0 0 auto; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); writing-mode: vertical-rl; transform: rotate(180deg); }

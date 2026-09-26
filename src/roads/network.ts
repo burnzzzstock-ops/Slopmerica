@@ -44,6 +44,9 @@ export interface RSeg {
   /** smoothed congestion 0..1+ (volume / capacity) */
   vc: number;
   blocked: number; // seconds a lane is blocked (crash, protest)
+  /** overpass: raised this many metres mid-span, with ramps; roads it crosses
+   * pass underneath instead of joining it */
+  over?: number;
 }
 
 /** Roads meeting at a node must be at least this far apart (radians). */
@@ -76,7 +79,7 @@ type Events = {
   changed: void;
 };
 
-type SegRow = [number, number, number, RoadTypeId, [number, number][], string, number, number];
+type SegRow = [number, number, number, RoadTypeId, [number, number][], string, number, number, number?];
 
 const MAX_PIECE = 110; // long strokes are split into pieces this long
 const BRIDGE_DECK = WATER + 5.5;
@@ -177,12 +180,18 @@ export class RoadNetwork {
   }
 
   // ------------------------------------------------------------------ planning
-  plan(start: Snap, curve: Cubic, typeId: RoadTypeId, money = Infinity): Plan {
+  plan(start: Snap, curve: Cubic, typeId: RoadTypeId, money = Infinity, opts: { over?: number } = {}): Plan {
     const t = this.type(typeId);
     const samp = sampleCubic(curve, 4);
     const crossings: V2[] = [];
     const res: Plan = { ok: true, length: samp.length, cost: 0, grant: 0, bridgeLen: 0, crossings };
     if (samp.length < 8) return { ...res, ok: false, reason: 'Too short' };
+    {
+      const pe = samp.pts[samp.pts.length - 1];
+      for (const sn of [start, this.snap(pe.x, pe.z, 6)]) {
+        if (sn.kind === 'seg' && this.segs.get(sn.id)?.over) return { ...res, ok: false, reason: 'That road is up on an overpass here. Join it at either end, where it meets the ground.' };
+      }
+    }
     let prevAng: number | null = null;
     let water = 0;
     for (let i = 0; i < samp.pts.length; i++) {
@@ -246,7 +255,9 @@ export class RoadNetwork {
       if (Math.abs(yb - ya) > 0.15 * samp.length + 2) return { ...res, ok: false, reason: `Too steep (${Math.round((Math.abs(yb - ya) / samp.length) * 100)}% grade). Go around or zig-zag.` };
     }
     res.bridgeLen = water;
-    res.cost = Math.round(samp.length * t.costPerM + water * t.costPerM * 2.5);
+    // an overpass is mostly bridge and embankment
+    const deck = opts.over ? Math.max(0, samp.length - 2 * Math.min(samp.length * 0.42, 85)) + Math.min(samp.length * 0.42, 85) : 0;
+    res.cost = Math.round(samp.length * t.costPerM + (water + deck) * t.costPerM * 2.5);
     res.grant = Math.round(res.cost * t.fedGrant);
     if (res.cost - res.grant > money) return { ...res, ok: false, reason: `Needs $${Math.round(res.cost - res.grant).toLocaleString()}; you can spend $${Math.max(0, Math.round(money)).toLocaleString()} (cash + credit). Try a shorter road or a loan.` };
     return res;
@@ -306,20 +317,24 @@ export class RoadNetwork {
   }
 
   /** Build a road. Returns the created segments (possibly several). */
-  build(start: Snap, end: Snap, curve: Cubic, typeId: RoadTypeId, streetName?: string): RSeg[] {
+  build(start: Snap, end: Snap, curve: Cubic, typeId: RoadTypeId, streetName?: string, opts: { over?: number } = {}): RSeg[] {
     const street = this.nextStreet++;
     const samp = sampleCubic(curve, 4);
     const name = streetName ?? roadName(typeId, this.terrain, samp.pts[Math.floor(samp.pts.length / 2)], this.map);
-    // gather crossing points with existing roads
+    // gather crossing points with existing roads (an overpass crosses over
+    // everything, and everything passes under an overpass)
     const cross: { p: V2; tNew: number }[] = [];
-    for (const seg of this.segsNear(Math.min(curve.p0.x, curve.p3.x, curve.p1.x, curve.p2.x) - 20, Math.min(curve.p0.z, curve.p3.z, curve.p1.z, curve.p2.z) - 20, Math.max(curve.p0.x, curve.p3.x, curve.p1.x, curve.p2.x) + 20, Math.max(curve.p0.z, curve.p3.z, curve.p1.z, curve.p2.z) + 20)) {
-      cross.push(...this.crossingsWith(samp, seg));
+    if (!opts.over) {
+      for (const seg of this.segsNear(Math.min(curve.p0.x, curve.p3.x, curve.p1.x, curve.p2.x) - 20, Math.min(curve.p0.z, curve.p3.z, curve.p1.z, curve.p2.z) - 20, Math.max(curve.p0.x, curve.p3.x, curve.p1.x, curve.p2.x) + 20, Math.max(curve.p0.z, curve.p3.z, curve.p1.z, curve.p2.z) + 20)) {
+        if (seg.over) continue;
+        cross.push(...this.crossingsWith(samp, seg));
+      }
     }
     // a dead end the new road runs over or touches joins it (a T junction):
     // otherwise its capped stub sat on top of the new road, unconnected (the
     // playtest's odd junction at the old county road's end)
     const hwNew = this.type(typeId).width / 2;
-    for (const n of this.nodes.values()) {
+    for (const n of opts.over ? [] : this.nodes.values()) {
       if (n.segs.length !== 1) continue;
       const c = closestOnSampled({ x: n.x, z: n.z }, samp);
       if (c.d > hwNew + 2 || c.s < 10 || c.s > samp.length - 10) continue;
@@ -360,7 +375,8 @@ export class RoadNetwork {
       piece = { ...piece, p0: { x: a.node.x, z: a.node.z }, p3: { x: b.node.x, z: b.node.z } };
       // chop long pieces
       const len = sampleCubic(piece, 8).length;
-      const parts = Math.max(1, Math.ceil(len / MAX_PIECE));
+      // an overpass stays one piece: a node mid-span would sit on the ground
+      const parts = opts.over ? 1 : Math.max(1, Math.ceil(len / MAX_PIECE));
       let from = a.node;
       let cur = piece;
       for (let q = 0; q < parts; q++) {
@@ -373,7 +389,7 @@ export class RoadNetwork {
           cur = x2;
           to = this.addNode(x1.p3.x, x1.p3.z);
         }
-        const s = this.addSeg(from, to, { ...sub_, p0: { x: from.x, z: from.z }, p3: { x: to.x, z: to.z } }, typeId, name, street);
+        const s = this.addSeg(from, to, { ...sub_, p0: { x: from.x, z: from.z }, p3: { x: to.x, z: to.z } }, typeId, name, street, opts.over);
         if (s) created.push(s);
         from = to;
       }
@@ -392,7 +408,7 @@ export class RoadNetwork {
   serialize() {
     return {
       nodes: [...this.nodes.values()].map((n): [number, number, number, number] => [n.id, +n.x.toFixed(2), +n.z.toFixed(2), +n.y.toFixed(2)]),
-      segs: [...this.segs.values()].map((s): SegRow => [s.id, s.a, s.b, s.type, [s.curve.p0, s.curve.p1, s.curve.p2, s.curve.p3].map((p) => [+p.x.toFixed(2), +p.z.toFixed(2)] as [number, number]), s.name, s.street, Math.round(s.builtDay)]),
+      segs: [...this.segs.values()].map((s): SegRow => [s.id, s.a, s.b, s.type, [s.curve.p0, s.curve.p1, s.curve.p2, s.curve.p3].map((p) => [+p.x.toFixed(2), +p.z.toFixed(2)] as [number, number]), s.name, s.street, Math.round(s.builtDay), ...(s.over ? [s.over] : [])] as SegRow),
       next: [this.nextNode, this.nextSeg, this.nextStreet] as [number, number, number],
     };
   }
@@ -400,12 +416,12 @@ export class RoadNetwork {
   restore(data: ReturnType<RoadNetwork['serialize']>) {
     for (const [id, x, z, y] of data.nodes) this.nodes.set(id, { id, x, z, y, segs: [] });
     const made: RSeg[] = [];
-    for (const [id, a, b, type, pts, name, street, built] of data.segs) {
+    for (const [id, a, b, type, pts, name, street, built, over] of data.segs) {
       const A = this.nodes.get(a), B = this.nodes.get(b);
       if (!A || !B) continue;
       this.nextSeg = id;
       const curve = { p0: { x: pts[0][0], z: pts[0][1] }, p1: { x: pts[1][0], z: pts[1][1] }, p2: { x: pts[2][0], z: pts[2][1] }, p3: { x: pts[3][0], z: pts[3][1] } };
-      const s = this.addSeg(A, B, curve, type, name, street);
+      const s = this.addSeg(A, B, curve, type, name, street, over);
       if (s) { s.builtDay = built; made.push(s); }
     }
     [this.nextNode, this.nextSeg, this.nextStreet] = data.next;
@@ -414,7 +430,7 @@ export class RoadNetwork {
     this.events.emit('changed', undefined);
   }
 
-  private addSeg(a: RNode, b: RNode, curve: Cubic, type: RoadTypeId, name: string, street: number): RSeg | null {
+  private addSeg(a: RNode, b: RNode, curve: Cubic, type: RoadTypeId, name: string, street: number, over?: number): RSeg | null {
     if (a.id === b.id) return null;
     // avoid duplicate segment between same nodes
     for (const sid of a.segs) {
@@ -426,6 +442,7 @@ export class RoadNetwork {
       id: this.nextSeg++, a: a.id, b: b.id, type, curve, samp, hs: [], ground: [], length: samp.length, name, street,
       trimA: 0, trimB: 0, minX: 0, minZ: 0, maxX: 0, maxZ: 0, builtDay: this.day, load: [0, 0], vc: 0, blocked: 0,
     };
+    if (over) seg.over = over;
     this.computeBounds(seg);
     this.computeProfile(seg);
     this.segs.set(seg.id, seg);
@@ -468,6 +485,12 @@ export class RoadNetwork {
       const wb = 1 - smoothstep(0, Math.min(24, L / 2), L - d);
       y[i] = lerp(lerp(y[i], A.y, wa), B.y, wb * (1 - wa));
       if (ground[i] < WATER + 0.6) y[i] = Math.max(y[i], WATER + 3.2);
+      // overpass: climb to the clearance within the ramps at each end
+      if (seg.over) {
+        const R = Math.min(L * 0.42, 85);
+        const k = smoothstep(0, R, d) * smoothstep(0, R, L - d);
+        y[i] = Math.max(y[i], Math.max(ground[i], WATER + 0.6) + seg.over * k);
+      }
     }
     // grade clamp with both ends pinned: alternate forward/backward passes until
     // consistent (a single pair of passes can leave a cliff next to an endpoint)

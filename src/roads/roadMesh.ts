@@ -592,7 +592,7 @@ export class RoadRenderer {
     for (let k = 0; k < ids.length; k++) b.tri(c, ids[k], ids[(k + 1) % ids.length]);
     // crosswalks where each street enters a real junction (not highways or
     // gravel, not bends): the edge of the junction reads as intended
-    if (segs.length >= 3) {
+    if (segs.length >= 3 && !segs.some((s) => s.type === 'highway')) {
       for (const s of segs) {
         const t = ROAD_TYPES[s.type];
         if (t.sidewalk <= 0) continue;

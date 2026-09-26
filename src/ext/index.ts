@@ -7,3 +7,4 @@ import '../sim/disasters';
 import '../sim/freight';
 import '../transit/system';
 import '../sim/land';
+import '../roads/interchanges';

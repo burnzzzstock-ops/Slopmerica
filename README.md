@@ -48,6 +48,13 @@ node scripts/zonetest.mjs        # zoning strokes report what they did; lots say
 node scripts/svcstatus.mjs       # services: covered / paid fallback / short, costs, why cut off
 node scripts/progresstest.mjs    # unlocks say where; NEW badges; locked cards; nature & sprawl meters
 node scripts/edgetest.mjs        # mouse at a screen edge scrolls the map
+node scripts/scaletest.mjs       # people, cars and boats in proportion to the town; one person out of a door at a time
+node scripts/hudfootprint.mjs    # how much of the height the HUD leaves for the map (W= H= for the window size)
+node scripts/shadercheck.mjs     # no sin-based hashes in shaders (they break on some Windows GPUs)
+node scripts/aotest.mjs          # ambient occlusion leaves open ground alone (no blotches, no stripes)
+node scripts/junctiontest.mjs    # roads over a dead end join it; no near-parallel junctions; crosswalks
+node scripts/interchangetest.mjs # roundabout and diamond interchange (overpass, ramps, save, undo)
+node scripts/townshots.mjs tag   # builds a ~250-person river town and screenshots day, night, a junction, a factory
 ```
 
 `BASE_URL=http://127.0.0.1:5174` points any of them at another server (handy for running the suite against a frozen copy while you keep editing). Scripts that assert exit nonzero on failure.

@@ -1,5 +1,6 @@
 // In-game HUD: top bar (money, pop, date, speed, RCIO demand, nature/sprawl),
 // bottom toolbar with sub-panels, the X feed, inspector, budget, toasts.
+import { currentLayout, LAYOUT_ORDER, LAYOUTS, rotateLayout, selectLayout, type LayoutId } from '../roads/interchanges';
 import * as THREE from 'three';
 import { EXT } from '../ext/registry';
 import type { LandmarkId, ZoneType } from '../contracts';
@@ -679,9 +680,16 @@ export class Hud implements UiSink {
         <div class="sp-grid">${ROAD_ORDER.map((id) => {
           const r = ROAD_TYPES[id];
           const locked = !g.sim.isUnlocked({ road: id });
-          return `<button class="card ${t.roadType === id ? 'on' : ''} ${this.fresh.has(`road:${id}`) ? 'new' : ''}" data-road="${id}" ${locked ? 'disabled' : ''} title="${esc(r.blurb)}">
+          return `<button class="card ${t.roadType === id && t.active === 'road' ? 'on' : ''} ${this.fresh.has(`road:${id}`) ? 'new' : ''}" data-road="${id}" ${locked ? 'disabled' : ''} title="${esc(r.blurb)}">
             <span class="ci">${r.icon}</span><b>${esc(r.name)}</b><small>${locked ? `🔒 Pop ${r.unlockPop.toLocaleString()}` : `$${r.costPerM}/m · ${r.lanesPerDir * 2} lanes${r.centerTurn ? ' + turn' : ''}`}</small></button>`;
-        }).join('')}</div>`;
+        }).join('')}</div>
+        <div class="sp-grid layouts"><span class="sp-lbl">Interchanges</span>${LAYOUT_ORDER.map((id) => {
+          const l = LAYOUTS[id];
+          const locked = g.sim.mode !== 'sandbox' && g.sim.population < l.unlockPop;
+          return `<button class="card ${currentLayout(g) === id ? 'on' : ''}" data-layout="${id}" ${locked ? 'disabled' : ''} title="${esc(l.blurb)}"><span class="ci">${l.icon}</span><b>${esc(l.name)}</b><small>${locked ? `🔒 Pop ${l.unlockPop.toLocaleString()}` : id === 'diamond' ? 'Overpass + 4 ramps' : 'Ring + 4 stubs'}</small></button>`;
+        }).join('')}${currentLayout(g) ? `<button class="chip" id="layout-rotate" title="Rotate (, and .)">↻ Rotate</button>` : ''}</div>`;
+      this.sub.querySelectorAll<HTMLButtonElement>('[data-layout]').forEach((b) => b.addEventListener('click', () => { selectLayout(g, b.dataset.layout as LayoutId); this.renderPanel(); }));
+      this.sub.querySelector('#layout-rotate')?.addEventListener('click', () => rotateLayout(g));
       this.sub.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) => b.addEventListener('click', () => { t.roadMode = b.dataset.mode as never; t.cancel(); t.set('road'); this.renderPanel(); }));
       this.sub.querySelectorAll<HTMLButtonElement>('[data-road]').forEach((b) => b.addEventListener('click', () => { t.roadType = b.dataset.road as RoadTypeId; this.fresh.delete(`road:${t.roadType}`); t.set('road'); this.renderPanel(); }));
     } else if (p === 'zones') {
@@ -784,6 +792,7 @@ export class Hud implements UiSink {
           <div><b>Roads</b> click start, click end. Keeps chaining. Esc / right-click stops.</div>
           <div><b>Speed</b> Space pause · 1 2 3</div>
           <div><b>Tools</b> B bulldoze · U one more lane · Z zoning · Esc cancel</div>
+          <div><b>Interchanges</b> Roads → Interchanges · , and . rotate</div>
           <div><b>Performance</b> F3 shows FPS, frame time, draw calls and triangles</div>`}
         </div>
         <div class="sp-row"><button class="chip" id="save-now">💾 Save now</button><button class="chip" id="new-city">🆕 New city</button><small>Autosaves every 30 seconds in this browser.</small></div>

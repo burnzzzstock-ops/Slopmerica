@@ -132,7 +132,8 @@ export class Zoning {
 
   private buildSeg(seg: RSeg) {
     const t = ROAD_TYPES[seg.type];
-    if (!t.zoneable) return;
+    // nothing fronts onto an overpass
+    if (!t.zoneable || seg.over) return;
     const hw = t.width / 2;
     const s0 = seg.trimA, s1 = seg.length - seg.trimB;
     const cols = Math.floor((s1 - s0) / CELL);

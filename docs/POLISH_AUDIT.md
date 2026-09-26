@@ -64,10 +64,41 @@ inferred from the video.
 - Mouse at a screen edge scrolls the map (Settings → Edge scrolling). **Script:** scripts/edgetest.mjs.
 - Bug reports now carry frame times, the slowest frames with what the game was doing, graphics state (effects on/off and why), demand and a short timeline; F3 shows where frame time goes.
 
+## Playtest 2 (2026-09-26): live commentary, a 6:56 recording and six reference shots
+
+The reference shots put the game at about **1268x595 CSS px** (Windows scaling
+inside the browser frame), which changed several conclusions.
+
+### The HUD covered the map
+- **Observed:** road drawer + top bar ~40% of the height; the toolbar ran off the right edge ("REPORT B").
+- **Now:** a slimmer top bar and toolbar on desktop; drawers share their title row with their mode chips; cards are one row; short windows tighten further. Milestones are a ribbon under the top bar, not a card over the middle. Settings has a field-of-view slider.
+- **Before/after (scripts/hudfootprint.mjs, share of the height that is map):** at 1268x595 roads 47% -> 73%, zoning 44% -> 73%, services 27% -> 62%; at 1690x946 roads 67% -> 80%.
+
+### "Spotting" at every preset was ambient occlusion
+- **Cause 1:** terrain facets read as creases, so AO blotched flat grass (Ultra). **Fix:** an angle bias; only real corners occlude.
+- **Cause 2:** at half resolution (High) every AO pixel sat exactly on the edge between two depth texels, and rounding picked one row or the other in slow bands (moire stripes that moved with the window size and zoom). **Fix:** read depth at texel centres; interleaved gradient noise for the rotation.
+- **Before/after (scripts/aotest.mjs, bare ground, AO on vs off):** AO darkened it by up to 49/255 with row-to-row stripes of 4-9; now under 1.6/255 and under 1, at High and Ultra, 1268x700 and 1268x595, two zooms.
+
+### Speckled water, flag-like distant trees, a black box
+- **Water:** the wave noise used the `fract(sin(x)*43758)` hash with world coordinates in the thousands; on GPUs whose `sin` loses precision for large arguments (the Windows/ANGLE path) it turns blocky and the reflection breaks into white speckles. All seven shaders that used it now use a sin-free hash. **Script:** scripts/shadercheck.mjs. (Not reproducible in the headless renderer, whose `sin` is exact.)
+- **Distant trees** were side-view impostors: from the usual camera angle, dark flags on long trunk streaks, and lit twice. They now bake a side view and a view from 55 degrees up, blend by view angle, and bake about their albedo.
+- **The black cube** was the Freedom Incinerator: dark metal under a near-black roof. Service and depot flat roofs are now a light membrane.
+
+### Night, junctions, people, boats
+- **Night:** the grade lifts exposure after dark and blacks go moonlit blue; water stays dark; fireflies (lime HDR glows up to 600 m out) are now warm, small and only close up.
+- **Junctions:** a road built over the end of another road didn't join it; the capped dead end sat on the through road as a round disc, unconnected (it happened at the county road's end in the town centre). Dead ends a new road runs over now become T junctions; roads can't meet closer than 15 degrees; junction asphalt matches the roads; street junctions get crosswalks. **Script:** scripts/junctiontest.mjs.
+- **People and boats:** pedestrians come from a town budget (3 + 7% of residents) with per-building caps, and each building lets one person out every 6-10 s (the lines outside a factory were people leaving together and walking off in step). Boats: 73 at 27 people before, 1 now (1 + pop/120). **Script:** scripts/scaletest.mjs.
+
+### New: prebuilt interchanges (Roads -> Interchanges)
+- **Freedom Circle:** a roundabout with four stubs.
+- **Diamond Interchange:** the cross street bridges the highway on an overpass (a raised deck with approach ramps; roads it crosses pass under; nothing joins or zones along it mid-span; saved with the city), four ramps join the two. Placed on a Slopway it lines up with it and uses it. `,` and `.` rotate. **Script:** scripts/interchangetest.mjs.
+
 ## Remaining (ranked)
 
-1. Junction at 1:27–1:37 (dark slab, queue behind a DUI crash): needs the recording's save to reproduce.
-2. Balance: the recurring deficit of an early town (see P0-A finding). A playtest question before tuning.
-3. "143/300" vs HUD 142: the transit notice reads population at the moment of the click while the HUD refreshes four times a second; not a data mismatch.
-4. P2: persisted audio/motion settings, colour-blind-safe zone patterns (the overlay still relies on hue plus brightness), keyboard focus through every panel.
-5. Phase 3: observe five unfamiliar players on the first neighbourhood (the report's playtest questions) before further tuning.
+1. Cities saved before this build keep any dead end that was built over (a disc on a through road, unconnected): bulldoze and redraw that stub. A load-time repair would move road endpoints that zoning and buildings refer to, so it wasn't done blind.
+2. The water speckle fix is reasoned from the shader, not reproduced: the headless renderer's `sin` is exact. Confirm on the playtest machine.
+3. Junction at 1:27–1:37 of the first recording (dark slab, queue behind a DUI crash): needs that save to reproduce.
+4. Balance: the recurring deficit of an early town (see P0-A finding). A playtest question before tuning.
+5. "143/300" vs HUD 142: the transit notice reads population at the moment of the click while the HUD refreshes four times a second; not a data mismatch.
+6. P2: persisted audio/motion settings, colour-blind-safe zone patterns (the overlay still relies on hue plus brightness), keyboard focus through every panel.
+7. Phase 3: observe five unfamiliar players on the first neighbourhood (the report's playtest questions) before further tuning.

@@ -118,6 +118,8 @@ export class Game {
   readonly traffic: Traffic;
   readonly peds: Pedestrians;
   readonly ambientLife: AmbientLife;
+  /** the building problem icon under a screen point, and what it means (set by services) */
+  problemAt?: (clientX: number, clientY: number) => { id: number; text: string | null } | null;
   readonly communes: Communes;
   readonly tools: Tools;
   readonly overlays: Overlays;

@@ -3069,3 +3069,6 @@ a {
    second row that was mostly empty space over the map) */
 .sp-sep { flex: 0 0 1px; align-self: stretch; margin: 2px 3px; background: var(--line); }
 .card.layout { border-style: dashed; }
+.quality-controls .ql { font-weight: 800; font-size: 12px; }
+.seg { display: inline-flex; gap: 3px; padding: 2px; border-radius: 999px; background: #14121c; }
+.seg .chip { border-color: transparent; }

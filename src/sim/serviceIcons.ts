@@ -134,8 +134,33 @@ export class ProblemIcons {
     this.geo.setAttribute('iIcon', this.icon);
   }
 
+  private items: { x: number; y: number; z: number; p: Problem; id: number }[] = [];
+  private v = new THREE.Vector3();
+
+  /**
+   * The icon under a screen point (client px), nearest the camera first. The
+   * shader sizes icons by distance; the same rule is used here.
+   */
+  pick(camera: THREE.PerspectiveCamera, rect: DOMRect, cx: number, cy: number): { p: Problem; id: number } | null {
+    if (!this.mesh.visible) return null;
+    let best: { p: Problem; id: number } | null = null, bd = Infinity;
+    const k = rect.height / (2 * Math.tan((camera.fov * Math.PI) / 360));
+    for (const it of this.items) {
+      this.v.set(it.x, it.y, it.z);
+      const dist = this.v.distanceTo(camera.position);
+      if (dist > 1900) continue;
+      this.v.project(camera);
+      if (this.v.z > 1) continue;
+      const sx = rect.left + ((this.v.x + 1) / 2) * rect.width, sy = rect.top + ((1 - this.v.y) / 2) * rect.height;
+      const half = (Math.min(26, Math.max(3.2, dist * 0.035)) * k) / dist / 2 + 3;
+      if (Math.abs(cx - sx) <= half && Math.abs(cy - sy) <= half * 1.4 && dist < bd) { bd = dist; best = it; }
+    }
+    return best;
+  }
+
   /** Replace all icons. items: x,y,z,problem */
   set(items: { x: number; y: number; z: number; p: Problem; id: number }[]) {
+    this.items = items.slice();
     if (items.length > this.cap) this.grow(Math.ceil(items.length * 1.5));
     const P = this.pos.array as Float32Array, I = this.icon.array as Float32Array;
     items.forEach((it, i) => {

@@ -152,13 +152,16 @@ export class Hud implements UiSink {
     window.addEventListener('keydown', (e) => this.hotkey(e));
     game.renderer.domElement.addEventListener('pointermove', (e) => {
       this.tipAt = { x: e.clientX, y: e.clientY };
+      this.overMap = true;
       this.placeTip();
     });
+    game.renderer.domElement.addEventListener('pointerleave', () => { this.overMap = false; });
     setTimeout(() => game.feed.push('gameStart'), 1500);
     if (!game.opts.restore) setTimeout(() => this.onboarding(), 900);
   }
 
   private tipAt = { x: 0, y: 0 };
+  private overMap = false;
   /**
    * The cursor tip stays inside the game: below-right of the cursor, flipping
    * to the other side at the right and bottom edges, and wrapping long text
@@ -788,8 +791,8 @@ export class Hud implements UiSink {
     } else if (p === 'help') {
       this.sub.innerHTML = `
         <div class="sp-title">Settings &amp; Controls</div>
-        <div class="sp-row quality-controls"><label for="quality-preset">Graphics</label>
-          <select id="quality-preset">${(Object.keys(QUALITY) as Quality['name'][]).map((n) => `<option value="${n}" ${n === (g.pendingQuality ?? g.q.name) ? 'selected' : ''}>${n[0].toUpperCase() + n.slice(1)}</option>`).join('')}</select>
+        <div class="sp-row quality-controls"><span class="ql" id="quality-label">Graphics</span>
+          <span class="seg" role="radiogroup" aria-labelledby="quality-label">${(Object.keys(QUALITY) as Quality['name'][]).map((n) => { const on = n === (g.pendingQuality ?? g.q.name); return `<button class="chip ${on ? 'on' : ''}" role="radio" aria-checked="${on}" data-quality="${n}">${n[0].toUpperCase() + n.slice(1)}</button>`; }).join('')}</span>
           <button class="chip" id="perf-toggle">${this.perfVisible ? 'Hide' : 'Show'} performance</button>
           ${IS_TOUCH ? '' : `<button class="chip ${g.rts.edgeScroll ? 'on' : ''}" id="edge-toggle" aria-pressed="${g.rts.edgeScroll}">Edge scrolling: ${g.rts.edgeScroll ? 'on' : 'off'}</button>`}
           ${g.pendingQuality ? '<button class="chip on" id="quality-reload">Reload to finish applying</button>' : ''}
@@ -821,11 +824,13 @@ export class Hud implements UiSink {
       this.sub.querySelector('#save-now')?.addEventListener('click', () => { const ok = saveGame(g); this.toast(ok ? 'Saved.' : 'Could not save in this browser', !ok); });
       this.sub.querySelector('#new-city')?.addEventListener('click', () => { saveGame(g); location.hash = ''; location.reload(); });
       this.sub.querySelector('#report-bug')?.addEventListener('click', () => this.reportBug());
-      this.sub.querySelector('#quality-preset')?.addEventListener('change', (e) => {
-        const reload = g.requestQuality((e.target as HTMLSelectElement).value as Quality['name']);
+      // buttons, not a native <select>: the playtest recording caught the
+      // dropdown's list painting blank on a second opening
+      this.sub.querySelectorAll<HTMLButtonElement>('[data-quality]').forEach((b) => b.addEventListener('click', () => {
+        const reload = g.requestQuality(b.dataset.quality as Quality['name']);
         this.renderPanel();
         this.toast(reload ? 'Graphics preset saved. Reload to apply all details.' : 'Graphics preset applied.');
-      });
+      }));
       this.sub.querySelector('#quality-reload')?.addEventListener('click', () => location.reload());
       this.sub.querySelector('#perf-toggle')?.addEventListener('click', () => { this.togglePerf(); this.renderPanel(); });
       this.sub.querySelector('#res-toggle')?.addEventListener('click', () => {
@@ -1126,7 +1131,7 @@ export class Hud implements UiSink {
       }
       if (this.game.selection && (this.game.selection.kind === 'car' || this.game.selection.kind === 'building' || this.game.selection.kind === 'lot')) this.renderInspector();
     }
-    const tip = this.game.tools.tip;
+    let tip = this.game.tools.tip;
     const t = this.game.tools;
     // phones: every map tool gets the bar (hint + Done), since there's no hover tip
     const placingLabel = t.placingLabel;
@@ -1163,6 +1168,12 @@ export class Hud implements UiSink {
       // name what Undo will reverse and what comes back
       const ul = this.game.undoLabel, utitle = ul ? `Undo ${ul} (Ctrl+Z)` : 'Nothing to undo';
       if (undo.title !== utitle) { undo.title = utitle; undo.setAttribute('aria-label', utitle); }
+    }
+    // hovering a problem icon over a building says what it needs (any tool
+    // that isn't already talking through the tip)
+    if (!IS_TOUCH && !tip && this.tipAt.x && this.overMap) {
+      const hit = this.game.problemAt?.(this.tipAt.x, this.tipAt.y);
+      if (hit?.text) tip = { text: hit.text, bad: true };
     }
     if (tip && !IS_TOUCH) {
       const was = this.tip.hidden, text = this.tip.textContent;

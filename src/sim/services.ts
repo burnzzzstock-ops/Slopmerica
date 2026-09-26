@@ -859,6 +859,28 @@ function problemOf(b: Bld): Problem | null {
   return null;
 }
 
+/** What a building's problem icon means, and what fixes it (hovering the icon shows this). */
+export function problemText(g: Game, id: number): string | null {
+  const b = g.buildings.list.get(id) as ZB | undefined;
+  if (!b) return null;
+  const bs = S.b.get(b.id);
+  const p = problemOf(b);
+  if (!p || !bs) return null;
+  const why: Record<Problem, string> = {
+    fire: 'On fire! A fire station within reach puts it out; without one it can spread (Services → Fire).',
+    abandoned: 'Abandoned: its people moved out. It needs its utilities and services back, or bulldoze it.',
+    power: 'No electricity: its roads reach no power plant and no highway to import from. Build a plant or connect its roads (Services → Power).',
+    water: 'No running water: its roads reach no pump and no highway to import from. Build one or connect its roads (Services → Water).',
+    sewage: 'No sewage: its roads reach no outfall and no highway to export to. Build one or connect its roads (Services → Sewage).',
+    garbage: `Trash piling up for ${Math.round(trashDaysOf(b, bs))} days: no garbage truck reaches it, or the county contract is full. Build a landfill within reach (Services → Garbage).`,
+    sick: `Sick residents (${Math.round(bs.sick * 100)}%): no clinic within reach. Sick people move out (Services → Health).`,
+    crime: 'High crime: no sheriff within reach. Crime drives people and shops away (Services → Police).',
+    education: 'Needs a school within reach to grow (Services → Education).',
+    pollution: 'Polluted: too close to industry or a dirty plant.',
+  };
+  return `${b.label}: ${why[p]}`;
+}
+
 function refreshIcons(g: Game) {
   const cam = g.rts.target;
   const items: { x: number; y: number; z: number; p: Problem; id: number }[] = [];
@@ -1384,6 +1406,10 @@ registerSystem({
     S.inited = true;
     initHooks(g);
     S.icons = new ProblemIcons(g.scene);
+    g.problemAt = (cx, cy) => {
+      const hit = S.icons?.pick(g.camera, g.renderer.domElement.getBoundingClientRect(), cx, cy);
+      return hit ? { id: hit.id, text: problemText(g, hit.id) } : null;
+    };
     g.net.events.on('changed', () => { S.graphDirty = true; });
   },
   daily: (g, day) => { const t0 = performance.now(); daily(g, day); S.perf.ms += performance.now() - t0; S.perf.n++; },

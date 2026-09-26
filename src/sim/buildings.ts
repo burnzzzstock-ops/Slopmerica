@@ -193,6 +193,24 @@ export class Buildings {
     };
   }
 
+  /**
+   * Buildings a road's pavement would run through (sample points every ~4 m,
+   * the pavement less its sidewalk edge, so a lot that only touches the
+   * sidewalk is left alone). Buildings still being built count too.
+   */
+  underPavement(pts: { x: number; z: number }[], halfWidth: number): Bld[] {
+    const out = new Set<Bld>();
+    const pad = Math.max(0.5, halfWidth - 1);
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      for (const b of this.hash.query(p.x - pad - 30, p.z - pad - 30, p.x + pad + 30, p.z + pad + 30)) if (!out.has(b) && this.contains(b, p.x, p.z, pad)) out.add(b);
+      // between samples too (samples can straddle a narrow building)
+      const q = pts[i + 1];
+      if (q) { const mx = (p.x + q.x) / 2, mz = (p.z + q.z) / 2; for (const b of this.hash.query(mx - pad - 30, mz - pad - 30, mx + pad + 30, mz + pad + 30)) if (!out.has(b) && this.contains(b, mx, mz, pad)) out.add(b); }
+    }
+    return [...out];
+  }
+
   /** Is any road's pavement on this footprint? Returns that road. */
   private roadOn(b: Bld) {
     const r = b.hw + b.hd + 40;

@@ -35,6 +35,14 @@ const r = await page.evaluate(() => {
   out.kept = feed(20, 4);
   // always full: back to 100% and it stays there
   g.setResolutionMode('full');
+  // a 60 Hz screen: frames never come faster than 16.7 ms; a lowered
+  // resolution must still come back once frames keep up with the screen
+  g.setResolutionMode('auto');
+  g.cadenceMs = Infinity;
+  feed(16.7, 3);
+  g.setRenderScale(0.77);
+  out.at60 = feed(16.7, 30);
+  g.setResolutionMode('full');
   out.full = feed(40, 10);
   out.info = g.renderInfo();
   g.setResolutionMode('auto');
@@ -43,6 +51,7 @@ const r = await page.evaluate(() => {
 check(`starts at full resolution (${r.start})`, r.start === 1, r);
 check(`a slow CPU-bound spell tries a lower resolution (${r.tried}) then gives it back when frames don't speed up (${r.afterNoGain}) and doesn't retry for a while (${r.later})`, r.tried < 1 && r.afterNoGain === 1 && r.later === 1, r);
 check(`a drop that makes frames faster is kept (${r.dropped} -> ${r.kept})`, r.dropped !== null && r.kept < 1 && r.kept >= 0.75, r);
+check(`on a 60 Hz screen a lowered resolution comes back once frames keep up (77% -> ${Math.round(r.at60 * 100)}%)`, r.at60 >= 0.99, r);
 check(`Resolution: always full never drops (${r.full}; ${r.info.buffer} of ${r.info.screen}, ${r.info.share}%)`, r.full === 1 && r.info.share === 100, r);
 check('no page errors', errs.length === 0, errs.slice(0, 3));
 await browser.close();

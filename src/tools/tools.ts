@@ -484,7 +484,7 @@ export class Tools implements PointerHandlers {
           const net$ = plan.cost - plan.grant;
           this.pendingCost = this.pendingEnd && plan.ok ? net$ : null;
           this.tip = plan.ok
-            ? { text: `${Math.round(plan.length)} m · $${net$.toLocaleString()}${plan.grant ? ` (feds pay $${plan.grant.toLocaleString()})` : ''}${plan.bridgeLen > 5 ? ' · bridge' : ''}${this.pendingEnd && !this.touchDown ? ' · tap Build, or drag to re-aim' : ''}` }
+            ? { text: `${Math.round(plan.length)} m · $${net$.toLocaleString()}${plan.grant ? ` (feds pay $${plan.grant.toLocaleString()})` : ''}${plan.bridgeLen > 5 ? ' · bridge' : ''}${plan.demolish ? ` · bulldozes ${plan.demolish} building${plan.demolish === 1 ? '' : 's'}` : ''}${this.pendingEnd && !this.touchDown ? ' · tap Build, or drag to re-aim' : ''}`, bad: !!plan.demolish }
             : { text: plan.reason ?? 'Nope', bad: true };
         }
       } else {

@@ -23,6 +23,8 @@ const VARIANTS = 3;
 const CELL = 64;
 const GRID_N = Math.ceil(WORLD / CELL);
 const SPRITE_W = 256, SPRITE_H = 512;
+/** average of the canopy's own shading baked into impostors (1 = as bright as fully lit) */
+const IMPOSTOR_SHADE = 0.66;
 
 const BASE_COLOR: Record<TreeKind, number> = {
   decid: 0x6f9a45, pine: 0x557f48, redwood: 0x527a45, oak: 0x7f9852, palm: 0x7aa84a, cypress: 0x7a9a50, mangrove: 0x55803e, shrub: 0x7a9448,
@@ -309,26 +311,37 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
     rt.texture.minFilter = THREE.LinearMipmapLinearFilter;
     rt.texture.colorSpace = THREE.SRGBColorSpace;
     const scene = new THREE.Scene();
-    // the impostor is lit again in the scene, so bake about its albedo (a dim
-    // bake made far trees darker than near ones)
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8a7a, 2.6));
+    // Two passes: lit (for the canopy's own light and shade) and unlit (its
+    // albedo). The impostor is lit again in the scene, so the stored picture is
+    // the albedo times the canopy's *relative* shading (average IMPOSTOR_SHADE),
+    // which keeps far trees as bright as the detailed models they replace.
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x6a6a5a, 2.6));
     const sun = new THREE.DirectionalLight(0xffffff, 1.2);
     sun.position.set(0.4, 1, 0.8);
     scene.add(sun);
-    const mat = new THREE.MeshLambertMaterial({ map: atlas, vertexColors: true, alphaTest: 0.42, side: THREE.DoubleSide });
-    mat.onBeforeCompile = (sh) => {
-      sh.uniforms.uLeaf = { value: 1 };
-      sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\nuniform float uLeaf;\nconst float vCanopy = 0.0;')
-        .replace('#include <alphatest_fragment>', LEAF_ALPHA);
+    const leafAlpha = (m: THREE.Material) => {
+      m.onBeforeCompile = (sh) => {
+        sh.uniforms.uLeaf = { value: 1 };
+        sh.fragmentShader = sh.fragmentShader
+          .replace('#include <common>', '#include <common>\nuniform float uLeaf;\nconst float vCanopy = 0.0;')
+          .replace('#include <alphatest_fragment>', LEAF_ALPHA);
+      };
+      return m;
     };
+    const litMat = leafAlpha(new THREE.MeshLambertMaterial({ map: atlas, vertexColors: true, alphaTest: 0.42, side: THREE.DoubleSide }));
+    const albMat = leafAlpha(new THREE.MeshBasicMaterial({ map: atlas, vertexColors: true, alphaTest: 0.42, side: THREE.DoubleSide }));
+    let mat: THREE.Material = litMat;
     const prevTarget = renderer.getRenderTarget();
     const prevClear = renderer.getClearColor(new THREE.Color());
     const prevAlpha = renderer.getClearAlpha();
     const prevTone = renderer.toneMapping;
     renderer.toneMapping = THREE.NoToneMapping;
-    renderer.setRenderTarget(rt);
     renderer.setClearColor(0x000000, 0);
+    const W = SPRITE_W * KINDS.length, H = SPRITE_H * 2;
+    const passes: Uint8Array[] = [];
+    for (const m of [litMat, albMat]) {
+    mat = m;
+    renderer.setRenderTarget(rt);
     renderer.setScissorTest(true);
     geos.forEach((g, i) => {
       g.computeBoundingBox();
@@ -358,20 +371,41 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
       scene.remove(mesh);
     });
     renderer.setScissorTest(false);
+    const buf = new Uint8Array(W * H * 4);
+    renderer.readRenderTargetPixels(rt, 0, 0, W, H, buf);
+    passes.push(buf);
+    }
     renderer.setRenderTarget(prevTarget);
     renderer.setClearColor(prevClear, prevAlpha);
     renderer.toneMapping = prevTone;
     const size = renderer.getSize(new THREE.Vector2());
     renderer.setViewport(0, 0, size.x, size.y);
-    // Read back and pad the transparent texels so mips don't halo the impostors
-    // black; a data texture also survives render-target churn.
-    const W = SPRITE_W * KINDS.length, H = SPRITE_H * 2;
-    const px = new Uint8Array(W * H * 4);
-    renderer.readRenderTargetPixels(rt, 0, 0, W, H, px);
     rt.dispose();
+    litMat.dispose();
+    albMat.dispose();
+    // albedo x relative shading, per species and view
+    const [lit, alb] = passes;
+    const px = lit;
+    for (let row = 0; row < 2; row++)
+      for (let k = 0; k < KINDS.length; k++) {
+        let sl = 0, sa = 0;
+        const each = (fn: (i: number) => void) => {
+          for (let y = row * SPRITE_H; y < (row + 1) * SPRITE_H; y++)
+            for (let x = k * SPRITE_W; x < (k + 1) * SPRITE_W; x++) { const i = (y * W + x) * 4; if (lit[i + 3] > 128) fn(i); }
+        };
+        each((i) => { sl += lit[i] + lit[i + 1] + lit[i + 2]; sa += alb[i] + alb[i + 1] + alb[i + 2]; });
+        const gain = sl > 0 ? (IMPOSTOR_SHADE * sa) / sl : 1;
+        each((i) => { for (let c = 0; c < 3; c++) px[i + c] = Math.min(255, Math.round(lit[i + c] * gain)); });
+      }
+    // Pad the transparent texels so mips don't halo the impostors black; a data
+    // texture also survives render-target churn.
     padTransparent(px, W, H, 8);
     const tex = new THREE.DataTexture(px, W, H, THREE.RGBAFormat);
-    tex.colorSpace = THREE.SRGBColorSpace;
+    // three renders into a target in linear (working) space: the pixels read
+    // back are linear. Tagging them sRGB decoded them a second time and made
+    // every distant tree ~3x too dark (the dark flat silhouettes at the edge
+    // of the detailed-tree radius).
+    tex.colorSpace = THREE.LinearSRGBColorSpace;
     tex.generateMipmaps = true;
     tex.magFilter = THREE.LinearFilter;
     tex.minFilter = THREE.LinearMipmapLinearFilter;

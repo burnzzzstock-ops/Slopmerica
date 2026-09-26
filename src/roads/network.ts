@@ -62,6 +62,8 @@ export interface Plan {
   reason?: string;
   /** the commune whose land the road would cross (the tool offers its buy-out / lawsuit) */
   blocker?: number;
+  /** homes and shops this road would bulldoze */
+  demolish?: number;
   length: number;
   cost: number;
   grant: number;
@@ -97,6 +99,9 @@ export class RoadNetwork {
   blockers: { x: number; z: number; r: number; name: string; id: number }[] = [];
   /** the rule and the way out when a road would cross a commune (set by the game, which knows the prices) */
   blockerReason?: (id: number) => string;
+  /** buildings under a planned road's pavement: a reason it can't go (a service
+   * or landmark in the way), and how many zoned buildings it would bulldoze */
+  buildingsUnder?: (pts: V2[], halfWidth: number) => { reason?: string; demolish: number };
   /** land the player may build on (null = everywhere); see sim/land.ts */
   allowed: ((x: number, z: number) => boolean) | null = null;
 
@@ -253,6 +258,12 @@ export class RoadNetwork {
       const snapEnd = this.snap(pe.x, pe.z, 6);
       const yb = snapEnd.kind === 'node' ? this.nodes.get(snapEnd.id)!.y : this.nodeHeight(pe.x, pe.z);
       if (Math.abs(yb - ya) > 0.15 * samp.length + 2) return { ...res, ok: false, reason: `Too steep (${Math.round((Math.abs(yb - ya) / samp.length) * 100)}% grade). Go around or zig-zag.` };
+    }
+    // buildings in the way: homes and shops make way; services and landmarks don't
+    if (this.buildingsUnder && !opts.over) {
+      const u = this.buildingsUnder(samp.pts, t.width / 2);
+      if (u.reason) return { ...res, ok: false, reason: u.reason };
+      res.demolish = u.demolish;
     }
     res.bridgeLen = water;
     // an overpass is mostly bridge and embankment

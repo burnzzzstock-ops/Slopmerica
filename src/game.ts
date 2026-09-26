@@ -17,7 +17,7 @@ import { RoadNetwork, RSeg, Plan } from './roads/network';
 import { RoadRenderer } from './roads/roadMesh';
 import { ROAD_TYPES, RoadTypeId } from './roads/roadTypes';
 import { Zoning, type ZCell } from './zones/zoning';
-import { Buildings, Bld } from './sim/buildings';
+import { Buildings, Bld, isZoned } from './sim/buildings';
 import { Sim, Mode, SPEEDS, DAY_SECONDS, usd } from './sim/sim';
 import { Traffic, Car } from './agents/traffic';
 import { Pedestrians, Ped } from './agents/pedestrians';
@@ -150,6 +150,8 @@ export class Game {
   /** seconds (perf clock) until the scaler may try lowering again */
   private resNoGain = 0;
   private perfClock = 0;
+  /** the fastest one-second average frame time seen: the display's refresh cadence */
+  private cadenceMs = Infinity;
   private dynamicScale = 1;
   pendingQuality: Quality['name'] | null = null;
   /** where each frame's time goes; its slowest frames go into bug reports */
@@ -223,6 +225,12 @@ export class Game {
     this.communes = new Communes(this.terrain, this.trees, opts.map, communeCount, this.map.def.seed + 5, opts.mode === 'hippie' ? 0.3 : 0.12, avoid);
     this.scene.add(this.communes.group);
     this.net.blockerReason = (id) => this.communeRoadRule(id);
+    this.net.buildingsUnder = (pts, hw) => {
+      const under = this.buildings.underPavement(pts, hw);
+      const keep = under.find((b) => !isZoned(b));
+      if (keep) return { reason: `${keep.label} is in the way: bulldoze it first, or go around.`, demolish: 0 };
+      return { demolish: under.length };
+    };
     // zoned lots are dimmed while their zone is waiting for demand (overlay only)
     this.zones.growable = (z) => this.tools.zoneDemand(z).ok;
     this.syncBlockers();
@@ -421,6 +429,14 @@ export class Game {
   }
 
   onRoadBuilt(segs: RSeg[], plan: Plan) {
+    // a road through homes and shops bulldozes them (the planner already
+    // refused roads through services and landmarks)
+    let razed = 0;
+    for (const s of segs) {
+      const pts = s.over ? s.samp.pts.filter((_, i) => s.hs[i] - s.ground[i] < 3) : s.samp.pts;
+      for (const b of this.buildings.underPavement(pts, ROAD_TYPES[s.type].width / 2)) if (isZoned(b) && this.buildings.list.has(b.id)) { this.buildings.demolish(b, 'road'); razed++; }
+    }
+    if (razed) { crumb(`road bulldozed ${razed} building${razed === 1 ? '' : 's'}`); this.toast(`${razed} building${razed === 1 ? '' : 's'} bulldozed for the road`); }
     const t = ROAD_TYPES[segs[0].type];
     this.audio.play('build', 0.6);
     const kind: FeedEventKind = t.id === 'highway' ? 'highwayBuilt' : t.centerTurn ? 'stroadBuilt' : plan.bridgeLen > 10 ? 'bridgeBuilt' : 'roadBuilt';
@@ -741,6 +757,7 @@ export class Game {
       this.perf.fps = this.perfWindowFrames * 1000 / this.perfWindowMs;
       this.perf.frameMs = this.perfWindowMs / this.perfWindowFrames;
       this.perfWindowMs = this.perfWindowFrames = 0;
+      if (this.perfSamples > 80) this.cadenceMs = Math.min(this.cadenceMs, this.perf.frameMs);
     }
     if (!this.qualityBenchmarkDone) {
       this.qualityElapsed += intervalMs;
@@ -778,15 +795,20 @@ export class Game {
           return;
         }
       }
-      if (ms > 18.5 && this.dynamicScale > MIN_RENDER_SCALE + 0.01 && this.perfClock >= this.resNoGain) {
+      // Aim for 60 fps, or the display's own rate if it's slower. A 60 Hz
+      // screen never shows frames faster than 16.7 ms, so "under 15.2 ms"
+      // never came true there and a lowered resolution never came back.
+      const cad = Number.isFinite(this.cadenceMs) ? this.cadenceMs : 16.7;
+      const slow = Math.max(18.5, cad * 1.25), fast = Math.max(15.2, cad * 1.1);
+      if (ms > slow && this.dynamicScale > MIN_RENDER_SCALE + 0.01 && this.perfClock >= this.resNoGain) {
         this.resTrial = { before: ms, from: this.dynamicScale };
         this.setRenderScale(this.dynamicScale - (ms > 25 ? 0.12 : 0.07));
         this.resolutionCooldown = 3;
-      } else if (ms < 15.2 && this.perf.renderMs < 15.2 && this.dynamicScale < 0.99) {
+      } else if (ms < fast && this.perf.renderMs < fast && this.dynamicScale < 0.99) {
         // Recover promptly from startup shader-compilation spikes. A large
         // performance margin permits a larger step; near the target, climb
         // slowly so the scale does not bounce between two levels.
-        const headroom = ms < 12.5 && this.perf.renderMs < 12.5;
+        const headroom = ms < Math.max(12.5, cad * 1.03) && this.perf.renderMs < 12.5;
         this.setRenderScale(this.dynamicScale + (headroom ? 0.1 : 0.04));
         this.resolutionCooldown = headroom ? 1.5 : 3;
       } else this.resolutionCooldown = 1.5;

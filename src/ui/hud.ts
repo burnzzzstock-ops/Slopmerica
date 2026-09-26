@@ -7,7 +7,7 @@ import { ZONE_TYPES } from '../contracts';
 import type { Game, Selection, UiSink } from '../game';
 import { LANDMARK_COST } from '../game';
 import { ROAD_ORDER, ROAD_TYPES, RoadTypeId } from '../roads/roadTypes';
-import { ZONE_COLORS, ZONE_LABEL } from '../zones/zoning';
+import { ZONE_COLORS, ZONE_LABEL, type ZCell } from '../zones/zoning';
 import { MAX_LEVEL } from '../contracts';
 import type { ToolId } from '../tools/tools';
 import { FeedPanel } from './feedPanel';
@@ -15,7 +15,7 @@ import { MERCH_URL, brandById } from '../art/brands';
 import { BUILD, crumb, onCapturedError, openBugReport } from './bugreport';
 import { IS_TOUCH } from '../config';
 import { QUALITY, type Quality } from '../config';
-import { SPEEDS } from '../sim/sim';
+import { SPEEDS, UNLOCKS, type DemandKey } from '../sim/sim';
 import { isZoned } from '../sim/buildings';
 import type { ViewMode } from '../render/overlays';
 import { ARCHETYPES } from '../agents/people';
@@ -37,6 +37,15 @@ const LANDMARKS: { id: LandmarkId; name: string; icon: string }[] = [
 ];
 
 const ZONE_ICON: Record<ZoneType, string> = { resLow: '🏡', resHigh: '🏢', comLow: '🛒', comHigh: '🏬', industry: '🏭', office: '💻' };
+const DEMAND_KEYS: DemandKey[] = ['res', 'com', 'ind', 'off'];
+const DEM: Record<DemandKey, { name: string; letter: string; noun: string; zones: [ZoneType, ZoneType?] }> = {
+  res: { name: 'Residential', letter: 'R', noun: 'homes', zones: ['resLow', 'resHigh'] },
+  com: { name: 'Commercial', letter: 'C', noun: 'shops', zones: ['comLow', 'comHigh'] },
+  ind: { name: 'Industrial', letter: 'I', noun: 'factories', zones: ['industry'] },
+  off: { name: 'Office', letter: 'O', noun: 'offices', zones: ['office'] },
+};
+/** +12 / −7 / 0, with a real minus sign */
+const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
 
 type PanelId = 'roads' | 'zones' | 'landmarks' | 'views' | 'budget' | 'communes' | 'help' | 'more' | `ext:${string}` | null;
 
@@ -59,6 +68,10 @@ export class Hud implements UiSink {
   private perfVisible = false;
   private floats: { el: HTMLElement; p: THREE.Vector3; t: number }[] = [];
   private panel: PanelId = null;
+  private demandPop!: HTMLElement;
+  private demandKey: DemandKey | null = null;
+  private demandHtml = '';
+  private demandCells: ZCell[] = [];
   private domT = 0;
   private v = new THREE.Vector3();
 
@@ -82,6 +95,25 @@ export class Hud implements UiSink {
     this.actions = this.mk('div', 'tool-actions');
     this.perfEl = this.mk('div', 'perf-overlay');
     this.perfEl.hidden = true;
+    this.demandPop = this.mk('div', 'demand-pop');
+    this.demandPop.hidden = true;
+    this.demandPop.setAttribute('role', 'dialog');
+    this.demandPop.setAttribute('aria-label', 'Why demand is where it is');
+    this.demandPop.addEventListener('click', (e) => {
+      const t = (e.target as HTMLElement).closest<HTMLElement>('[data-k],[data-act]');
+      if (!t) return;
+      game.audio.play('click', 0.4);
+      if (t.dataset.k) this.openDemand(t.dataset.k as DemandKey);
+      else this.demandAction(t.dataset.act!);
+    });
+    // a tap anywhere else (the map, a panel) puts the card away
+    document.addEventListener('pointerdown', (e) => {
+      if (!this.demandKey) return;
+      const t = e.target as HTMLElement;
+      if (this.demandPop.contains(t) || t.closest?.('[data-dem]')) return;
+      this.closeDemand();
+    }, true);
+    window.addEventListener('resize', () => { if (this.demandKey) this.placeDemand(); });
     this.actions.innerHTML = `<span class="ta-tip" id="ta-tip"></span><button id="ta-build" class="ta-build">🔨 Build</button><button id="ta-done" class="ta-done">${IS_TOUCH ? '✓ Done' : '✕ Stop'}</button><button id="ta-undo">↶ Undo</button>`;
     this.actions.hidden = true;
     // phones: Done leaves the tool entirely (double-tap ends just the current
@@ -166,11 +198,8 @@ export class Hud implements UiSink {
       </div>
       <div class="tb-stat"><span class="tb-lbl">Pop</span><b id="tb-pop">0</b></div>
       <div class="tb-stat tb-money"><span class="tb-lbl">Treasury</span><b id="tb-money">$0</b><i id="tb-net"></i></div>
-      <div class="tb-demand" title="Demand: Residential, Commercial, Industrial, Office">
-        <div class="dbar"><span class="dfill" id="d-res" style="--c:var(--res)"></span><em>R</em></div>
-        <div class="dbar"><span class="dfill" id="d-com" style="--c:var(--com)"></span><em>C</em></div>
-        <div class="dbar"><span class="dfill" id="d-ind" style="--c:var(--ind)"></span><em>I</em></div>
-        <div class="dbar"><span class="dfill" id="d-off" style="--c:var(--off)"></span><em>O</em></div>
+      <div class="tb-demand" role="group" aria-label="Demand">
+        ${DEMAND_KEYS.map((k) => `<button class="dbar" data-dem="${k}" aria-haspopup="dialog" aria-expanded="false"><span class="dtrack"><span class="dfill" id="d-${k}" style="--c:var(--${k})"></span><em>${DEM[k].letter}</em></span></button>`).join('')}
       </div>
       <div class="tb-meters">
         <div class="meter" title="Nature remaining"><span>🌲</span><div class="mtrack"><div class="mfill nature" id="m-nature"></div></div><b id="m-nature-t"></b></div>
@@ -180,6 +209,123 @@ export class Hud implements UiSink {
     this.top.querySelectorAll<HTMLButtonElement>('[data-speed]').forEach((b) =>
       b.addEventListener('click', () => { this.game.sim.speed = Number(b.dataset.speed); this.game.audio.play('click', 0.4); this.refreshTop(); }),
     );
+    this.top.querySelectorAll<HTMLButtonElement>('[data-dem]').forEach((b) => b.addEventListener('click', () => {
+      const k = b.dataset.dem as DemandKey;
+      this.game.audio.play('click', 0.4);
+      if (this.demandKey === k) this.closeDemand(); else this.openDemand(k);
+    }));
+  }
+
+  // ------------------------------------------------------------------ demand explainer
+  /** Open the "why is this bar where it is" card for one demand type. */
+  openDemand(k: DemandKey) {
+    crumb(`demand ${k}`);
+    this.demandKey = k;
+    this.demandHtml = '';
+    this.demandPop.hidden = false;
+    this.renderDemand();
+    this.placeDemand();
+    for (const b of this.top.querySelectorAll<HTMLElement>('[data-dem]')) {
+      b.classList.toggle('on', b.dataset.dem === k);
+      b.setAttribute('aria-expanded', String(b.dataset.dem === k));
+    }
+  }
+
+  closeDemand() {
+    if (!this.demandKey) return;
+    this.demandKey = null;
+    this.demandPop.hidden = true;
+    for (const b of this.top.querySelectorAll<HTMLElement>('[data-dem]')) { b.classList.remove('on'); b.setAttribute('aria-expanded', 'false'); }
+  }
+
+  private placeDemand() {
+    const bars = this.top.querySelector('.tb-demand')!.getBoundingClientRect();
+    const W = window.innerWidth, w = Math.min(340, W - 32);
+    const left = Math.max(16, Math.min(W - 16 - w, bars.left + bars.width / 2 - w / 2));
+    const st = this.demandPop.style;
+    st.width = `${w}px`;
+    st.left = `${left}px`;
+    st.top = `${bars.bottom + 10}px`;
+    const bar = this.demandKey && this.top.querySelector(`[data-dem="${this.demandKey}"]`)?.getBoundingClientRect();
+    st.setProperty('--caret', `${bar ? Math.max(14, Math.min(w - 14, bar.left + bar.width / 2 - left)) : w / 2}px`);
+  }
+
+  /** the zone a player should paint for this demand right now (null = locked) */
+  private demandZone(k: DemandKey): ZoneType | null {
+    const s = this.game.sim, P = s.population;
+    const [low, high] = DEM[k].zones;
+    if (high && s.isUnlocked({ zone: high }) && (P > (k === 'res' ? 1500 : 2000) || !s.isUnlocked({ zone: low }))) return high;
+    return s.isUnlocked({ zone: low }) ? low : null;
+  }
+
+  private renderDemand() {
+    const k = this.demandKey;
+    if (!k) return;
+    const g = this.game, s = g.sim, D = DEM[k];
+    const v = Math.round(s.demand[k]), raw = Math.round(s.demandRaw[k]);
+    const hist = s.demandHistory[k];
+    const trend = hist.length >= 2 ? Math.round(hist[hist.length - 1] - hist[0]) : 0;
+    const days = Math.max(1, hist.length - 1);
+    const zone = this.demandZone(k);
+    const lock = zone ? null : UNLOCKS.find((u) => u.zone === D.zones[0]);
+    const open = zone ? D.zones.reduce((n, z) => n + (z && s.isUnlocked({ zone: z }) ? g.zones.candidates(z, this.demandCells).length : 0), 0) : 0;
+    let status: string;
+    if (!zone) status = `🔒 ${D.noun[0].toUpperCase() + D.noun.slice(1)} unlock at ${lock?.pop.toLocaleString() ?? 'a bigger'} people.`;
+    else if (v >= 5) status = open ? `Builders are putting up ${D.noun} on the ${open} empty lot${open === 1 ? '' : 's'} zoned for them.` : `Builders want to put up ${D.noun}, but every lot zoned for them is taken. Zone more along a road.`;
+    else if (k === 'res' && v <= -30) status = v <= -60 ? 'Nobody is moving in, and some residents are packing up.' : 'Nobody is moving in.';
+    else status = `Too little demand: no new ${D.noun} are being built.`;
+    const parts = s.demandParts[k].filter((p) => !p.base && (p.v === null || Math.abs(p.v) >= 0.5));
+    const up = parts.filter((p) => p.v !== null && p.v > 0).sort((a, b) => b.v! - a.v!).slice(0, 3);
+    const down = parts.filter((p) => p.v !== null && p.v < 0).sort((a, b) => a.v! - b.v!).slice(0, 3);
+    const other = parts.filter((p) => p.v === null);
+    const base = s.demandParts[k].find((p) => p.base);
+    const row = (p: { text: string; v: number | null }, dir: 'up' | 'down' | 'na') => `<li class="dp-${dir}"><span>${esc(p.text)}</span>${p.v === null ? '' : `<b>${signed(Math.round(p.v))}</b>`}</li>`;
+    // one fix for the biggest thing holding this bar back, one way to use the demand
+    const acts: [string, string][] = [];
+    if (zone && v >= 5) acts.push([`zone:${zone}`, `${ZONE_ICON[zone]} Zone ${D.noun}`]);
+    else {
+      const best = DEMAND_KEYS.filter((o) => o !== k && s.demand[o] >= 5 && this.demandZone(o)).sort((a, b) => s.demand[b] - s.demand[a])[0];
+      if (best) { const z = this.demandZone(best)!; acts.push([`zone:${z}`, `${ZONE_ICON[z]} Zone ${DEM[best].noun} instead`]); }
+    }
+    const hasServices = EXT.panels.some((p) => p.id === 'services');
+    for (const p of down) {
+      if (hasServices && /utilit|crime|sick/.test(p.text)) { acts.push(['svc', /utilit/.test(p.text) ? '🔌 Fix utilities' : '🚓 Services']); break; }
+      if (/^taxes/.test(p.text)) { acts.push(['budget', '💰 Taxes']); break; }
+    }
+    const html = `
+      <div class="dp-head"><b>Demand</b><button class="dp-x" data-act="close" aria-label="Close">✕</button></div>
+      <div class="dp-tabs" role="tablist">${DEMAND_KEYS.map((o) => `<button role="tab" class="dp-tab ${o === k ? 'on' : ''}" aria-selected="${o === k}" data-k="${o}" style="--c:var(--${o})">${DEM[o].letter}<b>${signed(Math.round(s.demand[o]))}</b></button>`).join('')}</div>
+      <div class="dp-title" style="--c:var(--${k})"><span class="dp-name">${D.name}</span><span class="dp-val ${v < 0 ? 'neg' : 'pos'}">${signed(v)}</span>
+        <span class="dp-trend ${trend > 3 ? 'up' : trend < -3 ? 'down' : ''}">${hist.length < 2 ? 'new' : trend > 3 ? `▲ ${signed(trend)} in ${days}d` : trend < -3 ? `▼ ${signed(trend)} in ${days}d` : 'steady'}</span></div>
+      ${raw !== v ? `<div class="dp-cap">Maxed out at ${signed(v)} (would be ${signed(raw)})</div>` : ''}
+      <p class="dp-status">${status}</p>
+      ${up.length ? `<div class="dp-h">Pushing up</div><ul>${up.map((p) => row(p, 'up')).join('')}</ul>` : ''}
+      ${down.length ? `<div class="dp-h">Holding back</div><ul>${down.map((p) => row(p, 'down')).join('')}</ul>` : ''}
+      ${other.length ? `<div class="dp-h">Also</div><ul>${other.map((p) => row(p, 'na')).join('')}</ul>` : ''}
+      ${base ? `<div class="dp-base">Starts from ${esc(base.text)} ${signed(Math.round(base.v ?? 0))}</div>` : ''}
+      ${acts.length ? `<div class="dp-acts">${acts.map(([id, label], i) => `<button class="${i ? 'chip' : 'dp-go'}" data-act="${id}">${label}</button>`).join('')}</div>` : ''}`;
+    if (html === this.demandHtml) return;
+    // keep keyboard focus on the same control across live refreshes
+    const f = document.activeElement as HTMLElement | null;
+    const keep = f && this.demandPop.contains(f) ? (f.dataset.k ? `[data-k="${f.dataset.k}"]` : f.dataset.act ? `[data-act="${f.dataset.act}"]` : null) : null;
+    this.demandHtml = html;
+    this.demandPop.innerHTML = html;
+    if (keep) (this.demandPop.querySelector(keep) as HTMLElement | null)?.focus();
+  }
+
+  private demandAction(id: string) {
+    const g = this.game;
+    crumb(`demand action ${id}`);
+    this.closeDemand();
+    if (id === 'close') return;
+    if (id.startsWith('zone:')) {
+      g.tools.zoneType = id.slice(5) as ZoneType;
+      this.openPanel('zones');
+      g.tools.set('zone');
+      this.renderPanel();
+      this.toast(IS_TOUCH ? `Paint ${ZONE_LABEL[g.tools.zoneType]} along a road.` : `Paint ${ZONE_LABEL[g.tools.zoneType]} along a road: drag beside it.`);
+    } else if (id === 'svc') this.openPanel('ext:services');
+    else if (id === 'budget') this.openPanel('budget');
   }
 
   private refreshTop() {
@@ -193,16 +339,15 @@ export class Hud implements UiSink {
     const netEl = $('tb-net');
     netEl.textContent = s.money === Infinity ? 'sandbox' : `${net >= 0 ? '+' : ''}${money(net)}/wk`;
     netEl.className = net >= 0 ? 'pos' : 'neg';
-    const d = s.demand;
-    const names = { res: 'Residential', com: 'Commercial', ind: 'Industrial', off: 'Office' } as const;
-    for (const [k, v] of Object.entries(d) as [keyof typeof names, number][]) {
-      const el = $('d-' + k);
-      el.style.height = `${Math.max(2, Math.min(100, Math.max(0, v)))}%`;
-      el.classList.toggle('neg', v < 0);
-      const bar = el.parentElement as HTMLElement;
-      const tip = `${names[k]} demand ${Math.round(v)}\n• ${s.demandWhy[k].join('\n• ')}`;
-      if (bar.title !== tip) bar.title = tip;
+    for (const k of DEMAND_KEYS) {
+      const v = s.demand[k], el = $('d-' + k);
+      el.style.height = `${Math.max(2, Math.min(100, Math.abs(v)))}%`;
+      const bar = el.closest('.dbar') as HTMLElement;
+      bar.classList.toggle('neg', v < 0);
+      const label = `${DEM[k].name} demand ${signed(Math.round(v))}. Show why.`;
+      if (bar.getAttribute('aria-label') !== label) { bar.setAttribute('aria-label', label); bar.title = label; }
     }
+    if (this.demandKey) this.renderDemand();
     $('m-nature').style.width = `${Math.round(s.naturePct * 100)}%`;
     $('m-nature-t').textContent = `${Math.round(s.naturePct * 100)}%`;
     $('m-sprawl').style.width = `${Math.round(s.sprawlPct * 100)}%`;
@@ -459,7 +604,9 @@ export class Hud implements UiSink {
           <div><b>Rotate</b> twist two fingers</div>
           <div><b>Tilt</b> drag two fingers up or down</div>
           <div><b>Roads</b> drag to plan, tap Build. Double-tap ends a road. Done puts the tool away.</div>
-          <div><b>Placing</b> services and landmarks: tap to preview, then Build</div>` : `
+          <div><b>Placing</b> services and landmarks: tap to preview, then Build</div>
+          <div><b>Demand</b> tap the R C I O bars to see why they're up or down and what to zone</div>` : `
+          <div><b>Demand</b> click the R C I O bars to see why they're up or down and what to zone</div>
           <div><b>Move</b> WASD / arrows · drag</div>
           <div><b>Rotate</b> right-drag · Q/E</div>
           <div><b>Tilt</b> right-drag up/down · R/F</div>
@@ -508,7 +655,11 @@ export class Hud implements UiSink {
     else if (e.key.toLowerCase() === 'b') this.onTool('bulldoze');
     else if (e.key.toLowerCase() === 'u') this.onTool('upgrade');
     else if (e.key.toLowerCase() === 'z') this.onTool('zones');
-    else if (e.key === 'Escape') { this.openPanel(null); this.game.tools.set('inspect'); this.select(null); }
+    else if (e.key === 'Escape' && this.demandKey) {
+      const k = this.demandKey;
+      this.closeDemand();
+      (this.top.querySelector(`[data-dem="${k}"]`) as HTMLElement | null)?.focus();
+    } else if (e.key === 'Escape') { this.openPanel(null); this.game.tools.set('inspect'); this.select(null); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); this.game.undo(); }
     this.refreshTop();
   }

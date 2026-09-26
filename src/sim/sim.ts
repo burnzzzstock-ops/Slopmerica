@@ -44,6 +44,17 @@ export const UNLOCKS: { pop: number; what: string; zone?: ZoneType; road?: strin
 
 export type DemandKey = 'res' | 'com' | 'ind' | 'off';
 export type DemandWhy = Record<DemandKey, string[]>;
+/** one reason a demand bar is where it is; v is its signed share (null = not measured) */
+export interface DemandDriver { text: string; v: number | null; base?: boolean }
+export type DemandParts = Record<DemandKey, DemandDriver[]>;
+
+/** a reason without its number, once the number is shown beside it */
+const bare = (text: string) => text.replace(/\s*[+\-−]\s?\d+(?:\.\d+)?(?=\s*(?:\(|$))/, '').trim() || text;
+/** the last signed number in a reason ("taxes −12", "parks +3.5 (40% coverage)") */
+function signedIn(text: string): number | null {
+  const m = [...text.matchAll(/([+\-−])\s?(\d+(?:\.\d+)?)/g)].pop();
+  return m ? (m[1] === '+' ? 1 : -1) * Number(m[2]) : null;
+}
 
 /**
  * Extension points into the simulation. Systems outside sim.ts (services,
@@ -114,6 +125,12 @@ export class Sim {
   hooks: SimHooks = { landValue: [], levelCap: [], vacancy: [], taxMul: [], demand: [], weekly: [] };
   /** why each demand bar is where it is (for the UI) */
   demandWhy: DemandWhy = { res: [], com: [], ind: [], off: [] };
+  /** the same reasons with their signed contribution, for the demand explainer */
+  demandParts: DemandParts = { res: [], com: [], ind: [], off: [] };
+  /** demand before the ±100 clamp */
+  demandRaw: Record<DemandKey, number> = { res: 60, com: 0, ind: 0, off: 0 };
+  /** the last 8 days of demand, oldest first (not saved: a trend rebuilds in a week) */
+  demandHistory: Record<DemandKey, number[]> = { res: [], com: [], ind: [], off: [] };
   /** flat per-capita services cost; the services system zeroes it and bills real facilities */
   serviceCostPerCapita = 0.55;
 
@@ -233,29 +250,55 @@ export class Sim {
     const P = this.population, W = this.workers;
     const boom = P < 200 ? 25 : P < 800 ? 10 : 0;
     const taxHit = (this.taxRate - 0.09) * 450;
-    let res = 30 + (70 * (jobs * 0.95 - W)) / Math.max(60, W) + boom - taxHit;
+    const gap = jobs * 0.95 - W;
+    const jobsTerm = (70 * gap) / Math.max(60, W);
     const comCap = cap.comLow + cap.comHigh;
     const retailNeed = P * 0.2 + 8;
-    let com = (100 * (retailNeed - comCap)) / Math.max(25, retailNeed) - taxHit;
+    const retailTerm = (100 * (retailNeed - comCap)) / Math.max(25, retailNeed);
     const goodsNeed = comCap * 0.8 + 18;
-    let ind = (100 * (goodsNeed - cap.industry)) / Math.max(25, goodsNeed) + this.unemployment * 60 - taxHit;
+    const goodsTerm = (100 * (goodsNeed - cap.industry)) / Math.max(25, goodsNeed);
+    const joblessTerm = this.unemployment * 60;
     const officeNeed = resHighPop * 0.25 + P * 0.03 + 4;
-    let off = (100 * (officeNeed - cap.office)) / Math.max(20, officeNeed) - taxHit;
-    const wm = this.weatherDemandMul;
+    const officeTerm = (100 * (officeNeed - cap.office)) / Math.max(20, officeNeed);
     const why: DemandWhy = { res: [], com: [], ind: [], off: [] };
-    const gap = jobs * 0.95 - W;
-    why.res.push(gap >= 0 ? `${Math.round(gap)} more jobs than workers` : `${Math.round(-gap)} more workers than jobs`);
-    if (boom) why.res.push(`small-town boom +${boom}`);
-    why.com.push(comCap < retailNeed ? `shoppers want ${Math.round(retailNeed - comCap)} more shop jobs` : `${Math.round(comCap - retailNeed)} too many shop jobs for ${P} people`);
-    why.ind.push(cap.industry < goodsNeed ? `shops need goods: ${Math.round(goodsNeed - cap.industry)} factory jobs short` : 'enough factories for the shops');
-    if (this.unemployment > 0.05) why.ind.push(`${Math.round(this.unemployment * 100)}% unemployed want work`);
-    why.off.push(cap.office < officeNeed ? `${Math.round(officeNeed - cap.office)} office jobs wanted` : 'offices saturated');
-    if (Math.abs(taxHit) > 2) for (const k of ['res', 'com', 'ind', 'off'] as const) why[k].push(`taxes ${taxHit > 0 ? '−' : '+'}${Math.round(Math.abs(taxHit))}`);
-    if (wm !== 1) for (const k of ['res', 'com', 'ind', 'off'] as const) why[k].push(`weather ×${wm.toFixed(2)}`);
-    const dm = { res: res * (res > 0 ? wm : 1), com: com * (com > 0 ? wm : 1), ind: ind * (ind > 0 ? wm : 1), off: off * (off > 0 ? wm : 1) };
-    for (const h of this.hooks.demand) h(dm, why);
+    const parts: DemandParts = { res: [], com: [], ind: [], off: [] };
+    const part = (k: DemandKey, text: string, v: number, base = false) => { why[k].push(text); parts[k].push(base ? { text, v, base } : { text, v }); };
+    const dm: Record<DemandKey, number> = { res: 30 + jobsTerm + boom - taxHit, com: retailTerm - taxHit, ind: goodsTerm + joblessTerm - taxHit, off: officeTerm - taxHit };
+    part('res', 'new-town appetite', 30, true);
+    part('res', gap >= 0 ? `${Math.round(gap)} more jobs than workers` : `${Math.round(-gap)} more workers than jobs`, jobsTerm);
+    if (boom) part('res', 'small-town boom', boom);
+    part('com', comCap < retailNeed ? `shoppers want ${Math.round(retailNeed - comCap)} more shop jobs` : `${Math.round(comCap - retailNeed)} too many shop jobs for ${P} people`, retailTerm);
+    part('ind', cap.industry < goodsNeed ? `shops need goods: ${Math.round(goodsNeed - cap.industry)} factory jobs short` : 'enough factories for the shops', goodsTerm);
+    if (this.unemployment > 0.05) part('ind', `${Math.round(this.unemployment * 100)}% unemployed want work`, joblessTerm);
+    part('off', cap.office < officeNeed ? `${Math.round(officeNeed - cap.office)} office jobs wanted` : 'offices saturated', officeTerm);
+    if (Math.abs(taxHit) > 2) for (const k of ['res', 'com', 'ind', 'off'] as const) part(k, `taxes at ${Math.round(this.taxRate * 100)}%`, -taxHit);
+    // weather only damps (or boosts) demand that is already positive
+    const wm = this.weatherDemandMul;
+    if (wm !== 1) for (const k of ['res', 'com', 'ind', 'off'] as const) {
+      const v = dm[k] > 0 ? dm[k] * (wm - 1) : 0;
+      dm[k] += v;
+      if (Math.abs(v) >= 0.5) part(k, `weather ×${wm.toFixed(2)}`, v);
+    }
+    // extension hooks (services, districts, freight) explain themselves in
+    // text; measure what each one actually changed so the numbers add up
+    for (const h of this.hooks.demand) {
+      const before = { ...dm }, had = { res: why.res.length, com: why.com.length, ind: why.ind.length, off: why.off.length };
+      h(dm, why);
+      for (const k of ['res', 'com', 'ind', 'off'] as const) {
+        const delta = dm[k] - before[k], added = why[k].slice(had[k]);
+        if (added.length === 1) parts[k].push({ text: bare(added[0]), v: delta });
+        else if (added.length > 1) {
+          const vs = added.map(signedIn);
+          const known = vs.every((v) => v !== null) && Math.abs(vs.reduce<number>((a, v) => a + (v ?? 0), 0) - delta) <= added.length;
+          added.forEach((text, i) => parts[k].push({ text: known ? bare(text) : text, v: known ? vs[i] : null }));
+        } else if (Math.abs(delta) >= 0.5) { why[k].push('other effects'); parts[k].push({ text: 'other effects', v: delta }); }
+      }
+    }
+    this.demandRaw = { ...dm };
     this.demand = { res: clamp(dm.res, -100, 100), com: clamp(dm.com, -100, 100), ind: clamp(dm.ind, -100, 100), off: clamp(dm.off, -100, 100) };
     this.demandWhy = why;
+    this.demandParts = parts;
+    for (const k of ['res', 'com', 'ind', 'off'] as const) { const hst = this.demandHistory[k]; hst.push(this.demand[k]); if (hst.length > 8) hst.shift(); }
 
     // ---- growth
     const catDemand = (z: ZoneType) => {

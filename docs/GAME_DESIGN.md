@@ -1,8 +1,18 @@
 # SLOPMERICA
 ### *Land of the Free Parking.*
-**Game Design Doc · v0.1 (pre-production draft)**
+**Game Design Doc · v0.2 (playtest)**
 
-> Nothing is built yet. This is the idea and the plan for building it. The open questions are in §12; the answers get folded into v1.0 before any code is written.
+> **Status (September 2026).** The game is built and in playtest; this document is still the vision. Read everything below as intent, and check the lists here for what actually exists. Where the code and this doc disagree, the code is the current truth and the gap is a decision to make, not a bug to assume.
+>
+> **Implemented:** three counties (Appalachia, NorCal, Florida) with weather, seasons and night; road drawing (curves, junctions, bridges, grading, federal grants, ONE MORE LANE) with undo; zoning and growable buildings with levels; land tiles bought with money; utilities (power, water, sewage) flowing over the road network with capped imports; garbage, fire, police, health, education and parks by drive time; pollution and noise fields; freight stock between factories and shops; bus transit; districts and policies; terraforming; disasters; communes; traffic and pedestrians; the X feed; save/continue; a playtest bug reporter.
+>
+> **Trust milestone (done, September 2026):** road upgrades and bulldozing go through one validated command from the toolbar and the inspector; the pollution field conserves mass; transit riders are counted once; saves keep the random stream, growth and bankruptcy state, this week's ledger, unbilled utility imports, freight in transit and cleared trees; graphics quality changes only the picture (trees and traffic budgets are the same on every preset); widening or splitting a road keeps the buildings along it. Each has a regression script in `scripts/` that exits nonzero on failure.
+>
+> **Learnability (in progress):** the R C I O demand bars open a card with the signed value, its trend over the last week, every reason with its signed share (they add up to the bar), what the value means for building right now, and one action (zone what's wanted, fix utilities, taxes). Next: event-driven first-session objectives, growth receipts vs recurring liabilities, a transaction ledger, persisted mute and accessibility settings. The target is one learnable 30–45 minute first session, validated by watching unfamiliar players, not by reading the code.
+>
+> **Aspirational (not built):** the Old Main / courthouse-square anchor and a before/after "Then & Now" comparison; the 20–25-year maintenance cliff (road upkeep currently steps up after 1 and 4 years, and widening resets a road's age: a decision still to make); the full historical downtown economy; parking-minimum and floodplain systems as described below.
+>
+> The original open questions are in §12.
 
 ---
 

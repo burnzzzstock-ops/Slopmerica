@@ -22,11 +22,7 @@ npm run build:single   # dist-single/index.html, one file, works offline
 - An uncaught error pops a "Something broke" toast with a prefilled report. A lost WebGL context saves the city and offers a reload.
 - If the game can't start (no WebGL, or a save that breaks loading) the tester gets a rescue screen instead of a frozen loader: report it, try again, or start a new city. Starting over keeps the old save in `localStorage['slopmerica.save.v1.broken']`.
 
-**Reproducing a tester's city file** (`slopmerica-<city>-day<N>.json` from the report sheet): open the game, run this in the console, reload, and tap **Resume trip**:
-
-```js
-localStorage.setItem('slopmerica.save.v1', JSON.stringify(<paste the file's JSON>))
-```
+**Reproducing a tester's city file** (`slopmerica-<city>-day<N>.json` from the report sheet): on the title screen, **Load a city file** and pick it. The file is checked first, and the city already saved in that browser is only replaced once the loaded one is running.
 
 ## Tests
 
@@ -40,4 +36,10 @@ node scripts/svctouch.mjs        # phone placement previews (services, landmarks
 node scripts/widentest.mjs       # One More Lane keeps the street's buildings
 node scripts/soak.mjs norcal 360 # a simulated year: errors, NaN, save/continue, leaks
 node scripts/uisweep.mjs phone   # every panel opens cleanly (also: desk)
+node scripts/demandtest.mjs      # demand cards: reasons add up, actions, Esc/tap to close
+node scripts/commandtest.mjs     # road upgrade/bulldoze: same rules from toolbar and inspector
+node scripts/savecontinuity.mjs  # a reload resumes the same future (rng, ledger, trees, imports)
+node scripts/qualitytest.mjs     # graphics presets never change the simulation
 ```
+
+`BASE_URL=http://127.0.0.1:5174` points any of them at another server (handy for running the suite against a frozen copy while you keep editing). Scripts that assert exit nonzero on failure.

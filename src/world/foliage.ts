@@ -318,14 +318,26 @@ class GeoB {
 const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 const WHITE = new THREE.Color(1, 1, 1);
 
-function randomCard(b: GeoB, rnd: () => number, center: THREE.Vector3, crown: THREE.Vector3, size: number, reg: Rect, color = WHITE) {
+function randomCard(b: GeoB, rnd: () => number, center: THREE.Vector3, crown: THREE.Vector3, size: number, reg: Rect, color = WHITE, bend = 0.75) {
   const out = center.clone().sub(crown).normalize();
   // orient mostly facing outward with random roll
   const ax = new THREE.Vector3().crossVectors(out, V(0, 1, 0));
   if (ax.lengthSq() < 0.01) ax.set(1, 0, 0);
   ax.normalize().applyAxisAngle(out, (rnd() - 0.5) * 2.4).multiplyScalar(size);
   const ay = new THREE.Vector3().crossVectors(ax, out).normalize().multiplyScalar(size);
-  b.card(center, ax, ay, reg, crown, color);
+  b.card(center, ax, ay, reg, crown, color, 1, bend);
+}
+
+/**
+ * Crown self-shadowing baked into the card color: leaves deep inside and on
+ * the underside of a crown get less sky than the ones on top and outside.
+ */
+function crownShade(p: THREE.Vector3, crown: THREE.Vector3, R: number): THREE.Color {
+  const d = p.clone().sub(crown);
+  const out = Math.min(1, d.length() / R); // 0 at the heart, 1 at the skin
+  const up = Math.max(-1, Math.min(1, d.y / R)); // -1 underside, 1 top
+  const v = Math.max(0.5, Math.min(1.06, 0.6 + out * 0.28 + up * 0.16));
+  return new THREE.Color(v, v, v * 0.97);
 }
 
 /** Cards over the top of a round crown, facing up, so it's closed from above. */
@@ -351,14 +363,28 @@ export function makeTreeModel(kind: TreeKind, variant: number): THREE.BufferGeom
         const a = rnd() * Math.PI * 2;
         b.limb(V(0, th - 0.4, 0), V(Math.cos(a) * 2.4, th + 2 + rnd() * 1.5, Math.sin(a) * 2.4), 0.16, 0.06, 5, bark, reg.bark);
       }
-      for (let k = 0; k < 28; k++) {
-        const a = rnd() * Math.PI * 2, e = (rnd() - 0.35) * 1.3, r = 2.6 + rnd() * 1.7;
-        const c = V(Math.cos(a) * Math.cos(e) * r * 1.1, Math.sin(e) * r * 0.85, Math.sin(a) * Math.cos(e) * r * 1.1).add(crown);
-        randomCard(b, rnd, c, crown, 3.3 + rnd() * 1.4, rnd() < 0.5 ? reg.leafA : reg.leafB);
+      // a crown is a cluster of leafy lobes, not one ball: six lobes of small
+      // cards give it a ragged, cloud-like silhouette and close up read as
+      // leaves instead of a few big paper cutouts
+      const R = 4.9;
+      const lobes = 6;
+      for (let l = 0; l < lobes; l++) {
+        const a = (l / lobes) * Math.PI * 2 + rnd() * 0.7;
+        const top = l === 0;
+        const lc = top ? crown.clone().add(V((rnd() - 0.5) * 0.8, 1.9, (rnd() - 0.5) * 0.8))
+          : crown.clone().add(V(Math.cos(a) * (2.1 + rnd() * 0.8), -0.5 + rnd() * 1.6, Math.sin(a) * (2.1 + rnd() * 0.8)));
+        const lr = 1.9 + rnd() * 0.7;
+        for (let k = 0; k < 9; k++) {
+          const u = rnd() * Math.PI * 2, e = -0.5 + rnd() * 2.0;
+          const c = V(Math.cos(u) * Math.cos(e) * lr, Math.sin(e) * lr * 0.8, Math.sin(u) * Math.cos(e) * lr).add(lc);
+          randomCard(b, rnd, c, crown, 2.5 + rnd() * 1.0, rnd() < 0.5 ? reg.leafA : reg.leafB, crownShade(c, crown, R), 0.85);
+        }
       }
-      // the crown's top: the cards above stop at ~50 degrees up, which left a
-      // hole in the middle, so from above a close tree read as a ring of leaves
-      crownCap(b, rnd, crown, 2.9, 1.7, 5, 3.4);
+      // fill the heart so there's no see-through hole between lobes
+      for (let k = 0; k < 5; k++) {
+        const c = crown.clone().add(V((rnd() - 0.5) * 2.2, (rnd() - 0.2) * 1.8, (rnd() - 0.5) * 2.2));
+        randomCard(b, rnd, c, crown.clone().setY(crown.y - 1), 2.6 + rnd() * 0.8, rnd() < 0.5 ? reg.leafA : reg.leafB, crownShade(c, crown, R), 0.85);
+      }
       break;
     }
     case 'oak': {
@@ -369,10 +395,11 @@ export function makeTreeModel(kind: TreeKind, variant: number): THREE.BufferGeom
         b.limb(V(0, th - 0.2, 0), V(Math.cos(a) * 3.8, th + 2.2, Math.sin(a) * 3.8), 0.3, 0.12, 6, bark, reg.bark);
       }
       const crown = V(0, th + 3.2, 0);
-      for (let k = 0; k < 34; k++) {
-        const a = rnd() * Math.PI * 2, r = Math.sqrt(rnd()) * 5.6;
-        const c = V(Math.cos(a) * r, (rnd() - 0.3) * 2.2, Math.sin(a) * r).add(crown);
-        randomCard(b, rnd, c, crown.clone().setY(crown.y - 1.5), 3.2 + rnd() * 1.3, rnd() < 0.5 ? reg.leafA : reg.leafB);
+      for (let k = 0; k < 58; k++) {
+        const a = rnd() * Math.PI * 2, r = Math.sqrt(rnd()) * 5.8;
+        // a spreading dome: higher in the middle, drooping at the rim
+        const c = V(Math.cos(a) * r, (rnd() - 0.3) * 2.0 + 1.2 * (1 - (r / 5.8) ** 2), Math.sin(a) * r).add(crown);
+        randomCard(b, rnd, c, crown.clone().setY(crown.y - 1.5), 2.4 + rnd() * 1.0, rnd() < 0.5 ? reg.leafA : reg.leafB, crownShade(c, crown, 5.8), 0.85);
       }
       break;
     }

@@ -12,7 +12,8 @@ const page = await browser.newPage({ viewport: { width: 900, height: 500 } });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));
 await page.addInitScript(() => { localStorage.setItem('slopmerica.quality', 'high'); localStorage.setItem('slopmerica.onboarded', '1'); localStorage.setItem('slopmerica.fov', '50'); });
-await page.goto(`${base}/#skip&map=norcal&mode=sandbox`, { waitUntil: 'load', timeout: 120000 });
+const MAP = process.env.MAP || 'norcal';
+await page.goto(`${base}/#skip&map=${MAP}&mode=sandbox`, { waitUntil: 'load', timeout: 120000 });
 await page.waitForFunction(() => window.__game, null, { timeout: 180000 });
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra)); if (!ok) bad++; };
@@ -44,17 +45,20 @@ const lum = (a, b, c) => page.evaluate(async ([a, b, c]) => {
   const [N, F, O] = await Promise.all([px(a), px(b), px(c)]);
   const L = (D, i) => 0.2126 * D[i] + 0.7152 * D[i + 1] + 0.0722 * D[i + 2];
   let sn = 0, nn = 0, sf = 0, nf = 0;
+  const cn = [0, 0, 0], cf = [0, 0, 0];
   for (let i = 0; i < O.length; i += 4) {
-    if (Math.abs(L(N, i) - L(O, i)) > 12) { sn += L(N, i); nn++; }
-    if (Math.abs(L(F, i) - L(O, i)) > 12) { sf += L(F, i); nf++; }
+    if (Math.abs(L(N, i) - L(O, i)) > 12) { sn += L(N, i); nn++; for (let k = 0; k < 3; k++) cn[k] += N[i + k]; }
+    if (Math.abs(L(F, i) - L(O, i)) > 12) { sf += L(F, i); nf++; for (let k = 0; k < 3; k++) cf[k] += F[i + k]; }
   }
-  return { near: +(sn / Math.max(1, nn)).toFixed(1), far: +(sf / Math.max(1, nf)).toFixed(1), nearPx: nn, farPx: nf };
+  const avg = (c, n) => c.map((v) => Math.round(v / Math.max(1, n)));
+  return { near: +(sn / Math.max(1, nn)).toFixed(1), far: +(sf / Math.max(1, nf)).toFixed(1), nearPx: nn, farPx: nf, nearRGB: avg(cn, nn), farRGB: avg(cf, nf) };
 }, [a, b, c]);
-for (const [dist, pitch] of [[140, 0.75], [320, 0.95]]) {
+const VIEWS = process.env.VIEWS ? JSON.parse(process.env.VIEWS) : [[140, 0.75], [320, 0.95]];
+for (const [dist, pitch] of VIEWS) {
   const n = await frame('near', dist, pitch), f = await frame('far', dist, pitch), o = await frame('none', dist, pitch);
   const r = await lum(n, f, o);
   const ratio = r.far / r.near;
-  check(`at ${dist} m, impostors are as bright as detailed trees (tree pixels: detailed ${r.near}, impostor ${r.far}, ratio ${ratio.toFixed(2)})`, ratio > 0.85 && ratio < 1.15, r);
+  check(`at ${dist} m, pitch ${pitch}, impostors are as bright as detailed trees (tree pixels: detailed ${r.near} rgb(${r.nearRGB}), impostor ${r.far} rgb(${r.farRGB}), ratio ${ratio.toFixed(2)})`, ratio > 0.85 && ratio < 1.15, r);
   check(`at ${dist} m, impostors cover about as much ground (${r.farPx} vs ${r.nearPx} px)`, r.farPx > r.nearPx * 0.6 && r.farPx < r.nearPx * 1.6, r);
 }
 check('no page errors', errs.length === 0, errs.slice(0, 3));

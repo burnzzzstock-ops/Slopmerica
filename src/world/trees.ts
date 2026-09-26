@@ -25,6 +25,11 @@ const GRID_N = Math.ceil(WORLD / CELL);
 const SPRITE_W = 256, SPRITE_H = 512;
 /** average of the canopy's own shading baked into impostors (1 = as bright as fully lit) */
 const IMPOSTOR_SHADE = 0.66;
+// Broadleaf crowns shade themselves far more than conifers or open oaks (the
+// shadow map darkens their inner and lower cards), so their impostors, lit as
+// one sunny face, were ~40% too bright and read as a lime carpet past the
+// detailed ring. Measured by scripts/treelod.mjs on each map.
+const IMPOSTOR_SHADE_KIND: Partial<Record<string, number>> = { decid: 0.4, mangrove: 0.46, cypress: 0.52 };
 
 const BASE_COLOR: Record<TreeKind, number> = {
   decid: 0x6f9a45, pine: 0x557f48, redwood: 0x527a45, oak: 0x7f9852, palm: 0x7aa84a, cypress: 0x7a9a50, mangrove: 0x55803e, shrub: 0x7a9448,
@@ -136,7 +141,16 @@ vCanopy = canopy;`)
   float sn = uSnow * smoothstep(0.1, 0.75, wN.y) * smoothstep(uSnowLine - 30.0, uSnowLine + 60.0, vTWPos.y);
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.9, 0.95), sn * (0.35 + 0.45 * vCanopy));
 }`)
-          .replace('#include <lights_fragment_end>', cloudShadowChunk('vTWPos'))
+          .replace('#include <lights_fragment_end>', `
+#if NUM_DIR_LIGHTS > 0
+{
+  // leaves are thin: looking toward the sun through a crown, its edge glows
+  // yellow-green (directLight is the sun, already shadowed)
+  float back = pow(max(dot(-geometryViewDir, directLight.direction), 0.0), 3.0);
+  reflectedLight.directDiffuse += directLight.color * diffuseColor.rgb * vec3(0.95, 1.05, 0.55) * (back * 0.55 + 0.06) * vCanopy;
+}
+#endif
+` + cloudShadowChunk('vTWPos'))
           // leaf cards carry bent "crown" normals: don't flip them on back faces
           .replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', 'normal *= mix(faceDirection, 1.0, step(0.5, vCanopy));'));
       };
@@ -184,7 +198,7 @@ vCanopy = canopy;`)
     });
 
     const spriteTex = this.bakeSprites(renderer, models.map((m) => m[0]), atlas);
-    const farMat = new THREE.MeshLambertMaterial({ map: spriteTex, alphaTest: 0.5, side: THREE.DoubleSide, alphaToCoverage: msaa });
+    const farMat = new THREE.MeshLambertMaterial({ map: spriteTex, alphaTest: 0.3, side: THREE.DoubleSide, alphaToCoverage: msaa });
     farMat.onBeforeCompile = (sh) => {
       sh.uniforms.uLeaf = { value: 1 };
       bindAtmos(sh);
@@ -197,7 +211,9 @@ vCanopy = canopy;`)
   vec4 sprTop = texture2D(map, vec2(vMapUv.x, 0.5 + vMapUv.y * 0.5));
   diffuseColor *= mix(sprSide, sprTop, vK);
 #endif`)
-        .replace('#include <alphatest_fragment>', LEAF_ALPHA.replace('0.42', '0.5'))
+        // a lower cut than the cards': the baked crown's edge is soft, and at 0.5
+        // impostors covered only half the ground the detailed trees did
+        .replace('#include <alphatest_fragment>', LEAF_ALPHA.replace('0.42', '0.3'))
         .replace('#include <color_fragment>', `#include <color_fragment>
 diffuseColor.rgb *= cloudShade(vTWPos);
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.88, 0.93), uSnow * 0.55 * vTop * smoothstep(uSnowLine - 30.0, uSnowLine + 60.0, vTWPos.y));`);
@@ -394,8 +410,10 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
             for (let x = k * SPRITE_W; x < (k + 1) * SPRITE_W; x++) { const i = (y * W + x) * 4; if (lit[i + 3] > 128) fn(i); }
         };
         each((i) => { sl += lit[i] + lit[i + 1] + lit[i + 2]; sa += alb[i] + alb[i + 1] + alb[i + 2]; });
-        const gain = sl > 0 ? (IMPOSTOR_SHADE * sa) / sl : 1;
-        each((i) => { for (let c = 0; c < 3; c++) px[i + c] = Math.min(255, Math.round(lit[i + c] * gain)); });
+        const gain = sl > 0 ? ((IMPOSTOR_SHADE_KIND[KINDS[k]] ?? IMPOSTOR_SHADE) * sa) / sl : 1;
+        // shaded leaves take the sky's blue: a touch cooler than the sunlit picture
+        const tint = [0.96, 1, 1.25];
+        each((i) => { for (let c = 0; c < 3; c++) px[i + c] = Math.min(255, Math.round(lit[i + c] * gain * tint[c])); });
       }
     // Pad the transparent texels so mips don't halo the impostors black; a data
     // texture also survives render-target churn.

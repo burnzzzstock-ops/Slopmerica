@@ -34,14 +34,18 @@ const aoMat = () =>
         vec4 v = uInvProj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
         return v.xyz / v.w;
       }
-      float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
       void main() {
-        float d0 = texture2D(tDepth, vUv).r;
-        if (d0 >= 0.99999) { gl_FragColor = vec4(1.0); return; }
-        vec3 P = viewPos(vUv);
+        // AO runs at half resolution: every half-res pixel centre lands exactly
+        // on the edge between two full-res depth texels, and rounding picked
+        // one row or the other in slow bands (moire stripes that moved with the
+        // window size and zoom). Read depth at full-res texel centres.
         vec2 px = 1.0 / uFull;
-        vec3 Pr = viewPos(vUv + vec2(px.x, 0.0)), Pl = viewPos(vUv - vec2(px.x, 0.0));
-        vec3 Pu = viewPos(vUv + vec2(0.0, px.y)), Pd = viewPos(vUv - vec2(0.0, px.y));
+        vec2 uv0 = (floor(vUv * uFull) + 0.5) * px;
+        float d0 = texture2D(tDepth, uv0).r;
+        if (d0 >= 0.99999) { gl_FragColor = vec4(1.0); return; }
+        vec3 P = viewPos(uv0);
+        vec3 Pr = viewPos(uv0 + vec2(px.x, 0.0)), Pl = viewPos(uv0 - vec2(px.x, 0.0));
+        vec3 Pu = viewPos(uv0 + vec2(0.0, px.y)), Pd = viewPos(uv0 - vec2(0.0, px.y));
         vec3 dx = abs(Pr.z - P.z) < abs(P.z - Pl.z) ? Pr - P : P - Pl;
         vec3 dy = abs(Pu.z - P.z) < abs(P.z - Pd.z) ? Pu - P : P - Pd;
         // flat depth makes the cross product zero, and normalize(0) is NaN on
@@ -55,19 +59,26 @@ const aoMat = () =>
         float rPx = r * uProj[1][1] * 0.5 * uFull.y / -P.z;
         if (rPx < 1.5) { gl_FragColor = vec4(1.0); return; }
         rPx = min(rPx, 90.0);
-        float a0 = hash(gl_FragCoord.xy) * 6.2831853;
+        // interleaved gradient noise: a per-pixel rotation made to be blurred
+        // away (a general-purpose hash left row-periodic stripes after the blur)
+        float a0 = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) * 6.2831853;
         float sum = 0.0;
         float r2 = r * r;
         for (int i = 0; i < SAMPLES; i++) {
           float t = (float(i) + 0.5) / float(SAMPLES);
           float ang = a0 + t * 7.0 * 6.2831853;
           vec2 off = vec2(cos(ang), sin(ang)) * t * rPx * px;
-          vec3 S = viewPos(vUv + off);
+          vec3 S = viewPos((floor((uv0 + off) * uFull) + 0.5) * px);
           vec3 v = S - P;
           float vv = dot(v, v);
-          float vn = dot(v, N);
+          float vl = sqrt(vv) + 1e-4;
+          // angle bias: shallow creases (the facets of rolling terrain) aren't
+          // occluders; walls, trees and kerbs meeting the ground are. Without it
+          // open ground came out blotchy at every quality (the playtest's
+          // "spotting").
+          float cosA = (dot(v, N) - 0.0002 * -P.z) / vl;
           float f = max(r2 - vv, 0.0);
-          sum += f * f * f * max((vn - 0.0002 * -P.z) / (0.01 + vv), 0.0);
+          sum += f * f * f * max(cosA - 0.3, 0.0) / (0.7 * max(vl, 0.6));
         }
         float ao = max(0.0, 1.0 - sum * uIntensity * 5.0 / (float(SAMPLES) * r2 * r2 * r2));
         ao = mix(1.0, ao, 1.0 - smoothstep(uFade.x, uFade.y, -P.z));
@@ -87,12 +98,14 @@ const blurMat = () =>
       uniform float uNear, uFar;
       varying vec2 vUv;
       float lin(float d) { float z = d * 2.0 - 1.0; return 2.0 * uNear * uFar / (uFar + uNear - z * (uFar - uNear)); }
+      // depth at full-res texel centres (see the AO pass)
+      float depthAt(vec2 uv) { vec2 f = vec2(textureSize(tDepth, 0)); return texture2D(tDepth, (floor(uv * f) + 0.5) / f).r; }
       void main() {
-        float z0 = lin(texture2D(tDepth, vUv).r);
+        float z0 = lin(depthAt(vUv));
         float acc = 0.0, wsum = 0.0;
         for (int i = -4; i <= 4; i++) {
           vec2 uv = vUv + uDir * float(i);
-          float z = lin(texture2D(tDepth, uv).r);
+          float z = lin(depthAt(uv));
           float w = exp(-float(i * i) / 12.0) * exp(-abs(z - z0) / (0.03 * z0 + 0.1));
           acc += texture2D(tAO, uv).r * w;
           wsum += w;

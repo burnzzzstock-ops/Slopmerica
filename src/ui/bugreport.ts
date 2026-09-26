@@ -141,7 +141,8 @@ function graphics(g: Game): string {
   try {
     const r = g.renderer, gl = r.getContext(), a = gl.getContextAttributes();
     const fx = g.post.active ? 'effects on' : g.post.offReason ? `effects OFF (${g.post.offReason})` : 'effects off (preset)';
-    return `${g.q.name}${g.pendingQuality ? ` → ${g.pendingQuality} on reload` : ''} · ${fx} · ${gl.drawingBufferWidth}×${gl.drawingBufferHeight} px · pixel ratio ${r.getPixelRatio().toFixed(2)} · ${a?.antialias ? 'MSAA' : 'no MSAA'}${gl.isContextLost() ? ' · CONTEXT LOST' : ''}`;
+    const ri = g.renderInfo();
+    return `${g.q.name}${g.pendingQuality ? ` → ${g.pendingQuality} on reload` : ''} · ${fx} · ${gl.drawingBufferWidth}×${gl.drawingBufferHeight} px of a ${ri.screen} screen (${ri.share}%, ${ri.mode === 'full' ? 'full res locked' : `auto ${Math.round(ri.dynamic * 100)}%`}) · pixel ratio ${r.getPixelRatio().toFixed(2)} of ${ri.dpr} · ${g.post.active ? 'MSAA 4x (scene target)' : a?.antialias ? 'MSAA' : 'no MSAA'}${gl.isContextLost() ? ' · CONTEXT LOST' : ''}`;
   } catch {
     return 'unknown';
   }

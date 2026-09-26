@@ -143,6 +143,13 @@ export class Game {
   private qualityElapsed = 0;
   private qualityBenchmarkDone = false;
   private resolutionCooldown = 0;
+  /** Settings → Resolution: 'auto' lowers it to hold the frame rate, 'full' never does */
+  resolutionMode: 'auto' | 'full' = 'auto';
+  /** a resolution drop on trial: kept only if frames got faster */
+  private resTrial: { before: number; from: number } | null = null;
+  /** seconds (perf clock) until the scaler may try lowering again */
+  private resNoGain = 0;
+  private perfClock = 0;
   private dynamicScale = 1;
   pendingQuality: Quality['name'] | null = null;
   /** where each frame's time goes; its slowest frames go into bug reports */
@@ -243,6 +250,7 @@ export class Game {
 
     this.rts = new RTSCamera(this.camera, this.renderer.domElement, this.terrain, this.tools as PointerHandlers);
     try { this.rts.edgeScroll = localStorage.getItem('slopmerica.edgeScroll') !== '0'; } catch { /* private mode: default on */ }
+    try { if (localStorage.getItem('slopmerica.resolution') === 'full') this.resolutionMode = 'full'; } catch { /* default auto */ }
     this.rts.setView(start.x, start.z, IS_TOUCH ? 900 : 800, start.yaw, 0.72, true);
 
     // --- ambient life (codex) ---
@@ -698,6 +706,22 @@ export class Game {
     return this.pendingQuality !== null;
   }
 
+  /** Settings → Resolution */
+  setResolutionMode(m: 'auto' | 'full') {
+    this.resolutionMode = m;
+    this.resTrial = null;
+    this.resNoGain = 0;
+    try { localStorage.setItem('slopmerica.resolution', m); } catch { /* not remembered */ }
+    if (m === 'full') this.setRenderScale(1);
+  }
+
+  /** what the canvas actually renders at, against the screen's own pixels */
+  renderInfo() {
+    const c = this.renderer.domElement, dpr = window.devicePixelRatio || 1;
+    const sw = Math.round(c.clientWidth * dpr), sh = Math.round(c.clientHeight * dpr);
+    return { buffer: `${c.width}×${c.height}`, screen: `${sw}×${sh}`, share: Math.round((c.width / Math.max(1, sw)) * 100), dpr, dynamic: this.dynamicScale, mode: this.resolutionMode };
+  }
+
   private setRenderScale(scale: number, presetRatio = presetPixelRatio(this.pendingQuality ?? this.q.name)) {
     this.dynamicScale = THREE.MathUtils.clamp(scale, MIN_RENDER_SCALE, 1);
     this.perf.resolution = this.dynamicScale;
@@ -737,9 +761,25 @@ export class Game {
       }
     }
     this.resolutionCooldown -= intervalMs / 1000;
+    this.perfClock += intervalMs / 1000;
+    if (this.resolutionMode === 'full') { if (this.dynamicScale < 0.99) this.setRenderScale(1); return; }
     if (this.resolutionCooldown <= 0 && this.perfSamples > 80 && this.perf.frameMs > 0) {
       const ms = this.perf.frameMs;
-      if (ms > 18.5 && this.dynamicScale > MIN_RENDER_SCALE + 0.01) {
+      // a drop that didn't make frames faster (the time goes to the simulation,
+      // not to pixels) only made the picture soft: undo it and stop trying a while
+      if (this.resTrial) {
+        const t = this.resTrial;
+        this.resTrial = null;
+        if (ms > t.before * 0.92) {
+          this.setRenderScale(t.from);
+          this.resNoGain = this.perfClock + 60;
+          this.prof.note(`resolution drop didn't help (${t.before.toFixed(1)} → ${ms.toFixed(1)} ms): back to ${Math.round(t.from * 100)}%`);
+          this.resolutionCooldown = 3;
+          return;
+        }
+      }
+      if (ms > 18.5 && this.dynamicScale > MIN_RENDER_SCALE + 0.01 && this.perfClock >= this.resNoGain) {
+        this.resTrial = { before: ms, from: this.dynamicScale };
         this.setRenderScale(this.dynamicScale - (ms > 25 ? 0.12 : 0.07));
         this.resolutionCooldown = 3;
       } else if (ms < 15.2 && this.perf.renderMs < 15.2 && this.dynamicScale < 0.99) {

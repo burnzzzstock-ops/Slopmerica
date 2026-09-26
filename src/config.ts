@@ -61,7 +61,7 @@ export function presetPixelRatio(q: Quality['name']): number {
   return IS_TOUCH ? Math.max(base, q === 'low' ? 1.5 : 1.75) : base;
 }
 /** Dynamic resolution never drops below this share of the preset density. */
-export const MIN_RENDER_SCALE = IS_TOUCH ? 0.8 : 0.6;
+export const MIN_RENDER_SCALE = IS_TOUCH ? 0.8 : 0.75;
 
 export function storedQuality(): Quality['name'] | null {
   try {

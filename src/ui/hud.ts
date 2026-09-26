@@ -773,6 +773,7 @@ export class Hud implements UiSink {
           <button class="chip" id="perf-toggle">${this.perfVisible ? 'Hide' : 'Show'} performance</button>
           ${IS_TOUCH ? '' : `<button class="chip ${g.rts.edgeScroll ? 'on' : ''}" id="edge-toggle" aria-pressed="${g.rts.edgeScroll}">Edge scrolling: ${g.rts.edgeScroll ? 'on' : 'off'}</button>`}
           ${g.pendingQuality ? '<button class="chip on" id="quality-reload">Reload to finish applying</button>' : ''}
+          ${IS_TOUCH ? '' : `<button class="chip ${g.resolutionMode === 'full' ? 'on' : ''}" id="res-toggle" title="Auto lowers the resolution when frames are slow; Always full keeps it sharp">Resolution: ${g.resolutionMode === 'full' ? 'always full' : 'auto'}</button>`}
           <label class="fov-ctl" for="fov-range">Field of view <input type="range" id="fov-range" min="35" max="75" step="1" value="${Math.round(g.camera.fov)}"><b id="fov-v">${Math.round(g.camera.fov)}°</b></label>
         </div>
         <small>Resolution and shadows change immediately. Reload applies scenery, traffic, and post-processing budgets.</small>
@@ -807,6 +808,11 @@ export class Hud implements UiSink {
       });
       this.sub.querySelector('#quality-reload')?.addEventListener('click', () => location.reload());
       this.sub.querySelector('#perf-toggle')?.addEventListener('click', () => { this.togglePerf(); this.renderPanel(); });
+      this.sub.querySelector('#res-toggle')?.addEventListener('click', () => {
+        g.setResolutionMode(g.resolutionMode === 'full' ? 'auto' : 'full');
+        crumb(`resolution ${g.resolutionMode}`);
+        this.renderPanel();
+      });
       this.sub.querySelector('#fov-range')?.addEventListener('input', (e) => {
         const v = Number((e.target as HTMLInputElement).value);
         g.camera.fov = v;
@@ -1095,7 +1101,8 @@ export class Hud implements UiSink {
       if (this.perfVisible) {
         const p = this.game.perf;
         const pf = this.game.prof, w = pf.worst[0];
-        this.perfEl.textContent = `${p.fps.toFixed(1)} fps · ${p.frameMs.toFixed(1)} ms frame · ${p.renderMs.toFixed(1)} ms work\n${p.calls.toLocaleString()} calls · ${p.triangles.toLocaleString()} tris · ${p.quality.toUpperCase()} · ${Math.round(p.resolution * 100)}% res${this.game.post.active ? '' : ' · no FX'}\n${pf.top(5).map(([k, v]) => `${k} ${v.toFixed(1)}`).join(' · ')}${w ? `\nworst ${w.ms.toFixed(0)} ms: ${w.parts.slice(0, 3).map(([k, v]) => `${k} ${v}`).join(', ')}` : ''}`;
+        const ri = this.game.renderInfo();
+        this.perfEl.textContent = `${p.fps.toFixed(1)} fps · ${p.frameMs.toFixed(1)} ms frame · ${p.renderMs.toFixed(1)} ms work\n${p.calls.toLocaleString()} calls · ${p.triangles.toLocaleString()} tris · ${p.quality.toUpperCase()}${this.game.post.active ? '' : ' · no FX'}\nrender ${ri.buffer} of the screen's ${ri.screen} (${ri.share}%) · ${ri.mode === 'full' ? 'full res locked' : `auto ${Math.round(ri.dynamic * 100)}%`}\n${pf.top(5).map(([k, v]) => `${k} ${v.toFixed(1)}`).join(' · ')}${w ? `\nworst ${w.ms.toFixed(0)} ms: ${w.parts.slice(0, 3).map(([k, v]) => `${k} ${v}`).join(', ')}` : ''}`;
       }
       if (this.game.selection && (this.game.selection.kind === 'car' || this.game.selection.kind === 'building' || this.game.selection.kind === 'lot')) this.renderInspector();
     }

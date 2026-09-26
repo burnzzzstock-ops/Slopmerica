@@ -70,7 +70,7 @@ const SVC: SvcDef[] = [
   { id: 'solarFarm', cat: 'power', name: 'Freedom Solar Farm', blurb: 'Zero emissions. Output drops at night and under clouds.', icon: '☀️', w: 6, d: 4, cost: 30000, upkeep: 40, buildDays: 10, unlock: 400, power: 10, height: 4 },
   { id: 'nuclearPlant', cat: 'power', name: 'Three Mile Island Jr.', blurb: 'Enough power for the whole county. What could go wrong.', icon: '☢️', w: 7, d: 7, cost: 220000, upkeep: 700, buildDays: 30, unlock: 5000, power: 220, noise: 0.5, height: 52 },
   { id: 'waterPump', cat: 'water', name: 'Artesian Tap Pump', blurb: 'Pumps river water. Must touch water. Keep it far from the sewage outfall.', icon: '🚰', w: 2, d: 2, cost: 9000, upkeep: 45, buildDays: 6, unlock: 0, water: 3200, nearWater: true, noise: 0.3, height: 7 },
-  { id: 'wellTower', cat: 'water', name: 'Groundwater Well Tower', blurb: 'Works anywhere. Small output. Boil notice pending.', icon: '🗼', w: 2, d: 2, cost: 7000, upkeep: 30, buildDays: 6, unlock: 0, water: 800, height: 26 },
+  { id: 'wellTower', cat: 'water', name: 'Groundwater Well Tower', blurb: 'Works anywhere. Small output. Boil notice pending (a joke: the water is fine).', icon: '🗼', w: 2, d: 2, cost: 7000, upkeep: 30, buildDays: 6, unlock: 0, water: 800, height: 26 },
   { id: 'sewageOutfall', cat: 'sewage', name: 'Sewage Outfall', blurb: 'Straight into the river. Must touch water. Pollutes the neighborhood.', icon: '🚽', w: 2, d: 2, cost: 6000, upkeep: 25, buildDays: 5, unlock: 0, sewage: 3800, nearWater: true, pollution: 0.5, noise: 0.2, height: 4 },
   { id: 'treatmentPlant', cat: 'sewage', name: 'Poop Palace Treatment', blurb: 'Actually cleans it. Costs more. Smells less.', icon: '🧫', w: 5, d: 4, cost: 32000, upkeep: 150, buildDays: 12, unlock: 1000, sewage: 6000, nearWater: true, pollution: 0.06, noise: 0.3, height: 7 },
   { id: 'landfill', cat: 'garbage', name: 'Mt. Trashmore Landfill', blurb: 'Trucks collect trash within reach. Fills up. Stinks up the neighbors.', icon: '🗑️', w: 6, d: 6, cost: 14000, upkeep: 70, buildDays: 8, unlock: 0, store: 9000, collect: 36, cov: 'garbage', reach: 220, pollution: 0.3, noise: 0.5, vehicle: 'garbageTruck', height: 16 },
@@ -152,8 +152,9 @@ interface FS {
   contaminated: boolean;
   full: boolean;
 }
-interface UtilStat { supply: number; demand: number; served: number; imported: number; unserved: number }
-const z0 = (): UtilStat => ({ supply: 0, demand: 0, served: 0, imported: 0, unserved: 0 });
+/** unserved = noRoad + noLink + capped: why each cut-off building is cut off */
+interface UtilStat { supply: number; demand: number; served: number; imported: number; unserved: number; noRoad: number; noLink: number; capped: number }
+const z0 = (): UtilStat => ({ supply: 0, demand: 0, served: 0, imported: 0, unserved: 0, noRoad: 0, noLink: 0, capped: 0 });
 
 const S = {
   b: new Map<number, BS>(),
@@ -415,7 +416,7 @@ function allocateUtilities(g: Game, fac: Fac[], zoned: ZB[]) {
       if (b.state !== 'active' || b.abandoned !== undefined) { setUtil(bs, u, true); continue; }
       const s = segOf(g, b);
       const c = s ? S.comp.get(s.a) : undefined;
-      if (!s || c === undefined) { setUtil(bs, u, false); st.unserved++; continue; }
+      if (!s || c === undefined) { setUtil(bs, u, false); st.unserved++; st.noRoad++; continue; }
       const t = Math.min(tmap?.get(s.a) ?? 1e9, tmap?.get(s.b) ?? 1e9);
       const use = useOf(b, u);
       st.demand += use;
@@ -433,7 +434,12 @@ function allocateUtilities(g: Game, fac: Fac[], zoned: ZB[]) {
         st.imported += need;
         setUtil(bs, u, true);
         st.served += it.use;
-      } else { setUtil(bs, u, false); st.unserved++; }
+      } else {
+        setUtil(bs, u, false);
+        st.unserved++;
+        // no plant on its roads and no road to the highway, or the highway's sold out
+        if (S.compEdge.has(it.c)) st.capped++; else st.noLink++;
+      }
       if (u === 'water') bs.dirty = bs.wa && dirtyComp.has(it.c);
     }
     S.week[u] += st.imported;
@@ -793,7 +799,8 @@ function initHooks(g: Game) {
     for (const bs of S.b.values()) sch += bs.cov.school;
     if (S.b.size > 10 && sch / S.b.size > 0.4) add('res', (sch / S.b.size) * 8, 'good schools');
   });
-  H.weekly.push((add) => {
+  // the week's bill: what was actually imported, or (forecast) today's daily rate × 7
+  H.weekly.push((add, forecast) => {
     const byCat = new Map<SvcCat, number>();
     for (const f of facilities(g, false)) {
       const up = f.state === 'active' ? f.def.upkeep : 0;
@@ -801,12 +808,13 @@ function initHooks(g: Game) {
     }
     for (const c of CATS) { const v = byCat.get(c.id); if (v) add(`${c.label} upkeep`, v, 'services'); }
     for (const u of UTILS) {
-      const cost = S.week[u] * IMPORT_PRICE[u];
+      const cost = (forecast ? S.util[u].imported * 7 : S.week[u]) * IMPORT_PRICE[u];
       if (cost >= 1) add(`${u[0].toUpperCase() + u.slice(1)} imports`, cost, 'services');
-      S.week[u] = 0;
+      if (!forecast) S.week[u] = 0;
     }
-    if (S.week.trash * TRASH_PRICE >= 1) add('County waste contract', S.week.trash * TRASH_PRICE, 'services');
-    S.week.trash = 0;
+    const trash = forecast ? S.garbage.exported * 7 : S.week.trash;
+    if (trash * TRASH_PRICE >= 1) add('County waste contract', trash * TRASH_PRICE, 'services');
+    if (!forecast) S.week.trash = 0;
   });
 }
 
@@ -1102,12 +1110,13 @@ export function canPlaceService(g: Game, id: ServiceModelId, x: number, z: numbe
       }
     if (!wet) return { ok: false, yaw, reason: 'Must be on a river or lake shore (within 40 m of water)' };
   }
-  if (d.cost > g.sim.spendable()) return { ok: false, yaw, reason: 'Not enough money' };
+  const broke = g.sim.cantAfford(d.cost);
+  if (broke) return { ok: false, yaw, reason: broke };
   return { ok: true, yaw };
 }
 
 /** Problems moving the building a bit can fix (not money, unlocks or land). */
-const snappable = (reason?: string) => !!reason && !/money|Unlocks|own this land|county/i.test(reason);
+const snappable = (reason?: string) => !!reason && !/money|Needs \$|Unlocks|own this land|county/i.test(reason);
 
 /**
  * The cursor spot, or the nearest valid spot around it (shore plants search
@@ -1117,6 +1126,10 @@ export function findServiceSpot(g: Game, id: ServiceModelId, x: number, z: numbe
   const here = canPlaceService(g, id, x, z);
   if (here.ok) return { x, z, yaw: here.yaw, snapped: false };
   if (!snappable(here.reason)) return { x, z, yaw: here.yaw, snapped: false, reason: here.reason };
+  // pointing straight at a building means "that one", not "somewhere near it":
+  // no snapping, so a double-click doesn't buy a second office next door
+  const on = g.buildings.at(x, z);
+  if (on) return { x, z, yaw: here.yaw, snapped: false, reason: `${on.label} is already here` };
   const maxR = SERVICE_DEFS.get(id)!.nearWater ? 110 : 60;
   for (let r = 8; r <= maxR; r += 8) {
     const n = Math.max(8, Math.round((2 * Math.PI * r) / 14));
@@ -1142,6 +1155,7 @@ function ensureGhost(g: Game) {
   if (ghost) return ghost;
   ghostMat = new THREE.MeshBasicMaterial({ color: 0x57e389, transparent: true, opacity: 0.35, depthWrite: false });
   ghost = new THREE.Group();
+  ghost.name = 'svc-ghost';
   const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), ghostMat);
   box.position.y = 0.5;
   const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.22, 3), ghostMat);
@@ -1176,6 +1190,7 @@ export function placeService(g: Game, id: ServiceModelId, x: number, z: number):
   const b = g.buildings.placeCustom(d.id, x, z, chk.yaw);
   if (!b) return null;
   g.sim.spend(d.cost, d.name, 'construction');
+  g.pushUndo({ kind: 'place', bldId: b.id, refund: d.cost, label: d.name });
   crumb(`placed ${d.name}`);
   S.graphDirty = true;
   g.audio.play('build');
@@ -1190,6 +1205,7 @@ let planned: THREE.Vector3 | null = null;
 registerTool({
   id: 'svcPlace',
   touchLift: 64,
+  placing: () => { const d = SERVICE_DEFS.get(placing); return d ? `${d.icon} ${d.name}` : null; },
   move: (g, p) => { if (!planned) updateGhost(g, p); },
   up: (g, p, e, wasDrag) => {
     if (!p || wasDrag) return;
@@ -1214,20 +1230,66 @@ registerTool({
     const d = SERVICE_DEFS.get(placing)!;
     if (lastCheck && !lastCheck.ok) return { text: `${d.name}: ${lastCheck.reason}`, bad: true };
     if (g.isTouch && !planned) return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} · tap where it goes` };
-    return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} · $${d.upkeep}/wk${lastCheck?.snapped ? ' · 📍 snapped to the nearest good spot' : ''}${planned ? ' · tap Build, or tap elsewhere to move it' : ''}` };
+    // what this purchase does to the budget, from the same forecast the HUD shows
+    const after = g.sim.afterSpend(d.cost, d.upkeep);
+    return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} now + $${d.upkeep}/wk · ${after.text}${lastCheck?.snapped ? ' · 📍 snapped to the nearest good spot' : ''}${planned ? ' · tap Build, or tap elsewhere to move it' : ''}`, bad: after.credit };
   },
 });
 
 // ============================================================== panel
-function statusLine(c: SvcCat): string {
+const usd = (n: number) => `$${Math.round(n).toLocaleString()}`;
+/** the cheapest local building for a category that the city can build now */
+function cheapestLocal(g: Game, c: SvcCat, has: (d: SvcDef) => boolean): SvcDef | null {
+  const pop = g.sim.population, sandbox = g.sim.mode === 'sandbox';
+  return SVC.filter((d) => d.cat === c && has(d) && (sandbox || pop >= d.unlock)).sort((a, b) => a.cost - b.cost)[0] ?? null;
+}
+
+/**
+ * What a category's status means: covered by your own buildings, covered by
+ * a paid fallback (imports, the county contract), or actually short; what it
+ * costs; and what building the cheapest local option would change.
+ */
+function statusLine(c: SvcCat, g: Game): string {
   if (c === 'power' || c === 'water' || c === 'sewage') {
-    const st = S.util[c];
+    const st = S.util[c], perWk = (units: number) => units * IMPORT_PRICE[c] * 7;
     const short = st.unserved > 0;
-    return `<div class="svc-stat ${short ? 'bad' : ''}">${fmt(st.served, c)} used · ${fmt(st.supply, c)} built · importing ${fmt(st.imported, c)}${short ? ` · <b>${st.unserved} cut off</b>` : ''}</div>`;
+    const plural = (n: number) => `${n} building${n === 1 ? '' : 's'}`;
+    const causes = [st.noLink && `${plural(st.noLink)} on roads with no plant and no route to the highway, where imports come in`, st.capped && `${plural(st.capped)} past the import limit`, st.noRoad && `${plural(st.noRoad)} not on a road`].filter(Boolean).join('; ');
+    const head = short ? `⚠️ <b>${plural(st.unserved)} cut off</b>: ${causes}`
+      : st.demand <= 0 ? 'Nobody needs any yet'
+      : st.imported > 0.001 ? `✅ Everyone supplied · <b>${pct(st.imported / st.demand)} imported</b>` : '✅ Everyone supplied by your own plants';
+    const rows = [`${head}`, `Needed ${fmt(st.demand, c)} · your plants ${fmt(st.supply, c)} · imported ${fmt(st.imported, c)} (<b>${usd(perWk(st.imported))}/wk</b>; the highway sells at most ${fmt(IMPORT_CAP[c], c)})`];
+    if (c === 'water') { let dirty = 0; for (const bs of S.b.values()) if (bs.dirty) dirty++; if (dirty) rows.push(`<b class="neg">${dirty} buildings drink sewage-tainted water</b> (a pump within 500 m of an outfall): people get sick`); }
+    const d = cheapestLocal(g, c, (x) => !!x[c]);
+    if (d && (st.imported > 0.001 || short)) {
+      const out = (d[c] ?? 0) * (d.id === 'solarFarm' ? solarFactor(g) : 1);
+      const save = perWk(Math.min(out, st.imported)) - d.upkeep;
+      const fix = st.noLink ? `. Build it on the cut-off roads, or connect those roads to the highway` : st.capped ? `: covers what the highway can't sell` : save > 0 ? `: saves about <b class="pos">${usd(save)}/wk</b> on imports` : `: costs about ${usd(-save)}/wk more than importing`;
+      rows.push(`<span class="svc-trade">${d.icon} A ${esc(d.name)} (${usd(d.cost)} + ${usd(d.upkeep)}/wk) makes ${fmt(out, c)}${fix}${d.nearWater ? ' (must touch water)' : ''}.</span>`);
+    }
+    return `<div class="svc-stat ${short ? 'bad' : ''}">${rows.join('<br>')}</div>`;
   }
-  if (c === 'garbage') { const G = S.garbage; return `<div class="svc-stat ${S.counts.trash ? 'bad' : ''}">${G.made.toFixed(1)} t/day made · ${G.collected.toFixed(1)} collected · ${G.exported.toFixed(1)} hauled out of county · landfill ${Math.round(G.stored)}/${Math.round(G.capacity)} t</div>`; }
+  if (c === 'garbage') {
+    const G = S.garbage, piling = S.counts.trash;
+    const head = piling ? `⚠️ <b>Trash piling up at ${piling} building${piling === 1 ? '' : 's'}</b> (sickness, fire risk, nobody moves in)` : G.made <= 0.01 ? 'No trash yet' : G.exported > 0.01 ? '✅ All trash handled · the county contractor hauls some (paid)' : '✅ All trash handled by your trucks';
+    const rows = [head, `Made ${G.made.toFixed(1)} t/day · your trucks ${G.collected.toFixed(1)} · county contract ${G.exported.toFixed(1)} t/day (<b>${usd(G.exported * TRASH_PRICE * 7)}/wk</b>; takes at most ${TRASH_EXPORT} t/day)${G.capacity ? ` · landfill ${Math.round(G.stored).toLocaleString()}/${Math.round(G.capacity).toLocaleString()} t` : ''}`];
+    const d = cheapestLocal(g, 'garbage', (x) => !!x.collect);
+    if (d && (G.exported > 0.01 || piling)) rows.push(`<span class="svc-trade">${d.icon} A ${esc(d.name)} (${usd(d.cost)} + ${usd(d.upkeep)}/wk) collects ${d.collect} t/day within ${((d.reach ?? 0) / 60).toFixed(1)} min${G.exported > 0.01 ? `: saves about <b class="pos">${usd(Math.min(d.collect ?? 0, G.exported) * TRASH_PRICE * 7 - d.upkeep)}/wk</b> on the contract` : ''}.</span>`);
+    return `<div class="svc-stat ${piling ? 'bad' : ''}">${rows.join('<br>')}</div>`;
+  }
   const covs: Record<string, Cov[]> = { fire: ['fire'], police: ['police'], health: ['health'], education: ['school', 'college'], parks: ['parks'] };
-  return `<div class="svc-stat">Coverage ${pct(avgCov(covs[c]))} of buildings</div>`;
+  const why: Record<string, string> = {
+    fire: 'Buildings out of reach can catch fire, and fires spread.',
+    police: 'Crime lowers land value and makes people move out.',
+    health: 'Sick residents move out; a clinic in reach treats them.',
+    education: 'Schools let homes reach level 3+ and offices grow; college grads unlock the top levels.',
+    parks: 'Parks raise land value nearby.',
+  };
+  const risk = c === 'fire' ? S.counts.fires : c === 'police' ? S.counts.crime : c === 'health' ? S.counts.sick : 0;
+  const riskText = risk ? ` · <b class="neg">${risk} building${risk === 1 ? '' : 's'} ${c === 'fire' ? 'on fire' : c === 'police' ? 'with high crime' : 'with sick residents'} now</b>` : '';
+  const cov = avgCov(covs[c]);
+  const head = S.b.size === 0 ? 'No buildings to cover yet' : cov <= 0.001 ? `No ${CATS.find((x) => x.id === c)?.label.toLowerCase()} coverage yet` : `Covers ${pct(cov)} of buildings`;
+  return `<div class="svc-stat ${risk ? 'bad' : ''}">${head}${riskText}<br><span class="svc-trade">${why[c]}</span></div>`;
 }
 
 function esc(s: string) { return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!); }
@@ -1245,14 +1307,19 @@ registerPanel({
     el.innerHTML = `
       <div class="sp-title">City Services <small>Power, water and sewage flow along roads. Services reach buildings by drive time.</small></div>
       <div class="sp-row svc-cats">${CATS.map((c) => `<button class="chip ${c.id === panelCat ? 'on' : ''}" data-cat="${c.id}">${c.icon} ${c.label}</button>`).join('')}</div>
-      ${statusLine(panelCat)}
+      <div class="svc-live">${statusLine(panelCat, g)}</div>
       <div class="sp-grid">${list.map((d) => {
         const locked = !sandbox && pop < d.unlock;
         const on = g.tools.active === 'ext' && g.tools.extTool === 'svcPlace' && placing === d.id;
-        return `<button class="card ${on ? 'on' : ''}" data-svc="${d.id}" ${locked ? 'disabled' : ''} title="${esc(d.blurb)}"><span class="ci">${d.icon}</span><b>${esc(d.name)}</b><small>${locked ? `🔒 ${d.unlock.toLocaleString()} pop` : `$${d.cost.toLocaleString()} · $${d.upkeep}/wk`}</small></button>`;
+        // what it does, in numbers: output for plants, reach for everything else
+        const does = d.power ? fmt(d.power, 'power') : d.water ? fmt(d.water, 'water') : d.sewage ? fmt(d.sewage, 'sewage') : d.collect ? `${d.collect} t/day` : d.reach ? `${(d.reach / 60).toFixed(1)} min reach` : '';
+        return `<button class="card ${on ? 'on' : ''}" data-svc="${d.id}" ${locked ? 'disabled' : ''} title="${esc(d.blurb)}"><span class="ci">${d.icon}</span><b>${esc(d.name)}</b><small>${locked ? `🔒 Pop ${d.unlock.toLocaleString()}` : `$${d.cost.toLocaleString()} · $${d.upkeep}/wk${does ? ` · ${does}` : ''}`}</small></button>`;
       }).join('')}</div>
       <div class="svc-blurb">${esc(sel && sel.cat === panelCat ? sel.blurb : list[0]?.blurb ?? '')}</div>`;
     el.querySelectorAll<HTMLButtonElement>('[data-cat]').forEach((b) => b.addEventListener('click', () => {
+      // one active tool: switching category puts the other category's
+      // building away (ghost, warning and click handler together)
+      if (panelCat !== b.dataset.cat && g.tools.active === 'ext' && g.tools.extTool === 'svcPlace') g.tools.set('inspect');
       panelCat = b.dataset.cat as SvcCat;
       const v = VIEW_FOR_CAT[panelCat];
       g.overlays.setExt(v ? viewObjs.get(v)! : null);
@@ -1269,6 +1336,13 @@ registerPanel({
   close(g) {
     if (g.tools.active === 'ext' && g.tools.extTool === 'svcPlace') g.tools.set('inspect');
     if (S.view) g.overlays.setExt(null);
+  },
+  // the status line follows the city while the panel stays open
+  refresh(el, g) {
+    const live = el.querySelector('.svc-live');
+    if (!live) return;
+    const html = statusLine(panelCat, g);
+    if (live.innerHTML !== html) live.innerHTML = html;
   },
 });
 

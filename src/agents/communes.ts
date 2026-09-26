@@ -158,7 +158,7 @@ export class Communes {
   }
 
   blockers() {
-    return this.list.filter((c) => c.state !== 'gone').map((c) => ({ x: c.x, z: c.z, r: c.r + 6, name: c.name }));
+    return this.list.filter((c) => c.state !== 'gone').map((c) => ({ x: c.x, z: c.z, r: c.r + 6, name: c.name, id: c.id }));
   }
 
   /** Land value drag near communes (drum circles, patchouli). */

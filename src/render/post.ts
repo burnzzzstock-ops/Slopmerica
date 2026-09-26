@@ -224,12 +224,12 @@ export interface PostLook {
 
 export class PostFX {
   readonly enabled: boolean;
-  /** set when this GPU drew a black frame through the effects (see Game.checkBlackFrame) */
-  private off = false;
+  /** why the effects were switched off at runtime (see Game.checkBlackFrame), or null */
+  offReason: string | null = null;
   /** effects are on and haven't been switched off */
-  get active() { return this.enabled && !this.off; }
+  get active() { return this.enabled && !this.offReason; }
   /** fall back to drawing the scene straight to the screen */
-  turnOff() { this.off = true; }
+  turnOff(reason: string) { this.offReason = reason; }
   /** Optional looks (dev lab / photo mode). */
   vignette = true;
   tiltShift = false;

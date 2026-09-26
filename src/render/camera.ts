@@ -1,5 +1,5 @@
 // Cities: Skylines-style camera: WASD/arrow pan, right/middle-drag orbit,
-// wheel zoom toward cursor, Q/E rotate. Touch: one finger pans (or uses the
+// wheel zoom toward cursor, Q/E rotate, mouse at a screen edge scrolls. Touch: one finger pans (or uses the
 // active tool), two fingers pinch-zoom, twist to rotate, drag to tilt/pan.
 import * as THREE from 'three';
 import { HALF, WATER } from '../config';
@@ -15,6 +15,8 @@ export interface PointerHandlers {
   move(p: THREE.Vector3 | null, e: PointerEvent, dragging: boolean): void;
   up(p: THREE.Vector3 | null, e: PointerEvent, wasDrag: boolean): void;
   cancel(): void;
+  /** a right-click without a drag (defaults to cancel) */
+  rightClick?(): void;
 }
 
 export class RTSCamera {
@@ -24,6 +26,12 @@ export class RTSCamera {
   pitch = 0.85;
   private goal = { target: new THREE.Vector3(0, 10, 0), distance: 700, yaw: 0.6, pitch: 0.85 };
   private keys = new Set<string>();
+  /** mouse at a window edge scrolls the map (desktop; Settings can turn it off) */
+  edgeScroll = true;
+  /** last mouse position and whether it was over the map itself (not a panel) */
+  private mouse: { x: number; y: number; overMap: boolean } | null = null;
+  /** seconds the mouse has rested in the edge band (a short delay avoids jolts on the way to a button) */
+  private edgeT = 0;
   private ray = new THREE.Raycaster();
   private ndc = new THREE.Vector2();
   private pointers = new Map<number, { x: number; y: number; sx: number; sy: number }>();
@@ -42,7 +50,9 @@ export class RTSCamera {
       this.keys.add(e.key.toLowerCase());
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
-    window.addEventListener('blur', () => this.keys.clear());
+    window.addEventListener('blur', () => { this.keys.clear(); this.mouse = null; });
+    // the mouse left the window (or the frame the game runs in): stop edge scrolling
+    window.addEventListener('mouseout', (e) => { if (!e.relatedTarget) this.mouse = null; });
     dom.addEventListener('contextmenu', (e) => e.preventDefault());
     dom.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     dom.addEventListener('pointerdown', (e) => this.onDown(e));
@@ -119,6 +129,7 @@ export class RTSCamera {
   }
 
   private onMove(e: PointerEvent) {
+    if (e.pointerType === 'mouse') this.mouse = { x: e.clientX, y: e.clientY, overMap: e.target === this.dom };
     const pt = this.pointers.get(e.pointerId);
     if (e.target === this.dom || pt) this.lastClient = { x: e.clientX, y: e.clientY };
     if (!pt) {
@@ -175,8 +186,9 @@ export class RTSCamera {
       if (cancelled) this.handlers.cancel();
       else this.handlers.up(this.groundAt(e.clientX, e.clientY - this.lift(e)), e, this.moved);
     } else if (this.mode === 'orbit' && this.orbitButton === 2 && !this.moved && !cancelled) {
-      // right-click (no drag) = stop: ends the road being drawn; right-drag still orbits
-      this.handlers.cancel();
+      // right-click (no drag) = stop: ends the road being drawn, puts a building
+      // away; right-drag still orbits
+      if (this.handlers.rightClick) this.handlers.rightClick(); else this.handlers.cancel();
     } else if (this.mode === 'pan1' && !this.moved && !cancelled) {
       // a tap without a drag acts as a click
       const p = this.groundAt(e.clientX, e.clientY);
@@ -214,6 +226,33 @@ export class RTSCamera {
     this.clampTarget();
   }
 
+  /**
+   * Edge scrolling: the closer the mouse is to a window edge (within EDGE px,
+   * over the map rather than a panel), the faster the map slides that way.
+   * Off while a button is held (drawing, orbiting) or the tab is hidden.
+   */
+  private edgePan(dt: number) {
+    const EDGE = 18, m = this.mouse;
+    const w = window.innerWidth, h = window.innerHeight;
+    let ex = 0, ey = 0;
+    if (this.edgeScroll && m && m.overMap && this.pointers.size === 0 && !document.hidden) {
+      if (m.x < EDGE) ex = -(1 - m.x / EDGE); else if (m.x > w - EDGE) ex = 1 - (w - m.x) / EDGE;
+      if (m.y < EDGE) ey = -(1 - m.y / EDGE); else if (m.y > h - EDGE) ey = 1 - (h - m.y) / EDGE;
+    }
+    if (!ex && !ey) { this.edgeT = 0; return; }
+    this.edgeT += dt;
+    if (this.edgeT < 0.1) return;
+    // ease in over the first half second, then full speed
+    const ramp = Math.min(1, (this.edgeT - 0.1) / 0.4);
+    const sp = Math.max(120, this.distance) * 1.1 * dt * ramp * (this.keys.has('shift') ? 2.5 : 1);
+    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+    const r = Math.sign(ex) * (0.35 + 0.65 * Math.abs(ex)), f = -Math.sign(ey) * (0.35 + 0.65 * Math.abs(ey));
+    // screen right = (fz, -fx), screen up = (-fx, -fz), as with the D and W keys
+    this.goal.target.x += (r * fz - f * fx) * sp;
+    this.goal.target.z += (-r * fx - f * fz) * sp;
+    this.clampTarget();
+  }
+
   private clampTarget() {
     this.goal.target.x = clamp(this.goal.target.x, -HALF - 200, HALF + 200);
     this.goal.target.z = clamp(this.goal.target.z, -HALF - 200, HALF + 200);
@@ -233,6 +272,7 @@ export class RTSCamera {
       this.goal.target.z += mz * sp;
       this.clampTarget();
     }
+    this.edgePan(dt);
     if (k.has('q')) this.goal.yaw += dt * 1.4;
     if (k.has('e')) this.goal.yaw -= dt * 1.4;
     if (k.has('r')) this.goal.pitch = clamp(this.goal.pitch + dt, this.minPitch(), 1.48);

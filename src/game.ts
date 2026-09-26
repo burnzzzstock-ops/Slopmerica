@@ -16,9 +16,9 @@ import { AudioEngine } from './audio/audio';
 import { RoadNetwork, RSeg, Plan } from './roads/network';
 import { RoadRenderer } from './roads/roadMesh';
 import { ROAD_TYPES, RoadTypeId } from './roads/roadTypes';
-import { Zoning } from './zones/zoning';
+import { Zoning, type ZCell } from './zones/zoning';
 import { Buildings, Bld } from './sim/buildings';
-import { Sim, Mode, SPEEDS, DAY_SECONDS } from './sim/sim';
+import { Sim, Mode, SPEEDS, DAY_SECONDS, usd } from './sim/sim';
 import { Traffic, Car } from './agents/traffic';
 import { Pedestrians, Ped } from './agents/pedestrians';
 import { Communes, Commune } from './agents/communes';
@@ -33,6 +33,7 @@ import { buildingMaterial } from './buildings/generator';
 import { loadKitArt, setKitNight } from './buildings/kitGenerator';
 import { applySave, type SaveData } from './sim/save';
 import { crumb } from './ui/bugreport';
+import { FrameProfiler } from './core/prof';
 
 export type GameMode = Mode;
 
@@ -50,6 +51,7 @@ export type Selection =
   | { kind: 'ped'; p: Ped }
   | { kind: 'commune'; c: Commune }
   | { kind: 'road'; s: RSeg }
+  | { kind: 'lot'; cell: ZCell }
   | null;
 
 export interface FeedSink {
@@ -61,12 +63,31 @@ export interface UiSink {
   floatText(text: string, p: THREE.Vector3, color: string): void;
   select(sel: Selection): void;
   banner(title: string, sub: string): void;
+  /** a new tool unlocked at `pop`: say where it is, without covering the map */
+  unlocked?(label: string, pop: number): void;
   ending(kind: 'sprawl' | 'bankrupt'): void;
 }
 
+/**
+ * One undoable purchase. The rule is the same for all of them: undo removes
+ * what was built and refunds exactly what it cost (net of any grant).
+ */
 export type UndoAction =
-  | { kind: 'build'; segIds: number[]; refund: number }
-  | { kind: 'upgrade'; prev: { id: number; type: RoadTypeId }[]; refund: number };
+  | { kind: 'build'; segIds: number[]; refund: number; label: string }
+  | { kind: 'upgrade'; prev: { id: number; type: RoadTypeId }[]; refund: number; label: string }
+  | { kind: 'place'; bldId: number; refund: number; label: string };
+
+/** landmark names and icons (Landmarks panel, the "Placing …" badge) */
+export const LANDMARKS: { id: LandmarkId; name: string; icon: string }[] = [
+  { id: 'slopCannon', name: 'The Slop Cannon', icon: '💥' },
+  { id: 'slop69Field', name: 'Slop 69 Field', icon: '⚾' },
+  { id: 'pigCabanaResort', name: 'Pig Cabana Resort', icon: '🐷' },
+  { id: 'neuralFlyDatacenter', name: 'Neural Fly Datacenter', icon: '🪰' },
+  { id: 'propaneParadise', name: 'Propane Paradise', icon: '🔥' },
+  { id: 'fillErUpMegaStation', name: 'Fill Er Up Mega Station', icon: '⛽' },
+  { id: 'megachurch', name: 'Megachurch', icon: '⛪' },
+  { id: 'waterTower', name: 'Water Tower', icon: '🗼' },
+];
 
 export const LANDMARK_COST: Record<LandmarkId, number> = {
   slopCannon: 25000, slop69Field: 60000, pigCabanaResort: 45000, neuralFlyDatacenter: 80000, propaneParadise: 18000,
@@ -123,6 +144,8 @@ export class Game {
   private resolutionCooldown = 0;
   private dynamicScale = 1;
   pendingQuality: Quality['name'] | null = null;
+  /** where each frame's time goes; its slowest frames go into bug reports */
+  readonly prof = new FrameProfiler();
   /** when to look for an all-black picture (performance.now() ms) */
   private blackChecks: number[] = [];
   onFrame: ((dt: number) => void)[] = [];
@@ -188,6 +211,9 @@ export class Game {
     for (let t = 0; t <= 1; t += 0.05) avoid.push({ x: start.edge.x + (start.x - start.edge.x) * t, z: start.edge.z + (start.z - start.edge.z) * t, r: 140 });
     this.communes = new Communes(this.terrain, this.trees, opts.map, communeCount, this.map.def.seed + 5, opts.mode === 'hippie' ? 0.3 : 0.12, avoid);
     this.scene.add(this.communes.group);
+    this.net.blockerReason = (id) => this.communeRoadRule(id);
+    // zoned lots are dimmed while their zone is waiting for demand (overlay only)
+    this.zones.growable = (z) => this.tools.zoneDemand(z).ok;
     this.syncBlockers();
     this.groundDetail = new GroundDetail(this.terrain, this.map, this.q, {
       roads: this.net, zones: this.zones, buildings: this.buildings, communes: this.communes,
@@ -212,6 +238,7 @@ export class Game {
     this.tools = new Tools(this);
 
     this.rts = new RTSCamera(this.camera, this.renderer.domElement, this.terrain, this.tools as PointerHandlers);
+    try { this.rts.edgeScroll = localStorage.getItem('slopmerica.edgeScroll') !== '0'; } catch { /* private mode: default on */ }
     this.rts.setView(start.x, start.z, IS_TOUCH ? 900 : 800, start.yaw, 0.72, true);
 
     // --- ambient life (codex) ---
@@ -222,7 +249,11 @@ export class Game {
     this.wireEvents();
     // extension systems (transit, services, ...): init before a save restores their data
     for (const s of EXT.systems) s.init?.(this);
-    this.sim.events.on('day', (d) => { for (const s of EXT.systems) s.daily?.(this, d); });
+    this.sim.events.on('day', (d) => {
+      for (const s of EXT.systems) s.daily?.(this, d);
+      // demand moved: re-shade which zoned lots are waiting
+      if (this.zones.overlayActive) this.zones.markOverlayDirty();
+    });
     this.sim.events.on('week', () => { for (const s of EXT.systems) s.weekly?.(this); });
     if (opts.restore) applySave(this, opts.restore);
     else this.seedRoad(start);
@@ -294,6 +325,16 @@ export class Game {
     }
   }
 
+  /** Why a road can't cross a commune, and the two ways through (or none). */
+  communeRoadRule(id: number): string {
+    const c = this.communes.list.find((x) => x.id === id);
+    if (!c) return 'Commune land: roads can’t cross it.';
+    if (c.forever) return `Protected land: ${c.name} is here forever. Roads must go around.`;
+    if (c.state === 'suing') return `Commune land: roads can’t cross ${c.name}. Your lawsuit is in court (${Math.max(0, Math.ceil(c.suitDays - this.sim.day))} days left).`;
+    const pct = (v: number) => `${Math.round(v * 100)}%`;
+    return `Commune land: roads can’t cross ${c.name}. Pay them off ${usd(this.communes.bribeCost(c))} (${pct(this.communes.bribeOdds(c))} chance) or sue ${usd(this.communes.suitCost(c))} (${pct(this.communes.suitOdds(c))}, 20 days). Click here for options.`;
+  }
+
   syncBlockers() {
     const bl = this.communes.blockers();
     this.net.blockers = bl;
@@ -327,7 +368,8 @@ export class Game {
       if (m.kind === 'population') this.feed.push('populationMilestone', { count: m.value });
       if (m.kind === 'nature') this.feed.push('natureMilestone', { count: Math.round(m.value * 100) });
       if (m.kind === 'sprawl') this.feed.push('sprawlMilestone', { count: Math.round(m.value * 100) });
-      this.ui.banner(m.label, m.kind === 'nature' ? 'The trees had it coming.' : m.kind === 'unlock' ? 'New stuff in the toolbar.' : this.cityName);
+      if (m.kind === 'unlock' && this.ui.unlocked) this.ui.unlocked(m.label, m.value);
+      else this.ui.banner(m.label, m.kind === 'nature' ? 'The trees had it coming.' : m.kind === 'unlock' ? 'New stuff in the toolbar.' : this.cityName);
       this.audio.play('levelUp');
     });
     this.sim.events.on('lowMoney', () => this.feed.push('lowMoney'));
@@ -384,19 +426,31 @@ export class Game {
     return this.undoStack.length > 0;
   }
 
+  /** what Undo would reverse, e.g. "Sheriff's Office (+$11,000 back)"; null when nothing */
+  get undoLabel(): string | null {
+    const a = this.undoStack[this.undoStack.length - 1];
+    return a ? `${a.label} (+${usd(a.refund)} back)` : null;
+  }
+
   undo() {
     const a = this.undoStack.pop();
     if (!a) return false;
     if (a.kind === 'build') {
       // splits may have renumbered segments; remove what's still there
       for (const id of a.segIds) if (this.net.segs.has(id)) this.net.removeSeg(id);
-    } else {
+    } else if (a.kind === 'upgrade') {
       for (const p of a.prev) if (this.net.segs.has(p.id)) this.net.upgrade(p.id, p.type);
+    } else {
+      const b = this.buildings.list.get(a.bldId);
+      // already gone (burned, bulldozed): nothing to take back, nothing to refund
+      if (!b) { this.toast(`Can't undo ${a.label}: it's already gone.`, true); this.tools.cancel(); return true; }
+      this.buildings.demolish(b, 'undone');
     }
-    this.sim.refund(a.refund);
+    this.sim.refund(a.refund, `Undo: ${a.label}`);
+    crumb(`undo ${a.label}`);
     this.tools.cancel();
     this.audio.play('bulldoze', 0.6);
-    this.toast('Undone. The trees are still gone though.');
+    this.toast(`Undone: ${a.label}, ${usd(a.refund)} back.${a.kind === 'build' ? ' The trees are still gone though.' : ''}`);
     return true;
   }
 
@@ -426,8 +480,8 @@ export class Game {
     if (q.net > this.sim.spendable()) return fail('Not enough money for one more lane');
     const prev = segs.map((s) => ({ id: s.id, type: s.type }));
     for (const s of segs) this.net.upgrade(s.id, next);
-    this.pushUndo({ kind: 'upgrade', prev, refund: q.net });
-    this.sim.spend(q.cost, 'ONE MORE LANE', 'roads');
+    this.pushUndo({ kind: 'upgrade', prev, refund: q.net, label: 'ONE MORE LANE' });
+    this.sim.spend(q.cost, 'ONE MORE LANE', 'construction');
     this.sim.earn(q.grant, 'grants');
     if (q.grant > 0 && at) this.floatText(`+$${q.grant.toLocaleString()} Federal Slop Grant`, at, '#9dff3c');
     this.onLaneAdded(segs, next);
@@ -438,7 +492,7 @@ export class Game {
   bulldozeRoad(seg: RSeg) {
     if (!this.net.segs.has(seg.id)) return;
     this.net.removeSeg(seg.id);
-    this.sim.refund(Math.round(seg.length * ROAD_TYPES[seg.type].costPerM * 0.2));
+    this.sim.refund(Math.round(seg.length * ROAD_TYPES[seg.type].costPerM * 0.2), `Bulldozed ${seg.name} (20% back)`);
     this.audio.play('bulldoze');
   }
 
@@ -483,6 +537,8 @@ export class Game {
     if (this.net.pickSeg(x, z, r - 2)) return { ok: false, yaw, reason: 'Overlaps a road' };
     for (const b of this.buildings.near(x, z, r + 30)) if (Math.hypot(b.x - x, b.z - z) < r + Math.max(b.hw, b.hd)) return { ok: false, yaw, reason: `Overlaps ${b.label}` };
     if (this.communes.at(x, z)) return { ok: false, yaw, reason: 'Hippies live here' };
+    const broke = this.sim.cantAfford(LANDMARK_COST[id]);
+    if (broke) return { ok: false, yaw, reason: broke };
     return { ok: true, yaw };
   }
 
@@ -490,9 +546,10 @@ export class Game {
     const chk = this.canPlaceLandmark(id, p.x, p.z);
     if (!chk.ok) { this.toast(chk.reason ?? 'Nope', true); this.audio.play('error'); return false; }
     const cost = LANDMARK_COST[id];
-    if (cost > this.sim.spendable()) { this.toast('Not enough money', true); this.audio.play('error'); return false; }
-    this.sim.spend(cost, 'Landmark');
+    const name = LANDMARKS.find((l) => l.id === id)?.name ?? 'Landmark';
+    this.sim.spend(cost, name);
     const b = this.buildings.placeLandmark(id, p.x, p.z, chk.yaw);
+    this.pushUndo({ kind: 'place', bldId: b.id, refund: cost, label: name });
     this.feed.push('buildingOpened', { building: b.label, brand: id });
     this.audio.play(id === 'slopCannon' ? 'cannon' : 'build');
     return true;
@@ -571,7 +628,28 @@ export class Game {
     if (c) return this.select({ kind: 'commune', c });
     const s = this.net.pickSeg(p.x, p.z, 1);
     if (s) return this.select({ kind: 'road', s: s.seg });
+    // an empty zoned lot: say why nothing has grown there yet
+    const lot = this.zones.cellsNear(p.x, p.z, 5).filter((c) => c.valid && c.zone && !c.bld).sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0];
+    if (lot) return this.select({ kind: 'lot', cell: lot });
     this.select(null);
+  }
+
+  /**
+   * Why an empty zoned lot hasn't grown, most important reason first, from
+   * the same rules the builders use: its zone needs demand of +5, only
+   * street-front lots start buildings, and builders start a limited number
+   * of sites a day, spread over every empty lot of that zone.
+   */
+  lotStatus(c: ZCell): { primary: string; demand: { key: 'res' | 'com' | 'ind' | 'off'; v: number } | null } {
+    const z = c.zone!;
+    const d = this.tools.zoneDemand(z);
+    const key = z === 'resLow' || z === 'resHigh' ? 'res' : z === 'comLow' || z === 'comHigh' ? 'com' : z === 'industry' ? 'ind' : 'off';
+    const sign = (v: number) => (v > 0 ? `+${v}` : `${v}`);
+    if (!d.ok) return { primary: `Waiting for demand. ${d.letter} demand is ${sign(d.v)}; builders start at +5.`, demand: { key, v: d.v } };
+    if (c.row > 0) return { primary: 'Back lot. Only lots facing the street start new buildings; this one fills when a bigger building grows in front of it.', demand: null };
+    const lots = this.zones.candidates(z, []).length;
+    const perDay = Math.min(5, (0.8 + this.sim.population / 800) * this.sim.growthMul);
+    return { primary: `In line. Builders want this zone (${d.letter} ${sign(d.v)}) and start about ${perDay.toFixed(1)} buildings a day across ${lots} empty street-front lot${lots === 1 ? '' : 's'} of every kind that's in demand.`, demand: { key, v: d.v } };
   }
 
   select(sel: Selection) {
@@ -608,6 +686,7 @@ export class Game {
     }
     this.setRenderScale(this.dynamicScale, presetPixelRatio(name));
     this.blackChecks.push(performance.now() + 2500);
+    this.prof.note(`quality → ${name}`);
     return this.pendingQuality !== null;
   }
 
@@ -682,7 +761,7 @@ export class Game {
     }
     if (lit > 0) return 'ok';
     if (this.post.active) {
-      this.post.turnOff();
+      this.post.turnOff('the picture came out black with them on');
       crumb('black frame: turned post effects off');
       console.warn('SLOPMERICA: the picture came out black with post effects on; drawing without them.');
       this.blackChecks.unshift(performance.now() + 1500);
@@ -716,6 +795,8 @@ export class Game {
   private dayTick = 0;
   private emitT = 0;
   frame(dt: number, render = true) {
+    const P = this.prof;
+    P.begin();
     this.time += dt;
     const spd = SPEEDS[this.sim.speed];
     this.rts.update(dt);
@@ -728,7 +809,11 @@ export class Game {
       this.camera.updateProjectionMatrix();
     }
     this.env.update(0, this.rts.target, this.rts.distance, this.camera.position);
+    P.lap('camera+sky');
+    const dayWas = Math.floor(this.sim.day);
     this.sim.update(dt);
+    if (Math.floor(this.sim.day) !== dayWas) P.note(Math.floor(this.sim.day) % 7 === 0 ? 'new week' : 'new day');
+    P.lap('sim');
     const t = this.sim.time(this.hour);
     this.weather.update(dt, t, this.camera, spd, this.rts.distance);
     this.groundDetail.update(this.time, this.rts.target, this.rts.distance, {
@@ -740,19 +825,25 @@ export class Game {
     this.sim.weatherBuildMul = fxs.buildMul;
     this.sim.weatherDemandMul = fxs.demandMul;
     this.peds.outdoorMul = fxs.outdoorPeopleMul * (this.env.night > 0.5 ? 0.6 : 1);
+    P.lap('weather');
     if (Math.floor(this.sim.day) !== this.dayTick) {
       this.dayTick = Math.floor(this.sim.day);
       this.communeTick();
     }
+    P.lap('communes');
     this.terrain.updateLOD(this.camera.position);
     this.trees.setDayOfYear(t.dayOfYear);
     this.trees.update(this.time, this.rts.target, this.rts.distance);
+    P.lap('terrain+trees');
     this.zones.update();
     this.roads.update();
+    P.lap('zones+roads');
     const jobs = this.sim.jobsFilled;
     this.traffic.update(dt, spd, this.hour, this.sim.population, jobs, this.rts.target);
+    P.lap('traffic');
     this.peds.population = this.sim.population;
     this.peds.update(dt, spd, this.rts.target, this.rts.distance, this.time);
+    P.lap('people');
     this.communes.update(dt, this.env.night, this.time, this.camera.position);
     this.emitT -= dt;
     if (this.emitT <= 0 && spd > 0) {
@@ -781,16 +872,22 @@ export class Game {
         }
       }
     }
+    P.lap('communes');
     this.tools.update();
     this.overlays.update(dt);
     this.particles.night = this.env.night;
     this.particles.wind.copy(this.weather.wind);
     this.particles.update(dt, this.camera);
+    P.lap('tools+particles');
     {
       const simDays = (dt * spd) / DAY_SECONDS;
-      for (const s of EXT.systems) s.frame?.(this, dt, simDays);
+      for (const s of EXT.systems) {
+        s.frame?.(this, dt, simDays);
+        P.lap(s.id);
+      }
     }
     for (const f of this.onFrame) f(dt);
+    P.lap('hud+autosave');
     this.terrain.flush();
 
     // night lighting
@@ -821,10 +918,12 @@ export class Game {
       construction: Math.min(1, this.buildings.counts().building / 20), people: Math.min(1, this.peds.peds.length / 150), night: n,
       weather: this.weather.kind, weatherIntensity: this.weather.intensity, season: this.weather.season,
     });
+    P.lap('lighting+audio');
     if (render) {
       this.renderer.info.reset();
       wu.uReflOn.value = this.water.reflection?.shouldRender(this.camera) ? 1 : 0;
       this.post.render(n);
+      P.lap('render');
       if (this.blackChecks.length && performance.now() >= this.blackChecks[0] && !document.hidden) {
         this.blackChecks.shift();
         if (this.hour > 7.5 && this.hour < 17.5) this.checkBlackFrame();
@@ -833,9 +932,11 @@ export class Game {
       // three.js has created its shadow texture. Reuse the previous reflection
       // for this frame and refresh it after the main scene has rendered.
       this.water.reflection?.render(this.renderer, this.scene, this.camera, [this.water.mesh]);
+      P.lap('water reflection');
       this.perf.calls = this.renderer.info.render.calls;
       this.perf.triangles = this.renderer.info.render.triangles;
     }
+    P.end(() => `day ${Math.floor(this.sim.day)} ${String(Math.floor(this.hour)).padStart(2, '0')}:${String(Math.floor((this.hour % 1) * 60)).padStart(2, '0')} · speed ${this.sim.speed} · ${this.tools.active} · zoom ${Math.round(this.rts.distance)} · ${this.buildings.list.size} bld, ${this.traffic.count} cars, pop ${this.sim.population}`);
   }
 }
 

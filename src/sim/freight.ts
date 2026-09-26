@@ -254,7 +254,14 @@ registerSystem({
     g.sim.hooks.vacancy.push((b) => { const s = shops.get(b.id); return s && s.stock < 0.05 && s.dryDays >= 5 ? 'No goods to sell' : null; });
     g.sim.hooks.demand.push((d, why) => { const share = importShare(); if (share > 0) { d.ind += Math.min(25, share * 30); why.ind.push(`Shops import ${Math.round(share * 100)}% of goods`); } });
     g.sim.hooks.landValue.push((b) => b.zone === 'industry' ? 0 : -Math.min(5, (truckRoutes.get(b.seg) ?? 0) * 0.35));
-    g.sim.hooks.weekly.push((add) => { if (exportIncome > 0) add('Freight export income', -exportIncome, 'other'); if (importCosts > 0) add('Emergency goods imports', importCosts, 'other'); exportIncome = 0; importCosts = 0; });
+    // the forecast repeats last week's freight; the bill is this week's
+    let lastExport = 0, lastImport = 0;
+    g.sim.hooks.weekly.push((add, forecast) => {
+      const ex = forecast ? lastExport : exportIncome, im = forecast ? lastImport : importCosts;
+      if (ex > 0) add('Freight export income', -ex, 'freight');
+      if (im > 0) add('Emergency goods imports', im, 'freight');
+      if (!forecast) { lastExport = exportIncome; lastImport = importCosts; exportIncome = 0; importCosts = 0; }
+    });
     (g as Game & { freight?: unknown }).freight = {
       stats: () => ({
         factories: factories.size, shops: shops.size, dryShops: [...shops.values()].filter((s) => s.dryDays >= 5).length,

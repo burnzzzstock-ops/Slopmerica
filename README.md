@@ -41,6 +41,13 @@ node scripts/commandtest.mjs     # road upgrade/bulldoze: same rules from toolba
 node scripts/savecontinuity.mjs  # a reload resumes the same future (rng, ledger, trees, imports)
 node scripts/qualitytest.mjs     # graphics presets never change the simulation
 node scripts/nantest.mjs         # one NaN/Inf pixel can't black out the screen; black-frame fallback
+node scripts/ledgertest.mjs      # the weekly rate is recurring only; weeks reconcile; budget, previews, in-the-red card
+node scripts/tooltest.mjs        # one active tool: tab switches, Esc, right-click, Cancel, double-clicks, undo
+node scripts/roadrules.mjs       # a blocked road says the rule and the way out (communes)
+node scripts/zonetest.mjs        # zoning strokes report what they did; lots say why they wait
+node scripts/svcstatus.mjs       # services: covered / paid fallback / short, costs, why cut off
+node scripts/progresstest.mjs    # unlocks say where; NEW badges; locked cards; nature & sprawl meters
+node scripts/edgetest.mjs        # mouse at a screen edge scrolls the map
 ```
 
 `BASE_URL=http://127.0.0.1:5174` points any of them at another server (handy for running the suite against a frozen copy while you keep editing). Scripts that assert exit nonzero on failure.

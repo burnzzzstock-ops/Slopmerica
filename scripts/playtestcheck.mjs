@@ -54,7 +54,7 @@ const status = await page.textContent('.bug-status');
 const clip = await page.evaluate(() => navigator.clipboard.readText().catch(() => ''));
 ok('copy report', /Copied|copy it from there/.test(status), status);
 const report = clip || (await page.inputValue('#bug-preview'));
-for (const [label, re] of [['kind', /Looks wrong/], ['description', /road vanished/], ['build', /Build: \S+/], ['device', /Device: .*touch/], ['GPU', /GPU: /], ['city', /City: .*day \d+ · pop/], ['actions', /Recent actions:[\s\S]*(built|tool|opened)/]])
+for (const [label, re] of [['kind', /Looks wrong/], ['description', /road vanished/], ['build', /Build: \S+/], ['device', /Device: .*touch/], ['GPU', /GPU: /], ['city', /City: .*day \d+ · pop/], ['actions', /Recent actions:[\s\S]*(built|tool|opened)/], ['graphics', /Graphics: \w+.*effects (on|off|OFF)/], ['frame times', /Frames \(last \d+\): avg [\d.]+ ms · p95/], ['demand', /Demand: R [+−-]?\d+/]])
   ok(`report has ${label}`, re.test(report));
 await page.evaluate(() => { const p = document.querySelector('.bug-peek'); p.open = true; });
 await shot('shots/playtest/report-sheet.png');

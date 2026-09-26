@@ -49,7 +49,9 @@ for (const id of ids) {
   if (id === 'more') continue;
   await visit(id, () => page.tap ? (phone ? page.tap(`button.tbtn[data-t="${id}"]`) : page.click(`button.tbtn[data-t="${id}"]`)) : null);
   // close it again with the same button and make sure nothing stays armed
-  if (phone) await page.tap(`button.tbtn[data-t="${id}"]`); else await page.click(`button.tbtn[data-t="${id}"]`);
+  // (the bug report is a modal sheet over the toolbar: it closes with Esc)
+  if (id === 'bug') await page.keyboard.press('Escape');
+  else if (phone) await page.tap(`button.tbtn[data-t="${id}"]`); else await page.click(`button.tbtn[data-t="${id}"]`);
   await page.waitForTimeout(300);
   const t = await tool();
   if (t !== 'inspect') console.log('  !! after closing', id, 'tool is still', t);

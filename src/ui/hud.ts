@@ -5,7 +5,7 @@ import { EXT } from '../ext/registry';
 import type { LandmarkId, ZoneType } from '../contracts';
 import { ZONE_TYPES } from '../contracts';
 import type { Game, Selection, UiSink } from '../game';
-import { LANDMARK_COST } from '../game';
+import { LANDMARK_COST, LANDMARKS } from '../game';
 import { ROAD_ORDER, ROAD_TYPES, RoadTypeId } from '../roads/roadTypes';
 import { ZONE_COLORS, ZONE_LABEL, type ZCell } from '../zones/zoning';
 import { MAX_LEVEL } from '../contracts';
@@ -15,7 +15,7 @@ import { MERCH_URL, brandById } from '../art/brands';
 import { BUILD, crumb, onCapturedError, openBugReport } from './bugreport';
 import { IS_TOUCH } from '../config';
 import { QUALITY, type Quality } from '../config';
-import { SPEEDS, UNLOCKS, type DemandKey } from '../sim/sim';
+import { BANKRUPT_AT, BANKRUPT_WEEKS, CREDIT_LINE, LEDGER_LABEL, ONE_TIME, RECURRING, SPEEDS, Sim, UNLOCKS, usd, type DemandKey } from '../sim/sim';
 import { isZoned } from '../sim/buildings';
 import type { ViewMode } from '../render/overlays';
 import { ARCHETYPES } from '../agents/people';
@@ -25,16 +25,6 @@ import { VEHICLE_SPECS } from '../agents/vehicles';
 const esc = (s: string) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 const money = (n: number) => (n === Infinity ? '∞' : (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString());
 
-const LANDMARKS: { id: LandmarkId; name: string; icon: string }[] = [
-  { id: 'slopCannon', name: 'The Slop Cannon', icon: '💥' },
-  { id: 'slop69Field', name: 'Slop 69 Field', icon: '⚾' },
-  { id: 'pigCabanaResort', name: 'Pig Cabana Resort', icon: '🐷' },
-  { id: 'neuralFlyDatacenter', name: 'Neural Fly Datacenter', icon: '🪰' },
-  { id: 'propaneParadise', name: 'Propane Paradise', icon: '🔥' },
-  { id: 'fillErUpMegaStation', name: 'Fill Er Up Mega Station', icon: '⛽' },
-  { id: 'megachurch', name: 'Megachurch', icon: '⛪' },
-  { id: 'waterTower', name: 'Water Tower', icon: '🗼' },
-];
 
 const ZONE_ICON: Record<ZoneType, string> = { resLow: '🏡', resHigh: '🏢', comLow: '🛒', comHigh: '🏬', industry: '🏭', office: '💻' };
 const DEMAND_KEYS: DemandKey[] = ['res', 'com', 'ind', 'off'];
@@ -69,6 +59,13 @@ export class Hud implements UiSink {
   private floats: { el: HTMLElement; p: THREE.Vector3; t: number }[] = [];
   private panel: PanelId = null;
   private demandPop!: HTMLElement;
+  private meterPop: HTMLElement | null = null;
+  /** tools unlocked this session and not used yet (their cards say NEW) */
+  private fresh = new Set<string>();
+  private budgetHtml = '';
+  private crisis: HTMLElement | null = null;
+  private crisisHtml = '';
+  private crisisDismissed = false;
   private demandKey: DemandKey | null = null;
   private demandHtml = '';
   private demandCells: ZCell[] = [];
@@ -108,8 +105,9 @@ export class Hud implements UiSink {
     });
     // a tap anywhere else (the map, a panel) puts the card away
     document.addEventListener('pointerdown', (e) => {
-      if (!this.demandKey) return;
       const t = e.target as HTMLElement;
+      if (this.meterPop && !this.meterPop.hidden && !this.meterPop.contains(t) && !t.closest?.('#tb-meters')) this.closeMeters();
+      if (!this.demandKey) return;
       if (this.demandPop.contains(t) || t.closest?.('[data-dem]')) return;
       this.closeDemand();
     }, true);
@@ -119,7 +117,8 @@ export class Hud implements UiSink {
     // phones: Done leaves the tool entirely (double-tap ends just the current
     // road); desktop: Stop ends the road being drawn and keeps the tool
     this.actions.querySelector('#ta-done')!.addEventListener('click', () => {
-      if (IS_TOUCH) { this.exitTool(); return; }
+      // desktop roads: stop this road, keep the tool; everything else: put the tool away
+      if (IS_TOUCH || game.tools.active !== 'road') { this.exitTool(); return; }
       game.tools.cancel();
       game.audio.play('click', 0.4);
     });
@@ -143,7 +142,12 @@ export class Hud implements UiSink {
       el.querySelector('.ct-x')!.addEventListener('click', () => el.remove());
       setTimeout(() => el.remove(), 12000);
     });
-    game.tools.onChange = () => this.syncToolbar();
+    // one active tool: the toolbar, the open panel's highlighted card, the
+    // badge and the cursor tip all follow it
+    game.tools.onChange = () => {
+      this.syncToolbar();
+      if (this.panel && this.panel !== 'budget' && this.panel !== 'help' && this.panel !== 'more' && this.panel !== 'communes') this.renderPanel();
+    };
     window.addEventListener('keydown', (e) => this.hotkey(e));
     game.renderer.domElement.addEventListener('pointermove', (e) => {
       this.tip.style.transform = `translate(${e.clientX + 16}px, ${e.clientY + 18}px)`;
@@ -197,11 +201,11 @@ export class Hud implements UiSink {
         <button data-speed="3" title="Speed 3 (3)">▶▶▶</button>
       </div>
       <div class="tb-stat"><span class="tb-lbl">Pop</span><b id="tb-pop">0</b></div>
-      <div class="tb-stat tb-money"><span class="tb-lbl">Treasury</span><b id="tb-money">$0</b><i id="tb-net"></i></div>
+      <div class="tb-stat tb-money" role="button" tabindex="0" id="tb-treasury"><span class="tb-lbl">Treasury</span><b id="tb-money">$0</b><i id="tb-net"></i></div>
       <div class="tb-demand" role="group" aria-label="Demand">
         ${DEMAND_KEYS.map((k) => `<button class="dbar" data-dem="${k}" aria-haspopup="dialog" aria-expanded="false"><span class="dtrack"><span class="dfill" id="d-${k}" style="--c:var(--${k})"></span><em>${DEM[k].letter}</em></span></button>`).join('')}
       </div>
-      <div class="tb-meters">
+      <div class="tb-meters" role="button" tabindex="0" id="tb-meters" aria-haspopup="dialog" aria-label="Nature and sprawl: show what they mean">
         <div class="meter" title="Nature remaining"><span>🌲</span><div class="mtrack"><div class="mfill nature" id="m-nature"></div></div><b id="m-nature-t"></b></div>
         <div class="meter" title="Progress toward Endless Sprawl"><span>🏙️</span><div class="mtrack"><div class="mfill sprawl" id="m-sprawl"></div></div><b id="m-sprawl-t"></b></div>
       </div>
@@ -209,11 +213,164 @@ export class Hud implements UiSink {
     this.top.querySelectorAll<HTMLButtonElement>('[data-speed]').forEach((b) =>
       b.addEventListener('click', () => { this.game.sim.speed = Number(b.dataset.speed); this.game.audio.play('click', 0.4); this.refreshTop(); }),
     );
+    const meters = this.top.querySelector('#tb-meters') as HTMLElement;
+    const toggleMeters = () => { this.game.audio.play('click', 0.4); if (this.meterPop && !this.meterPop.hidden) this.closeMeters(); else this.openMeters(); };
+    meters.addEventListener('click', toggleMeters);
+    meters.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleMeters(); } });
+    const treasury = this.top.querySelector('#tb-treasury') as HTMLElement;
+    const openBudget = () => { if (this.panel !== 'budget') this.onTool('budget'); };
+    treasury.addEventListener('click', openBudget);
+    treasury.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBudget(); } });
     this.top.querySelectorAll<HTMLButtonElement>('[data-dem]').forEach((b) => b.addEventListener('click', () => {
       const k = b.dataset.dem as DemandKey;
       this.game.audio.play('click', 0.4);
       if (this.demandKey === k) this.closeDemand(); else this.openDemand(k);
     }));
+  }
+
+  // ------------------------------------------------------------------ budget
+  /** the budget's numbers: next week's bill, this week's one-time money, last week, the log */
+  private budgetLive(): string {
+    const g = this.game, s = g.sim;
+    if (s.money === Infinity) return '<p>Sandbox: money is no object. Nothing to balance.</p>';
+    const fc = s.forecastWeek();
+    const sign = (v: number) => `<b class="${v < 0 ? 'neg' : v > 0 ? 'pos' : ''}">${v > 0 ? '+' : ''}${usd(v)}</b>`;
+    const row = (label: string, v: number, cls = '') => `<tr class="${cls}"><td>${esc(label)}</td><td>${sign(v)}</td></tr>`;
+    const lines = [...fc.lines].sort((a, b) => (b.amount > 0 ? 1 : 0) - (a.amount > 0 ? 1 : 0) || Math.abs(b.amount) - Math.abs(a.amount));
+    const shown = lines.slice(0, 9), rest = lines.slice(9);
+    const restSum = rest.reduce((a, l) => a + l.amount, 0);
+    const spendable = s.money + CREDIT_LINE;
+    const runway = fc.net < 0 ? Math.floor(Math.max(0, spendable) / -fc.net) : Infinity;
+    const dayOfWeek = (Math.floor(s.day) % 7) + 1;
+    const oneTime = ONE_TIME.filter((k) => Math.round(s.ledger[k]));
+    const last = Sim.split(s.lastWeek), lc = s.lastWeekCash;
+    // growth money vs forever costs: the Ponzi in two numbers
+    const since = s.day - 28;
+    const growth = s.transactions.filter((t) => t.day >= since && (t.kind === 'impact' || t.kind === 'grants')).reduce((a, t) => a + t.amount, 0);
+    const weeks = Math.max(1, Math.min(4, s.day / 7));
+    const recent = s.transactions.slice(-12).reverse();
+    return `
+      <div class="bg-top">
+        <div><span>Treasury</span>${sign(s.money)}</div>
+        <div><span>Every week</span><b class="${fc.net < 0 ? 'neg' : 'pos'}">${fc.net >= 0 ? '+' : ''}${usd(fc.net)}/wk</b></div>
+        <div><span>${fc.net < 0 ? 'Money lasts' : 'Trend'}</span><b class="${runway < 8 ? 'neg' : ''}">${fc.net >= 0 ? 'growing' : runway >= 520 ? '10+ years' : `${runway} week${runway === 1 ? '' : 's'}`}</b></div>
+      </div>
+      <table>
+        <tr class="head"><td colspan="2">Every week, at today's rates</td></tr>
+        ${shown.map((l) => row(l.label, l.amount)).join('')}
+        ${rest.length ? row(`${rest.length} smaller lines`, restSum) : ''}
+        ${row('Weekly balance', fc.net, 'total')}
+      </table>
+      <table>
+        <tr class="head"><td colspan="2">This week so far · day ${dayOfWeek} of 7</td></tr>
+        ${oneTime.length ? oneTime.map((k) => row(LEDGER_LABEL[k], s.ledger[k])).join('') : '<tr><td colspan="2" class="muted">No one-time spending or income yet.</td></tr>'}
+        <tr><td colspan="2" class="muted">Taxes and upkeep are billed when the week ends.</td></tr>
+      </table>
+      ${growth ? `<p class="bg-growth">Growth money: new buildings' impact fees and grants brought <b class="pos">+${usd(growth / weeks)}/wk</b> on average lately. It stops when growth stops; upkeep doesn't.</p>` : ''}
+      <details class="bg-more"><summary>Last week: ${usd(lc.from)} → ${usd(lc.to)} (${last.total >= 0 ? '+' : ''}${usd(last.total)})</summary>
+        <table>
+          ${RECURRING.filter((k) => Math.round(s.lastWeek[k])).map((k) => row(LEDGER_LABEL[k], s.lastWeek[k])).join('')}
+          ${row('Recurring', last.recurring, 'sub')}
+          ${ONE_TIME.filter((k) => Math.round(s.lastWeek[k])).map((k) => row(LEDGER_LABEL[k], s.lastWeek[k])).join('')}
+          ${row('One-time', last.oneTime, 'sub')}
+        </table>
+        ${Math.abs(s.ledgerDrift) > 1 ? `<p class="neg">Ledger mismatch: ${usd(s.ledgerDrift)} unaccounted for. Please report this (🐞).</p>` : ''}
+      </details>
+      <details class="bg-more"><summary>Recent transactions</summary>
+        <table>${recent.map((t) => `<tr><td><span class="muted">d${Math.floor(t.day)}</span> ${esc(t.label)}</td><td>${sign(t.amount)}</td></tr>`).join('') || '<tr><td class="muted">Nothing yet.</td></tr>'}</table>
+      </details>`;
+  }
+
+  private budgetRules(): string {
+    const s = this.game.sim;
+    if (s.money === Infinity) return '';
+    return `<b>Debt:</b> you can spend down to ${usd(-CREDIT_LINE)}. Below ${usd(BANKRUPT_AT)} at ${BANKRUPT_WEEKS} weekly closes in a row, the city goes bankrupt${s.bankruptWeeks ? ` (<b class="neg">${s.bankruptWeeks}/${BANKRUPT_WEEKS}</b> so far)` : ''}.`;
+  }
+
+  /** update the open panel's live numbers without re-rendering it (keeps focus and scroll) */
+  private refreshPanelLive() {
+    if (this.panel === 'budget') {
+      const live = this.sub.querySelector('.budget-live') as HTMLElement | null, rules = this.sub.querySelector('.bg-rules') as HTMLElement | null;
+      if (live) {
+        const open = [...live.querySelectorAll('details')].map((d) => d.open);
+        const html = this.budgetLive();
+        if (html !== this.budgetHtml) {
+          this.budgetHtml = html;
+          live.innerHTML = html;
+          live.querySelectorAll('details').forEach((d, i) => { d.open = open[i] ?? false; });
+        }
+      }
+      if (rules) { const r = this.budgetRules(); if (rules.innerHTML !== r) rules.innerHTML = r; }
+    } else if (this.panel?.startsWith('ext:')) {
+      EXT.panels.find((x) => `ext:${x.id}` === this.panel)?.refresh?.(this.sub, this.game);
+    }
+  }
+
+  /** In the red: a card that says why and what to do, without blocking the map. */
+  private syncCrisis() {
+    const s = this.game.sim;
+    const red = s.money !== Infinity && s.money < 0;
+    if (!red) { this.crisisDismissed = false; if (this.crisis) this.crisis.hidden = true; return; }
+    if (this.crisisDismissed) return;
+    if (!this.crisis) {
+      this.crisis = this.mk('aside', 'crisis');
+      this.crisis.setAttribute('role', 'status');
+      this.crisis.addEventListener('click', (e) => {
+        const a = (e.target as HTMLElement).closest<HTMLElement>('[data-crisis]')?.dataset.crisis;
+        if (!a) return;
+        this.game.audio.play('click', 0.4);
+        if (a === 'budget') { if (this.panel !== 'budget') this.onTool('budget'); }
+        else if (a === 'pause') this.game.sim.speed = 0;
+        else if (a === 'close') { this.crisisDismissed = true; this.crisis!.hidden = true; }
+      });
+    }
+    // what drained it: the biggest outflows of the last two weeks, and the weekly rate
+    const since = s.day - 14, by = new Map<string, number>();
+    for (const t of s.transactions) if (t.day >= since && t.amount < 0 && !RECURRING.includes(t.kind)) by.set(t.label, (by.get(t.label) ?? 0) + t.amount);
+    const top = [...by].sort((a, b) => a[1] - b[1]).slice(0, 3);
+    const fc = s.forecastWeek();
+    const worst = [...fc.lines].filter((l) => l.amount < 0).sort((a, b) => a.amount - b.amount)[0];
+    const html = `<div class="crisis-head"><b>In the red: ${usd(s.money)}</b><button data-crisis="close" aria-label="Dismiss">✕</button></div>
+      <p>${top.length ? `Recent spending: ${top.map(([l, v]) => `${esc(l)} ${usd(v)}`).join(' · ')}.` : ''} Every week: <b class="${fc.net < 0 ? 'neg' : 'pos'}">${fc.net >= 0 ? '+' : ''}${usd(fc.net)}</b>${worst ? ` (biggest: ${esc(worst.label)} ${usd(worst.amount)})` : ''}.</p>
+      <p class="muted">Credit left ${usd(s.money + CREDIT_LINE)}. Bankrupt after ${BANKRUPT_WEEKS} weekly closes below ${usd(BANKRUPT_AT)}${s.bankruptWeeks ? ` (${s.bankruptWeeks}/${BANKRUPT_WEEKS})` : ''}. Raise taxes, take a loan, or let growth fees catch up.</p>
+      <div class="crisis-acts"><button class="chip on" data-crisis="budget">💰 Budget</button>${s.speed ? '<button class="chip" data-crisis="pause">❚❚ Pause</button>' : ''}</div>`;
+    if (html !== this.crisisHtml) { this.crisisHtml = html; this.crisis.innerHTML = html; }
+    this.crisis.hidden = false;
+  }
+
+  // ------------------------------------------------------------------ nature & sprawl explainer
+  private openMeters() {
+    this.closeDemand();
+    if (!this.meterPop) {
+      this.meterPop = this.mk('div', 'demand-pop meter-pop');
+      this.meterPop.setAttribute('role', 'dialog');
+      this.meterPop.setAttribute('aria-label', 'Nature and sprawl');
+      this.meterPop.addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('[data-act="close"]')) this.closeMeters(); });
+    }
+    crumb('opened meters');
+    this.meterPop.hidden = false;
+    this.renderMeters();
+    const r = this.top.querySelector('#tb-meters')!.getBoundingClientRect();
+    const W = window.innerWidth, w = Math.min(320, W - 32);
+    const left = Math.max(16, Math.min(W - 16 - w, r.left + r.width / 2 - w / 2));
+    Object.assign(this.meterPop.style, { width: `${w}px`, left: `${left}px`, top: `${r.bottom + 10}px` });
+    this.meterPop.style.setProperty('--caret', `${Math.max(14, Math.min(w - 14, r.left + r.width / 2 - left))}px`);
+  }
+
+  private closeMeters() {
+    if (this.meterPop) this.meterPop.hidden = true;
+  }
+
+  private renderMeters() {
+    if (!this.meterPop || this.meterPop.hidden) return;
+    const s = this.game.sim, pct = (v: number) => `${Math.round(v * 100)}%`;
+    const html = `
+      <div class="dp-head"><b>Nature &amp; sprawl</b><button class="dp-x" data-act="close" aria-label="Close">✕</button></div>
+      <div class="dp-title" style="--c:var(--good)"><span class="dp-name">🌲 Nature left</span><span class="dp-val">${pct(s.naturePct)}</span></div>
+      <p class="dp-status">The county's original trees still standing. Roads, buildings and terraforming cut them down, and they don't grow back.</p>
+      <div class="dp-title" style="--c:var(--slop)"><span class="dp-name">🏙️ Endless Sprawl</span><span class="dp-val">${pct(s.sprawlPct)}</span></div>
+      <p class="dp-status">Your win meter. ${pct(s.coverage)} of buildable land is paved or built on; ${pct(s.maxedPct)} of buildings are maxed out. Pave 90% of it with 98% maxed to win.</p>`;
+    if (this.meterPop.innerHTML !== html) this.meterPop.innerHTML = html;
   }
 
   // ------------------------------------------------------------------ demand explainer
@@ -339,6 +496,13 @@ export class Hud implements UiSink {
     const netEl = $('tb-net');
     netEl.textContent = s.money === Infinity ? 'sandbox' : `${net >= 0 ? '+' : ''}${money(net)}/wk`;
     netEl.className = net >= 0 ? 'pos' : 'neg';
+    if (s.money !== Infinity) {
+      const fc = s.forecastWeek(), one = Sim.split(s.ledger).oneTime;
+      const tip = `Every week at today's rates: ${usd(fc.income)} taxes and fees in, ${usd(fc.expense)} upkeep, imports and loans out.${one ? ` One-time this week: ${one > 0 ? '+' : ''}${usd(one)} (construction, fees, grants).` : ''} Click for the budget.`;
+      const tr = $('tb-treasury');
+      if (tr.title !== tip) { tr.title = tip; tr.setAttribute('aria-label', `Treasury ${usd(s.money)}, ${usd(net)} per week. ${tip}`); }
+    }
+    this.syncCrisis();
     for (const k of DEMAND_KEYS) {
       const v = s.demand[k], el = $('d-' + k);
       el.style.height = `${Math.max(2, Math.min(100, Math.abs(v)))}%`;
@@ -348,6 +512,7 @@ export class Hud implements UiSink {
       if (bar.getAttribute('aria-label') !== label) { bar.setAttribute('aria-label', label); bar.title = label; }
     }
     if (this.demandKey) this.renderDemand();
+    this.renderMeters();
     $('m-nature').style.width = `${Math.round(s.naturePct * 100)}%`;
     $('m-nature-t').textContent = `${Math.round(s.naturePct * 100)}%`;
     $('m-sprawl').style.width = `${Math.round(s.sprawlPct * 100)}%`;
@@ -452,6 +617,12 @@ export class Hud implements UiSink {
     else if (pid !== 'landmarks' || g.tools.active !== 'landmark') g.tools.set('inspect');
   }
 
+  /** refresh the top bar and the open panel now (tests; normally 4× a second) */
+  refreshNow() {
+    this.refreshTop();
+    this.refreshPanelLive();
+  }
+
   /** Open the playtest bug report sheet. */
   reportBug(prefill?: string) {
     openBugReport(this.root, this.game, { prefill });
@@ -508,18 +679,19 @@ export class Hud implements UiSink {
         <div class="sp-grid">${ROAD_ORDER.map((id) => {
           const r = ROAD_TYPES[id];
           const locked = !g.sim.isUnlocked({ road: id });
-          return `<button class="card ${t.roadType === id ? 'on' : ''}" data-road="${id}" ${locked ? 'disabled' : ''} title="${esc(r.blurb)}">
+          return `<button class="card ${t.roadType === id ? 'on' : ''} ${this.fresh.has(`road:${id}`) ? 'new' : ''}" data-road="${id}" ${locked ? 'disabled' : ''} title="${esc(r.blurb)}">
             <span class="ci">${r.icon}</span><b>${esc(r.name)}</b><small>${locked ? `🔒 Pop ${r.unlockPop.toLocaleString()}` : `$${r.costPerM}/m · ${r.lanesPerDir * 2} lanes${r.centerTurn ? ' + turn' : ''}`}</small></button>`;
         }).join('')}</div>`;
       this.sub.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) => b.addEventListener('click', () => { t.roadMode = b.dataset.mode as never; t.cancel(); t.set('road'); this.renderPanel(); }));
-      this.sub.querySelectorAll<HTMLButtonElement>('[data-road]').forEach((b) => b.addEventListener('click', () => { t.roadType = b.dataset.road as RoadTypeId; t.set('road'); this.renderPanel(); }));
+      this.sub.querySelectorAll<HTMLButtonElement>('[data-road]').forEach((b) => b.addEventListener('click', () => { t.roadType = b.dataset.road as RoadTypeId; this.fresh.delete(`road:${t.roadType}`); t.set('road'); this.renderPanel(); }));
     } else if (p === 'zones') {
       this.sub.innerHTML = `
         <div class="sp-title">Zoning <small>Paint cells along roads. Buildings grow when there's demand.</small></div>
         <div class="sp-grid zones">${ZONE_TYPES.map((z) => {
           const locked = !g.sim.isUnlocked({ zone: z });
-          return `<button class="card zone ${t.active === 'zone' && t.zoneType === z ? 'on' : ''}" data-zone="${z}" style="--zc:#${ZONE_COLORS[z].toString(16).padStart(6, '0')}" ${locked ? 'disabled' : ''}>
-            <span class="ci">${ZONE_ICON[z]}</span><b>${esc(ZONE_LABEL[z])}</b><small>${locked ? '🔒 grow the city' : `Levels 1–${MAX_LEVEL[z]}`}</small></button>`;
+          const need = UNLOCKS.find((u) => u.zone === z)?.pop;
+          return `<button class="card zone ${t.active === 'zone' && t.zoneType === z ? 'on' : ''} ${this.fresh.has(`zone:${z}`) ? 'new' : ''}" data-zone="${z}" style="--zc:#${ZONE_COLORS[z].toString(16).padStart(6, '0')}" ${locked ? 'disabled' : ''}>
+            <span class="ci">${ZONE_ICON[z]}</span><b>${esc(ZONE_LABEL[z])}</b><small>${locked ? `🔒 Pop ${need?.toLocaleString() ?? '?'}` : `Levels 1–${MAX_LEVEL[z]}`}</small></button>`;
         }).join('')}
           <button class="card zone ${t.active === 'dezone' ? 'on' : ''}" data-zone="none" style="--zc:#888"><span class="ci">🧽</span><b>Dezone</b><small>Unzone empty cells</small></button>
         </div>
@@ -527,7 +699,7 @@ export class Hud implements UiSink {
       this.sub.querySelectorAll<HTMLButtonElement>('[data-zone]').forEach((b) => b.addEventListener('click', () => {
         const z = b.dataset.zone!;
         if (z === 'none') t.set('dezone');
-        else { t.zoneType = z as ZoneType; t.set('zone'); }
+        else { t.zoneType = z as ZoneType; this.fresh.delete(`zone:${z}`); t.set('zone'); }
         this.renderPanel();
       }));
       this.sub.querySelectorAll<HTMLButtonElement>('[data-brush]').forEach((b) => b.addEventListener('click', () => { t.brush = Number(b.dataset.brush); this.renderPanel(); }));
@@ -553,23 +725,18 @@ export class Hud implements UiSink {
       }));
       this.sub.querySelectorAll<HTMLButtonElement>('[data-wx]').forEach((b) => b.addEventListener('click', () => g.weather.force(b.dataset.wx as never, 4)));
     } else if (p === 'budget') {
-      const s = g.sim, L = s.lastWeek;
-      const row = (label: string, v: number) => `<tr><td>${label}</td><td class="${v < 0 ? 'neg' : v > 0 ? 'pos' : ''}">${money(v)}</td></tr>`;
+      const s = g.sim;
       this.sub.innerHTML = `
         <div class="sp-title">Budget <small>The Growth Ponzi: new roads are cheap now, expensive forever.</small></div>
         <div class="budget">
-          <table>
-            ${row('Residential tax', L.resTax)}${row('Commercial tax', L.comTax)}${row('Industrial tax', L.indTax)}${row('Office tax', L.offTax)}
-            ${row('Impact fees (new construction)', L.impact)}${row('Federal Slop Grants', L.grants)}${row('Other', L.other)}
-            ${row('Road upkeep (ages badly)', L.roads)}${row('Services: cops, fire, schools', L.services)}${row('Construction', L.construction)}${row('Communes & lawyers', L.communes)}${row('Loan payments', L.loans)}
-            <tr class="total"><td>Last week</td><td class="${s.weeklyNet() < 0 ? 'neg' : 'pos'}">${money(s.weeklyNet())}</td></tr>
-          </table>
+          <div class="budget-live">${this.budgetLive()}</div>
           <div class="tax">
+            <div class="bg-rules">${this.budgetRules()}</div>
             <label for="tax">Tax rate <b id="tax-v">${Math.round(s.taxRate * 100)}%</b></label>
             <input id="tax" type="range" min="1" max="29" value="${Math.round(s.taxRate * 100)}" />
             <small>Taxation is theft (demand drops) / eat the rich (money rises)</small>
-            <div class="sp-row">${[10000, 50000, 150000].map((a) => `<button class="chip" data-loan="${a}">Loan ${money(a)}</button>`).join('')}</div>
-            <small>${s.loans.length ? `${s.loans.length} loan(s): ${money(s.loans.reduce((a, l) => a + l.weekly, 0))}/wk` : 'No loans. Yet.'}</small>
+            <div class="sp-row">${[10000, 50000, 150000].map((a) => `<button class="chip" data-loan="${a}" title="${usd(a)} now, then ${usd(Math.round((a * 1.18) / 52))}/wk for 52 weeks">Loan ${money(a)} <small>−${usd(Math.round((a * 1.18) / 52))}/wk</small></button>`).join('')}</div>
+            <small>${s.loans.length ? `${s.loans.length} loan(s): ${money(s.loans.reduce((a, l) => a + l.weekly, 0))}/wk, ${Math.max(...s.loans.map((l) => l.weeksLeft))} weeks left` : 'No loans. Yet.'}</small>
           </div>
         </div>`;
       const tax = this.sub.querySelector('#tax') as HTMLInputElement;
@@ -578,6 +745,7 @@ export class Hud implements UiSink {
         s.taxRate = Number(tax.value) / 100;
         (this.sub.querySelector('#tax-v') as HTMLElement).textContent = `${tax.value}%`;
         if (Math.abs(s.taxRate - old) > 0.001) this.taxFeed(s.taxRate > old);
+        this.refreshPanelLive();
       });
       this.sub.querySelectorAll<HTMLButtonElement>('[data-loan]').forEach((b) => b.addEventListener('click', () => { s.takeLoan(Number(b.dataset.loan)); g.audio.play('cash'); this.renderPanel(); }));
     } else if (p === 'communes') {
@@ -595,6 +763,7 @@ export class Hud implements UiSink {
         <div class="sp-row quality-controls"><label for="quality-preset">Graphics</label>
           <select id="quality-preset">${(Object.keys(QUALITY) as Quality['name'][]).map((n) => `<option value="${n}" ${n === (g.pendingQuality ?? g.q.name) ? 'selected' : ''}>${n[0].toUpperCase() + n.slice(1)}</option>`).join('')}</select>
           <button class="chip" id="perf-toggle">${this.perfVisible ? 'Hide' : 'Show'} performance</button>
+          ${IS_TOUCH ? '' : `<button class="chip ${g.rts.edgeScroll ? 'on' : ''}" id="edge-toggle" aria-pressed="${g.rts.edgeScroll}">Edge scrolling: ${g.rts.edgeScroll ? 'on' : 'off'}</button>`}
           ${g.pendingQuality ? '<button class="chip on" id="quality-reload">Reload to finish applying</button>' : ''}
         </div>
         <small>Resolution and shadows change immediately. Reload applies scenery, traffic, and post-processing budgets.</small>
@@ -607,7 +776,7 @@ export class Hud implements UiSink {
           <div><b>Placing</b> services and landmarks: tap to preview, then Build</div>
           <div><b>Demand</b> tap the R C I O bars to see why they're up or down and what to zone</div>` : `
           <div><b>Demand</b> click the R C I O bars to see why they're up or down and what to zone</div>
-          <div><b>Move</b> WASD / arrows · drag</div>
+          <div><b>Move</b> WASD / arrows · drag · push the mouse against a screen edge</div>
           <div><b>Rotate</b> right-drag · Q/E</div>
           <div><b>Tilt</b> right-drag up/down · R/F</div>
           <div><b>Zoom</b> wheel</div>
@@ -628,6 +797,12 @@ export class Hud implements UiSink {
       });
       this.sub.querySelector('#quality-reload')?.addEventListener('click', () => location.reload());
       this.sub.querySelector('#perf-toggle')?.addEventListener('click', () => { this.togglePerf(); this.renderPanel(); });
+      this.sub.querySelector('#edge-toggle')?.addEventListener('click', () => {
+        g.rts.edgeScroll = !g.rts.edgeScroll;
+        try { localStorage.setItem('slopmerica.edgeScroll', g.rts.edgeScroll ? '1' : '0'); } catch { /* not remembered */ }
+        crumb(`edge scrolling ${g.rts.edgeScroll ? 'on' : 'off'}`);
+        this.renderPanel();
+      });
     }
   }
 
@@ -652,6 +827,9 @@ export class Hud implements UiSink {
     if (e.key === 'F3') { e.preventDefault(); this.togglePerf(); }
     else if (e.key === ' ') { e.preventDefault(); s.speed = s.speed === 0 ? 1 : 0; }
     else if (e.key === '1' || e.key === '2' || e.key === '3') s.speed = Number(e.key);
+    // Ctrl/Cmd+Z before plain Z (Zoning), or undo never happens
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); this.game.undo(); }
+    else if (e.ctrlKey || e.metaKey || e.altKey) return;
     else if (e.key.toLowerCase() === 'b') this.onTool('bulldoze');
     else if (e.key.toLowerCase() === 'u') this.onTool('upgrade');
     else if (e.key.toLowerCase() === 'z') this.onTool('zones');
@@ -659,8 +837,10 @@ export class Hud implements UiSink {
       const k = this.demandKey;
       this.closeDemand();
       (this.top.querySelector(`[data-dem="${k}"]`) as HTMLElement | null)?.focus();
+    } else if (e.key === 'Escape' && this.meterPop && !this.meterPop.hidden) {
+      this.closeMeters();
+      (this.top.querySelector('#tb-meters') as HTMLElement | null)?.focus();
     } else if (e.key === 'Escape') { this.openPanel(null); this.game.tools.set('inspect'); this.select(null); }
-    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); this.game.undo(); }
     this.refreshTop();
   }
 
@@ -684,7 +864,7 @@ export class Hud implements UiSink {
     if (!sel || this.inspector.hidden) return;
     // roads are left alone: a segment can be hundreds of meters long, and
     // centering its middle would throw the view away from where you tapped
-    const at = sel.kind === 'building' ? sel.b : sel.kind === 'commune' || sel.kind === 'car' ? sel.c : null;
+    const at = sel.kind === 'building' ? sel.b : sel.kind === 'commune' || sel.kind === 'car' ? sel.c : sel.kind === 'lot' ? sel.cell : null;
     if (!at) return;
     const top = this.inspector.getBoundingClientRect().top;
     this.v.set(at.x, this.game.terrain.h(at.x, at.z), at.z).project(this.game.camera);
@@ -757,11 +937,20 @@ export class Hud implements UiSink {
           <div><span>Status</span><b>${c.forever ? '♾️ Forever' : c.state === 'suing' ? `⚖️ Court in ${Math.max(0, Math.ceil(c.suitDays - g.sim.day))} days` : c.state}</b></div>
         </div>
         <p class="in-blurb">Demands: “${esc(c.demand)}”</p>
-        ${c.forever ? `<p class="in-warn">They've been here since 1969. They're never leaving. Build around them.</p>` : ''}
+        ${c.forever ? `<p class="in-warn">They've been here since 1969. They're never leaving. Build around them.</p>` : `<p class="in-note">Roads and zoning can't cross their land. <b>Pay off</b>: if they refuse, the money is gone and they dig in harder. <b>Sue</b>: 20 days in court; lose and they dig in.</p>`}
         <div class="in-actions">
           <button id="in-bribe" ${c.forever || c.state !== 'active' ? 'disabled' : ''}>💸 Pay off ${money(g.communes.bribeCost(c))} <small>${Math.round(g.communes.bribeOdds(c) * 100)}%</small></button>
           <button id="in-sue" ${c.forever || c.state !== 'active' ? 'disabled' : ''}>⚖️ Sue ${money(g.communes.suitCost(c))} <small>${Math.round(g.communes.suitOdds(c) * 100)}%</small></button>
         </div>`;
+    } else if (sel.kind === 'lot') {
+      const c = sel.cell, z = c.zone;
+      // built on while you were looking: show the building instead
+      if (c.bld) { const b = g.buildings.list.get(c.bld); g.select(b ? { kind: 'building', b } : null); return; }
+      if (!z) { g.select(null); return; }
+      const st = g.lotStatus(c);
+      html = `<div class="in-kicker">ZONED LOT · EMPTY</div><h3>${ZONE_ICON[z]} ${esc(ZONE_LABEL[z])}</h3>
+        <p class="in-blurb"><b>${esc(st.primary)}</b></p>
+        <div class="in-actions">${st.demand ? `<button id="in-why">📊 ${DEM[st.demand.key].name} demand ${signed(st.demand.v)}: why?</button>` : ''}<button id="in-dezone">🧽 Dezone</button></div>`;
     } else if (sel.kind === 'road') {
       const s = sel.s;
       const t = ROAD_TYPES[s.type];
@@ -797,6 +986,8 @@ export class Hud implements UiSink {
       if (g.upgradeRoads([sel.s]).ok) crumb(`one more lane: ${sel.s.name} (inspector)`);
       this.renderInspector();
     });
+    this.inspector.querySelector('#in-why')?.addEventListener('click', () => { if (sel.kind === 'lot') { const st = g.lotStatus(sel.cell); if (st.demand) this.openDemand(st.demand.key); } });
+    this.inspector.querySelector('#in-dezone')?.addEventListener('click', () => { if (sel.kind === 'lot') { g.zones.paint(sel.cell.x, sel.cell.z, 4, null); crumb('dezoned a lot (inspector)'); g.select(null); } });
     this.inspector.querySelector('#in-bribe')?.addEventListener('click', () => { if (sel.kind === 'commune') { g.bribe(sel.c); this.renderInspector(); } });
     this.inspector.querySelector('#in-sue')?.addEventListener('click', () => { if (sel.kind === 'commune') { g.sue(sel.c); this.renderInspector(); } });
   }
@@ -822,7 +1013,33 @@ export class Hud implements UiSink {
     this.floats.push({ el, p: p.clone(), t: 0 });
   }
 
+  /** New tool unlocked: a small card that says where it is, with a way there. */
+  unlocked(label: string, pop: number) {
+    const u = UNLOCKS.find((x) => x.pop === pop);
+    if (!u) { this.toast(label); return; }
+    const key = u.zone ? `zone:${u.zone}` : `road:${u.road}`;
+    this.fresh.add(key);
+    const where = u.zone ? `Zoning → ${ZONE_ICON[u.zone]} ${ZONE_LABEL[u.zone]}` : `Roads → ${ROAD_TYPES[u.road as RoadTypeId]?.name ?? u.what}`;
+    crumb(`unlocked ${u.what}`);
+    const t = document.createElement('div');
+    t.className = 'toast unlock';
+    t.innerHTML = `<span><b>🔓 Unlocked at ${pop.toLocaleString()} people:</b> ${esc(u.what)}<small>${esc(where)}</small></span><button class="chip on">Open</button>`;
+    t.querySelector('button')!.addEventListener('click', () => {
+      this.game.audio.play('click', 0.4);
+      if (u.zone) { this.game.tools.zoneType = u.zone; if (this.panel !== 'zones') this.onTool('zones'); this.game.tools.set('zone'); }
+      else if (u.road) { this.game.tools.roadType = u.road as RoadTypeId; if (this.panel !== 'roads') this.onTool('roads'); this.game.tools.set('road'); }
+      this.renderPanel();
+      t.remove();
+    });
+    this.toasts.appendChild(t);
+    setTimeout(() => t.classList.add('out'), 9000);
+    setTimeout(() => t.remove(), 9600);
+    while (this.toasts.children.length > 3) this.toasts.firstChild?.remove();
+  }
+
   banner(title: string, sub: string) {
+    // while something is being placed, a celebration mustn't cover the spot
+    if (this.game.tools.active !== 'inspect') { this.toast(`${title} · ${sub}`); return; }
     const b = document.createElement('div');
     b.className = 'banner';
     b.innerHTML = `<b>${esc(title)}</b><span>${esc(sub)}</span>`;
@@ -843,7 +1060,7 @@ export class Hud implements UiSink {
          <p>The roads came due. The chains closed. Somewhere, a sapling pushes up through a parking lot.</p>
          <button id="end-go">Take a federal bailout (sandbox)</button></div>`;
     el.querySelector('#end-go')!.addEventListener('click', () => {
-      if (kind === 'bankrupt') { g.sim.money = 50000; g.sim.bankruptWeeks = 0; }
+      if (kind === 'bankrupt') { g.sim.earn(50000 - g.sim.money, 'other', 'Federal bailout'); g.sim.bankruptWeeks = 0; }
       el.remove();
       g.sim.speed = 1;
     });
@@ -857,16 +1074,20 @@ export class Hud implements UiSink {
       this.domT = 0.25;
       this.remeasureToasts = true;
       this.refreshTop();
+      this.refreshPanelLive();
       if (this.perfVisible) {
         const p = this.game.perf;
-        this.perfEl.textContent = `${p.fps.toFixed(1)} fps · ${p.frameMs.toFixed(1)} ms frame · ${p.renderMs.toFixed(1)} ms work\n${p.calls.toLocaleString()} calls · ${p.triangles.toLocaleString()} tris · ${p.quality.toUpperCase()} · ${Math.round(p.resolution * 100)}% res`;
+        const pf = this.game.prof, w = pf.worst[0];
+        this.perfEl.textContent = `${p.fps.toFixed(1)} fps · ${p.frameMs.toFixed(1)} ms frame · ${p.renderMs.toFixed(1)} ms work\n${p.calls.toLocaleString()} calls · ${p.triangles.toLocaleString()} tris · ${p.quality.toUpperCase()} · ${Math.round(p.resolution * 100)}% res${this.game.post.active ? '' : ' · no FX'}\n${pf.top(5).map(([k, v]) => `${k} ${v.toFixed(1)}`).join(' · ')}${w ? `\nworst ${w.ms.toFixed(0)} ms: ${w.parts.slice(0, 3).map(([k, v]) => `${k} ${v}`).join(', ')}` : ''}`;
       }
-      if (this.game.selection && (this.game.selection.kind === 'car' || this.game.selection.kind === 'building')) this.renderInspector();
+      if (this.game.selection && (this.game.selection.kind === 'car' || this.game.selection.kind === 'building' || this.game.selection.kind === 'lot')) this.renderInspector();
     }
     const tip = this.game.tools.tip;
     const t = this.game.tools;
     // phones: every map tool gets the bar (hint + Done), since there's no hover tip
-    const showActions = t.active === 'road' || t.active === 'upgrade' || (IS_TOUCH && t.active !== 'inspect');
+    const placingLabel = t.placingLabel;
+    // desktop: placing a building shows a "Placing …" badge with Cancel
+    const showActions = t.active === 'road' || t.active === 'upgrade' || (IS_TOUCH && t.active !== 'inspect') || !!placingLabel;
     const barChanged = this.actions.hidden === showActions;
     this.actions.hidden = !showActions;
     if (barChanged || this.remeasureToasts) {
@@ -878,10 +1099,14 @@ export class Hud implements UiSink {
     }
     if (showActions) {
       const tipEl = this.actions.querySelector('#ta-tip') as HTMLElement;
-      tipEl.textContent = IS_TOUCH ? tip?.text ?? '' : '';
-      tipEl.classList.toggle('bad', !!tip?.bad);
-      tipEl.hidden = !IS_TOUCH || !tip;
-      (this.actions.querySelector('#ta-done') as HTMLElement).hidden = IS_TOUCH ? false : !t.drawing;
+      const badge = !IS_TOUCH && placingLabel ? `Placing ${placingLabel} · Esc or right-click to cancel` : '';
+      tipEl.textContent = IS_TOUCH ? tip?.text ?? '' : badge;
+      tipEl.classList.toggle('bad', IS_TOUCH && !!tip?.bad);
+      tipEl.hidden = IS_TOUCH ? !tip : !badge;
+      const done = this.actions.querySelector('#ta-done') as HTMLElement;
+      done.hidden = IS_TOUCH ? false : !t.drawing && !placingLabel;
+      const doneLabel = IS_TOUCH ? '✓ Done' : placingLabel ? '✕ Cancel' : '✕ Stop';
+      if (done.textContent !== doneLabel) done.textContent = doneLabel;
       const build = this.actions.querySelector('#ta-build') as HTMLButtonElement;
       const plan = t.active === 'ext' ? t.extPending : t.pending ? { cost: t.pendingCost } : null;
       build.hidden = !plan;
@@ -889,8 +1114,11 @@ export class Hud implements UiSink {
       const label = plan && plan.cost !== null ? `🔨 Build $${plan.cost.toLocaleString()}` : '🔨 Build';
       if (build.textContent !== label) build.textContent = label;
       const undo = this.actions.querySelector('#ta-undo') as HTMLButtonElement;
-      undo.hidden = t.active !== 'road' && t.active !== 'upgrade'; // only roads and lanes are on the undo stack
+      undo.hidden = t.active !== 'road' && t.active !== 'upgrade' && !placingLabel;
       undo.disabled = !this.game.canUndo;
+      // name what Undo will reverse and what comes back
+      const ul = this.game.undoLabel, utitle = ul ? `Undo ${ul} (Ctrl+Z)` : 'Nothing to undo';
+      if (undo.title !== utitle) { undo.title = utitle; undo.setAttribute('aria-label', utitle); }
     }
     if (tip && !IS_TOUCH) {
       this.tip.hidden = false;

@@ -6,8 +6,9 @@ import type { PointerHandlers } from '../render/camera';
 import type { Snap } from '../roads/network';
 import { ROAD_TYPES, RoadTypeId } from '../roads/roadTypes';
 import type { LandmarkId, ZoneType } from '../contracts';
+import { ZONE_LABEL } from '../zones/zoning';
 import { landmarkFootprint } from '../buildings/generator';
-import { LANDMARK_COST, type Game } from '../game';
+import { LANDMARK_COST, LANDMARKS, type Game } from '../game';
 import { EXT, type ExtTool } from '../ext/registry';
 import { crumb } from '../ui/bugreport';
 
@@ -35,6 +36,28 @@ export class Tools implements PointerHandlers {
   }
 
   /** touch: the extension tool's planned placement waiting for Build, if any */
+  /**
+   * What the player has in hand, for the "Placing …" badge: the service,
+   * depot or landmark about to be built (null for road, zoning and brushes).
+   */
+  get placingLabel(): string | null {
+    if (this.active === 'ext') return this.ext?.placing?.(this.game) ?? null;
+    if (this.active === 'landmark') { const l = LANDMARKS.find((x) => x.id === this.landmark); return l ? `${l.icon} ${l.name}` : 'Landmark'; }
+    return null;
+  }
+
+  /**
+   * Right-click: cancel whatever is in progress (a planned spot, a draft);
+   * with nothing in progress, put a placement tool away. Roads keep their
+   * tool (a right-click ends the road being drawn).
+   */
+  rightClick() {
+    const busy = !!this.extPending || !!this.pending || (this.active === 'ext' && !!this.ext?.busy?.(this.game));
+    if (busy || !this.placingLabel) { this.cancel(); return; }
+    crumb('right-click: put the tool away');
+    this.set('inspect');
+  }
+
   get extPending(): { cost: number | null } | null {
     return this.ext?.pending?.(this.game) ?? null;
   }
@@ -180,7 +203,9 @@ export class Tools implements PointerHandlers {
   // ------------------------------------------------------------------ pointer
   down(p: THREE.Vector3 | null, e: PointerEvent) {
     if (!p) return;
-    if (e.button === 2) { this.cancel(); return; }
+    // right button: roads and brushes stop what they're doing at once; placing
+    // tools wait for the release so a right-drag can still orbit the camera
+    if (e.button === 2) { if (!this.placingLabel && this.active !== 'ext') this.cancel(); return; }
     this.hover = p;
     if (this.active === 'ext') { this.ext?.down?.(this.game, p, e); return; }
     if (this.active === 'road' && e.pointerType !== 'mouse') {
@@ -206,6 +231,7 @@ export class Tools implements PointerHandlers {
       case 'dezone':
         this.painting = true;
         this.warnedZoned = false;
+        this.game.zones.beginStroke();
         this.paint(p);
         break;
       case 'bulldoze':
@@ -227,10 +253,11 @@ export class Tools implements PointerHandlers {
   up(p: THREE.Vector3 | null, e: PointerEvent, wasDrag: boolean) {
     const wasPainting = this.painting;
     this.painting = false;
+    if (wasPainting && (this.active === 'zone' || this.active === 'dezone')) this.strokeSummary();
     if (e.pointerType !== 'mouse') this.touchDown = false;
-    if (this.active === 'ext') { if (e.button !== 2) this.ext?.up?.(this.game, p, e, wasDrag); return; }
+    if (e.button === 2) return; // the camera turns a right-click into rightClick()
+    if (this.active === 'ext') { this.ext?.up?.(this.game, p, e, wasDrag); return; }
     if (!p) return;
-    if (e.button === 2) return;
     switch (this.active) {
       case 'road':
         if (!wasDrag && this.doubleTap(p, e) && this.start) {
@@ -331,6 +358,9 @@ export class Tools implements PointerHandlers {
     if (!plan.ok) {
       this.game.toast(plan.reason ?? 'Nope', true);
       this.game.audio.play('error');
+      // commune in the way: open it, where the buy-out and lawsuit buttons are
+      const c = plan.blocker !== undefined ? this.game.communes.list.find((x) => x.id === plan.blocker) : null;
+      if (c) this.game.select({ kind: 'commune', c });
       return;
     }
     const segs = net.build(this.start, end, curve, this.roadType);
@@ -339,7 +369,7 @@ export class Tools implements PointerHandlers {
       if (plan.grant > 0) this.game.sim.earn(plan.grant, 'grants');
       if (plan.grant > 0) this.game.floatText(`+$${plan.grant.toLocaleString()} Federal Slop Grant`, p, '#9dff3c');
       this.game.onRoadBuilt(segs, plan);
-      this.game.pushUndo({ kind: 'build', segIds: segs.map((x) => x.id), refund: plan.cost - plan.grant });
+      this.game.pushUndo({ kind: 'build', segIds: segs.map((x) => x.id), refund: plan.cost - plan.grant, label: ROAD_TYPES[this.roadType].name });
       crumb(`built ${ROAD_TYPES[this.roadType].name} ${Math.round(plan.length)} m ($${plan.cost - plan.grant})`);
       // continue drawing from the end like Skylines
       const last = segs[segs.length - 1];
@@ -372,14 +402,31 @@ export class Tools implements PointerHandlers {
   }
 
   private paint(p: THREE.Vector3) {
-    const zones = this.game.zones;
-    const before = zones.skipped;
-    zones.paint(p.x, p.z, this.brushRadius(), this.active === 'dezone' ? null : this.zoneType);
-    crumb(this.active === 'dezone' ? 'dezoned' : `zoned ${this.zoneType}`);
-    if (zones.skipped > before && !this.warnedZoned) {
-      this.warnedZoned = true;
-      this.game.toast('Already zoned. Use Dezone first to change it.');
-    }
+    this.game.zones.paint(p.x, p.z, this.brushRadius(), this.active === 'dezone' ? null : this.zoneType);
+  }
+
+  /** builders' appetite for a zone right now, and whether it's enough to build */
+  zoneDemand(z: ZoneType) {
+    const k = z === 'resLow' || z === 'resHigh' ? 'res' : z === 'comLow' || z === 'comHigh' ? 'com' : z === 'industry' ? 'ind' : 'off';
+    const v = Math.round(this.game.sim.demand[k]);
+    return { letter: k[0].toUpperCase(), v, ok: v >= 5 };
+  }
+
+  /** after a brush stroke: what got zoned, what was refused and why, and whether it will grow */
+  private strokeSummary() {
+    const r = this.game.zones.endStroke();
+    const dez = this.active === 'dezone';
+    const refused = [
+      r.notOwned && `${r.notOwned} outside your land (buy it in 🏞️ Land)`,
+      r.otherZone && `${r.otherZone} already zoned something else (Dezone first)`,
+      r.built && `${r.built} already built on${dez ? ' (bulldoze first)' : ''}`,
+    ].filter(Boolean) as string[];
+    if (!r.changed && !refused.length) return;
+    crumb(`${dez ? 'dezoned' : `zoned ${this.zoneType}`} ${r.changed}${refused.length ? `, refused ${refused.join('; ')}` : ''}`);
+    let msg = r.changed ? `${dez ? 'Dezoned' : 'Zoned'} ${r.changed} lot${r.changed === 1 ? '' : 's'}${dez ? '' : ` ${ZONE_LABEL[this.zoneType]}`}` : 'Nothing zoned';
+    if (refused.length) msg += ` · ${refused.join(' · ')}`;
+    if (!dez && r.changed) { const d = this.zoneDemand(this.zoneType); msg += d.ok ? ` · builders want it (${d.letter} +${d.v})` : ` · waiting for demand (${d.letter} ${d.v > 0 ? '+' : ''}${d.v}; building starts at +5)`; }
+    this.game.toast(msg, !r.changed);
   }
   private warnedZoned = false;
   private lastTap = { t: -1e9, x: 0, z: 0 };
@@ -484,7 +531,11 @@ export class Tools implements PointerHandlers {
       this.brushRing.visible = true;
       this.brushRing.scale.set(r, 1, r);
       this.brushRing.position.set(hov.x, hov.y + 0.8, hov.z);
-      this.tip = null;
+      if (this.active === 'dezone') this.tip = { text: 'Dezone: unzones empty lots' };
+      else {
+        const d = this.zoneDemand(this.zoneType);
+        this.tip = { text: `${ZONE_LABEL[this.zoneType]}: ${d.ok ? `builders want it (${d.letter} +${d.v})` : `waiting for demand (${d.letter} ${d.v > 0 ? '+' : ''}${d.v}; starts at +5)`} · dim lots are waiting` };
+      }
     } else this.tip = null;
   }
 

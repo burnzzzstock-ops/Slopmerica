@@ -106,8 +106,8 @@ export class TransitSystem {
       const depotCount = this.depots().length;
       const upkeep = activeBuses * 135 + depotCount * 420;
       const fares = [...this.lines.values()].reduce((n, l) => n + l.lastWeekRiders, 0) * FARE[this.fare].price;
-      if (upkeep) add('SLOP Transit operations', upkeep, 'other');
-      if (fares) add('Bus fares', -fares, 'other');
+      if (upkeep) add('SLOP Transit operations', upkeep, 'transit');
+      if (fares) add('Bus fares', -fares, 'transit');
     });
     g.net.events.on('segRemoved', (seg) => this.roadGone(seg.id));
     g.net.events.on('changed', () => { this.accessDirty = true; this.visualDirty = true; });
@@ -145,7 +145,8 @@ export class TransitSystem {
     if (!chk.ok) { this.g.toast(chk.reason ?? 'Nope', true); this.g.audio.play('error'); return false; }
     const b = this.g.buildings.placeCustom('busDepot', x, z, chk.yaw);
     if (!b) return false;
-    this.g.sim.spend(DEPOT_COST, 'Bus depot', 'services');
+    this.g.sim.spend(DEPOT_COST, 'Bus depot', 'construction');
+    this.g.pushUndo({ kind: 'place', bldId: b.id, refund: DEPOT_COST, label: 'Bus depot' });
     this.g.audio.play('build');
     this.g.toast("Bus depot ordered. The sign's confidence exceeds the timetable's.");
     return true;
@@ -627,6 +628,7 @@ let depotSpot: { x: number; z: number } | null = null;
 
 registerTool({
   id: 'transit-depot', touchLift: 64,
+  placing: () => '🚏 Bus depot',
   up(g, p, e, wasDrag) {
     if (wasDrag || !p) return;
     if (e.pointerType !== 'mouse') { depotSpot = { x: p.x, z: p.z }; return; }
@@ -651,6 +653,7 @@ registerTool({
 
 registerTool({
   id: 'transit-line', touchLift: 52,
+  busy: (g) => !!transitFor(g)?.drawing,
   up(g, p, _e, wasDrag) { if (!wasDrag && p) transitFor(g)?.addDraftPoint(p.x, p.z); },
   cancel(g) { transitFor(g)?.cancelDraft(); },
   // phone Done: keep a line with enough stops instead of throwing it away

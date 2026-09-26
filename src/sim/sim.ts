@@ -16,22 +16,67 @@ export const SPEEDS = [0, 1, 2, 4];
 
 export type Mode = 'sandbox' | 'ponzi' | 'hippie' | 'speedrun';
 
+/**
+ * Money by category, signed (income +, spending -). Recurring kinds are
+ * billed once a week and make up the weekly rate the HUD shows; one-time
+ * kinds are single purchases and payments that move cash but never the rate.
+ */
 export interface Ledger {
+  // recurring
   resTax: number;
   comTax: number;
   indTax: number;
   offTax: number;
+  /** road upkeep */
+  roads: number;
+  /** service upkeep, utility imports, the county waste contract */
+  services: number;
+  /** bus operations and fares */
+  transit: number;
+  /** district policy costs */
+  policies: number;
+  /** freight exports and emergency goods imports */
+  freight: number;
+  /** loan repayments */
+  loans: number;
+  // one-time
+  construction: number;
   impact: number;
   grants: number;
-  other: number;
-  roads: number;
-  construction: number;
   communes: number;
-  loans: number;
-  services: number;
+  disasters: number;
+  refunds: number;
+  /** loan money received */
+  loanIn: number;
+  other: number;
 }
+export type LedgerKind = keyof Ledger;
+export const RECURRING: LedgerKind[] = ['resTax', 'comTax', 'indTax', 'offTax', 'roads', 'services', 'transit', 'policies', 'freight', 'loans'];
+export const ONE_TIME: LedgerKind[] = ['construction', 'impact', 'grants', 'communes', 'disasters', 'refunds', 'loanIn', 'other'];
+export const LEDGER_LABEL: Record<LedgerKind, string> = {
+  resTax: 'Residential taxes', comTax: 'Commercial taxes', indTax: 'Industrial taxes', offTax: 'Office taxes',
+  roads: 'Road upkeep', services: 'Services & utility imports', transit: 'Transit', policies: 'Policies', freight: 'Freight', loans: 'Loan payments',
+  construction: 'Construction', impact: 'Impact fees', grants: 'Federal grants', communes: 'Communes & lawyers', disasters: 'Disaster recovery',
+  refunds: 'Refunds', loanIn: 'Loans taken', other: 'Other',
+};
+/** how far below zero the treasury may go before purchases are refused */
+export const CREDIT_LINE = 20000;
+/** below this for BANKRUPT_WEEKS weekly closes in a row, the city goes bankrupt */
+export const BANKRUPT_AT = -15000;
+export const BANKRUPT_WEEKS = 6;
 
-const emptyLedger = (): Ledger => ({ resTax: 0, comTax: 0, indTax: 0, offTax: 0, impact: 0, grants: 0, other: 0, roads: 0, construction: 0, communes: 0, loans: 0, services: 0 });
+const emptyLedger = (): Ledger => ({
+  resTax: 0, comTax: 0, indTax: 0, offTax: 0, roads: 0, services: 0, transit: 0, policies: 0, freight: 0, loans: 0,
+  construction: 0, impact: 0, grants: 0, communes: 0, disasters: 0, refunds: 0, loanIn: 0, other: 0,
+});
+
+/** $12,345 / −$12,345 */
+export const usd = (n: number) => (n === Infinity ? '∞' : `${n < 0 ? '−' : ''}$${Math.abs(Math.round(n)).toLocaleString()}`);
+
+/** one entry in the transaction log */
+export interface Tx { day: number; label: string; amount: number; kind: LedgerKind }
+/** one line of a weekly bill or forecast (amount signed like the ledger) */
+export interface WeekLine { label: string; amount: number; kind: LedgerKind }
 
 export const UNLOCKS: { pop: number; what: string; zone?: ZoneType; road?: string }[] = [
   { pop: 250, what: 'Luxury Slop apartments', zone: 'resHigh' },
@@ -71,8 +116,12 @@ export interface SimHooks {
   taxMul: ((b: Bld) => number)[];
   /** adjust demand in place and explain the change */
   demand: ((d: Record<DemandKey, number>, why: DemandWhy) => void)[];
-  /** weekly budget lines: call add(label, amount, kind); amount > 0 is an expense, < 0 income */
-  weekly: ((add: (label: string, amount: number, kind: keyof Ledger) => void) => void)[];
+  /**
+   * Weekly budget lines: call add(label, amount, kind); amount > 0 is an
+   * expense, < 0 income. With forecast=true the hook is asked for the bill it
+   * would send at today's rates and must not change any state.
+   */
+  weekly: ((add: (label: string, amount: number, kind: LedgerKind) => void, forecast: boolean) => void)[];
 }
 
 type Events = {
@@ -99,6 +148,15 @@ export class Sim {
   demand = { res: 60, com: 0, ind: 0, off: 0 };
   ledger = emptyLedger(); // current week (accumulating)
   lastWeek = emptyLedger();
+  /** the latest transactions, oldest first (labelled; recurring bills included) */
+  transactions: Tx[] = [];
+  /** cash when the current week began (for the weekly reconciliation) */
+  private weekStartCash = 0;
+  /** cash at the start and end of the last closed week */
+  lastWeekCash = { from: 0, to: 0 };
+  /** how far the last closed week's cash change missed its ledger (should be 0) */
+  ledgerDrift = 0;
+  private fcCache: { key: string; v: ReturnType<Sim['computeForecast']> } | null = null;
   history: { day: number; pop: number; money: number; nature: number; sprawl: number }[] = [];
   coverage = 0;
   maxedPct = 0;
@@ -136,6 +194,7 @@ export class Sim {
 
   constructor(public mode: Mode, private b: Buildings, private zones: Zoning, private net: RoadNetwork, private terrain: Terrain, private trees: Trees) {
     this.money = mode === 'sandbox' ? Infinity : mode === 'speedrun' ? 150000 : mode === 'hippie' ? 70000 : 90000;
+    this.weekStartCash = this.money;
     if (mode === 'speedrun') this.growthMul = 2;
     if (mode === 'sandbox') for (const u of UNLOCKS) this.unlocked.add(u.what);
     // sample buildable land once (for the sprawl meter)
@@ -148,28 +207,113 @@ export class Sim {
   }
 
   // ------------------------------------------------------------------ money
+  /** what can still be spent: cash plus the credit line */
   spendable() {
-    return this.money === Infinity ? Infinity : Math.max(0, this.money + 20000);
+    return this.money === Infinity ? Infinity : Math.max(0, this.money + CREDIT_LINE);
   }
-  spend(amount: number, _label: string, kind: keyof Ledger = 'construction') {
+  private record(label: string, amount: number, kind: LedgerKind) {
+    if (!amount) return;
+    this.transactions.push({ day: Math.round(this.day * 10) / 10, label: label || LEDGER_LABEL[kind], amount, kind });
+    if (this.transactions.length > 200) this.transactions.splice(0, this.transactions.length - 200);
+    this.fcCache = null;
+  }
+  spend(amount: number, label: string, kind: LedgerKind = 'construction') {
     if (this.money === Infinity) return true;
     this.money -= amount;
     this.ledger[kind] -= amount;
+    this.record(label, -amount, kind);
     return true;
   }
-  refund(amount: number) {
+  refund(amount: number, label = 'Refund') {
     if (this.money !== Infinity) this.money += amount;
-    this.ledger.other += amount;
+    this.ledger.refunds += amount;
+    this.record(label, amount, 'refunds');
   }
-  earn(amount: number, kind: keyof Ledger) {
+  earn(amount: number, kind: LedgerKind, label = LEDGER_LABEL[kind]) {
     if (this.money !== Infinity) this.money += amount;
     this.ledger[kind] += amount;
+    this.record(label, amount, kind);
   }
   takeLoan(amount: number) {
     const weeks = 52;
     const weekly = Math.round((amount * 1.18) / weeks);
     this.loans.push({ amount, weekly, weeksLeft: weeks });
-    this.earn(amount, 'other');
+    this.earn(amount, 'loanIn', `Loan (${weeks} weeks)`);
+  }
+
+  /** why a purchase can't go through, or null when it can */
+  cantAfford(cost: number): string | null {
+    if (cost <= this.spendable()) return null;
+    return `Needs ${usd(cost)}. You can spend ${usd(this.spendable())} (cash ${usd(this.money)} + ${usd(CREDIT_LINE)} credit).`;
+  }
+
+  /**
+   * Cash and the weekly rate after buying something for `cost` that adds
+   * `weekly` of recurring cost (negative = recurring income).
+   */
+  afterSpend(cost: number, weekly = 0) {
+    if (this.money === Infinity) return { cash: Infinity, before: 0, after: 0, credit: false, text: 'sandbox: money is no object' };
+    const cash = this.money - cost, before = this.forecastWeek().net, after = before - weekly;
+    const rate = (v: number) => `${v >= 0 ? '+' : '−'}${usd(Math.abs(v))}/wk`;
+    return { cash, before, after, credit: cash < 0, text: `cash after ${usd(cash)}${cash < 0 ? ' (on credit)' : ''} · ${weekly ? `${rate(before)} → ${rate(after)}` : `${rate(before)} unchanged`}` };
+  }
+
+  /** tax owed per zone group this week at today's occupancy and rate */
+  private taxLines(): WeekLine[] {
+    const t = this.taxRate / 0.09;
+    let res = 0, com = 0, ind = 0, off = 0;
+    for (const bld of this.b.list.values()) {
+      if (bld.state !== 'active' && bld.occ === 0) continue;
+      if (!isZoned(bld) || bld.abandoned !== undefined) continue;
+      let lm = 1 + (bld.level - 1) * 0.3;
+      for (const h of this.hooks.taxMul) lm *= h(bld);
+      if (bld.zone === 'resLow' || bld.zone === 'resHigh') res += bld.occ * 0.9 * lm;
+      else if (bld.zone === 'comLow' || bld.zone === 'comHigh') com += bld.occ * 1.2 * lm;
+      else if (bld.zone === 'industry') ind += bld.occ * 1.0 * lm;
+      else if (bld.zone === 'office') off += bld.occ * 1.5 * lm;
+    }
+    return [
+      { label: LEDGER_LABEL.resTax, amount: Math.round(res * t), kind: 'resTax' },
+      { label: LEDGER_LABEL.comTax, amount: Math.round(com * t), kind: 'comTax' },
+      { label: LEDGER_LABEL.indTax, amount: Math.round(ind * t), kind: 'indTax' },
+      { label: LEDGER_LABEL.offTax, amount: Math.round(off * t), kind: 'offTax' },
+    ];
+  }
+
+  /** every recurring line of a weekly bill; forecast=true asks hooks for today's rates */
+  private weekLines(forecast: boolean): WeekLine[] {
+    const lines = this.taxLines();
+    lines.push({ label: 'Road upkeep', amount: -Math.round(this.net.upkeep()), kind: 'roads' });
+    if (this.serviceCostPerCapita > 0) lines.push({ label: 'Services', amount: -Math.round(this.population * this.serviceCostPerCapita), kind: 'services' });
+    for (const h of this.hooks.weekly) h((label, amount, kind) => { if (Math.round(amount)) lines.push({ label, amount: -Math.round(amount), kind }); }, forecast);
+    for (const L of this.loans) if (L.weeksLeft > 0) lines.push({ label: 'Loan payment', amount: -L.weekly, kind: 'loans' });
+    return lines.filter((l) => l.amount);
+  }
+
+  private computeForecast() {
+    const lines = this.weekLines(true);
+    let income = 0, expense = 0;
+    for (const l of lines) if (l.amount > 0) income += l.amount; else expense -= l.amount;
+    return { lines, income, expense, net: income - expense };
+  }
+
+  /**
+   * The weekly bill at today's rates: taxes in, upkeep, imports and loan
+   * payments out. One-time spending is never part of it. Cached briefly;
+   * any transaction invalidates it.
+   */
+  forecastWeek() {
+    const key = `${Math.floor(this.day * 8)}|${this.taxRate}|${this.population}`;
+    if (!this.fcCache || this.fcCache.key !== key) this.fcCache = { key, v: this.computeForecast() };
+    return this.fcCache.v;
+  }
+
+  /** a ledger's recurring and one-time totals */
+  static split(L: Ledger) {
+    let recurring = 0, oneTime = 0;
+    for (const k of RECURRING) recurring += L[k];
+    for (const k of ONE_TIME) oneTime += L[k];
+    return { recurring, oneTime, total: recurring + oneTime };
   }
   isUnlocked(key: { zone?: ZoneType; road?: string }): boolean {
     if (this.mode === 'sandbox') return true;
@@ -470,39 +614,31 @@ export class Sim {
   }
 
   private weekly() {
-    const t = this.taxRate / 0.09;
-    let res = 0, com = 0, ind = 0, off = 0;
-    for (const bld of this.b.list.values()) {
-      if (bld.state !== 'active' && bld.occ === 0) continue;
-      if (!isZoned(bld) || bld.abandoned !== undefined) continue;
-      let lm = 1 + (bld.level - 1) * 0.3;
-      for (const h of this.hooks.taxMul) lm *= h(bld);
-      if (bld.zone === 'resLow' || bld.zone === 'resHigh') res += bld.occ * 0.9 * lm;
-      else if (bld.zone === 'comLow' || bld.zone === 'comHigh') com += bld.occ * 1.2 * lm;
-      else if (bld.zone === 'industry') ind += bld.occ * 1.0 * lm;
-      else if (bld.zone === 'office') off += bld.occ * 1.5 * lm;
+    // bill exactly the lines a forecast would show (the hooks close their
+    // weekly accumulators when forecast=false)
+    for (const l of this.weekLines(false)) {
+      if (l.amount > 0) this.earn(l.amount, l.kind, l.label);
+      else this.spend(-l.amount, l.label, l.kind);
     }
-    this.earn(Math.round(res * t), 'resTax');
-    this.earn(Math.round(com * t), 'comTax');
-    this.earn(Math.round(ind * t), 'indTax');
-    this.earn(Math.round(off * t), 'offTax');
-    this.spend(Math.round(this.net.upkeep()), 'Road upkeep', 'roads');
-    if (this.serviceCostPerCapita > 0) this.spend(Math.round(this.population * this.serviceCostPerCapita), 'Services', 'services');
-    for (const h of this.hooks.weekly) h((label, amount, kind) => { if (amount > 0) this.spend(Math.round(amount), label, kind); else if (amount < 0) this.earn(Math.round(-amount), kind); });
-    for (const L of this.loans) {
-      if (L.weeksLeft <= 0) continue;
-      L.weeksLeft--;
-      this.spend(L.weekly, 'Loan payment', 'loans');
-    }
+    for (const L of this.loans) if (L.weeksLeft > 0) L.weeksLeft--;
     this.loans = this.loans.filter((l) => l.weeksLeft > 0);
+    // reconcile: the week's cash change must equal the sum of its ledger
+    if (this.money !== Infinity) {
+      const { total } = Sim.split(this.ledger);
+      this.ledgerDrift = Math.round(this.money - this.weekStartCash - total);
+      if (Math.abs(this.ledgerDrift) > 1) console.error(`Ledger out of balance by $${this.ledgerDrift} (week ending day ${Math.floor(this.day)})`);
+      this.lastWeekCash = { from: Math.round(this.weekStartCash), to: Math.round(this.money) };
+      this.weekStartCash = this.money;
+    }
     this.lastWeek = this.ledger;
     this.ledger = emptyLedger();
+    this.fcCache = null;
     this.events.emit('week', this.lastWeek);
     if (this.money !== Infinity) {
       if (this.money < 5000 && this.money >= 0) this.events.emit('lowMoney', this.money);
-      if (this.money < -15000) {
+      if (this.money < BANKRUPT_AT) {
         this.bankruptWeeks++;
-        if (this.bankruptWeeks >= 6) this.events.emit('bankrupt', this.money);
+        if (this.bankruptWeeks >= BANKRUPT_WEEKS) this.events.emit('bankrupt', this.money);
       } else this.bankruptWeeks = 0;
     }
   }
@@ -513,6 +649,7 @@ export class Sim {
     this.net.day = day;
     this.b.day = day;
     this.money = money === null ? Infinity : money;
+    this.weekStartCash = this.money;
     this.taxRate = tax;
     this.loans = loans;
     this.population = pop;
@@ -530,6 +667,8 @@ export class Sim {
       bankruptWeeks: this.bankruptWeeks, growthAcc: this.growthAcc, rng: this.rng.state,
       ledger: { ...this.ledger }, lastWeek: { ...this.lastWeek }, history: this.history.slice(-400),
       unlocked: [...this.unlocked],
+      weekStartCash: this.money === Infinity ? 0 : Math.round(this.weekStartCash), lastWeekCash: { ...this.lastWeekCash },
+      transactions: this.transactions.slice(-60),
     };
   }
 
@@ -540,13 +679,16 @@ export class Sim {
     if (Number.isFinite(x.rng)) this.rng.state = x.rng >>> 0;
     if (x.ledger) this.ledger = { ...emptyLedger(), ...x.ledger };
     if (x.lastWeek) this.lastWeek = { ...emptyLedger(), ...x.lastWeek };
+    // older saves: start reconciling from what this week has booked so far
+    this.weekStartCash = Number.isFinite(x.weekStartCash) ? x.weekStartCash : this.money - Sim.split(this.ledger).total;
+    if (x.lastWeekCash) this.lastWeekCash = x.lastWeekCash;
+    if (Array.isArray(x.transactions)) this.transactions = x.transactions;
     if (Array.isArray(x.history)) this.history = x.history;
     if (Array.isArray(x.unlocked)) for (const u of x.unlocked) this.unlocked.add(u);
   }
 
-  /** Net per week from the last completed ledger. */
+  /** The weekly rate at today's rates (recurring lines only; see forecastWeek). */
   weeklyNet() {
-    const L = this.lastWeek;
-    return Object.values(L).reduce((a, b) => a + b, 0);
+    return this.forecastWeek().net;
   }
 }

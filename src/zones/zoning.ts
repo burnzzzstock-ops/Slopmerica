@@ -238,16 +238,35 @@ export class Zoning {
 
   /** cells a zoning stroke skipped because they already had another zone */
   skipped = 0;
+  /** true while builders want this zone (the overlay dims zoned lots that are waiting for demand) */
+  growable: ((z: ZoneType) => boolean) | null = null;
+  /** what the current brush stroke did, by cell (a stroke repaints the same cells many times) */
+  private stroke: { changed: Set<number>; notOwned: Set<number>; otherZone: Set<number>; built: Set<number> } | null = null;
+
+  beginStroke() {
+    this.stroke = { changed: new Set(), notOwned: new Set(), otherZone: new Set(), built: new Set() };
+  }
+
+  /** counts for the stroke that just ended: lots changed, and lots refused by reason */
+  endStroke() {
+    const s = this.stroke;
+    this.stroke = null;
+    return { changed: s?.changed.size ?? 0, notOwned: s?.notOwned.size ?? 0, otherZone: s?.otherZone.size ?? 0, built: s?.built.size ?? 0 };
+  }
+
+  get overlayActive() { return this.overlayOn; }
 
   paint(x: number, z: number, r: number, zone: ZoneType | null) {
     let n = 0;
+    const st = this.stroke;
     for (const c of this.hash.query(x - r, z - r, x + r, z + r)) {
-      if (!c.valid || c.bld) continue;
-      if (zone && this.allowed && !this.allowed(c.x, c.z)) continue;
+      if (!c.valid || Math.hypot(c.x - x, c.z - z) > r) continue;
+      // standing buildings keep their lots (only count it when the stroke wanted something else)
+      if (c.bld) { if (c.zone !== zone) st?.built.add(c.id); continue; }
+      if (zone && this.allowed && !this.allowed(c.x, c.z)) { st?.notOwned.add(c.id); continue; }
       // zoned land keeps its zone: dezone it first to change it
-      if (zone && c.zone && c.zone !== zone) { if (Math.hypot(c.x - x, c.z - z) <= r) this.skipped++; continue; }
-      if (Math.hypot(c.x - x, c.z - z) > r) continue;
-      if (c.zone !== zone) { c.zone = zone; n++; }
+      if (zone && c.zone && c.zone !== zone) { this.skipped++; st?.otherZone.add(c.id); continue; }
+      if (c.zone !== zone) { c.zone = zone; n++; st?.changed.add(c.id); }
     }
     if (n) { this.overlayDirty = true; this.version++; }
     return n;
@@ -370,7 +389,8 @@ export class Zoning {
       q.setFromAxisAngle(up, c.yaw);
       m.compose(new THREE.Vector3(c.x, c.y + 0.35, c.z), q, new THREE.Vector3(1, 1, 1));
       this.overlayMesh.setMatrixAt(n, m);
-      if (c.zone) col.setHex(ZONE_COLORS[c.zone]).multiplyScalar(this.overlayOn ? 1 : 0.8);
+      // with the zoning tool out: bright = builders want these lots, dim = waiting for demand
+      if (c.zone) col.setHex(ZONE_COLORS[c.zone]).multiplyScalar(this.overlayOn ? (this.growable && !this.growable(c.zone) ? 0.38 : 1) : 0.8);
       else col.setRGB(0.85, 0.85, 0.9);
       this.overlayMesh.setColorAt(n, col);
       n++;

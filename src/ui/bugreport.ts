@@ -107,6 +107,20 @@ export function buildReport(g: Game | null, f: ReportFields, extra?: string): st
     L.push(`City: ${g.cityName} (${g.map.def.id}, ${s.mode}) · day ${Math.floor(s.day)} · pop ${s.population.toLocaleString()} · ${money} · ${g.net.segs.size} roads · ${g.buildings.list.size} buildings`);
     const t = g.tools, c = g.rts.target;
     L.push(`Where: tool ${t.active}${t.extTool ? `/${t.extTool}` : ''} · camera ${Math.round(c.x)},${Math.round(c.z)} · zoom ${Math.round(g.rts.distance)} · speed ${s.speed}`);
+    L.push(`Graphics: ${graphics(g)}`);
+    const fs = g.prof.stats();
+    if (fs.frames) L.push(`Frames (last ${fs.frames}): avg ${fs.avg.toFixed(1)} ms · p95 ${fs.p95.toFixed(1)} ms · worst ${fs.max.toFixed(0)} ms · usually ${g.prof.top(4).map(([k, v]) => `${k} ${v.toFixed(1)}`).join(', ')}`);
+    if (g.prof.worst.length) {
+      L.push('Slowest frames:');
+      for (const w of g.prof.worst.slice(0, 3)) L.push(` ${w.ms.toFixed(0)} ms at ${clock(w.at)}: ${w.parts.map(([k, v]) => `${k} ${v}`).join(', ')} · ${w.ctx}`);
+    }
+    const dm = (['res', 'com', 'ind', 'off'] as const).map((k) => {
+      const h = s.demandHistory[k], v = Math.round(s.demand[k]), tr = h.length > 1 ? Math.round(h[h.length - 1] - h[0]) : 0;
+      return `${k[0].toUpperCase()} ${v > 0 ? '+' : ''}${v}${tr ? ` (${tr > 0 ? '+' : ''}${tr}/wk)` : ''}`;
+    });
+    L.push(`Demand: ${dm.join(' · ')}`);
+    const hist = s.history.slice(-8);
+    if (hist.length) L.push(`Timeline: ${hist.map((h) => `d${h.day} ${h.pop} pop ${s.money === Infinity ? '' : `$${Math.round(h.money / 1000)}k`}`.trim()).join(' → ')}`);
   }
   L.push(`Session: ${clock(performance.now())} played`);
   if (f.withLog) {
@@ -120,6 +134,17 @@ export function buildReport(g: Game | null, f: ReportFields, extra?: string): st
     }
   }
   return L.join('\n');
+}
+
+/** quality preset, whether post effects run (and why not), and the drawing buffer */
+function graphics(g: Game): string {
+  try {
+    const r = g.renderer, gl = r.getContext(), a = gl.getContextAttributes();
+    const fx = g.post.active ? 'effects on' : g.post.offReason ? `effects OFF (${g.post.offReason})` : 'effects off (preset)';
+    return `${g.q.name}${g.pendingQuality ? ` → ${g.pendingQuality} on reload` : ''} · ${fx} · ${gl.drawingBufferWidth}×${gl.drawingBufferHeight} px · pixel ratio ${r.getPixelRatio().toFixed(2)} · ${a?.antialias ? 'MSAA' : 'no MSAA'}${gl.isContextLost() ? ' · CONTEXT LOST' : ''}`;
+  } catch {
+    return 'unknown';
+  }
 }
 
 type Downloads = { save(r: { filename: string; data: string | Blob }): Promise<{ status: string }> };
@@ -214,7 +239,10 @@ export function openBugReport(parent: HTMLElement, g: Game | null, opts: { prefi
     refresh();
   }));
   for (const inp of [what, exp, log]) inp.addEventListener('input', refresh);
-  const close = () => { el.remove(); opts.onClose?.(); };
+  // Esc closes the sheet wherever focus is (phones never focus inside it)
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && el.isConnected) { e.stopPropagation(); close(); } };
+  const close = () => { document.removeEventListener('keydown', onKey, true); el.remove(); opts.onClose?.(); };
+  document.addEventListener('keydown', onKey, true);
   $('.bug-x').addEventListener('click', close);
   el.addEventListener('pointerdown', (e) => { if (e.target === el) close(); });
   el.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Escape') close(); });

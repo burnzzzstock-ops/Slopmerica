@@ -340,7 +340,7 @@ registerSystem({
         for (const k of ['res', 'com', 'ind', 'off'] as const) if (delta[k]) { const n = delta[k] * share; d[k] += n; why[k].push(`${label} ${n > 0 ? '+' : ''}${n.toFixed(1)} (${Math.round(share * 100)}% coverage)`); }
       }
     });
-    g.sim.hooks.weekly.push((add) => { for (const id of POLICY_IDS) { const cost = policyCost(s, id); if (cost) add(`Policy: ${POLICY_BY_ID.get(id)!.label}`, cost, 'other'); } });
+    g.sim.hooks.weekly.push((add) => { for (const id of POLICY_IDS) { const cost = policyCost(s, id); if (cost) add(`Policy: ${POLICY_BY_ID.get(id)!.label}`, cost, 'policies'); } });
     (g as unknown as { districts: unknown }).districts = {
       create: () => createDistrict(s), paint: (x: number, z: number, districtId = s.selected, radius = s.brush) => { s.selected = districtId; s.brush = radius; const n = paint(s, x, z, false); rebuildVisual(s); return n; },
       erase: (x: number, z: number, radius = s.brush) => { s.brush = radius; const n = paint(s, x, z, true); rebuildVisual(s); return n; },

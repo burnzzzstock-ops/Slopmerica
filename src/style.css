@@ -887,6 +887,7 @@ a {
   touch-action: pan-x;
 }
 .card {
+  position: relative;
   flex: 0 0 132px;
   display: flex;
   flex-direction: column;
@@ -972,6 +973,144 @@ a {
   font-weight: 900;
   border-bottom: 0;
   padding-top: 8px;
+}
+.tb-meters {
+  cursor: pointer;
+  border-radius: 8px;
+}
+.tb-meters:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.meter-pop .dp-title + .dp-status {
+  margin-bottom: 10px;
+}
+.tb-money {
+  cursor: pointer;
+  border-radius: 8px;
+}
+.tb-money:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.budget-live {
+  min-width: 0;
+}
+.budget .muted,
+.crisis .muted {
+  color: var(--muted);
+  font-weight: 500;
+}
+.budget td.muted {
+  text-align: left;
+  font-size: 12px;
+}
+.bg-top {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.bg-top > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.bg-top span {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.bg-top b {
+  font-size: 15px;
+}
+.budget table + table,
+.budget .bg-more {
+  margin-top: 10px;
+}
+.budget tr.head td {
+  padding-top: 2px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: left;
+}
+.budget tr.sub td {
+  color: var(--ink-2);
+  font-style: italic;
+}
+.bg-growth {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-2);
+  white-space: normal;
+}
+.bg-more summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink-2);
+  padding: 4px 0;
+}
+.bg-rules {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-2);
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  white-space: normal;
+}
+.tax .chip small {
+  font-weight: 600;
+  opacity: 0.75;
+}
+.crisis {
+  position: absolute;
+  top: calc(84px + var(--safe-t));
+  right: 12px;
+  z-index: 4;
+  width: min(340px, calc(100vw - 32px));
+  padding: 10px 12px;
+  background: rgba(38, 12, 14, 0.94);
+  border: 1px solid rgba(255, 90, 79, 0.55);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  font-size: 12.5px;
+  line-height: 1.4;
+  white-space: normal;
+}
+.crisis p {
+  margin: 6px 0 0;
+}
+.crisis-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  color: #ffb3ad;
+}
+.crisis-head button {
+  width: 30px;
+  height: 30px;
+  margin: -6px -6px -6px 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink-2);
+}
+.crisis-acts {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
 }
 .tax {
   display: flex;
@@ -1214,6 +1353,39 @@ a {
   margin: 0 0 8px;
   color: var(--ink-2);
   line-height: 1.35;
+}
+.toast.unlock {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: auto;
+  border-color: var(--lime);
+}
+.toast.unlock small {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-2);
+  font-weight: 600;
+}
+.card.new::after {
+  content: 'NEW';
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: var(--lime);
+  color: #111;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+.in-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-2);
+  white-space: normal;
 }
 .in-warn {
   color: var(--ind);
@@ -1504,6 +1676,10 @@ a {
   .budget {
     grid-template-columns: 1fr;
   }
+  .crisis {
+    top: calc(64px + var(--safe-t));
+    right: 8px;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   * {
@@ -1710,6 +1886,13 @@ a {
   background: rgba(255, 255, 255, 0.05);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+.svc-stat {
+  line-height: 1.45;
+  white-space: normal;
+}
+.svc-trade {
+  color: var(--ink-2);
 }
 .svc-stat.bad {
   background: rgba(224, 48, 42, 0.16);

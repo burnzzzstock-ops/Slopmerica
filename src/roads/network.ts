@@ -54,6 +54,8 @@ export type Snap =
 export interface Plan {
   ok: boolean;
   reason?: string;
+  /** the commune whose land the road would cross (the tool offers its buy-out / lawsuit) */
+  blocker?: number;
   length: number;
   cost: number;
   grant: number;
@@ -86,7 +88,9 @@ export class RoadNetwork {
   private nextStreet = 1;
   private hash = new SpatialHash<number>(64);
   /** Areas where roads may not go (hippie communes). */
-  blockers: { x: number; z: number; r: number; name: string }[] = [];
+  blockers: { x: number; z: number; r: number; name: string; id: number }[] = [];
+  /** the rule and the way out when a road would cross a commune (set by the game, which knows the prices) */
+  blockerReason?: (id: number) => string;
   /** land the player may build on (null = everywhere); see sim/land.ts */
   allowed: ((x: number, z: number) => boolean) | null = null;
 
@@ -164,7 +168,7 @@ export class RoadNetwork {
       if (this.allowed && !this.allowed(p.x, p.z)) return { ...res, ok: false, reason: "You don't own this land yet. Buy it in 🏞️ Land." };
       if (this.terrain.h(p.x, p.z) < WATER + 0.4) water += i > 0 ? samp.cum[i] - samp.cum[i - 1] : 0;
       for (const b of this.blockers) {
-        if (Math.hypot(p.x - b.x, p.z - b.z) < b.r + t.width / 2) return { ...res, ok: false, reason: `${b.name} won't let you. Pay them off or sue.` };
+        if (Math.hypot(p.x - b.x, p.z - b.z) < b.r + t.width / 2) return { ...res, ok: false, blocker: b.id, reason: this.blockerReason?.(b.id) ?? `Commune land: roads can't cross ${b.name}.` };
       }
       if (i > 0) {
         const d = sub(p, samp.pts[i - 1]);
@@ -205,7 +209,7 @@ export class RoadNetwork {
     res.bridgeLen = water;
     res.cost = Math.round(samp.length * t.costPerM + water * t.costPerM * 2.5);
     res.grant = Math.round(res.cost * t.fedGrant);
-    if (res.cost - res.grant > money) return { ...res, ok: false, reason: 'Not enough money (try a loan, or a lawsuit)' };
+    if (res.cost - res.grant > money) return { ...res, ok: false, reason: `Needs $${Math.round(res.cost - res.grant).toLocaleString()}; you can spend $${Math.max(0, Math.round(money)).toLocaleString()} (cash + credit). Try a shorter road or a loan.` };
     return res;
   }
 

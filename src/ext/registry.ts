@@ -29,6 +29,10 @@ export interface ExtTool {
   confirm?(g: Game): void;
   /** the action-bar Done button, just before the tool is put away (finish drafts here) */
   done?(g: Game): void;
+  /** the one thing this tool places, for the "Placing …" badge (null when it isn't a placement tool) */
+  placing?(g: Game): string | null;
+  /** an unfinished draft (a bus line's stops): right-click cancels it before putting the tool away */
+  busy?(g: Game): boolean;
 }
 
 /** A toolbar button with a sub-panel. */
@@ -41,6 +45,8 @@ export interface ExtPanel {
   render(el: HTMLElement, g: Game, rerender: () => void): void;
   /** called when the panel closes */
   close?(g: Game): void;
+  /** called twice a second while open, to update live numbers without a re-render */
+  refresh?(el: HTMLElement, g: Game): void;
 }
 
 /** An info view (overlay) listed in the Info Views panel. */

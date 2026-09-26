@@ -141,7 +141,7 @@ function recover(g: Game) {
     if (s) s.blocked = 0;
   }
   clearMarker(g);
-  if (event.cost) g.sim.spend(event.cost, `${event.kind} recovery`, 'services');
+  if (event.cost) g.sim.spend(event.cost, `${event.kind} recovery`, 'disasters');
   g.toast(`${event.kind} recovery complete. The invoice survived.`);
   g.feed.push('weatherChange', { weather: g.weather.kind });
   event = null;

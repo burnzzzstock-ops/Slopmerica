@@ -32,6 +32,7 @@ import { Overlays } from './render/overlays';
 import { buildingMaterial } from './buildings/generator';
 import { loadKitArt, setKitNight } from './buildings/kitGenerator';
 import { applySave, type SaveData } from './sim/save';
+import { crumb } from './ui/bugreport';
 
 export type GameMode = Mode;
 
@@ -122,6 +123,8 @@ export class Game {
   private resolutionCooldown = 0;
   private dynamicScale = 1;
   pendingQuality: Quality['name'] | null = null;
+  /** when to look for an all-black picture (performance.now() ms) */
+  private blackChecks: number[] = [];
   onFrame: ((dt: number) => void)[] = [];
 
   constructor(public container: HTMLElement, public opts: GameOptions) {
@@ -604,6 +607,7 @@ export class Game {
       this.env.sun.shadow.map = null;
     }
     this.setRenderScale(this.dynamicScale, presetPixelRatio(name));
+    this.blackChecks.push(performance.now() + 2500);
     return this.pendingQuality !== null;
   }
 
@@ -662,9 +666,37 @@ export class Game {
     }
   }
 
+  /**
+   * Safety net for GPUs that draw nothing through the post effects: sample
+   * the picture just drawn and, if a daylight frame is black everywhere, draw
+   * straight to the screen instead. Returns what it found (for tests).
+   */
+  checkBlackFrame(): string {
+    const gl = this.renderer.getContext();
+    if (gl.isContextLost()) return 'context lost'; // reads come back as zeros; main.ts handles it
+    const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, px = new Uint8Array(4);
+    let lit = 0;
+    for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) {
+      gl.readPixels(Math.floor((w * (i + 0.5)) / 5), Math.floor((h * (j + 0.5)) / 5), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      if (px[0] + px[1] + px[2] > 12) lit++;
+    }
+    if (lit > 0) return 'ok';
+    if (this.post.active) {
+      this.post.turnOff();
+      crumb('black frame: turned post effects off');
+      console.warn('SLOPMERICA: the picture came out black with post effects on; drawing without them.');
+      this.blackChecks.unshift(performance.now() + 1500);
+      return 'black: post effects off';
+    }
+    // still black with nothing in between: that is a bug to report
+    console.error(`Black frame even without post effects (${gpuName(gl)}, ${this.q.name})`);
+    return 'black without post effects';
+  }
+
   // ------------------------------------------------------------------ loop
   start() {
     let last = performance.now();
+    this.blackChecks = [last + 2500, last + 6000, last + 12000];
     const loop = () => {
       this.raf = requestAnimationFrame(loop);
       const began = performance.now();
@@ -793,6 +825,10 @@ export class Game {
       this.renderer.info.reset();
       wu.uReflOn.value = this.water.reflection?.shouldRender(this.camera) ? 1 : 0;
       this.post.render(n);
+      if (this.blackChecks.length && performance.now() >= this.blackChecks[0] && !document.hidden) {
+        this.blackChecks.shift();
+        if (this.hour > 7.5 && this.hour < 17.5) this.checkBlackFrame();
+      }
       // A mirror pass before the main pass can bind a shadow sampler before
       // three.js has created its shadow texture. Reuse the previous reflection
       // for this frame and refresh it after the main scene has rendered.
@@ -801,6 +837,14 @@ export class Game {
       this.perf.triangles = this.renderer.info.render.triangles;
     }
   }
+}
+
+/** the GPU's name for a log line, when the browser shares it */
+function gpuName(gl: WebGLRenderingContext | WebGL2RenderingContext) {
+  try {
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    return String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+  } catch { return 'unknown GPU'; }
 }
 
 function defaultCityName(map: MapId) {

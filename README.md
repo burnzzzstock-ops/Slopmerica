@@ -40,6 +40,7 @@ node scripts/demandtest.mjs      # demand cards: reasons add up, actions, Esc/ta
 node scripts/commandtest.mjs     # road upgrade/bulldoze: same rules from toolbar and inspector
 node scripts/savecontinuity.mjs  # a reload resumes the same future (rng, ledger, trees, imports)
 node scripts/qualitytest.mjs     # graphics presets never change the simulation
+node scripts/nantest.mjs         # one NaN/Inf pixel can't black out the screen; black-frame fallback
 ```
 
 `BASE_URL=http://127.0.0.1:5174` points any of them at another server (handy for running the suite against a frozen copy while you keep editing). Scripts that assert exit nonzero on failure.

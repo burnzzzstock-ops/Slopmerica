@@ -44,7 +44,12 @@ const aoMat = () =>
         vec3 Pu = viewPos(vUv + vec2(0.0, px.y)), Pd = viewPos(vUv - vec2(0.0, px.y));
         vec3 dx = abs(Pr.z - P.z) < abs(P.z - Pl.z) ? Pr - P : P - Pl;
         vec3 dy = abs(Pu.z - P.z) < abs(P.z - Pd.z) ? Pu - P : P - Pd;
-        vec3 N = normalize(cross(dx, dy));
+        // flat depth makes the cross product zero, and normalize(0) is NaN on
+        // some GPUs (Direct3D): skip those pixels instead
+        vec3 cr = cross(dx, dy);
+        float cl = dot(cr, cr);
+        if (!(cl > 1e-24)) { gl_FragColor = vec4(1.0); return; }
+        vec3 N = cr * inversesqrt(cl);
         if (N.z < 0.0) N = -N;
         float r = uRadius;
         float rPx = r * uProj[1][1] * 0.5 * uFull.y / -P.z;
@@ -103,14 +108,34 @@ const compositeMat = () =>
   new THREE.ShaderMaterial({
     uniforms: { tColor: { value: null }, tAO: { value: null }, uAO: { value: 1 } },
     vertexShader: FSQ_VERT,
+    // Also the frame's firewall: one NaN or Inf pixel from any material would
+    // be smeared across the whole screen by bloom's blur and turn it black.
+    // Bad pixels take their neighbours' colour; brightness is capped well
+    // inside half-float range.
     fragmentShader: /* glsl */ `
       uniform sampler2D tColor, tAO;
       uniform float uAO;
       varying vec2 vUv;
+      // NaN and ±Inf have every exponent bit set; tested on the bits so no
+      // shader compiler can optimise the check away
+      bool finite(float x) { return (floatBitsToUint(x) & 0x7f800000u) != 0x7f800000u; }
+      bool finite3(vec3 c) { return finite(c.r) && finite(c.g) && finite(c.b); }
       void main() {
-        vec4 c = texture2D(tColor, vUv);
-        float ao = mix(1.0, texture2D(tAO, vUv).r, uAO);
-        gl_FragColor = vec4(c.rgb * ao, 1.0);
+        vec3 c = texture2D(tColor, vUv).rgb;
+        if (!finite3(c)) {
+          vec2 px = 1.0 / vec2(textureSize(tColor, 0));
+          vec3 acc = vec3(0.0); float n = 0.0;
+          for (int i = 0; i < 4; i++) {
+            vec2 o = i == 0 ? vec2(px.x, 0.0) : i == 1 ? vec2(-px.x, 0.0) : i == 2 ? vec2(0.0, px.y) : vec2(0.0, -px.y);
+            vec3 s = texture2D(tColor, vUv + o).rgb;
+            if (finite3(s)) { acc += s; n += 1.0; }
+          }
+          c = n > 0.0 ? acc / n : vec3(0.0);
+        }
+        float ao = texture2D(tAO, vUv).r;
+        if (!finite(ao)) ao = 1.0;
+        ao = mix(1.0, ao, uAO);
+        gl_FragColor = vec4(clamp(c * ao, 0.0, 4096.0), 1.0);
       }`,
     depthTest: false,
     depthWrite: false,
@@ -199,6 +224,12 @@ export interface PostLook {
 
 export class PostFX {
   readonly enabled: boolean;
+  /** set when this GPU drew a black frame through the effects (see Game.checkBlackFrame) */
+  private off = false;
+  /** effects are on and haven't been switched off */
+  get active() { return this.enabled && !this.off; }
+  /** fall back to drawing the scene straight to the screen */
+  turnOff() { this.off = true; }
   /** Optional looks (dev lab / photo mode). */
   vignette = true;
   tiltShift = false;
@@ -255,7 +286,7 @@ export class PostFX {
   /** night: 0 day .. 1 night (bloom strength etc.) */
   render(night: number) {
     const r = this.renderer;
-    if (!this.enabled) {
+    if (!this.active) {
       r.setRenderTarget(null);
       r.render(this.scene, this.camera);
       return;

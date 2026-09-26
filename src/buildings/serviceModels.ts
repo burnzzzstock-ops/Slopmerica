@@ -35,6 +35,9 @@ export type ServiceModelId =
   | 'fireStation' | 'sheriff' | 'clinic' | 'hospital' | 'school' | 'college' | 'park';
 
 const CONCRETE = col(0xb9b6ad), STEEL = col(0x8e959c), DARK = col(0x2b2e33), WHITE = col(0xf1f0ea);
+// flat roofs: light membrane like real commercial roofs (near-black roofs read
+// as solid black boxes from the usual camera angle)
+const ROOF = col(0x9c9fa1);
 const BRICK = col(0x9a4c34), RED = col(0xb3151d), GRASS = col(0x6f9a4a), ASPH = col(0x3a3c40);
 
 function lot(k: Kit, W: number, D: number, tile: number = T.CONCRETE, c: Col = col(0xffffff)) {
@@ -130,7 +133,7 @@ export function serviceModel(id: ServiceModelId, w: number, d: number): Building
       lot(k, W, D);
       perimeter(k, W, D, 12);
       // boiler house + turbine hall
-      k.box(-6, -4, 18, 20, 0, 30, [T.BRICK, T.BRICK, T.BRICK, T.BRICK], col(0x7a4a36), T.ROOF_FLAT, DARK, { floors: 6 });
+      k.box(-6, -4, 18, 20, 0, 30, [T.BRICK, T.BRICK, T.BRICK, T.BRICK], col(0x7a4a36), T.ROOF_FLAT, ROOF, { floors: 6 });
       k.box(8, 0, 14, 26, 0, 16, [T.METAL, T.METAL, T.METAL, T.METAL], col(0x6d7780), T.ROOF_FLAT, col(0x55595e));
       k.gable(8, 0, 14, 26, 16, 3, false, col(0x55595e), col(0x6d7780), T.METAL, 0.3, T.METAL);
       stack(k, -12, -16, 2.6, 62);
@@ -305,8 +308,8 @@ export function serviceModel(id: ServiceModelId, w: number, d: number): Building
     }
     case 'incinerator': {
       lot(k, W, D);
-      k.box(-3, -2, 20, 18, 0, 17, [T.METAL, T.METAL, T.METAL, T.METAL], col(0x4e5358), T.ROOF_FLAT, DARK);
-      k.box(-3, 8.5, 12, 3, 0, 7, T.GARAGE, col(0x6a7076), T.ROOF_FLAT, DARK);
+      k.box(-3, -2, 20, 18, 0, 17, [T.METAL, T.METAL, T.METAL, T.METAL], col(0x7d868d), T.ROOF_FLAT, ROOF);
+      k.box(-3, 8.5, 12, 3, 0, 7, T.GARAGE, col(0x6a7076), T.ROOF_FLAT, ROOF);
       stack(k, 10, -9, 1.8, 44);
       k.box(10, 5, 6, 8, 0, 9, T.METAL, col(0x6d7780), T.SOLID, DARK);
       k.flame(10, 44, -9, 3, 1.2, 5);
@@ -319,9 +322,9 @@ export function serviceModel(id: ServiceModelId, w: number, d: number): Building
     // ------------------------------------------------------------ safety & health
     case 'fireStation': {
       lot(k, W, D);
-      k.box(-1, -3, 18, 12, 0, 6.5, [T.BRICK, T.BRICK, T.BRICK, T.BRICK], BRICK, T.ROOF_FLAT, DARK);
+      k.box(-1, -3, 18, 12, 0, 6.5, [T.BRICK, T.BRICK, T.BRICK, T.BRICK], BRICK, T.ROOF_FLAT, ROOF);
       garageDoors(k, -9.6, 5, 3.02, 4.6, 3, RED);
-      k.box(9, -5, 3.5, 3.5, 0, 13, T.BRICK, BRICK, T.ROOF_FLAT, DARK); // hose tower
+      k.box(9, -5, 3.5, 3.5, 0, 13, T.BRICK, BRICK, T.ROOF_FLAT, ROOF); // hose tower
       k.box(-1, 3.4, 18, 0.5, 6.5, 7.2, T.SOLID, WHITE, T.SOLID);
       k.sign(-1, 5.6, 3.36, 11, 1.3, 'svc:fire', 0, false);
       flagpole(k, 10, 9);
@@ -333,7 +336,7 @@ export function serviceModel(id: ServiceModelId, w: number, d: number): Building
     }
     case 'sheriff': {
       lot(k, W, D);
-      k.box(0, -3, 18, 12, 0, 7, [T.STORE, T.BRICK, T.BRICK, T.BRICK], col(0xc9b99a), T.ROOF_FLAT, DARK, { fit: true });
+      k.box(0, -3, 18, 12, 0, 7, [T.STORE, T.BRICK, T.BRICK, T.BRICK], col(0xc9b99a), T.ROOF_FLAT, ROOF, { fit: true });
       k.box(0, 3.3, 7, 0.6, 5.2, 7.4, T.SOLID, col(0x1a2233), T.SOLID);
       k.sign(0, 6.3, 3.65, 6.4, 1.6, 'svc:sheriff', 0, false);
       k.sign(0, 4.4, 3.08, 12, 0.8, 'svc:qi', 0, false);
@@ -380,8 +383,8 @@ export function serviceModel(id: ServiceModelId, w: number, d: number): Building
     // ------------------------------------------------------------ education & parks
     case 'school': {
       lot(k, W, D);
-      k.box(-4, -5, 20, 12, 0, 7.5, [T.HOUSE_WIN, T.BRICK, T.HOUSE_WIN, T.BRICK], col(0xa45a3c), T.ROOF_FLAT, DARK, { floors: 2 });
-      k.box(9, -6, 10, 14, 0, 9, T.BRICK, col(0x8e4a32), T.ROOF_FLAT, DARK); // gym
+      k.box(-4, -5, 20, 12, 0, 7.5, [T.HOUSE_WIN, T.BRICK, T.HOUSE_WIN, T.BRICK], col(0xa45a3c), T.ROOF_FLAT, ROOF, { floors: 2 });
+      k.box(9, -6, 10, 14, 0, 9, T.BRICK, col(0x8e4a32), T.ROOF_FLAT, ROOF); // gym
       k.gable(9, -6, 10, 14, 9, 1.6, false, col(0x5a5f66), col(0x8e4a32), T.BRICK, 0.2, T.METAL);
       k.box(-4, 1.3, 5, 0.8, 0, 3.6, T.SOLID, WHITE, T.SOLID);
       k.sign(-4, 5.6, 1.06, 16, 1.7, 'svc:school', 0, false);

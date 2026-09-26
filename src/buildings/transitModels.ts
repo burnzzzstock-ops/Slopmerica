@@ -12,7 +12,8 @@ export function busDepotModel(): BuildingModel {
   const yellow = col(0xf1c232);
 
   k.slab(-20, -16, 20, 16, 0.04, T.PARKING, col(0x8f8d87));
-  k.box(0, -3, 38, 23, 0.05, 8.2, [T.GARAGE, T.CONCRETE, T.CONCRETE, T.CONCRETE], concrete, T.ROOF_FLAT, dark, { fit: true });
+  // a light membrane roof: a dark one read as a black box from above
+  k.box(0, -3, 38, 23, 0.05, 8.2, [T.GARAGE, T.CONCRETE, T.CONCRETE, T.CONCRETE], concrete, T.ROOF_FLAT, col(0x9c9fa1), { fit: true });
   // Three oversized bay doors across the public-facing wall.
   for (const x of [-12, 0, 12]) {
     k.box(x, 8.62, 8.5, 0.24, 0.15, 6.5, T.GARAGE, col(0x676b70), T.METAL, dark, { ao: false });

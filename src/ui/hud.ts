@@ -687,6 +687,7 @@ export class Hud implements UiSink {
     } else if (p === 'zones') {
       this.sub.innerHTML = `
         <div class="sp-title">Zoning <small>Paint cells along roads. Buildings grow when there's demand.</small></div>
+        <div class="sp-row">Brush ${['S', 'M', 'L'].map((s, i) => `<button class="chip ${t.brush === i ? 'on' : ''}" data-brush="${i}">${s}</button>`).join('')}</div>
         <div class="sp-grid zones">${ZONE_TYPES.map((z) => {
           const locked = !g.sim.isUnlocked({ zone: z });
           const need = UNLOCKS.find((u) => u.zone === z)?.pop;
@@ -694,8 +695,7 @@ export class Hud implements UiSink {
             <span class="ci">${ZONE_ICON[z]}</span><b>${esc(ZONE_LABEL[z])}</b><small>${locked ? `🔒 Pop ${need?.toLocaleString() ?? '?'}` : `Levels 1–${MAX_LEVEL[z]}`}</small></button>`;
         }).join('')}
           <button class="card zone ${t.active === 'dezone' ? 'on' : ''}" data-zone="none" style="--zc:#888"><span class="ci">🧽</span><b>Dezone</b><small>Unzone empty cells</small></button>
-        </div>
-        <div class="sp-row">Brush ${['S', 'M', 'L'].map((s, i) => `<button class="chip ${t.brush === i ? 'on' : ''}" data-brush="${i}">${s}</button>`).join('')}</div>`;
+        </div>`;
       this.sub.querySelectorAll<HTMLButtonElement>('[data-zone]').forEach((b) => b.addEventListener('click', () => {
         const z = b.dataset.zone!;
         if (z === 'none') t.set('dezone');
@@ -765,6 +765,7 @@ export class Hud implements UiSink {
           <button class="chip" id="perf-toggle">${this.perfVisible ? 'Hide' : 'Show'} performance</button>
           ${IS_TOUCH ? '' : `<button class="chip ${g.rts.edgeScroll ? 'on' : ''}" id="edge-toggle" aria-pressed="${g.rts.edgeScroll}">Edge scrolling: ${g.rts.edgeScroll ? 'on' : 'off'}</button>`}
           ${g.pendingQuality ? '<button class="chip on" id="quality-reload">Reload to finish applying</button>' : ''}
+          <label class="fov-ctl" for="fov-range">Field of view <input type="range" id="fov-range" min="35" max="75" step="1" value="${Math.round(g.camera.fov)}"><b id="fov-v">${Math.round(g.camera.fov)}°</b></label>
         </div>
         <small>Resolution and shadows change immediately. Reload applies scenery, traffic, and post-processing budgets.</small>
         <div class="help">${IS_TOUCH ? `
@@ -797,6 +798,13 @@ export class Hud implements UiSink {
       });
       this.sub.querySelector('#quality-reload')?.addEventListener('click', () => location.reload());
       this.sub.querySelector('#perf-toggle')?.addEventListener('click', () => { this.togglePerf(); this.renderPanel(); });
+      this.sub.querySelector('#fov-range')?.addEventListener('input', (e) => {
+        const v = Number((e.target as HTMLInputElement).value);
+        g.camera.fov = v;
+        g.camera.updateProjectionMatrix();
+        this.sub.querySelector('#fov-v')!.textContent = `${v}°`;
+        try { localStorage.setItem('slopmerica.fov', String(v)); } catch { /* not remembered */ }
+      });
       this.sub.querySelector('#edge-toggle')?.addEventListener('click', () => {
         g.rts.edgeScroll = !g.rts.edgeScroll;
         try { localStorage.setItem('slopmerica.edgeScroll', g.rts.edgeScroll ? '1' : '0'); } catch { /* not remembered */ }

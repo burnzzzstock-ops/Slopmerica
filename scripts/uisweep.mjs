@@ -9,7 +9,7 @@ const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const out = `shots/sweep-${kind}`;
 mkdirSync(out, { recursive: true });
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
-const ctx = await browser.newContext(phone ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : { viewport: { width: Number(process.env.W) || 1280, height: 800 } });
+const ctx = await browser.newContext(phone ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : { viewport: { width: Number(process.env.W) || 1280, height: Number(process.env.H) || 800 } });
 const page = await ctx.newPage();
 const errs = [];
 page.on('pageerror', (e) => errs.push('pageerror ' + e.message));

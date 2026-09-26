@@ -177,6 +177,9 @@ export class Game {
     this.renderer.domElement.className = 'game-canvas';
     container.appendChild(this.renderer.domElement);
     this.camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 1, 50000);
+    // Settings → Field of view (playtest: "hard to see what you're doing")
+    try { const f = Number(localStorage.getItem('slopmerica.fov')); if (f >= 35 && f <= 75) this.camera.fov = f; } catch { /* default */ }
+    this.camera.updateProjectionMatrix();
 
     // world
     this.terrain = new Terrain(this.map, this.renderer, this.q);

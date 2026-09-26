@@ -1322,13 +1322,15 @@ registerSystem({
     }
     const fac: [number, number, number][] = [];
     for (const [id, fs] of S.f) { const b = g.buildings.list.get(id); if (b && fs.stored > 0) fac.push([Math.round(b.x), Math.round(b.z), Math.round(fs.stored)]); }
-    return { v: 1, bld, fac, pol: S.fields.save(), counts: S.counts, grace: S.graceUntil };
+    return { v: 1, bld, fac, pol: S.fields.save(), counts: S.counts, grace: S.graceUntil, week: { ...S.week } };
   },
   load(g, data) {
-    const d = data as { bld?: [number, number, number, number, number, number, number?][]; fac?: [number, number, number][]; pol?: [number, number][]; counts?: typeof S.counts; grace?: number } | undefined;
+    const d = data as { bld?: [number, number, number, number, number, number, number?][]; fac?: [number, number, number][]; pol?: [number, number][]; counts?: typeof S.counts; grace?: number; week?: typeof S.week } | undefined;
     if (!d) return;
     S.loaded = true;
     S.graceUntil = d.grace ?? 0;
+    // utility imports and trash hauled so far this week, billed at week's end
+    if (d.week) S.week = { ...S.week, ...d.week };
     const key = (x: number, z: number) => `${Math.round(x)},${Math.round(z)}`;
     const byPos = new Map<string, Bld>();
     for (const b of g.buildings.list.values()) byPos.set(key(b.x, b.z), b);

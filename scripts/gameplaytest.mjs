@@ -5,7 +5,7 @@ const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromi
 const page = await browser.newPage({ viewport: { width: 800, height: 500 } });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message + '\n' + e.stack));
-await page.goto(`http://127.0.0.1:5173/#skip&map=${map}&mode=ponzi`, { waitUntil: 'load' });
+await page.goto(`${process.env.BASE_URL || 'http://127.0.0.1:5173'}/#skip&map=${map}&mode=ponzi`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.__game && window.__dbg && window.__land, null, { timeout: 120000 });
 await page.evaluate(() => cancelAnimationFrame(window.__game.raf));
 const out = await page.evaluate(() => {

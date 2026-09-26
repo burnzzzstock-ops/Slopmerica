@@ -211,19 +211,43 @@ export class TransitSystem {
     this.accessDirty = true; this.visualDirty = true;
   }
 
+  /**
+   * Ridership model (the one authoritative count; fares and crowding use it):
+   * each day every running line carries riders = min(homes, jobs) it serves ×
+   * how attractive it is (headway, fare), capped by its bus capacity. A
+   * building within walking distance of several lines splits its people
+   * between them by attractiveness, so overlapping lines share one market
+   * instead of each counting the same commuters. Visible car trips that
+   * `chooseTransit` diverts only drive traffic and the mode share; they are
+   * not added again as riders.
+   */
   daily() {
     if (this.unlocked && !this.unlockedNotice) { this.unlockedNotice = true; this.g.toast('Public transit unlocked: buses now available for civic disappointment.'); }
     if (this.accessDirty) this.rebuildAccess();
     this.stats.ridersToday = 0;
     for (const stop of this.stops.values()) stop.boardings *= 0.82;
+    const pull = new Map<number, number>();
     for (const line of this.lines.values()) {
       line.loopLength = this.computeLoopLength(line);
+      pull.set(line.id, this.lineCanRun(line) ? clamp((18 - this.headway(line)) / 18, 0.08, 0.72) : 0);
+    }
+    // each building's share of its people that goes to each line
+    const shareOf = (lineId: number, access: { lineId: number }[]) => {
+      const total = access.reduce((n, v) => n + (pull.get(v.lineId) ?? 0), 0);
+      return total > 0 ? (pull.get(lineId) ?? 0) / total : 0;
+    };
+    for (const line of this.lines.values()) {
       if (!this.lineCanRun(line)) { line.busiestStop = null; continue; }
-      const served = [...this.access.entries()].filter(([, a]) => a.some((v) => v.lineId === line.id)).map(([id]) => this.g.buildings.list.get(id)).filter((b): b is Bld => !!b);
-      const homes = served.filter((b) => b.zone === 'resLow' || b.zone === 'resHigh').reduce((n, b) => n + b.occ, 0);
-      const jobs = served.filter((b) => b.zone !== 'resLow' && b.zone !== 'resHigh' && b.zone !== 'service' && b.zone !== 'landmark').reduce((n, b) => n + b.occ, 0);
-      const headway = this.headway(line);
-      const attractiveness = clamp((18 - headway) / 18, 0.08, 0.72) * FARE[this.fare].demand;
+      let homes = 0, jobs = 0;
+      for (const [id, a] of this.access) {
+        if (!a.some((v) => v.lineId === line.id)) continue;
+        const b = this.g.buildings.list.get(id);
+        if (!b) continue;
+        const people = b.occ * shareOf(line.id, a);
+        if (b.zone === 'resLow' || b.zone === 'resHigh') homes += people;
+        else if (b.zone !== 'service' && b.zone !== 'landmark') jobs += people;
+      }
+      const attractiveness = (pull.get(line.id) ?? 0) * FARE[this.fare].demand;
       const capacity = Math.max(1, line.buses * BUS_CAPACITY * 8);
       const raw = Math.round(Math.min(homes * 0.65, jobs * 0.9) * attractiveness);
       const riders = Math.round(raw * Math.min(1, capacity / Math.max(1, raw)));
@@ -447,9 +471,9 @@ export class TransitSystem {
     const crowdMul = 1 / (1 + Math.max(0, crowded - 1) * 1.6);
     const p = clamp((1 / (1 + Math.exp(-0.72 * (carMinutes - transitMinutes)))) * FARE[this.fare].demand * crowdMul, 0.015, 0.88);
     if (hash2(from.id * 4099 + to.id, this.modeRoll++, Math.floor(this.g.sim.day)) >= p) return false;
+    // mode choice for a visible trip: counts toward mode share, not riders
+    // (the daily model already carries these commuters)
     this.stats.divertedCarTrips++;
-    this.stats.ridersThisWeek++;
-    for (const line of best.lines) line.weeklyRiders++;
     return true;
   }
 

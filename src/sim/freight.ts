@@ -12,7 +12,7 @@ interface ShopStock { id: number; stock: number; capacity: number; sold: number;
 interface Shipment { id: number; kind: FreightKind; qty: number; fromId: number; toId: number; car: Car }
 interface Totals { produced: number; localDelivered: number; imported: number; exported: number; sold: number; factoryLost: number; shopSpoiled: number }
 interface SavedStock { id: number; x: number; z: number; stock: number; capacity: number; produced?: number; sold?: number; dryDays?: number; localDelivered?: number; imported?: number; lastDelivery?: number; supplier?: string }
-interface FreightSave { version: 1; factories: SavedStock[]; shops: SavedStock[]; totals: Totals; routes: [number, number][] }
+interface FreightSave { version: 1; factories: SavedStock[]; shops: SavedStock[]; totals: Totals; routes: [number, number][]; pending?: { exportIncome: number; importCosts: number } }
 
 const factories = new Map<number, FactoryStock>();
 const shops = new Map<number, ShopStock>();
@@ -217,10 +217,20 @@ function restoreMap<T extends FactoryStock | ShopStock>(g: Game, rows: SavedStoc
   }
 }
 
+/**
+ * Trucks on the road can't be resumed, so the snapshot rolls them back
+ * without creating or losing goods: outbound loads go back into their
+ * factory's stock (the live game is untouched), imports were not paid for
+ * yet and are simply re-ordered later. Money earned or owed this week that
+ * the weekly bill hasn't settled yet is kept.
+ */
 function saveState(g: Game): FreightSave {
-  let inFlightLoss = 0;
-  for (const s of shipments.values()) if (s.kind !== 'import') inFlightLoss += s.qty;
-  return { version: 1, factories: savedStocks(g, factories), shops: savedStocks(g, shops), totals: { ...totals, factoryLost: totals.factoryLost + inFlightLoss }, routes: [...truckRoutes] };
+  const back = new Map<number, number>();
+  for (const s of shipments.values()) if (s.kind !== 'import' && s.fromId) back.set(s.fromId, (back.get(s.fromId) ?? 0) + s.qty);
+  const facRows = savedStocks(g, factories).map((r) => (back.has(r.id) ? { ...r, stock: r.stock + back.get(r.id)! } : r));
+  let orphaned = 0; // loads whose factory is gone: they were lost with it
+  for (const [id, qty] of back) if (!factories.has(id)) orphaned += qty;
+  return { version: 1, factories: facRows, shops: savedStocks(g, shops), totals: { ...totals, factoryLost: totals.factoryLost + orphaned }, routes: [...truckRoutes], pending: { exportIncome, importCosts } };
 }
 
 function loadState(g: Game, raw: unknown) {
@@ -229,6 +239,8 @@ function loadState(g: Game, raw: unknown) {
   restoreMap(g, data.factories ?? [], 'factory', (r, id) => ({ id, stock: r.stock, capacity: r.capacity, produced: r.produced ?? 0 }));
   restoreMap(g, data.shops ?? [], 'shop', (r, id) => ({ id, stock: r.stock, capacity: r.capacity, sold: r.sold ?? 0, dryDays: r.dryDays ?? 0, localDelivered: r.localDelivered ?? 0, imported: r.imported ?? 0, lastDelivery: r.lastDelivery ?? -1, supplier: r.supplier ?? 'None yet' }));
   for (const [id, n] of data.routes ?? []) truckRoutes.set(id, n);
+  exportIncome = data.pending?.exportIncome ?? 0;
+  importCosts = data.pending?.importCosts ?? 0;
   syncBuildings(g); routesDirty = true;
 }
 

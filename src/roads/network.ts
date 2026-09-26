@@ -64,6 +64,8 @@ export interface Plan {
 type Events = {
   segAdded: RSeg;
   segRemoved: RSeg;
+  /** Only a junction end was pulled back (trimA/trimB): same id, length and route. */
+  segTrimmed: RSeg;
   segChanged: RSeg;
   nodeChanged: RNode;
   changed: void;
@@ -459,6 +461,9 @@ export class RoadNetwork {
     this.events.emit('segAdded', seg);
   }
 
+  /** Id of the segment being split right now (its removal is a split, not a demolition). */
+  splitting = -1;
+
   /** Split a segment at curve param t; returns the new middle node. */
   splitSeg(seg: RSeg, t: number): RNode {
     const pt = bezPoint(seg.curve, t);
@@ -470,7 +475,9 @@ export class RoadNetwork {
     const idx = Math.round(t * (seg.hs.length - 1));
     const node: RNode = { id: this.nextNode++, x: pt.x, z: pt.z, y: seg.hs[clamp(idx, 0, seg.hs.length - 1)], segs: [] };
     this.nodes.set(node.id, node);
+    this.splitting = seg.id;
     this.detachSeg(seg);
+    this.splitting = -1;
     const s1 = this.addSeg(A, node, { ...c1, p3: { x: node.x, z: node.z } }, seg.type, seg.name, seg.street)!;
     const s2 = this.addSeg(node, B, { ...c2, p0: { x: node.x, z: node.z } }, seg.type, seg.name, seg.street)!;
     s1.builtDay = s2.builtDay = seg.builtDay;
@@ -563,7 +570,9 @@ export class RoadNetwork {
       if (Math.abs(old - trim) > 0.01) {
         if (e.atA) e.s.trimA = trim;
         else e.s.trimB = trim;
-        this.events.emit('segChanged', e.s);
+        // a new street joining here reshapes the junction, it doesn't change
+        // the road: cars keep their routes (see segChanged for real changes)
+        this.events.emit('segTrimmed', e.s);
       }
     }
     this.events.emit('nodeChanged', n);

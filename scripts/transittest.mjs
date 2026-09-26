@@ -15,7 +15,7 @@ const page = await browser.newPage({ viewport: { width: Number(process.argv[3]) 
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-const base = process.argv[2] || 'http://127.0.0.1:5173';
+const base = process.argv[2] || process.env.BASE_URL || 'http://127.0.0.1:5173';
 await page.goto(`${base}/#skip&map=florida&mode=sandbox`, { waitUntil: 'load', timeout: 120000 });
 try {
   await page.waitForFunction(() => window.__game?.transit && window.__dbg, null, { timeout: 120000 });
@@ -67,11 +67,20 @@ const out = await page.evaluate(() => {
   const carsWithoutTransit = g.traffic.totalTrips - b0;
   clearCars();
   g.traffic.transitModeChoice = hook;
-  const b1 = g.traffic.totalTrips, diverted0 = t.stats.divertedCarTrips;
+  const b1 = g.traffic.totalTrips, diverted0 = t.stats.divertedCarTrips, riders0 = line?.weeklyRiders ?? 0;
   for (let i = 0; i < 700; i++) g.traffic.spawnTrip(8.2);
   const carsWithTransit = g.traffic.totalTrips - b1;
   const diverted = t.stats.divertedCarTrips - diverted0;
+  // accounting: diverted visible trips are mode choice, not extra riders
+  const divertedAddedRiders = (line?.weeklyRiders ?? 0) - riders0;
   clearCars();
+  // a second line on the same stops shares the same commuters
+  points.forEach(([x, z]) => t.addDraftPoint(x, z));
+  t.finishDraft();
+  const twin = [...t.lines.values()][1];
+  if (twin) twin.buses = 4;
+  t.daily();
+  const ridersWithTwin = t.stats.ridersToday;
 
   g.sim.speed = 3;
   for (let i = 0; i < 3000; i++) g.frame(1 / 30, false);
@@ -81,7 +90,7 @@ const out = await page.evaluate(() => {
   return {
     depotPlaced, stopResults, lineFinished, lines: t.lines.size, stops: t.stops.size,
     servedBuildings: t.stats.servedBuildings, ridersAtOpening, ridersToday: t.stats.ridersToday,
-    carsWithoutTransit, carsWithTransit, diverted,
+    carsWithoutTransit, carsWithTransit, diverted, divertedAddedRiders, ridersWithTwin, twinLines: t.lines.size,
     observedDrop: carsWithoutTransit ? (carsWithoutTransit - carsWithTransit) / carsWithoutTransit : 0,
     busesCompletedLoops: t.stats.busesCompletedLoops,
     activeBuses: g.traffic.cars.filter((c) => c.kind === 'cityBus').length,
@@ -90,7 +99,9 @@ const out = await page.evaluate(() => {
 });
 console.log(JSON.stringify(out, null, 2));
 if (errors.length) console.log('browser errors:', errors.join('\n'));
-const ok = out.depotPlaced && out.stopResults.every(Boolean) && out.lineFinished && out.servedBuildings > 0 && out.ridersAtOpening > 0 && out.diverted > 0 && out.carsWithTransit < out.carsWithoutTransit && out.busesCompletedLoops > 0 && out.roundTrip && !errors.length;
+const ok = out.depotPlaced && out.stopResults.every(Boolean) && out.lineFinished && out.servedBuildings > 0 && out.ridersAtOpening > 0 && out.diverted > 0 && out.carsWithTransit < out.carsWithoutTransit && out.busesCompletedLoops > 0 && out.roundTrip && !errors.length
+  && out.divertedAddedRiders === 0 && out.twinLines === 2 && out.ridersWithTwin <= out.ridersAtOpening * 1.05;
+console.log(ok ? 'OK' : 'FAIL', `riders one line ${out.ridersAtOpening}, two overlapping lines ${out.ridersWithTwin}, riders added by diversions ${out.divertedAddedRiders}`);
 const shotPrefix = process.argv[6];
 if (shotPrefix) {
   mkdirSync('artifacts', { recursive: true });

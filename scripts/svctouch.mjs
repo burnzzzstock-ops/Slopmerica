@@ -6,7 +6,7 @@ const page = await ctx.newPage();
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));
 await page.addInitScript(() => { try { localStorage.setItem('slopmerica.quality', 'low'); localStorage.setItem('slopmerica.onboarded', '1'); } catch { /* */ } });
-await page.goto(`http://127.0.0.1:${process.env.PORT || '5173'}/#skip&map=florida&mode=sandbox`, { waitUntil: 'load' });
+await page.goto(`${process.env.BASE_URL || 'http://127.0.0.1:' + (process.env.PORT || '5173')}/#skip&map=florida&mode=sandbox`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.__game && window.__dbg && window.__services, null, { timeout: 180000 });
 const cdp = await ctx.newCDPSession(page);
 const tap = async (x, y) => { await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await page.waitForTimeout(500); };

@@ -159,5 +159,18 @@ registerSystem({
       batch.push({ id, height: base + delta, paint: paint as Paint });
     }
     g.terrain.editHeights(batch);
+    // the brush cleared trees where it moved ground; the world regrows them
+    // from its seed on load, so clear the same ground again
+    if (batch.length) {
+      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+      for (const { id } of batch) {
+        const x = (id % HM_N) * HM_STEP - HALF, z = Math.floor(id / HM_N) * HM_STEP - HALF;
+        x0 = Math.min(x0, x); z0 = Math.min(z0, z); x1 = Math.max(x1, x); z1 = Math.max(z1, z);
+      }
+      g.trees.cut(x0 - HM_STEP, z0 - HM_STEP, x1 + HM_STEP, z1 + HM_STEP, (tx, tz) => {
+        const i = Math.round((tx + HALF) / HM_STEP), j = Math.round((tz + HALF) / HM_STEP);
+        return edits.has(j * HM_N + i);
+      });
+    }
   },
 });

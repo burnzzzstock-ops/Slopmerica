@@ -481,6 +481,26 @@ export class Sim {
     for (const u of UNLOCKS) if (pop >= u.pop) this.unlocked.add(u.what);
   }
 
+  /** State that shapes what happens next but isn't in the core save fields. */
+  serializeExtra() {
+    return {
+      bankruptWeeks: this.bankruptWeeks, growthAcc: this.growthAcc, rng: this.rng.state,
+      ledger: { ...this.ledger }, lastWeek: { ...this.lastWeek }, history: this.history.slice(-400),
+      unlocked: [...this.unlocked],
+    };
+  }
+
+  restoreExtra(x: ReturnType<Sim['serializeExtra']> | undefined) {
+    if (!x || typeof x !== 'object') return;
+    if (Number.isFinite(x.bankruptWeeks)) this.bankruptWeeks = x.bankruptWeeks;
+    if (Number.isFinite(x.growthAcc)) this.growthAcc = x.growthAcc;
+    if (Number.isFinite(x.rng)) this.rng.state = x.rng >>> 0;
+    if (x.ledger) this.ledger = { ...emptyLedger(), ...x.ledger };
+    if (x.lastWeek) this.lastWeek = { ...emptyLedger(), ...x.lastWeek };
+    if (Array.isArray(x.history)) this.history = x.history;
+    if (Array.isArray(x.unlocked)) for (const u of x.unlocked) this.unlocked.add(u);
+  }
+
   /** Net per week from the last completed ledger. */
   weeklyNet() {
     const L = this.lastWeek;

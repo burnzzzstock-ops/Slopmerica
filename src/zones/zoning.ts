@@ -80,7 +80,12 @@ export class Zoning {
     // a widened road rebuilds its cells; the buildings on them are re-linked
     // after the rebuild instead of being bulldozed with the old cells
     net.events.on('segChanged', (s) => { this.remember(s.id); this.dropSeg(s.id, true); this.dirtySegs.add(s.id); });
-    net.events.on('segRemoved', (s) => { this.remember(s.id); this.dropSeg(s.id); });
+    // a reshaped junction changes which lots fit along the road; lots rebuild
+    // and the buildings on them are re-linked, not bulldozed
+    net.events.on('segTrimmed', (s) => { this.remember(s.id); this.dropSeg(s.id, true); this.dirtySegs.add(s.id); });
+    // a road split in two by a new junction keeps its lots and buildings
+    // (re-linked to the two new pieces); a bulldozed road takes them with it
+    net.events.on('segRemoved', (s) => { this.remember(s.id); this.dropSeg(s.id, net.splitting === s.id); });
   }
 
   private memKey(x: number, z: number) {

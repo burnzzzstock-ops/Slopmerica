@@ -209,8 +209,17 @@ export class Buildings {
    * off the new pavement; only bulldoze it when there's no room behind.
    */
   private settleAfterWiden(b: Bld) {
+    if (isZoned(b) && !this.net.segs.has(b.seg)) {
+      // its road was split by a new junction: adopt the piece whose new lots lie under it
+      const votes = new Map<number, number>();
+      for (const c of this.zones.cellsNear(b.x, b.z, b.hw + b.hd + 8)) if (!c.bld && this.contains(b, c.x, c.z, 0.5)) votes.set(c.seg, (votes.get(c.seg) ?? 0) + 1);
+      let best = 0, most = 0;
+      for (const [seg, n] of votes) if (n > most) { best = seg; most = n; }
+      const near = best ? null : this.net.pickSeg(b.x, b.z, b.hw + b.hd + 30);
+      if (best || near) b.seg = best || near!.seg.id;
+    }
     const hit = this.roadOn(b);
-    if (!hit) return; // clear of the wider road: keeps its lot
+    if (!hit) { this.claimCells(b); return; } // clear of the new road: keeps its lot
     const c = closestOnSampled({ x: b.x, z: b.z }, hit.samp);
     const dl = Math.hypot(b.x - c.pt.x, b.z - c.pt.z) || 1;
     const ux = (b.x - c.pt.x) / dl, uz = (b.z - c.pt.z) / dl;
@@ -234,14 +243,19 @@ export class Buildings {
     b.y = this.terrain.h(b.x, b.z);
     this.terrain.flattenLot(this.corners(b), b.y, b.zone === 'resLow' || b.zone === 'resHigh' ? Paint.Lawn : Paint.Paved);
     this.trees.cut(b.x - pad - 4, b.z - pad - 4, b.x + pad + 4, b.z + pad + 4, (tx, tz) => this.contains(b, tx, tz, 2));
-    const cells = this.zones.cellsNear(b.x, b.z, pad + 8);
+    this.claimCells(b);
+    if (b.inst >= 0) this.writeMatrix(b, b.state === 'active' ? 1 : easeGrow(b.progress));
+  }
+
+  /** Point the lot cells under a building at it (and release ones it left). */
+  private claimCells(b: Bld) {
+    const cells = this.zones.cellsNear(b.x, b.z, b.hw + b.hd + 8);
     const mine = (cell: { seg: number }) => !isZoned(b) || cell.seg === b.seg;
     for (const cell of cells) {
       if (cell.bld === b.id && !this.contains(b, cell.x, cell.z, 0.5)) cell.bld = 0;
       else if (!cell.bld && mine(cell) && this.contains(b, cell.x, cell.z, 0.5)) cell.bld = b.id;
     }
     b.cells = cells.filter((cell) => cell.bld === b.id);
-    if (b.inst >= 0) this.writeMatrix(b, b.state === 'active' ? 1 : easeGrow(b.progress));
     this.zones.markOverlayDirty();
   }
 

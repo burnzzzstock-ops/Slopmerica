@@ -621,7 +621,11 @@ export class Hud implements UiSink {
           <div><span>Age</span><b>${Math.floor((g.sim.day - s.builtDay) / 365)} yrs</b></div>
           <div><span>Upkeep</span><b>${money(s.length * t.upkeepPerM)}/wk+</b></div>
         </div>
-        <div class="in-actions">${t.next ? `<button id="in-lane">➕ ONE MORE LANE</button>` : '<button disabled>MAX LANES</button>'}<button class="danger" id="in-bulldoze">💣 Bulldoze</button></div>`;
+        <div class="in-actions">${t.next ? (() => {
+          const q = g.quoteUpgrade([s], t.next);
+          const short = q.net > g.sim.spendable();
+          return `<button id="in-lane" ${short ? 'disabled title="Not enough money"' : ''}>➕ ONE MORE LANE · ${money(q.net)}</button>`;
+        })() : '<button disabled>MAX LANES</button>'}<button class="danger" id="in-bulldoze">💣 Bulldoze</button></div>`;
     }
     let extra = '';
     for (const f of EXT.inspector) extra += f(sel, g) ?? '';
@@ -632,18 +636,14 @@ export class Hud implements UiSink {
     this.inspector.innerHTML = `<button class="in-close" id="in-close" aria-label="Close">×</button>${html}`;
     this.inspector.querySelector('#in-close')?.addEventListener('click', () => g.select(null));
     this.inspector.querySelector('#in-bulldoze')?.addEventListener('click', () => {
-      if (sel.kind === 'building') { g.buildings.demolish(sel.b, 'bulldozed'); g.audio.play('bulldoze'); }
-      if (sel.kind === 'road') { g.net.removeSeg(sel.s.id); g.audio.play('bulldoze'); }
+      if (sel.kind === 'building') { crumb(`bulldozed ${sel.b.label} (inspector)`); g.buildings.demolish(sel.b, 'bulldozed'); g.audio.play('bulldoze'); }
+      if (sel.kind === 'road') { crumb(`bulldozed road ${sel.s.name} (inspector)`); g.bulldozeRoad(sel.s); }
       g.select(null);
     });
     this.inspector.querySelector('#in-lane')?.addEventListener('click', () => {
       if (sel.kind !== 'road') return;
-      const next = ROAD_TYPES[sel.s.type].next!;
-      const cost = sel.s.length * ROAD_TYPES[next].costPerM;
-      g.sim.spend(Math.round(cost), 'ONE MORE LANE');
-      g.sim.earn(Math.round(cost * ROAD_TYPES[next].fedGrant), 'grants');
-      g.net.upgrade(sel.s.id);
-      g.onLaneAdded([sel.s], next);
+      // the same command as the map tool: price, affordability check and undo
+      if (g.upgradeRoads([sel.s]).ok) crumb(`one more lane: ${sel.s.name} (inspector)`);
       this.renderInspector();
     });
     this.inspector.querySelector('#in-bribe')?.addEventListener('click', () => { if (sel.kind === 'commune') { g.bribe(sel.c); this.renderInspector(); } });

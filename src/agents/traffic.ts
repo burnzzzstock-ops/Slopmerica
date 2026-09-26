@@ -13,6 +13,9 @@ import { FIXED_PAINT, randomVehicleKind, VEHICLE_SPECS, VehicleRenderer } from '
 import { ARCHETYPES } from './people';
 import { HALF } from '../config';
 
+/** Cars the simulation runs at once, whatever the graphics preset can draw. */
+const SIM_MAX_CARS = 1000;
+
 interface Step {
   seg: number;
   dir: 1 | -1;
@@ -470,8 +473,9 @@ export class Traffic {
       if (!ok && !oB) return null;
     }
     const spec = VEHICLE_SPECS[kind];
+    // a trip happens whether or not the graphics preset has a free vehicle
+    // to draw it: -1 = simulated but not drawn (set/remove ignore it)
     const h = this.renderer.add(kind, FIXED_PAINT[kind] ?? PAINT[Math.floor(Math.random() * PAINT.length)]);
-    if (h < 0) return null;
     const night = hour > 21 || hour < 4;
     const drunk = !sober && Math.random() < (night ? 0.14 : 0.04);
     const firstSeg = this.net.segs.get(rt.steps[0].seg)!;
@@ -526,7 +530,9 @@ export class Traffic {
     const induced = 0.6 + 0.6 * this.flowEma;
     const edgeBoost = Math.min(3, this.edgeAnchors().length) * 12;
     // codex:policies begin -- Free Parking, Ban Bikes, and 4-Day Week move actual trip volume
-    this.targetCars = Math.min(this.maxCars, Math.round((population * 0.12 + jobs * 0.05 + edgeBoost) * tod * induced * this.policyTripMul));
+    // one traffic budget on every preset, so congestion (and what it does to
+    // trips, freight and demand) doesn't depend on graphics settings
+    this.targetCars = Math.min(SIM_MAX_CARS, Math.round((population * 0.12 + jobs * 0.05 + edgeBoost) * tod * induced * this.policyTripMul));
     // codex:policies end
     if (simSpeed > 0) {
       let spawns = 0;

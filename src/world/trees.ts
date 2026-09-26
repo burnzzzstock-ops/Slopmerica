@@ -12,6 +12,11 @@ import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from './atmos';
 import { newSeasonLook, sampleSeason } from './seasons';
 import type { MapId } from './maps';
 
+/** The densest preset's tree density: every tree that any preset can draw. */
+const MAX_DENSITY = 1.15;
+/** The tree set the simulation counts, whatever the preset draws. */
+const REF_DENSITY = 1;
+
 const KINDS: TreeKind[] = ['decid', 'pine', 'redwood', 'oak', 'palm', 'cypress', 'mangrove', 'shrub'];
 const DECIDUOUS = new Set<TreeKind>(['decid', 'cypress']);
 const VARIANTS = 3;
@@ -56,6 +61,12 @@ export class Trees {
   private Vr!: Uint8Array;
   private Hue!: Float32Array;
   private A!: Uint8Array;
+  /** Per-tree density weight in [0, MAX_DENSITY]. A preset draws the trees
+   * whose weight is under its density; the simulation (land value, nature)
+   * always counts the same reference set, so graphics quality never changes
+   * the city's numbers. */
+  private W!: Float32Array;
+  private renderDensity = 1;
   private cellStart!: Int32Array;
   private cellItems!: Int32Array;
   private near: THREE.InstancedMesh[] = [];
@@ -71,7 +82,8 @@ export class Trees {
 
   constructor(private terrain: Terrain, map: MapData, private q: Quality, renderer: THREE.WebGLRenderer) {
     this.mapId = map.def.id;
-    this.place(map, q.treeDensity);
+    this.renderDensity = q.treeDensity;
+    this.place(map);
     const atlas = createFoliageAtlas(renderer);
     const counts = new Array(KINDS.length).fill(0);
     for (let i = 0; i < this.n; i++) counts[this.K[i]]++;
@@ -212,14 +224,16 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
   }
 
   // ------------------------------------------------------------------ placement
-  private place(map: MapData, density: number) {
+  private place(map: MapData) {
+    // Every preset places the same trees (the densest set, same random
+    // draws); each tree keeps its weight so presets only differ in drawing.
     const rng = new Rng(map.def.seed + 99);
     const step = 9;
     const cap = Math.ceil((WORLD / step + 1) ** 2);
     const X = new Float32Array(cap), Z = new Float32Array(cap), Y = new Float32Array(cap), S = new Float32Array(cap), Rt = new Float32Array(cap);
-    const K = new Uint8Array(cap), Vr = new Uint8Array(cap), Hue = new Float32Array(cap);
+    const K = new Uint8Array(cap), Vr = new Uint8Array(cap), Hue = new Float32Array(cap), W = new Float32Array(cap);
     let n = 0;
-    const dens = density * map.def.treeDensity;
+    const dens = map.def.treeDensity;
     for (let gz = -HALF + step / 2; gz < HALF; gz += step)
       for (let gx = -HALF + step / 2; gx < HALF; gx += step) {
         const x = gx + (rng.float() - 0.5) * step * 0.95;
@@ -230,7 +244,10 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
         const rule = map.treeRule(x, z, h, this.terrain.slope(x, z), this.terrain.coverAt(x, z), rng.float());
         if (!rule) continue;
         const clump = hash2(Math.floor(x / 45), Math.floor(z / 45), 9) * 0.6 + 0.7;
-        if (rng.float() > rule.p * dens * clump * 0.62) continue;
+        const odds = rule.p * dens * clump * 0.62;
+        const roll = rng.float();
+        if (roll > odds * MAX_DENSITY) continue;
+        W[n] = odds > 0 ? roll / odds : MAX_DENSITY;
         X[n] = x;
         Z[n] = z;
         Y[n] = h - 0.25;
@@ -250,6 +267,7 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
     this.K = K.slice(0, n);
     this.Vr = Vr.slice(0, n);
     this.Hue = Hue.slice(0, n);
+    this.W = W.slice(0, n);
     this.A = new Uint8Array(n).fill(1);
     const cellOf = (i: number) => Math.min(GRID_N - 1, Math.floor((this.Z[i] + HALF) / CELL)) * GRID_N + Math.min(GRID_N - 1, Math.floor((this.X[i] + HALF) / CELL));
     const starts = new Int32Array(GRID_N * GRID_N + 1);
@@ -259,7 +277,9 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
     this.cellItems = new Int32Array(n);
     const fill = starts.slice(0, GRID_N * GRID_N);
     for (let i = 0; i < n; i++) this.cellItems[fill[cellOf(i)]++] = i;
-    this.total = this.alive = n;
+    let ref = 0;
+    for (let i = 0; i < n; i++) if (this.W[i] <= REF_DENSITY) ref++;
+    this.total = this.alive = ref;
   }
 
   // ------------------------------------------------------------------ impostor sprites
@@ -398,7 +418,7 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
         if ((cx - focus.x) ** 2 + (cz - focus.z) ** 2 > (farR + CELL) ** 2) continue;
         for (let p = this.cellStart[cell]; p < this.cellStart[cell + 1]; p++) {
           const i = this.cellItems[p];
-          if (!this.A[i]) continue;
+          if (!this.A[i] || this.W[i] > this.renderDensity) continue;
           const dx = this.X[i] - focus.x, dz = this.Z[i] - focus.z;
           const d2 = dx * dx + dz * dz;
           if (d2 > farR2) continue;
@@ -468,23 +488,26 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
   /** Remove trees inside the predicate within a box. Returns count cut. */
   cut(minX: number, minZ: number, maxX: number, maxZ: number, inside: (x: number, z: number) => boolean): number {
     let n = 0;
+    let ref = 0;
     this.forCells(minX, minZ, maxX, maxZ, (i) => {
       if (!this.A[i] || !inside(this.X[i], this.Z[i])) return;
       this.A[i] = 0;
       n++;
+      if (this.W[i] <= REF_DENSITY) ref++;
     });
     if (n) {
-      this.alive -= n;
+      this.alive -= ref;
       this.dirty = true;
     }
-    return n;
+    return ref;
   }
 
+  /** Trees near x,z in the simulation's reference set (same on every preset). */
   countIn(x: number, z: number, r: number): number {
     let n = 0;
     const r2 = r * r;
     this.forCells(x - r, z - r, x + r, z + r, (i) => {
-      if (this.A[i] && (this.X[i] - x) ** 2 + (this.Z[i] - z) ** 2 < r2) n++;
+      if (this.A[i] && this.W[i] <= REF_DENSITY && (this.X[i] - x) ** 2 + (this.Z[i] - z) ** 2 < r2) n++;
     });
     return n;
   }

@@ -5,7 +5,7 @@ const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, is
 const page = await ctx.newPage();
 page.on('pageerror', (e) => console.log('pageerror', e.message));
 await page.addInitScript(() => { try { localStorage.setItem('slopmerica.quality', 'low'); } catch { /* private */ } });
-await page.goto(`http://127.0.0.1:${process.env.PORT || '5173'}/#skip&map=appalachia&mode=sandbox`, { waitUntil: 'load' });
+await page.goto(`${process.env.BASE_URL || 'http://127.0.0.1:' + (process.env.PORT || '5173')}/#skip&map=appalachia&mode=sandbox`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.__game && window.__dbg, null, { timeout: 180000 });
 const cdp = await ctx.newCDPSession(page);
 const touch = async (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] });

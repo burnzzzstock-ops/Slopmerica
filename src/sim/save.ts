@@ -27,6 +27,8 @@ export interface SaveData {
   communes: [number, string, number, number, number][];
   /** extension system state keyed by system id */
   ext?: Record<string, unknown>;
+  /** sim state beyond the core fields (streaks, accumulators, RNG, ledgers, history) */
+  simx?: ReturnType<Game['sim']['serializeExtra']>;
 }
 
 export function snapshot(g: Game): SaveData {
@@ -36,6 +38,7 @@ export function snapshot(g: Game): SaveData {
     nature: g.sim.naturePct, sprawl: g.sim.sprawlPct, roads: g.net.serialize(), zones: g.zones.serialize(), buildings: g.buildings.serialize(),
     communes: g.communes.list.map((c) => [c.id, c.state === 'leaving' ? 'gone' : c.state, c.stubborn, c.suitDays, c.suitOdds]),
     ext: Object.fromEntries(EXT.systems.filter((s) => s.save).map((s) => [s.id, s.save!(g)])),
+    simx: g.sim.serializeExtra(),
   };
 }
 
@@ -107,19 +110,27 @@ export function applySave(g: Game, d: SaveData) {
   g.buildings.restore(d.buildings);
   g.hour = d.hour;
   g.sim.restoreState(d.day, d.money, d.tax, d.loans, d.pop, d.nature, d.sprawl);
+  g.sim.restoreExtra(d.simx);
   for (const s of EXT.systems) if (s.load && d.ext && s.id in d.ext) s.load(g, d.ext[s.id]);
 }
 
 export function autosave(g: Game) {
-  let t = 0;
+  let t = 0, warned = -Infinity;
+  // never fail quietly: a player who thinks the city is safe loses it
+  const save = () => {
+    if (saveGame(g)) return;
+    if (performance.now() - warned < 5 * 60e3) return;
+    warned = performance.now();
+    g.toast("Couldn't save: this browser's storage is full or blocked. Settings → 🐞 Report bug → Save city file keeps a copy.", true);
+  };
   g.onFrame.push((dt) => {
     t += dt;
     if (t > 30) {
       t = 0;
-      saveGame(g);
+      save();
     }
   });
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') saveGame(g);
+    if (document.visibilityState === 'hidden') save();
   });
 }

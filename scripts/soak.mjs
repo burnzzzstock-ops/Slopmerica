@@ -108,13 +108,14 @@ const run = async (days) => page.evaluate(async (days) => {
   return Math.round(performance.now() - t0);
 }, days);
 
-let day = 0;
+let day = 0, badSeen = 0;
 const CH = 30;
 while (day < DAYS) {
   const ms = await run(CH);
   day += CH;
   const s = await page.evaluate((l) => window.__soak.snap(l), `+${CH}d`);
   s.ms = ms;
+  if (s.bad?.length) badSeen++;
   log(s);
   if (day === 120) {
     // bulldoze a grid street (splits the network), upgrade another
@@ -145,3 +146,7 @@ log({ renderMsPerFrame: frames });
 console.log('ERRORS', errs.length);
 for (const e of [...new Set(errs)].slice(0, 15)) console.log(e);
 await browser.close();
+// a gate, not just a log: invalid state or page errors fail the run
+const pageErrors = errs.filter((e) => e.startsWith('pageerror'));
+if (badSeen || pageErrors.length) { console.log(`FAIL soak: ${badSeen} snapshots with invalid state, ${pageErrors.length} page errors`); process.exit(1); }
+console.log('OK soak');

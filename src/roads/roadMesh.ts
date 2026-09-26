@@ -266,6 +266,7 @@ export class RoadRenderer {
 
     net.events.on('segAdded', (s) => this.invalidateSeg(s));
     net.events.on('segChanged', (s) => this.invalidateSeg(s));
+    net.events.on('segTrimmed', (s) => this.invalidateSeg(s));
     net.events.on('segRemoved', (s) => {
       this.segGeo.delete(s.id);
       this.invalidateJunction(s.a);

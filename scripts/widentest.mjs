@@ -1,6 +1,6 @@
 // ONE MORE LANE keeps the street's buildings (slid back off the wider road),
-// nothing ends up on pavement or overlapping, and a service survives a
-// nearby road being bulldozed.
+// nothing ends up on pavement or overlapping, a service survives a nearby
+// road being bulldozed, and a road split by a new junction keeps its buildings.
 import { chromium } from 'playwright-core';
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
 const page = await browser.newPage({ viewport: { width: 900, height: 600 } });
@@ -39,10 +39,18 @@ const r = await page.evaluate(() => {
   const cross = g.net.pickSeg(cx + 120, cz + 100, 10);
   if (cross) g.net.removeSeg(cross.seg.id);
   out.svcSurvivesNearbyRoadRemoval = before2 && g.buildings.list.has(svc.id);
+  // a side street teeing into the middle splits the road: its buildings stay
+  const zoned = () => [...g.buildings.list.values()].filter((b) => b.zone !== 'service' && b.zone !== 'landmark').length;
+  const bz = zoned();
+  d.road(cx - 60, cz + 150, cx - 60, cz, 'twoLane');
+  d.run(0.3);
+  out.beforeSplit = bz; out.afterSplit = zoned();
+  out.danglingSeg = [...g.buildings.list.values()].filter((b) => b.zone !== 'service' && b.zone !== 'landmark' && !g.net.segs.has(b.seg)).length;
   return out;
 });
 console.log(JSON.stringify(r));
-const ok = r.afterUpgrade >= r.before - Math.ceil(r.before * 0.2) && r.onRoad === 0 && r.overlap === 0 && r.svcSurvivesNearbyRoadRemoval;
+const ok = r.afterUpgrade >= r.before - Math.ceil(r.before * 0.2) && r.onRoad === 0 && r.overlap === 0 && r.svcSurvivesNearbyRoadRemoval
+  && r.afterSplit >= r.beforeSplit - 2 && r.danglingSeg === 0; // at most the lots the new street actually crosses
 console.log(ok ? 'OK' : 'FAIL');
 await page.screenshot({ path: 'shots/widen.png' });
 await browser.close();

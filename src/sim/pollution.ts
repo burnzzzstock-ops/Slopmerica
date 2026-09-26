@@ -32,14 +32,20 @@ export class Fields {
   }
 
   /**
-   * One pollution day. Paired transfers conserve mass before decay:
-   * next = cur*(1-decay) + emissions + inflow - outflow (never negative).
+   * One pollution step. Transfers conserve mass before decay:
+   * next = (cur + emissions + inflow - outflow) * (1 - decay), where the
+   * outflow never exceeds 90% of a cell and mass only leaves at the map edge.
    */
   stepPollution(days: number, windX: number, windZ: number) {
     const N = FIELD_N, P = this.pol, T = this.tmp;
-    const k = Math.min(0.2, 0.1 * days); // diffusion share to each neighbor
     const wx = Math.max(-1, Math.min(1, windX)), wz = Math.max(-1, Math.min(1, windZ));
-    const adv = Math.min(0.25, 0.12 * days); // share blown downwind
+    // shares of a cell that move this step: diffusion to each of 4 neighbors,
+    // plus wind along each axis. Scaled so a cell never gives away more than
+    // 90% of what it holds (long steps used to overdraw and create mass).
+    const dk = Math.min(0.2, 0.1 * days), da = Math.min(0.25, 0.12 * days);
+    const out = 4 * dk + (Math.abs(wx) + Math.abs(wz)) * da;
+    const norm = out > 0.9 ? 0.9 / out : 1;
+    const k = dk * norm, adv = da * norm;
     const decay = 1 - Math.pow(1 - 0.07, days);
     for (let i = 0; i < P.length; i++) { P[i] += this.emit[i] * days; this.emit[i] = 0; }
     T.fill(0);

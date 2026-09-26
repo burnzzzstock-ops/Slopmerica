@@ -358,30 +358,7 @@ export class Tools implements PointerHandlers {
     const pick = net.pickSeg(p.x, p.z, 3);
     if (!pick) return;
     const segs = wholeStreet ? [...net.segs.values()].filter((s) => s.street === pick.seg.street && s.type === pick.seg.type) : [pick.seg];
-    const next = ROAD_TYPES[pick.seg.type].next;
-    if (!next) {
-      this.game.toast('MAX LANES. For now. (Try a highway.)', true);
-      return;
-    }
-    let cost = 0, grant = 0;
-    for (const s of segs) {
-      const c = s.length * (ROAD_TYPES[next].costPerM - ROAD_TYPES[s.type].costPerM * 0.3);
-      cost += c;
-      grant += c * ROAD_TYPES[next].fedGrant;
-    }
-    if (cost - grant > this.game.sim.spendable()) {
-      this.game.toast('Not enough money for one more lane', true);
-      this.game.audio.play('error');
-      return;
-    }
-    const prev = segs.map((s) => ({ id: s.id, type: s.type }));
-    for (const s of segs) net.upgrade(s.id, next);
-    this.game.pushUndo({ kind: 'upgrade', prev, refund: Math.round(cost - grant) });
-    this.game.sim.spend(Math.round(cost), 'ONE MORE LANE');
-    this.game.sim.earn(Math.round(grant), 'grants');
-    if (grant > 0) this.game.floatText(`+$${Math.round(grant).toLocaleString()} Federal Slop Grant`, p, '#9dff3c');
-    this.game.onLaneAdded(segs, next);
-    crumb(`one more lane: ${segs.length} block(s) → ${ROAD_TYPES[next].name}`);
+    if (this.game.upgradeRoads(segs, p).ok) crumb(`one more lane: ${segs.length} block(s) → ${ROAD_TYPES[pick.seg.type].name}`);
   }
 
   private bulldozeAt(p: THREE.Vector3) {
@@ -390,9 +367,7 @@ export class Tools implements PointerHandlers {
     const pick = this.game.net.pickSeg(p.x, p.z, 1);
     if (!pick) return;
     crumb(`bulldozed road ${pick.seg.name ?? pick.seg.id}`);
-    this.game.net.removeSeg(pick.seg.id);
-    this.game.sim.refund(Math.round(pick.seg.length * ROAD_TYPES[pick.seg.type].costPerM * 0.2));
-    this.game.audio.play('bulldoze');
+    this.game.bulldozeRoad(pick.seg);
     this.game.particles.emit('dust', p.x, p.y + 1, p.z, { count: 30, spread: 6 });
   }
 

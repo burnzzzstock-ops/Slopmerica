@@ -20,9 +20,17 @@ export function hash2(x: number, y: number, seed = 0): number {
 }
 
 export class Rng {
-  private next: () => number;
+  /** mulberry32 state; save it to resume the exact sequence after a reload */
+  state: number;
   constructor(seed: number) {
-    this.next = mulberry32(seed);
+    this.state = seed >>> 0;
+  }
+  private next(): number {
+    this.state = (this.state + 0x6d2b79f5) >>> 0;
+    let t = this.state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   }
   float(): number {
     return this.next();

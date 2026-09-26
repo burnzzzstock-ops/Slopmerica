@@ -397,6 +397,48 @@ export class Game {
     return true;
   }
 
+  // ------------------------------------------------------------------ commands
+  // One validated path per player action, whichever UI asked for it (the map
+  // tool, the inspector, a hotkey): same price, same checks, same undo.
+
+  /** Price of ONE MORE LANE on these segments (all go to `next`). */
+  quoteUpgrade(segs: RSeg[], next: RoadTypeId) {
+    let cost = 0, grant = 0;
+    for (const s of segs) {
+      const c = s.length * (ROAD_TYPES[next].costPerM - ROAD_TYPES[s.type].costPerM * 0.3);
+      cost += c;
+      grant += c * ROAD_TYPES[next].fedGrant;
+    }
+    return { cost: Math.round(cost), grant: Math.round(grant), net: Math.round(cost - grant) };
+  }
+
+  /** ONE MORE LANE: widen `segs` one step. Rejects without changing anything. */
+  upgradeRoads(segs: RSeg[], at?: THREE.Vector3): { ok: boolean; reason?: string } {
+    const first = segs[0];
+    const next = first && ROAD_TYPES[first.type].next;
+    const fail = (reason: string) => { this.toast(reason, true); this.audio.play('error'); return { ok: false, reason }; };
+    if (!first) return { ok: false, reason: 'No road there' };
+    if (!next) return fail('MAX LANES. For now. (Try a highway.)');
+    const q = this.quoteUpgrade(segs, next);
+    if (q.net > this.sim.spendable()) return fail('Not enough money for one more lane');
+    const prev = segs.map((s) => ({ id: s.id, type: s.type }));
+    for (const s of segs) this.net.upgrade(s.id, next);
+    this.pushUndo({ kind: 'upgrade', prev, refund: q.net });
+    this.sim.spend(q.cost, 'ONE MORE LANE', 'roads');
+    this.sim.earn(q.grant, 'grants');
+    if (q.grant > 0 && at) this.floatText(`+$${q.grant.toLocaleString()} Federal Slop Grant`, at, '#9dff3c');
+    this.onLaneAdded(segs, next);
+    return { ok: true };
+  }
+
+  /** Bulldoze one road segment (20% salvage, like the map tool). */
+  bulldozeRoad(seg: RSeg) {
+    if (!this.net.segs.has(seg.id)) return;
+    this.net.removeSeg(seg.id);
+    this.sim.refund(Math.round(seg.length * ROAD_TYPES[seg.type].costPerM * 0.2));
+    this.audio.play('bulldoze');
+  }
+
   onLaneAdded(segs: RSeg[], to: RoadTypeId) {
     this.audio.play('build');
     this.feed.push('laneAdded', { road: segs[0]?.name, count: ROAD_TYPES[to].lanesPerDir * 2 });

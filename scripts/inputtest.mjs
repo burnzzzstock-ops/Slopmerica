@@ -4,7 +4,7 @@ const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromi
 const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));
-await page.goto('http://127.0.0.1:5173/#skip&map=florida&mode=sandbox', { waitUntil: 'load' });
+await page.goto(`${process.env.BASE_URL || 'http://127.0.0.1:5173'}/#skip&map=florida&mode=sandbox`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.__game && window.__dbg, null, { timeout: 120000 });
 await page.evaluate(() => document.querySelector('.onboard button, .onboarding button')?.click());
 await page.waitForTimeout(500);

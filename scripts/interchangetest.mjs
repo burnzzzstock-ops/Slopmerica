@@ -47,6 +47,7 @@ const r = await page.evaluate(async () => {
   const money0 = g.sim.money;
   const ra = flat(S, 80, []);
   const rb = m.placeLayout(g, 'roundabout', ra, 0);
+  const again = m.checkLayout(g, 'roundabout', ra, 0);
   const ring = [0, 1, 2, 3].map((k) => node(ra.x + Math.cos(k * Math.PI / 2) * 28, ra.z + Math.sin(k * Math.PI / 2) * 28).map((n) => n.segs.length));
   // diamond on open ground: brings its own highway
   const dc = flat(S, 250, [ra]);
@@ -86,9 +87,10 @@ const r = await page.evaluate(async () => {
   g.undo();
   const refunded = g.sim.money - before;
   const over2Gone = over2 ? !g.net.segs.has(over2.id) : false;
-  return { why, why2, hx, rb: !!rb, ring, dm: !!dm, overs: over.length, lift: +lift.toFixed(1), underJunction, hwAt, rampEnds, crossEnds, under, junctionsOnOverpass, overStill, join, cells, rows, newHw, ang: +ang.toFixed(2), refunded, undoLabel, over2Gone, spent: money0 === Infinity ? 'sandbox' : money0 - g.sim.money, dc, ra };
+  return { again, why, why2, hx, rb: !!rb, ring, dm: !!dm, overs: over.length, lift: +lift.toFixed(1), underJunction, hwAt, rampEnds, crossEnds, under, junctionsOnOverpass, overStill, join, cells, rows, newHw, ang: +ang.toFixed(2), refunded, undoLabel, over2Gone, spent: money0 === Infinity ? 'sandbox' : money0 - g.sim.money, dc, ra };
 });
 check(`the roundabout is a connected ring (${JSON.stringify(r.ring)} roads at each ring node)`, r.rb && r.ring.every((x) => x.length === 1 && x[0] === 3), r);
+check(`a second one on top of the first is refused ("${r.again.reason}")`, !r.again.ok && /in the way/.test(r.again.reason ?? ''), r.again);
 check(`the diamond raises an overpass (${r.overs} overpass, ${r.lift} m above the ground)`, r.dm && r.overs === 1 && r.lift >= 6, r);
 check(`the highway runs under it without a junction (${r.underJunction} nodes at the crossing, road there: ${r.hwAt})`, r.underJunction === 0 && r.hwAt === 'highway', r);
 check(`ramps join the highway (${JSON.stringify(r.rampEnds)}) and the cross street (${JSON.stringify(r.crossEnds)})`, r.rampEnds.every((x) => x.length === 1 && x[0] >= 4) && r.crossEnds.every((x) => x.length === 1 && x[0] >= 4), r);

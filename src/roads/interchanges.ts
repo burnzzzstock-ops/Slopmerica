@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { registerTool } from '../ext/registry';
 import type { Game } from '../game';
-import { Cubic, lineCubic, norm, quadCubic, sampleCubic, sub, tangentAt, V2 } from '../core/math';
+import { bezPoint, Cubic, lineCubic, norm, quadCubic, sampleCubic, sub, tangentAt, V2 } from '../core/math';
 import { crumb } from '../ui/bugreport';
 import type { Plan, RSeg } from './network';
 import { ROAD_TYPES, RoadTypeId } from './roadTypes';
@@ -23,7 +23,7 @@ export const LAYOUT_ORDER: LayoutId[] = ['roundabout', 'diamond'];
 /** clearance of the diamond's overpass above the ground (m) */
 const OVERPASS = 7.5;
 
-interface Piece { from: V2; to: V2; curve: Cubic; type: RoadTypeId; over?: number }
+interface Piece { from: V2; to: V2; curve: Cubic; type: RoadTypeId; over?: number; /** a ramp merging into the highway at a shallow angle */ merge?: boolean }
 interface Layout { pieces: Piece[]; onHighway: RSeg | null; c: V2; yaw: number }
 
 const at = (c: V2, yaw: number, x: number, z: number): V2 => {
@@ -76,7 +76,7 @@ function layout(g: Game, id: LayoutId, p: V2, yawIn: number): Layout {
   line(L(0, 100), L(0, 150), 'stroad4');
   for (const sz of [1, -1]) for (const sx of [1, -1]) {
     const a = L(0, 100 * sz), b = L(150 * sx, 0), k = L(90 * sx, 54 * sz);
-    pieces.push({ from: a, to: b, curve: quadCubic(a, k, b), type: 'twoLane' });
+    pieces.push({ from: a, to: b, curve: quadCubic(a, k, b), type: 'twoLane', merge: true });
   }
   return { pieces, onHighway, c, yaw };
 }
@@ -84,11 +84,20 @@ function layout(g: Game, id: LayoutId, p: V2, yawIn: number): Layout {
 /** plan every piece against today's network: total cost, and the first reason it can't be built */
 function planLayout(g: Game, lay: Layout): { ok: boolean; cost: number; grant: number; reason?: string } {
   let cost = 0, grant = 0;
+  // an existing road under the middle of a piece: the spot is taken
+  for (const pc of lay.pieces) {
+    if (pc.over || pc.merge) continue;
+    const mid = bezPoint(pc.curve, 0.5);
+    const hit = g.net.pickSeg(mid.x, mid.z, 1);
+    if (hit && hit.seg !== lay.onHighway) return { ok: false, cost: 0, grant: 0, reason: `${hit.seg.name} is in the way: find open ground, or bulldoze it first.` };
+  }
   for (const pc of lay.pieces) {
     const start = g.net.snap(pc.from.x, pc.from.z, 6);
     const plan: Plan = g.net.plan(start, pc.curve, pc.type, Infinity, { over: pc.over });
-    // pieces of this layout overlap each other until they're built; other problems are real
-    if (!plan.ok && plan.reason !== 'Overlaps an existing road' && !/Too sharp a junction/.test(plan.reason ?? '')) return { ok: false, cost, grant, reason: plan.reason };
+    // ramps run alongside the highway where they merge into it, by design;
+    // anything else in the way (an existing road included) stops the layout
+    const merging = pc.merge && (plan.reason === 'Overlaps an existing road' || /Too sharp a junction/.test(plan.reason ?? ''));
+    if (!plan.ok && !merging) return { ok: false, cost, grant, reason: plan.reason === 'Overlaps an existing road' ? 'Overlaps an existing road: find open ground, or bulldoze what is in the way.' : plan.reason };
     cost += plan.cost;
     grant += plan.grant;
   }

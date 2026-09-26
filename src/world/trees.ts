@@ -441,8 +441,10 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
     const t = this.tmpC;
     if (DECIDUOUS.has(k) || (this.mapId === 'norcal' && k === 'oak')) {
       if (s.spring > 0) out.lerp(t.setHex(0x9cc860), s.spring * 0.6);
-      // redbud (magenta) and dogwood (white) bloom in the understory before full leaf-out
-      if (s.blossom > 0 && k === 'decid' && h > 0.84) out.lerp(t.setHex(h > 0.92 ? 0xc84f97 : 0xf2eee4), s.blossom);
+      // redbud and dogwood bloom in the understory before full leaf-out. Seen
+      // from above through bare branches they read as dusty rose and off-white,
+      // not neon: a full magenta crown looked like a missing texture
+      if (s.blossom > 0 && k === 'decid' && h > 0.86) out.lerp(t.setHex(h > 0.94 ? 0xa8708f : 0xd9d6c8), s.blossom * 0.7);
       if (s.fall > 0) {
         // stands share a palette (maples, hickories, oaks); each tree turns on its own schedule
         const stand = hash2(Math.floor(this.X[i] / 90), Math.floor(this.Z[i] / 90), 3);
@@ -565,6 +567,28 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
       this.dirty = true;
     }
     return ref;
+  }
+
+  /**
+   * Trees stand on the ground: after the terrain under them changes (a road's
+   * cut and fill, a building pad's embankment, terraforming) they move with
+   * it, and ones now under water are gone. Without this, trees on a graded
+   * slope were left floating over the cut or buried in the fill.
+   */
+  resettle(minX: number, minZ: number, maxX: number, maxZ: number) {
+    let moved = false, ref = 0;
+    this.forCells(minX, minZ, maxX, maxZ, (i) => {
+      if (!this.A[i]) return;
+      const x = this.X[i], z = this.Z[i];
+      if (x < minX || x > maxX || z < minZ || z > maxZ) return;
+      // planted 0.25 m into the ground; gone where it's now deeper than a cypress stands
+      const h = this.terrain.h(x, z);
+      if (Math.abs(h - 0.25 - this.Y[i]) < 0.12) return;
+      if (h < WATER - 1.2) { this.A[i] = 0; if (this.W[i] <= REF_DENSITY) ref++; }
+      else this.Y[i] = h - 0.25;
+      moved = true;
+    });
+    if (moved) { this.alive -= ref; this.dirty = true; }
   }
 
   /** Trees near x,z in the simulation's reference set (same on every preset). */

@@ -90,7 +90,8 @@ const build = await page.evaluate(() => {
       const x = cx + Math.cos(ang) * r, z = cz + Math.sin(ang) * r;
       const spot = SV.findSpot ? SV.findSpot(g, id, x, z) : null;
       const px = spot && !spot.reason ? spot.x : x, pz = spot && !spot.reason ? spot.z : z;
-      if (SV.canPlace(g, id, px, pz).ok && SV.place(g, id, px, pz)) return [Math.round(px), Math.round(pz)];
+      const yaw = spot && !spot.reason ? spot.yaw : undefined;
+      if (SV.canPlace(g, id, px, pz, yaw).ok && SV.place(g, id, px, pz, yaw)) return [Math.round(px), Math.round(pz)];
     }
     return null;
   };

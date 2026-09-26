@@ -2,7 +2,7 @@
 // level-ups, and renders everything through one BatchedMesh (one draw call,
 // each unique model uploaded once).
 import * as THREE from 'three';
-import { CELL } from '../config';
+import { CELL, WATER } from '../config';
 import { MAX_LEVEL, type BuildingModel, type LandmarkId, type ZoneType } from '../contracts';
 import { closestOnSampled, SpatialHash, V2 } from '../core/math';
 import { Rng } from '../core/rng';
@@ -411,14 +411,38 @@ export class Buildings {
     return b;
   }
 
+  /**
+   * The level a special building's pad is cut to: the road's grade where its
+   * front meets a road (the entrance is at street level and the pad is cut
+   * into the slope behind), else the footprint's average ground. Never below
+   * the waterline (shore plants fill their bank in).
+   */
+  padHeight(x: number, z: number, hw: number, hd: number, yaw: number): number {
+    const s = Math.sin(yaw), c = Math.cos(yaw);
+    const fx = x + s * hd, fz = z + c * hd;
+    const pick = this.net.pickSeg(fx, fz, 6);
+    if (pick && !pick.seg.over) {
+      const hs = pick.seg.hs;
+      const k = Math.round((pick.s / pick.seg.length) * (hs.length - 1));
+      if (hs.length) return Math.max(WATER + 0.6, hs[Math.max(0, Math.min(hs.length - 1, k))] - 0.35);
+    }
+    let sum = 0, n = 0;
+    for (const u of [-1, 0, 1]) for (const v of [-1, 0, 1]) {
+      const lx = u * hw * 0.9, lz = v * hd * 0.9;
+      sum += this.terrain.h(x + lx * c + lz * s, z - lx * s + lz * c);
+      n++;
+    }
+    return Math.max(WATER + 0.6, sum / n);
+  }
+
   /** Place a landmark at a point facing the given yaw. */
-  placeLandmark(id: LandmarkId, x: number, z: number, yaw: number): Bld {
+  placeLandmark(id: LandmarkId, x: number, z: number, yaw: number, yIn?: number): Bld {
     const fp = landmarkFootprint(id);
     const model = generateLandmark(id, 1);
     const key = `landmark|${id}`;
     let e = this.geoIds.get(key);
     if (!e) this.geoIds.set(key, (e = { id: this.main.addGeometry(model.geometry), model }));
-    const y = this.terrain.h(x, z);
+    const y = yIn ?? this.padHeight(x, z, (fp.widthCells * CELL) / 2, (fp.depthCells * CELL) / 2, yaw);
     const b: Bld = {
       id: this.nextId++, zone: 'landmark', landmark: id, level: 1, w: fp.widthCells, d: fp.depthCells, x, z, y, yaw,
       hw: (fp.widthCells * CELL) / 2, hd: (fp.depthCells * CELL) / 2, cells: [], seg: 0, label: model.label, model,
@@ -434,13 +458,13 @@ export class Buildings {
   }
 
   /** Place a registered custom building (see CUSTOM_BUILDINGS) facing yaw. */
-  placeCustom(kind: string, x: number, z: number, yaw: number): Bld | null {
+  placeCustom(kind: string, x: number, z: number, yaw: number, yIn?: number): Bld | null {
     const def = CUSTOM_BUILDINGS.get(kind);
     if (!def) return null;
     const key = `custom|${kind}`;
     let e = this.geoIds.get(key);
     if (!e) { const model = def.model(); this.geoIds.set(key, (e = { id: this.kit.addGeometry(model.geometry), model })); }
-    const y = this.terrain.h(x, z);
+    const y = yIn ?? this.padHeight(x, z, (def.w * CELL) / 2, (def.d * CELL) / 2, yaw);
     const pick = this.net.pickSeg(x, z, (Math.max(def.w, def.d) * CELL) / 2 + 40);
     const b: Bld = {
       id: this.nextId++, zone: 'service', kind, level: 1, w: def.w, d: def.d, x, z, y, yaw,
@@ -479,7 +503,7 @@ export class Buildings {
     for (const r of rows) {
       const [zone, landmark, level, w, d, x, z, y, yaw, brand, occ, prog, seg, lp] = r;
       if (zone === 'service') {
-        const b = this.placeCustom(landmark, x, z, yaw);
+        const b = this.placeCustom(landmark, x, z, yaw, y);
         if (!b) continue;
         b.progress = Math.min(1, prog);
         if (b.progress >= 1) {
@@ -490,7 +514,7 @@ export class Buildings {
         continue;
       }
       if (zone === 'landmark') {
-        const b = this.placeLandmark(landmark as LandmarkId, x, z, yaw);
+        const b = this.placeLandmark(landmark as LandmarkId, x, z, yaw, y);
         b.state = 'active';
         b.progress = 1;
         this.dropScaffold(b);

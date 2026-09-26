@@ -533,7 +533,8 @@ export class RoadNetwork {
   private finalizeSeg(seg: RSeg) {
     const t = this.type(seg.type);
     this.terrain.gradeRoad(seg.samp.pts, seg.hs, t.width / 2);
-    const hw = t.width / 2 + 2.5;
+    // clear far enough that crowns (about 4 m across) don't hang over the pavement
+    const hw = t.width / 2 + 4;
     const pts = seg.samp.pts;
     this.trees.cut(seg.minX, seg.minZ, seg.maxX, seg.maxZ, (x, z) => {
       for (let i = 0; i < pts.length - 1; i += 1) {
@@ -622,7 +623,8 @@ export class RoadNetwork {
   private finalizeSegChanged(seg: RSeg) {
     const t = this.type(seg.type);
     this.terrain.gradeRoad(seg.samp.pts, seg.hs, t.width / 2);
-    const hw = t.width / 2 + 2.5;
+    // clear far enough that crowns (about 4 m across) don't hang over the pavement
+    const hw = t.width / 2 + 4;
     const pts = seg.samp.pts;
     this.trees.cut(seg.minX, seg.minZ, seg.maxX, seg.maxZ, (x, z) => closestOnSampled({ x, z }, seg.samp).d < hw);
     void pts;

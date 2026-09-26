@@ -26,6 +26,8 @@ import type { FeedContext, FeedEventKind, VehicleKind, ZoneType } from '../contr
 import type { DemandKey } from './sim';
 import { POLICY } from './policyEffects';
 import { crumb } from '../ui/bugreport';
+import { frontageCandidates, inRect, rectCorners, specialAt, type Frontage } from './frontage';
+import { PlacementGhost } from '../tools/placementGhost';
 
 type ZB = Bld & { zone: ZoneType };
 
@@ -1076,28 +1078,17 @@ const VIEW_FOR_CAT: Partial<Record<SvcCat, ViewId>> = { power: 'power', water: '
 
 // ============================================================== placement tool
 let placing: ServiceModelId = 'gasPeaker';
-let ghost: THREE.Group | null = null;
-let ghostMat: THREE.MeshBasicMaterial | null = null;
-let lastCheck: { ok: boolean; reason?: string; snapped?: boolean } | null = null;
+let ghost: PlacementGhost | null = null;
+let lastCheck: { ok: boolean; reason?: string; snapped?: boolean; road?: string } | null = null;
 let panelCat: SvcCat = 'power';
 
-function rectCorners(x: number, z: number, hw: number, hd: number, yaw: number) {
-  const c = Math.cos(yaw), s = Math.sin(yaw);
-  return [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(([a, b]) => ({ x: x + a * c + b * s, z: z - a * s + b * c }));
-}
-function inRect(px: number, pz: number, x: number, z: number, hw: number, hd: number, yaw: number, pad = 0) {
-  const c = Math.cos(yaw), s = Math.sin(yaw);
-  const dx = px - x, dz = pz - z;
-  const lx = dx * c - dz * s, lz = dx * s + dz * c;
-  return Math.abs(lx) <= hw + pad && Math.abs(lz) <= hd + pad;
-}
 
-export function canPlaceService(g: Game, id: ServiceModelId, x: number, z: number): { ok: boolean; reason?: string; yaw: number } {
+export function canPlaceService(g: Game, id: ServiceModelId, x: number, z: number, yawIn?: number): { ok: boolean; reason?: string; yaw: number } {
   const d = SERVICE_DEFS.get(id)!;
   const hw = (d.w * CELL) / 2, hd = (d.d * CELL) / 2;
   const pick = g.net.pickSeg(x, z, Math.max(hw, hd) + 40);
-  let yaw = 0;
-  if (pick) {
+  let yaw = yawIn ?? 0;
+  if (pick && yawIn === undefined) {
     const pts = pick.seg.samp.pts;
     const p = pts[Math.min(pts.length - 1, Math.round((pick.s / pick.seg.length) * (pts.length - 1)))];
     yaw = Math.atan2(p.x - x, p.z - z);
@@ -1105,7 +1096,7 @@ export function canPlaceService(g: Game, id: ServiceModelId, x: number, z: numbe
   if (g.sim.mode !== 'sandbox' && g.sim.population < d.unlock) return { ok: false, yaw, reason: `Unlocks at ${d.unlock.toLocaleString()} people` };
   if (!g.terrain.inBounds(x, z, Math.max(hw, hd) + 12)) return { ok: false, yaw, reason: 'Outside the county' };
   if (g.net.allowed && !g.net.allowed(x, z)) return { ok: false, yaw, reason: "You don't own this land yet. Buy it in 🏞️ Land." };
-  if (!pick) return { ok: false, yaw, reason: 'Needs a road within 40 m' };
+  if (!pick) return { ok: false, yaw, reason: d.nearWater ? 'Needs a road within 40 m: run one down to the shore first' : 'Needs a road within 40 m' };
   const cs = rectCorners(x, z, hw, hd, yaw);
   let lo = Infinity, hi = -Infinity;
   for (const p of [...cs, { x, z }]) { const h = g.terrain.h(p.x, p.z); lo = Math.min(lo, h); hi = Math.max(hi, h); }
@@ -1140,32 +1131,52 @@ export function canPlaceService(g: Game, id: ServiceModelId, x: number, z: numbe
 /** Problems moving the building a bit can fix (not money, unlocks or land). */
 const snappable = (reason?: string) => !!reason && !/money|Needs \$|Unlocks|own this land|county/i.test(reason);
 
+export interface ServiceSpot { x: number; z: number; yaw: number; snapped: boolean; reason?: string; front?: Frontage }
+
 /**
- * The cursor spot, or the nearest valid spot around it (shore plants search
- * wider), so placing doesn't need pixel-perfect aim. null = nothing close works.
+ * Where the building goes for a cursor at (x, z): square to the nearest road,
+ * its front a short apron back from the curb and facing the street, sliding
+ * along that road to the nearest spot that works. Shore plants that can't
+ * reach the water from the street may sit back on the bank, facing the road.
+ * The ghost, the click and the final building all use this transform.
  */
-export function findServiceSpot(g: Game, id: ServiceModelId, x: number, z: number): { x: number; z: number; yaw: number; snapped: boolean; reason?: string } {
+export function findServiceSpot(g: Game, id: ServiceModelId, x: number, z: number): ServiceSpot {
+  const d = SERVICE_DEFS.get(id)!;
+  const hd = (d.d * CELL) / 2;
   const here = canPlaceService(g, id, x, z);
-  if (here.ok) return { x, z, yaw: here.yaw, snapped: false };
-  if (!snappable(here.reason)) return { x, z, yaw: here.yaw, snapped: false, reason: here.reason };
+  if (!here.ok && !snappable(here.reason)) return { x, z, yaw: here.yaw, snapped: false, reason: here.reason };
   // pointing straight at a building means "that one", not "somewhere near it":
   // no snapping, so a double-click doesn't buy a second office next door
   const on = g.buildings.at(x, z);
   if (on) return { x, z, yaw: here.yaw, snapped: false, reason: `${on.label} is already here` };
-  const maxR = SERVICE_DEFS.get(id)!.nearWater ? 110 : 60;
-  for (let r = 8; r <= maxR; r += 8) {
-    const n = Math.max(8, Math.round((2 * Math.PI * r) / 14));
-    for (let k = 0; k < n; k++) {
-      const a = (k / n) * Math.PI * 2;
-      const px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
-      const c = canPlaceService(g, id, px, pz);
-      if (c.ok) return { x: px, z: pz, yaw: c.yaw, snapped: true };
+  const hw = (d.w * CELL) / 2;
+  let first: string | undefined;
+  let k = 0;
+  for (const f of frontageCandidates(g.net, x, z, hd, hd + 40)) {
+    // the spot facing the cursor already holds a special building: that one,
+    // not "slide along and build another" (four quick clicks bought four)
+    if (k === 0) { const on = specialAt(g.buildings, f, hw, hd); if (on) return { x: f.x, z: f.z, yaw: f.yaw, snapped: false, reason: `${on.label} is already here`, front: f }; }
+    const c = canPlaceService(g, id, f.x, f.z, f.yaw);
+    if (c.ok) return { x: f.x, z: f.z, yaw: f.yaw, snapped: k > 0, front: f };
+    first ??= c.reason;
+    k++;
+  }
+  if (d.nearWater) {
+    if (here.ok) return { x, z, yaw: here.yaw, snapped: false };
+    for (let r = 8; r <= 110; r += 8) {
+      const n = Math.max(8, Math.round((2 * Math.PI * r) / 14));
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
+        const c = canPlaceService(g, id, px, pz);
+        if (c.ok) return { x: px, z: pz, yaw: c.yaw, snapped: true };
+      }
     }
   }
-  return { x, z, yaw: here.yaw, snapped: false, reason: here.reason };
+  return { x, z, yaw: here.yaw, snapped: false, reason: first ?? here.reason ?? 'Needs a road within 40 m' };
 }
 
-let spotCache: { id: string; x: number; z: number; r: ReturnType<typeof findServiceSpot> } | null = null;
+let spotCache: { id: string; x: number; z: number; r: ServiceSpot } | null = null;
 function spotFor(g: Game, id: ServiceModelId, x: number, z: number) {
   if (spotCache && spotCache.id === id && Math.hypot(spotCache.x - x, spotCache.z - z) < 3) return spotCache.r;
   const r = findServiceSpot(g, id, x, z);
@@ -1174,40 +1185,26 @@ function spotFor(g: Game, id: ServiceModelId, x: number, z: number) {
 }
 
 function ensureGhost(g: Game) {
-  if (ghost) return ghost;
-  ghostMat = new THREE.MeshBasicMaterial({ color: 0x57e389, transparent: true, opacity: 0.35, depthWrite: false });
-  ghost = new THREE.Group();
-  ghost.name = 'svc-ghost';
-  const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), ghostMat);
-  box.position.y = 0.5;
-  const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.22, 3), ghostMat);
-  arrow.rotation.x = Math.PI / 2;
-  arrow.position.set(0, 0.05, 0.62);
-  ghost.add(box, arrow);
-  ghost.visible = false;
-  g.scene.add(ghost);
-  return ghost;
+  return (ghost ??= new PlacementGhost(g.scene, 'svc-ghost'));
 }
 
 function updateGhost(g: Game, p: THREE.Vector3 | null) {
   const gh = ensureGhost(g);
-  if (!p) { gh.visible = false; lastCheck = null; return; }
+  if (!p) { gh.hide(); lastCheck = null; return; }
   const d = SERVICE_DEFS.get(placing)!;
   const spot = spotFor(g, placing, p.x, p.z);
   const ok = !spot.reason;
-  lastCheck = { ok, reason: spot.reason, snapped: spot.snapped };
-  gh.visible = true;
-  gh.position.set(spot.x, g.terrain.h(spot.x, spot.z), spot.z);
-  gh.rotation.y = spot.yaw;
-  gh.scale.set(d.w * CELL, Math.max(6, d.height * 0.6), d.d * CELL);
-  ghostMat!.color.setHex(ok ? (spot.snapped ? 0x9be36a : 0x57e389) : 0xff5a4a);
+  lastCheck = { ok, reason: spot.reason, snapped: spot.snapped, road: spot.front?.seg.name };
+  const hw = (d.w * CELL) / 2, hd = (d.d * CELL) / 2;
+  const y = g.buildings.padHeight(spot.x, spot.z, hw, hd, spot.yaw);
+  gh.show(`svc|${placing}`, () => CUSTOM_BUILDINGS.get(placing)!.model().geometry, spot.x, y, spot.z, spot.yaw, hw, hd, ok, spot.front?.door ?? null);
 }
 
 /** Place a service building (the tool, tests and future AI all use this). */
-export function placeService(g: Game, id: ServiceModelId, x: number, z: number): Bld | null {
+export function placeService(g: Game, id: ServiceModelId, x: number, z: number, yaw?: number): Bld | null {
   spotCache = null;
   const d = SERVICE_DEFS.get(id)!;
-  const chk = canPlaceService(g, id, x, z);
+  const chk = canPlaceService(g, id, x, z, yaw);
   if (!chk.ok) { g.toast(chk.reason ?? 'Nope', true); g.audio.play('error'); return null; }
   const b = g.buildings.placeCustom(d.id, x, z, chk.yaw);
   if (!b) return null;
@@ -1237,24 +1234,24 @@ registerTool({
       return;
     }
     const spot = spotFor(g, placing, p.x, p.z);
-    if (placeService(g, placing, spot.x, spot.z)) spotCache = null;
+    if (placeService(g, placing, spot.x, spot.z, spot.yaw)) spotCache = null;
     updateGhost(g, p);
   },
   pending: () => (planned ? { cost: lastCheck?.ok ? SERVICE_DEFS.get(placing)!.cost : null } : null),
   confirm: (g) => {
     if (!planned) return;
     const spot = spotFor(g, placing, planned.x, planned.z);
-    if (placeService(g, placing, spot.x, spot.z)) { spotCache = null; planned = null; if (ghost) ghost.visible = false; lastCheck = null; }
+    if (placeService(g, placing, spot.x, spot.z, spot.yaw)) { spotCache = null; planned = null; ghost?.hide(); lastCheck = null; }
     else updateGhost(g, planned);
   },
-  cancel: () => { planned = null; if (ghost) ghost.visible = false; lastCheck = null; },
+  cancel: () => { planned = null; ghost?.hide(); lastCheck = null; },
   tip: (g) => {
     const d = SERVICE_DEFS.get(placing)!;
     if (lastCheck && !lastCheck.ok) return { text: `${d.name}: ${lastCheck.reason}`, bad: true };
     if (g.isTouch && !planned) return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} · tap where it goes` };
     // what this purchase does to the budget, from the same forecast the HUD shows
     const after = g.sim.afterSpend(d.cost, d.upkeep);
-    return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} now + $${d.upkeep}/wk · ${after.text}${lastCheck?.snapped ? ' · 📍 snapped to the nearest good spot' : ''}${planned ? ' · tap Build, or tap elsewhere to move it' : ''}`, bad: after.credit };
+    return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} now + $${d.upkeep}/wk · ${after.text}${lastCheck?.road ? ` · fronts ${esc(lastCheck.road)}${lastCheck.snapped ? ' (slid to the nearest spot that fits)' : ''}` : lastCheck?.snapped ? ' · 📍 moved to the nearest good spot' : ''}${planned ? ' · tap Build, or tap elsewhere to move it' : ''}`, bad: after.credit };
   },
 });
 

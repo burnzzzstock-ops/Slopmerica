@@ -7,7 +7,8 @@ import type { Snap } from '../roads/network';
 import { ROAD_TYPES, RoadTypeId } from '../roads/roadTypes';
 import type { LandmarkId, ZoneType } from '../contracts';
 import { ZONE_LABEL } from '../zones/zoning';
-import { landmarkFootprint } from '../buildings/generator';
+import { generateLandmark, landmarkFootprint } from '../buildings/generator';
+import { PlacementGhost } from './placementGhost';
 import { LANDMARK_COST, LANDMARKS, type Game } from '../game';
 import { EXT, type ExtTool } from '../ext/registry';
 import { crumb } from '../ui/bugreport';
@@ -19,6 +20,8 @@ export interface ToolTip {
   text: string;
   bad?: boolean;
 }
+
+const BRUSH_SEGS = 72;
 
 export class Tools implements PointerHandlers {
   active: ToolId = 'inspect';
@@ -94,6 +97,7 @@ export class Tools implements PointerHandlers {
   private startPin: THREE.Mesh;
   private highlight: THREE.Mesh;
   private brushRing: THREE.Mesh;
+  private ghost: PlacementGhost;
 
   constructor(private game: Game) {
     this.previewMat = new THREE.MeshBasicMaterial({ color: 0x7fd8ff, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide });
@@ -111,12 +115,22 @@ export class Tools implements PointerHandlers {
     this.highlight = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0xff4d4d, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }));
     this.highlight.renderOrder = 5;
     this.highlight.visible = false;
-    const br = new THREE.RingGeometry(0.93, 1, 48);
-    br.rotateX(-Math.PI / 2);
-    this.brushRing = new THREE.Mesh(br, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthTest: false }));
+    // the zoning brush: a ring draped on the ground (it follows the slope and
+    // hides behind trees and buildings, instead of a flat hoop drawn over them)
+    const br = new THREE.BufferGeometry();
+    br.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(BRUSH_SEGS * 2 * 3), 3));
+    const idx: number[] = [];
+    for (let i = 0; i < BRUSH_SEGS; i++) {
+      const a = i * 2, b = ((i + 1) % BRUSH_SEGS) * 2;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+    br.setIndex(idx);
+    this.brushRing = new THREE.Mesh(br, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 }));
     this.brushRing.renderOrder = 6;
+    this.brushRing.frustumCulled = false;
     this.brushRing.visible = false;
     game.scene.add(this.preview, this.marker, this.startPin, this.highlight, this.brushRing);
+    this.ghost = new PlacementGhost(game.scene, 'landmark-ghost');
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') this.cancel();
     });
@@ -135,6 +149,21 @@ export class Tools implements PointerHandlers {
 
   brushRadius() {
     return [10, 22, 44][this.brush];
+  }
+
+  private drapeBrush(cx: number, cz: number, r: number) {
+    const pos = this.brushRing.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const w = Math.max(0.7, r * 0.05);
+    const T = this.game.terrain;
+    for (let i = 0; i < BRUSH_SEGS; i++) {
+      const a = (i / BRUSH_SEGS) * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a);
+      for (let j = 0; j < 2; j++) {
+        const R = j ? r : r - w, x = cx + c * R, z = cz + sn * R;
+        pos.setXYZ(i * 2 + j, x, T.h(x, z) + 0.6, z);
+      }
+    }
+    pos.needsUpdate = true;
+    this.brushRing.visible = true;
   }
 
   toolCapturesDrag(): boolean {
@@ -448,6 +477,7 @@ export class Tools implements PointerHandlers {
     this.startPin.visible = false;
     this.highlight.visible = false;
     this.brushRing.visible = false;
+    this.ghost.hide();
     // road rings stay a readable size on screen at any zoom (bigger on phones)
     this.marker.scale.setScalar(Math.max(1, this.game.rts.distance * (this.game.isTouch ? 0.009 : 0.005)));
     if (this.active === 'ext') { this.tip = this.ext?.tip?.(this.game) ?? null; return; }
@@ -507,30 +537,21 @@ export class Tools implements PointerHandlers {
       } else this.tip = null;
     } else if (this.active === 'landmark') {
       const fp = landmarkFootprint(this.landmark);
-      const chk = this.game.canPlaceLandmark(this.landmark, hov.x, hov.z);
-      const w = fp.widthCells * 8, d = fp.depthCells * 8;
-      const c = Math.cos(chk.yaw), s = Math.sin(chk.yaw);
-      const corners = [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]].map(([lx, lz]) => ({ x: hov.x + lx * c + lz * s, z: hov.z - lx * s + lz * c }));
-      const pos: number[] = [];
-      for (const k of [0, 1, 2, 0, 2, 3]) pos.push(corners[k].x, hov.y + 1, corners[k].z);
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-      this.highlight.geometry.dispose();
-      this.highlight.geometry = g;
-      this.highlight.visible = true;
-      (this.highlight.material as THREE.MeshBasicMaterial).color.set(chk.ok ? 0x9dff3c : 0xff4d4d);
+      const spot = this.game.landmarkSpot(this.landmark, hov.x, hov.z);
+      const hw = (fp.widthCells * 8) / 2, hd = (fp.depthCells * 8) / 2;
+      const y = this.game.buildings.padHeight(spot.x, spot.z, hw, hd, spot.yaw);
+      const id = this.landmark;
+      this.ghost.show(`lm|${id}`, () => generateLandmark(id, 1).geometry, spot.x, y, spot.z, spot.yaw, hw, hd, spot.ok, spot.front?.door ?? null);
       const cost = LANDMARK_COST[this.landmark];
-      this.pendingCost = this.landmarkAt && chk.ok && cost <= this.game.sim.spendable() ? cost : null;
-      if (!chk.ok) this.tip = { text: chk.reason ?? 'Nope', bad: true };
-      else if (!this.game.isTouch) this.tip = { text: 'Click to place (faces the nearest road)' };
+      this.pendingCost = this.landmarkAt && spot.ok && cost <= this.game.sim.spendable() ? cost : null;
+      const where = spot.front ? `fronts ${spot.front.seg.name}` : 'no road here yet: it faces the one you build';
+      if (!spot.ok) this.tip = { text: spot.reason ?? 'Nope', bad: true };
+      else if (!this.game.isTouch) this.tip = { text: `Click to place · ${where}` };
       else this.tip = this.landmarkAt
-        ? cost > this.game.sim.spendable() ? { text: 'Not enough money', bad: true } : { text: 'Faces the nearest road · tap Build, or drag to move it' }
+        ? cost > this.game.sim.spendable() ? { text: 'Not enough money', bad: true } : { text: `${where} · tap Build, or drag to move it` }
         : { text: 'Tap or drag to where it goes' };
     } else if (this.active === 'zone' || this.active === 'dezone') {
-      const r = this.brushRadius();
-      this.brushRing.visible = true;
-      this.brushRing.scale.set(r, 1, r);
-      this.brushRing.position.set(hov.x, hov.y + 0.8, hov.z);
+      this.drapeBrush(hov.x, hov.z, this.brushRadius());
       if (this.active === 'dezone') this.tip = { text: 'Dezone: unzones empty lots' };
       else {
         const d = this.zoneDemand(this.zoneType);

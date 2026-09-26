@@ -82,6 +82,10 @@ export class Terrain {
   private lodDist: [number, number, number];
   private builtThisFrame = 0;
 
+  /** Called with the box of every height edit (roads, lots, terraforming), so
+   * things standing on the ground (trees) can follow it. */
+  onReshape?: (minX: number, minZ: number, maxX: number, maxZ: number) => void;
+
   constructor(public map: MapData, renderer: THREE.WebGLRenderer, q: Quality) {
     this.heights = map.heights;
     this.cover = map.cover;
@@ -359,9 +363,11 @@ if (uInfoOn > 0.0) {
   editHeights(edits: readonly { id: number; height: number; paint?: Paint }[]) {
     if (!edits.length) return;
     this.surfaceVersion++;
+    let i0 = HM_N, i1 = -1, j0 = HM_N, j1 = -1;
     for (const e of edits) {
       const j = Math.floor(e.id / HM_N), i = e.id - j * HM_N;
       if (i < 0 || i >= HM_N || j < 0 || j >= HM_N) continue;
+      i0 = Math.min(i0, i); i1 = Math.max(i1, i); j0 = Math.min(j0, j); j1 = Math.max(j1, j);
       const before = this.heights[e.id];
       if (Math.abs(before - e.height) < 0.001 && (e.paint === undefined || this.paint[e.id] === e.paint)) continue;
       this.heights[e.id] = e.height;
@@ -369,6 +375,7 @@ if (uInfoOn > 0.0) {
       this.markDirty(i, j);
       this.markTex(j);
     }
+    if (i1 >= 0) this.onReshape?.(i0 * HM_STEP - HALF - HM_STEP, j0 * HM_STEP - HALF - HM_STEP, i1 * HM_STEP - HALF + HM_STEP, j1 * HM_STEP - HALF + HM_STEP);
   }
   // codex:terraform end
 
@@ -428,22 +435,35 @@ if (uInfoOn > 0.0) {
         this.markDirty(i, j);
       }
     });
+    this.onReshape?.(minX - R, minZ - R, maxX + R, maxZ + R);
   }
 
-  flattenLot(corners: V2[], height: number, paint: Paint) {
+  /**
+   * Level a building pad: the footprint goes exactly to `height`, and the
+   * ground around it meets the natural slope in an embankment (cut into the
+   * hill, fill below it) about twice as wide as the pad is deep, 6-24 m.
+   * Road beds nearby are left alone. Returns the embankment width.
+   */
+  flattenLot(corners: V2[], height: number, paint: Paint): number {
     this.surfaceVersion++;
     let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
     for (const p of corners) {
       minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
       minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
     }
-    const feather = 6;
+    let dh = 0;
+    this.forEachIn(minX - 2, minZ - 2, maxX + 2, maxZ + 2, (_i, _j, x, z, id) => {
+      if (sdPoly({ x, z }, corners) <= 2) dh = Math.max(dh, Math.abs(this.heights[id] - height));
+    });
+    const feather = clamp(dh * 2, 6, 24);
     this.forEachIn(minX - feather, minZ - feather, maxX + feather, maxZ + feather, (i, j, x, z, id) => {
       const d = sdPoly({ x, z }, corners);
       if (d > feather) return;
-      const w = 1 - smoothstep(-1, feather, d);
+      // outside the pad, never regrade a road bed (it would bury or undercut the road)
+      if (d > 0.5 && this.roadMask[id]) return;
+      const w = d <= 0.5 ? 1 : 1 - smoothstep(0.5, feather, d);
       const cur = this.heights[id];
-      const next = lerp(cur, height, w * 0.9);
+      const next = lerp(cur, height, w);
       if (Math.abs(next - cur) > 0.01) {
         this.heights[id] = next;
         if (cur < 1.5 || next < 1.5) this.markTex(j);
@@ -451,6 +471,8 @@ if (uInfoOn > 0.0) {
       if (d < 0.5 && paint !== Paint.None && this.paint[id] !== Paint.Paved) this.paint[id] = paint;
       this.markDirty(i, j);
     });
+    this.onReshape?.(minX - feather, minZ - feather, maxX + feather, maxZ + feather);
+    return feather;
   }
 
   paintCircle(x: number, z: number, r: number, p: Paint) {

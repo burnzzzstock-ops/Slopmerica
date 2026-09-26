@@ -328,6 +328,15 @@ function randomCard(b: GeoB, rnd: () => number, center: THREE.Vector3, crown: TH
   b.card(center, ax, ay, reg, crown, color);
 }
 
+/** Cards over the top of a round crown, facing up, so it's closed from above. */
+function crownCap(b: GeoB, rnd: () => number, crown: THREE.Vector3, up: number, spread: number, n: number, size: number, reg?: Rect) {
+  for (let k = 0; k < n; k++) {
+    const a = (k / n) * Math.PI * 2 + rnd() * 0.8, r = k === 0 ? 0 : spread * (0.5 + rnd() * 0.5);
+    const c = V(Math.cos(a) * r, up + (rnd() - 0.5) * 0.6 - r * 0.25, Math.sin(a) * r).add(crown);
+    randomCard(b, rnd, c, crown.clone().setY(crown.y - 1.5), size * (0.85 + rnd() * 0.3), reg ?? (rnd() < 0.5 ? REGIONS.leafA : REGIONS.leafB));
+  }
+}
+
 export function makeTreeModel(kind: TreeKind, variant: number): THREE.BufferGeometry {
   const rnd = mulberry32(1000 + variant * 31 + kind.length * 7);
   const b = new GeoB();
@@ -347,6 +356,9 @@ export function makeTreeModel(kind: TreeKind, variant: number): THREE.BufferGeom
         const c = V(Math.cos(a) * Math.cos(e) * r * 1.1, Math.sin(e) * r * 0.85, Math.sin(a) * Math.cos(e) * r * 1.1).add(crown);
         randomCard(b, rnd, c, crown, 3.3 + rnd() * 1.4, rnd() < 0.5 ? reg.leafA : reg.leafB);
       }
+      // the crown's top: the cards above stop at ~50 degrees up, which left a
+      // hole in the middle, so from above a close tree read as a ring of leaves
+      crownCap(b, rnd, crown, 2.9, 1.7, 5, 3.4);
       break;
     }
     case 'oak': {
@@ -440,6 +452,7 @@ export function makeTreeModel(kind: TreeKind, variant: number): THREE.BufferGeom
         const a = rnd() * Math.PI * 2, e = rnd() * 0.9, r = 1.4 + rnd() * 1.4;
         randomCard(b, rnd, V(Math.cos(a) * r * 1.3, Math.sin(e) * r * 0.6, Math.sin(a) * r * 1.3).add(crown), crown, 2.4 + rnd(), reg.leafB);
       }
+      crownCap(b, rnd, crown, 1.5, 1.2, 3, 2.6, reg.leafB);
       break;
     }
     case 'shrub': {

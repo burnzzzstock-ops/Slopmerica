@@ -8,6 +8,8 @@ import { ROAD_TYPES } from '../roads/roadTypes';
 import { CUSTOM_BUILDINGS, isZoned, type Bld } from '../sim/buildings';
 import { registerInspector, registerPanel, registerSystem, registerTool, registerView } from '../ext/registry';
 import { busDepotModel } from '../buildings/transitModels';
+import { footprintHitsBuilding, footprintHitsRoad, frontageCandidates, specialAt, type Frontage } from '../sim/frontage';
+import { PlacementGhost } from '../tools/placementGhost';
 import { TransitRenderer } from './render';
 import type { FarePolicy, TransitLine, TransitSave, TransitStats, TransitStop } from './types';
 
@@ -121,29 +123,45 @@ export class TransitSystem {
     return [...this.g.buildings.list.values()].filter((b) => b.zone === 'service' && b.kind === 'busDepot' && b.state === 'active');
   }
 
-  canPlaceDepot(x: number, z: number) {
-    const r = 23;
+  canPlaceDepot(x: number, z: number, yawIn?: number) {
+    const r = 23, hw = 20, hd = 16;
     const pick = this.g.net.pickSeg(x, z, 42);
-    const yaw = pick ? (() => {
+    const yaw = yawIn ?? (pick ? (() => {
       const p = pick.seg.samp.pts[Math.min(pick.seg.samp.pts.length - 1, Math.round((pick.s / pick.seg.length) * (pick.seg.samp.pts.length - 1)))];
       return Math.atan2(p.x - x, p.z - z);
-    })() : 0;
+    })() : 0);
     if (!this.unlocked) return { ok: false, yaw, reason: `Unlocks at 300 population (${this.g.sim.population}/300)` };
     if (!this.g.terrain.inBounds(x, z, r + 10)) return { ok: false, yaw, reason: 'Outside the county' };
     if (this.g.net.allowed && !this.g.net.allowed(x, z)) return { ok: false, yaw, reason: "You don't own this land yet. Buy it in 🏞️ Land." };
     if (this.g.terrain.h(x, z) < WATER + 0.8) return { ok: false, yaw, reason: 'The buses are not amphibious' };
     if (!pick) return { ok: false, yaw, reason: 'Needs road access within 40 m' };
-    if (this.g.net.pickSeg(x, z, r - 2)) return { ok: false, yaw, reason: 'Overlaps a road' };
-    for (const b of this.g.buildings.near(x, z, r + 35)) if (Math.hypot(b.x - x, b.z - z) < r + Math.max(b.hw, b.hd)) return { ok: false, yaw, reason: `Overlaps ${b.label}` };
+    if (footprintHitsRoad(this.g.net, x, z, hw, hd, yaw)) return { ok: false, yaw, reason: 'Overlaps a road' };
+    const hit = footprintHitsBuilding(this.g.buildings, x, z, hw, hd, yaw);
+    if (hit) return { ok: false, yaw, reason: `Overlaps ${hit.label}` };
     if (this.g.communes.at(x, z)) return { ok: false, yaw, reason: 'The drum circle rejected the bus easement' };
     if (DEPOT_COST > this.g.sim.spendable()) return { ok: false, yaw, reason: `Needs ${money(DEPOT_COST)}` };
     return { ok: true, yaw };
   }
 
+  /** Where the depot goes for a cursor at (x, z): square to the nearest road, facing it. */
+  depotSpotAt(x: number, z: number): { x: number; z: number; yaw: number; ok: boolean; reason?: string; front?: Frontage } {
+    let first: string | undefined;
+    let k = 0;
+    for (const f of frontageCandidates(this.g.net, x, z, 16, 16 + 40)) {
+      if (k++ === 0) { const on = specialAt(this.g.buildings, f, 20, 16); if (on) return { x: f.x, z: f.z, yaw: f.yaw, ok: false, reason: `${on.label} is already here`, front: f }; }
+      const c = this.canPlaceDepot(f.x, f.z, f.yaw);
+      if (c.ok) return { x: f.x, z: f.z, yaw: f.yaw, ok: true, front: f };
+      if (c.reason && /Unlocks|Needs \$|own this land|county/.test(c.reason)) return { x: f.x, z: f.z, yaw: f.yaw, ok: false, reason: c.reason, front: f };
+      first ??= c.reason;
+    }
+    const c = this.canPlaceDepot(x, z);
+    return { x, z, yaw: c.yaw, ok: false, reason: first ?? c.reason ?? 'Needs road access within 40 m' };
+  }
+
   placeDepot(x: number, z: number) {
-    const chk = this.canPlaceDepot(x, z);
-    if (!chk.ok) { this.g.toast(chk.reason ?? 'Nope', true); this.g.audio.play('error'); return false; }
-    const b = this.g.buildings.placeCustom('busDepot', x, z, chk.yaw);
+    const spot = this.depotSpotAt(x, z);
+    if (!spot.ok) { this.g.toast(spot.reason ?? 'Nope', true); this.g.audio.play('error'); return false; }
+    const b = this.g.buildings.placeCustom('busDepot', spot.x, spot.z, spot.yaw);
     if (!b) return false;
     this.g.sim.spend(DEPOT_COST, 'Bus depot', 'construction');
     this.g.pushUndo({ kind: 'place', bldId: b.id, refund: DEPOT_COST, label: 'Bus depot' });
@@ -625,29 +643,40 @@ export class TransitSystem {
 
 // touch: a tap marks the depot spot; the action-bar Build places it
 let depotSpot: { x: number; z: number } | null = null;
+let depotGhost: PlacementGhost | null = null;
+function showDepotGhost(g: Game, p: { x: number; z: number } | null) {
+  const t = transitFor(g);
+  depotGhost ??= new PlacementGhost(g.scene, 'depot-ghost');
+  if (!t || !p) { depotGhost.hide(); return; }
+  const s = t.depotSpotAt(p.x, p.z);
+  const y = g.buildings.padHeight(s.x, s.z, 20, 16, s.yaw);
+  depotGhost.show('busDepot', () => busDepotModel().geometry, s.x, y, s.z, s.yaw, 20, 16, s.ok, s.front?.door ?? null);
+}
 
 registerTool({
   id: 'transit-depot', touchLift: 64,
   placing: () => '🚏 Bus depot',
+  move(g, p) { showDepotGhost(g, depotSpot ?? p); },
   up(g, p, e, wasDrag) {
     if (wasDrag || !p) return;
-    if (e.pointerType !== 'mouse') { depotSpot = { x: p.x, z: p.z }; return; }
+    if (e.pointerType !== 'mouse') { depotSpot = { x: p.x, z: p.z }; showDepotGhost(g, depotSpot); return; }
     transitFor(g)?.placeDepot(p.x, p.z);
+    showDepotGhost(g, p);
   },
   pending(g) {
     if (!depotSpot) return null;
-    const ok = transitFor(g)?.canPlaceDepot(depotSpot.x, depotSpot.z).ok;
+    const ok = transitFor(g)?.depotSpotAt(depotSpot.x, depotSpot.z).ok;
     return { cost: ok ? DEPOT_COST : null };
   },
   confirm(g) {
-    if (depotSpot && transitFor(g)?.placeDepot(depotSpot.x, depotSpot.z)) depotSpot = null;
+    if (depotSpot && transitFor(g)?.placeDepot(depotSpot.x, depotSpot.z)) { depotSpot = null; depotGhost?.hide(); }
   },
-  cancel() { depotSpot = null; },
+  cancel() { depotSpot = null; depotGhost?.hide(); },
   tip(g) {
     const t = transitFor(g), p = depotSpot ?? g.tools.hoverPoint;
     if (!t || !p || (g.isTouch && !depotSpot)) return { text: `Place bus depot · ${money(DEPOT_COST)}${g.isTouch ? ' · tap where it goes' : ''}` };
-    const c = t.canPlaceDepot(p.x, p.z);
-    return c.ok ? { text: `Place bus depot · ${money(DEPOT_COST)}${depotSpot ? ' · tap Build, or tap elsewhere to move it' : ''}` } : { text: c.reason ?? 'Nope', bad: true };
+    const c = t.depotSpotAt(p.x, p.z);
+    return c.ok ? { text: `Place bus depot · ${money(DEPOT_COST)}${c.front ? ` · fronts ${esc(c.front.seg.name)}` : ''}${depotSpot ? ' · tap Build, or tap elsewhere to move it' : ''}` } : { text: c.reason ?? 'Nope', bad: true };
   },
 });
 

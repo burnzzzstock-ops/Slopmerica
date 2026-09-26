@@ -18,6 +18,7 @@ import { RoadRenderer } from './roads/roadMesh';
 import { ROAD_TYPES, RoadTypeId } from './roads/roadTypes';
 import { Zoning, type ZCell } from './zones/zoning';
 import { Buildings, Bld, isZoned } from './sim/buildings';
+import { footprintHitsBuilding, footprintHitsRoad, frontageCandidates, rectCorners, type Frontage } from './sim/frontage';
 import { Sim, Mode, SPEEDS, DAY_SECONDS, usd } from './sim/sim';
 import { Traffic, Car } from './agents/traffic';
 import { Pedestrians, Ped } from './agents/pedestrians';
@@ -199,6 +200,7 @@ export class Game {
     this.water = createWater(this.terrain, this.map.def.water, this.q.name === 'high' || this.q.name === 'ultra', opts.map);
     this.scene.add(this.water.mesh);
     this.trees = new Trees(this.terrain, this.map, this.q, this.renderer);
+    this.terrain.onReshape = (a, b, c, d) => this.trees.resettle(a, b, c, d);
     this.scene.add(this.trees.group);
     lap('trees');
     this.env = new Environment(this.scene, this.map.def, this.q, this.q.name === 'high' || this.q.name === 'ultra' ? this.renderer : undefined);
@@ -562,32 +564,58 @@ export class Game {
     return true;
   }
 
-  canPlaceLandmark(id: LandmarkId, x: number, z: number): { ok: boolean; yaw: number; reason?: string } {
+  canPlaceLandmark(id: LandmarkId, x: number, z: number, yawIn?: number): { ok: boolean; yaw: number; reason?: string } {
     const fp = landmarkFootprint(id);
-    const r = (Math.max(fp.widthCells, fp.depthCells) * 8) / 2 + 2;
-    const pick = this.net.pickSeg(x, z, r + 40);
-    const yaw = pick ? (() => {
+    const hw = (fp.widthCells * 8) / 2, hd = (fp.depthCells * 8) / 2;
+    const r = Math.max(hw, hd) + 2;
+    const pick = yawIn === undefined ? this.net.pickSeg(x, z, r + 40) : null;
+    const yaw = yawIn ?? (pick ? (() => {
       const p = pick.seg.samp.pts[Math.min(pick.seg.samp.pts.length - 1, Math.round((pick.s / pick.seg.length) * (pick.seg.samp.pts.length - 1)))];
       return Math.atan2(p.x - x, p.z - z);
-    })() : 0;
+    })() : 0);
     if (!this.terrain.inBounds(x, z, r + 10)) return { ok: false, yaw, reason: 'Outside the county' };
     if (this.net.allowed && !this.net.allowed(x, z)) return { ok: false, yaw, reason: "You don't own this land yet. Buy it in 🏞️ Land." };
-    if (this.terrain.h(x, z) < WATER + 0.8) return { ok: false, yaw, reason: 'Not in the water (yet)' };
-    if (this.net.pickSeg(x, z, r - 2)) return { ok: false, yaw, reason: 'Overlaps a road' };
-    for (const b of this.buildings.near(x, z, r + 30)) if (Math.hypot(b.x - x, b.z - z) < r + Math.max(b.hw, b.hd)) return { ok: false, yaw, reason: `Overlaps ${b.label}` };
+    const cs = rectCorners(x, z, hw, hd, yaw);
+    let lo = Infinity, hi = -Infinity;
+    for (const p of [...cs, { x, z }]) { const h = this.terrain.h(p.x, p.z); lo = Math.min(lo, h); hi = Math.max(hi, h); }
+    if (lo < WATER + 0.8) return { ok: false, yaw, reason: 'Not in the water (yet)' };
+    if (hi - lo > Math.max(8, Math.max(hw, hd) * 0.4)) return { ok: false, yaw, reason: 'Too steep here: find flatter ground' };
+    if (footprintHitsRoad(this.net, x, z, hw, hd, yaw)) return { ok: false, yaw, reason: 'Overlaps a road' };
+    const hit = footprintHitsBuilding(this.buildings, x, z, hw, hd, yaw);
+    if (hit) return { ok: false, yaw, reason: `Overlaps ${hit.label}` };
     if (this.communes.at(x, z)) return { ok: false, yaw, reason: 'Hippies live here' };
     const broke = this.sim.cantAfford(LANDMARK_COST[id]);
     if (broke) return { ok: false, yaw, reason: broke };
     return { ok: true, yaw };
   }
 
+  /**
+   * Where a landmark goes for a cursor at (x, z): square to the nearest road
+   * and facing it (sliding along to the nearest spot that fits), or, with no
+   * road near, right there: landmarks can come first and roads after.
+   */
+  landmarkSpot(id: LandmarkId, x: number, z: number): { x: number; z: number; yaw: number; ok: boolean; reason?: string; front?: Frontage } {
+    const hd = (landmarkFootprint(id).depthCells * 8) / 2;
+    let first: string | undefined;
+    for (const f of frontageCandidates(this.net, x, z, hd, hd + 30)) {
+      const c = this.canPlaceLandmark(id, f.x, f.z, f.yaw);
+      if (c.ok) return { x: f.x, z: f.z, yaw: f.yaw, ok: true, front: f };
+      // money, land and unlocks don't change by sliding along the road
+      if (c.reason && /Needs \$|money|own this land|county/i.test(c.reason)) return { x: f.x, z: f.z, yaw: f.yaw, ok: false, reason: c.reason, front: f };
+      first ??= c.reason;
+    }
+    const here = this.canPlaceLandmark(id, x, z);
+    if (first && !here.ok) return { x, z, yaw: here.yaw, ok: false, reason: first };
+    return { x, z, yaw: here.yaw, ok: here.ok, reason: here.reason };
+  }
+
   placeLandmark(id: LandmarkId, p: THREE.Vector3) {
-    const chk = this.canPlaceLandmark(id, p.x, p.z);
-    if (!chk.ok) { this.toast(chk.reason ?? 'Nope', true); this.audio.play('error'); return false; }
+    const spot = this.landmarkSpot(id, p.x, p.z);
+    if (!spot.ok) { this.toast(spot.reason ?? 'Nope', true); this.audio.play('error'); return false; }
     const cost = LANDMARK_COST[id];
     const name = LANDMARKS.find((l) => l.id === id)?.name ?? 'Landmark';
     this.sim.spend(cost, name);
-    const b = this.buildings.placeLandmark(id, p.x, p.z, chk.yaw);
+    const b = this.buildings.placeLandmark(id, spot.x, spot.z, spot.yaw);
     this.pushUndo({ kind: 'place', bldId: b.id, refund: cost, label: name });
     this.feed.push('buildingOpened', { building: b.label, brand: id });
     this.audio.play(id === 'slopCannon' ? 'cannon' : 'build');

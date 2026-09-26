@@ -797,6 +797,8 @@ export class Hud implements UiSink {
           ${IS_TOUCH ? '' : `<button class="chip ${g.rts.edgeScroll ? 'on' : ''}" id="edge-toggle" aria-pressed="${g.rts.edgeScroll}">Edge scrolling: ${g.rts.edgeScroll ? 'on' : 'off'}</button>`}
           ${g.pendingQuality ? '<button class="chip on" id="quality-reload">Reload to finish applying</button>' : ''}
           ${IS_TOUCH ? '' : `<button class="chip ${g.resolutionMode === 'full' ? 'on' : ''}" id="res-toggle" title="Auto lowers the resolution when frames are slow; Always full keeps it sharp">Resolution: ${g.resolutionMode === 'full' ? 'always full' : 'auto'}</button>`}
+          <button class="chip ${g.audio.musicOn ? 'on' : ''}" id="music-toggle" aria-pressed="${g.audio.musicOn}">🎹 Music: ${g.audio.musicOn ? 'on' : 'off'}</button>
+          <label class="fov-ctl" for="music-range">Music volume <input type="range" id="music-range" min="5" max="100" step="5" value="${Math.round(g.audio.musicVolume * 100)}"></label>
           <label class="fov-ctl" for="fov-range">Field of view <input type="range" id="fov-range" min="35" max="75" step="1" value="${Math.round(g.camera.fov)}"><b id="fov-v">${Math.round(g.camera.fov)}°</b></label>
         </div>
         <small>Resolution and shadows change immediately. Reload applies scenery, traffic, and post-processing budgets.</small>
@@ -833,6 +835,17 @@ export class Hud implements UiSink {
       }));
       this.sub.querySelector('#quality-reload')?.addEventListener('click', () => location.reload());
       this.sub.querySelector('#perf-toggle')?.addEventListener('click', () => { this.togglePerf(); this.renderPanel(); });
+      this.sub.querySelector('#music-toggle')?.addEventListener('click', () => {
+        g.audio.unlock();
+        g.audio.musicOn = !g.audio.musicOn;
+        try { localStorage.setItem('slopmerica.music', g.audio.musicOn ? '1' : '0'); } catch { /* not remembered */ }
+        crumb(`music ${g.audio.musicOn ? 'on' : 'off'}`);
+        this.renderPanel();
+      });
+      this.sub.querySelector('#music-range')?.addEventListener('input', (e) => {
+        g.audio.musicVolume = Number((e.target as HTMLInputElement).value) / 100;
+        try { localStorage.setItem('slopmerica.musicVol', String(g.audio.musicVolume)); } catch { /* not remembered */ }
+      });
       this.sub.querySelector('#res-toggle')?.addEventListener('click', () => {
         g.setResolutionMode(g.resolutionMode === 'full' ? 'auto' : 'full');
         crumb(`resolution ${g.resolutionMode}`);

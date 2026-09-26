@@ -7,6 +7,7 @@ import type { MapId } from '../world/maps';
 import { Synth } from './synth';
 import { SFX } from './sfx';
 import { Ambience } from './ambience';
+import { AmbientPiano } from './piano';
 
 export class AudioEngine {
   muted = false;
@@ -19,6 +20,10 @@ export class AudioEngine {
   private ambBus?: GainNode;
   private revIn?: GainNode;
   private amb?: Ambience;
+  private piano?: AmbientPiano;
+  /** Settings → Music (remembered): ambient piano on/off and its volume */
+  musicOn = true;
+  musicVolume = 0.55;
   private volume = 0.8;
   private wasMuted = false;
   private lastPlay: Partial<Record<SfxKind, number>> = {};
@@ -63,6 +68,9 @@ export class AudioEngine {
     revOut.gain.value = 0.55;
     this.revIn.connect(conv).connect(revOut).connect(this.master);
     this.amb = new Ambience(s, this.ambBus, this.revIn);
+    this.piano = new AmbientPiano(s, this.master, this.revIn);
+    this.piano.enabled = this.musicOn;
+    this.piano.volume = this.musicVolume;
     this.amb.mapId = this.mapId;
     if (c.state === 'suspended') void c.resume();
   }
@@ -84,6 +92,11 @@ export class AudioEngine {
     if (this.muted || this.ctx.state !== 'running') return;
     this.amb.mapId = this.mapId;
     this.amb.update(Math.min(dt, 0.1), mix);
+    if (this.piano) {
+      this.piano.enabled = this.musicOn;
+      this.piano.volume = this.musicVolume;
+      this.piano.update(mix.night);
+    }
   }
 
   play(kind: SfxKind, volume = 1) {

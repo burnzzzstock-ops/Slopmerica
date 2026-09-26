@@ -261,6 +261,11 @@ export class Game {
     this.rts = new RTSCamera(this.camera, this.renderer.domElement, this.terrain, this.tools as PointerHandlers);
     try { this.rts.edgeScroll = localStorage.getItem('slopmerica.edgeScroll') !== '0'; } catch { /* private mode: default on */ }
     try { if (localStorage.getItem('slopmerica.resolution') === 'full') this.resolutionMode = 'full'; } catch { /* default auto */ }
+    try {
+      this.audio.musicOn = localStorage.getItem('slopmerica.music') !== '0';
+      const mv = Number(localStorage.getItem('slopmerica.musicVol'));
+      if (mv > 0 && mv <= 1) this.audio.musicVolume = mv;
+    } catch { /* defaults: on, 55% */ }
     this.rts.setView(start.x, start.z, IS_TOUCH ? 900 : 800, start.yaw, 0.72, true);
 
     // --- ambient life (codex) ---

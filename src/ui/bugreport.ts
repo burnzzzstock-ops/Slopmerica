@@ -287,7 +287,7 @@ export function openBugReport(parent: HTMLElement, g: Game | null, opts: { prefi
  * say so plainly and give the tester a way out instead of a frozen
  * loading screen.
  */
-export function showBootFailure(parent: HTMLElement, err: unknown, opts: { restoring: boolean; savedJSON: string | null; shelveSave: () => void }) {
+export function showBootFailure(parent: HTMLElement, err: unknown, opts: { restoring: boolean; savedJSON: string | null; shelveSave: () => void; checkpoint?: boolean }) {
   const msg = text(err);
   record(msg, (err as Error | undefined)?.stack);
   const noGL = /webgl|context/i.test(msg);
@@ -303,7 +303,7 @@ export function showBootFailure(parent: HTMLElement, err: unknown, opts: { resto
       <div class="bf-actions">
         <button class="bug-primary" id="bf-report">🐞 Report this</button>
         <button id="bf-retry">↻ Try again</button>
-        ${opts.restoring ? '<button id="bf-fresh">🆕 Start a new city</button>' : ''}
+        ${opts.restoring ? `<button id="bf-fresh">${opts.checkpoint ? '⏪ Load the earlier checkpoint' : '🆕 Start a new city'}</button>` : ''}
         ${opts.restoring && opts.savedJSON ? '<button id="bf-city">💾 Save the city file</button>' : ''}
       </div>
       ${opts.restoring ? '<small>Starting a new city sets the old one aside (it is kept in this browser, not deleted) so the developer can still fix it.</small>' : ''}
@@ -312,6 +312,7 @@ export function showBootFailure(parent: HTMLElement, err: unknown, opts: { resto
   parent.appendChild(el);
   el.querySelector('#bf-report')!.addEventListener('click', () => openBugReport(parent, null, { kind: 'Broken', prefill: `The game wouldn't start${opts.restoring ? ' when I tapped Resume trip' : ''}.`, extra: `Boot failure: ${msg.slice(0, 300)}` }));
   el.querySelector('#bf-retry')!.addEventListener('click', () => location.reload());
+  // with a checkpoint: set the crashing save aside and continue from the checkpoint
   el.querySelector('#bf-fresh')?.addEventListener('click', () => { opts.shelveSave(); location.hash = ''; location.reload(); });
   el.querySelector('#bf-city')?.addEventListener('click', () => { if (opts.savedJSON) void saveFile('slopmerica-broken-city.json', opts.savedJSON); });
 }

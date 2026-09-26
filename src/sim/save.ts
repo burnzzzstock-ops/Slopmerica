@@ -42,21 +42,60 @@ export function snapshot(g: Game): SaveData {
   };
 }
 
-export function saveGame(g: Game): boolean {
+/**
+ * A second, older known-good copy (blueprint: 'retain the previous validated
+ * checkpoint'). Refreshed from the last save that parsed, at most every five
+ * minutes, so a damaged or crashing save never takes the city with it.
+ */
+const CHECKPOINT = `${KEY}.checkpoint`;
+const CHECKPOINT_EVERY = 5 * 60e3;
+let lastCheckpoint = 0;
+
+const parse = (raw: string | null): SaveData | null => {
+  if (!raw) return null;
   try {
-    localStorage.setItem(KEY, JSON.stringify(snapshot(g)));
-    return true;
+    const d = JSON.parse(raw) as SaveData;
+    // enough to build a world from: the right version and the core sections
+    return d && d.v === 1 && d.map && d.roads && d.zones && d.buildings ? d : null;
+  } catch {
+    return null;
+  }
+};
+
+export function saveGame(g: Game): boolean {
+  let json: string;
+  try {
+    json = JSON.stringify(snapshot(g));
+  } catch {
+    return false;
+  }
+  try {
+    // the save being replaced becomes the checkpoint if it's valid and the old one is stale
+    const now = Date.now();
+    if (now - lastCheckpoint > CHECKPOINT_EVERY || !localStorage.getItem(CHECKPOINT)) {
+      const prev = localStorage.getItem(KEY);
+      if (parse(prev) && prev!.length < 1_500_000) {
+        try { localStorage.setItem(CHECKPOINT, prev!); lastCheckpoint = now; } catch { /* no room: the main save matters more */ }
+      }
+    }
+    // a browser replaces a key's value whole or not at all
+    localStorage.setItem(KEY, json);
+    return localStorage.getItem(KEY)?.length === json.length;
   } catch {
     return false;
   }
 }
 
+/** Which copy the last load came from, for a notice ('checkpoint' = the main save was damaged). */
+export let loadedFrom: 'main' | 'checkpoint' | null = null;
+
 export function loadSave(): SaveData | null {
   try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return null;
-    const d = JSON.parse(raw) as SaveData;
-    return d && d.v === 1 ? d : null;
+    const main = parse(localStorage.getItem(KEY));
+    if (main) { loadedFrom = 'main'; return main; }
+    const cp = parse(localStorage.getItem(CHECKPOINT));
+    loadedFrom = cp ? 'checkpoint' : null;
+    return cp;
   } catch {
     return null;
   }
@@ -71,15 +110,36 @@ export function rawSave(): string | null {
   }
 }
 
-/** A save that crashes the game on load: keep a copy aside, then clear it. */
+/**
+ * A save that crashes the game on load: keep a copy aside, then clear it. The
+ * checkpoint (if it isn't the same city state) becomes the save to continue.
+ */
 export function shelveBrokenSave() {
+  let raw: string | null = null;
   try {
-    const raw = localStorage.getItem(KEY);
+    raw = localStorage.getItem(KEY);
     if (raw) localStorage.setItem(`${KEY}.broken`, raw);
   } catch {
     /* storage full or blocked: clearing still unblocks the player */
   }
   clearSave();
+  try {
+    const cp = localStorage.getItem(CHECKPOINT);
+    if (cp && cp !== raw && parse(cp)) localStorage.setItem(KEY, cp);
+    localStorage.removeItem(CHECKPOINT);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Whether an earlier checkpoint exists to fall back to (the rescue screen offers it). */
+export function hasCheckpoint(): boolean {
+  try {
+    const cp = localStorage.getItem(CHECKPOINT);
+    return !!cp && cp !== localStorage.getItem(KEY) && !!parse(cp);
+  } catch {
+    return false;
+  }
 }
 
 export function clearSave() {

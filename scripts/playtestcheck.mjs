@@ -97,10 +97,15 @@ await page.waitForSelector('.boot-fail', { timeout: 120000 }).catch(() => {});
 ok('broken save shows the rescue screen', await page.isVisible('.boot-fail'));
 await shot('shots/playtest/rescue.png');
 if (await page.isVisible('#bf-fresh')) {
+  // with an earlier checkpoint the button restores it; without one it starts fresh
+  const label = await page.textContent('#bf-fresh');
+  const withCheckpoint = /checkpoint/i.test(label ?? '');
+  const cp = await page.evaluate(() => localStorage.getItem('slopmerica.save.v1.checkpoint'));
   await page.tap('#bf-fresh');
   await page.waitForSelector('.aaa-home', { timeout: 60000 });
-  const st = await page.evaluate(() => ({ save: !!localStorage.getItem('slopmerica.save.v1'), shelved: !!localStorage.getItem('slopmerica.save.v1.broken'), ticket: !!document.querySelector('#continue') }));
-  ok('Start a new city shelves the broken save and returns to the title', !st.save && st.shelved && !st.ticket, JSON.stringify(st));
+  const st = await page.evaluate(() => ({ save: localStorage.getItem('slopmerica.save.v1'), shelved: !!localStorage.getItem('slopmerica.save.v1.broken'), ticket: !!document.querySelector('#continue') }));
+  if (withCheckpoint) ok('Load the earlier checkpoint shelves the broken save and offers the checkpoint to continue', st.save === cp && st.shelved && st.ticket, JSON.stringify({ label, shelved: st.shelved, ticket: st.ticket, restored: st.save === cp }));
+  else ok('Start a new city shelves the broken save and returns to the title', !st.save && st.shelved && !st.ticket, JSON.stringify({ ...st, save: !!st.save }));
 }
 const unexpected = pageErrors.filter((m) => !m.includes('playtest boom'));
 ok('no unexpected page errors', unexpected.length === 0, unexpected.slice(0, 3).join(' | '));

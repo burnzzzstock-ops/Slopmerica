@@ -9,7 +9,7 @@ import type { Mode } from './sim/sim';
 import { debugApi } from './dev/debug';
 import { Hud } from './ui/hud';
 import { showLoading, showTitle, StartChoice } from './ui/title';
-import { autosave, rawSave, saveGame, shelveBrokenSave } from './sim/save';
+import { autosave, hasCheckpoint, rawSave, saveGame, shelveBrokenSave } from './sim/save';
 
 const app = document.getElementById('app')!;
 
@@ -51,7 +51,7 @@ async function boot() {
     loading.done();
     // a loaded file that won't start must not cost the player their own save
     const own = !!choice.restore && !choice.imported;
-    showBootFailure(document.body, err, { restoring: own, savedJSON: own ? rawSave() : null, shelveSave: shelveBrokenSave });
+    showBootFailure(document.body, err, { restoring: own, savedJSON: own ? rawSave() : null, shelveSave: shelveBrokenSave, checkpoint: own && hasCheckpoint() });
     return;
   }
   loading.done();
@@ -72,5 +72,5 @@ boot().catch((err) => {
   // anything before the game exists (the title reading an old save, say)
   document.querySelector('.loading')?.remove();
   const saved = rawSave();
-  showBootFailure(document.body, err, { restoring: !!saved, savedJSON: saved, shelveSave: shelveBrokenSave });
+  showBootFailure(document.body, err, { restoring: !!saved, savedJSON: saved, shelveSave: shelveBrokenSave, checkpoint: !!saved && hasCheckpoint() });
 });

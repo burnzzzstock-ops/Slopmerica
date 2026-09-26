@@ -528,11 +528,15 @@ export class Traffic {
     // demand for trips: population & jobs, time of day, induced demand
     const tod = hour < 5 ? 0.25 : hour < 7 ? 0.6 : hour < 10 ? 1.35 : hour < 15.5 ? 0.9 : hour < 19.5 ? 1.4 : hour < 22 ? 0.8 : 0.45;
     const induced = 0.6 + 0.6 * this.flowEma;
-    const edgeBoost = Math.min(3, this.edgeAnchors().length) * 12;
+    // a small town sees a small town's traffic: through-traffic from the
+    // highway and trips per resident both ramp up to their city values
+    // (reached at ~600 and ~1,500 people), so big cities are unchanged
+    const edgeBoost = Math.min(3, this.edgeAnchors().length) * Math.max(3, 12 * Math.min(1, population / 600));
+    const perPerson = 0.07 + 0.05 * Math.min(1, population / 1500);
     // codex:policies begin -- Free Parking, Ban Bikes, and 4-Day Week move actual trip volume
     // one traffic budget on every preset, so congestion (and what it does to
     // trips, freight and demand) doesn't depend on graphics settings
-    this.targetCars = Math.min(SIM_MAX_CARS, Math.round((population * 0.12 + jobs * 0.05 + edgeBoost) * tod * induced * this.policyTripMul));
+    this.targetCars = Math.min(SIM_MAX_CARS, Math.round((population * perPerson + jobs * 0.05 + edgeBoost) * tod * induced * this.policyTripMul));
     // codex:policies end
     if (simSpeed > 0) {
       let spawns = 0;

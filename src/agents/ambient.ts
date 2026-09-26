@@ -250,16 +250,28 @@ export class AmbientLife {
     return this.seed / 4294967296;
   }
 
+  /** boats on the water at once: set from the town's population (wildlife isn't) */
+  boatCap = 2;
+
+  activeBoats() {
+    let n = 0;
+    for (let i = 0; i < this.budget; i++) if (this.active[i] && this.models[this.kind[i]].family === 'boat') n++;
+    return n;
+  }
+
   private chooseKind(): number {
     const table = SPAWN[this.mapId];
+    // boats belong to the town: once it has as many as it can crew, pick wildlife instead
+    const noBoats = this.activeBoats() >= this.boatCap;
     let total = 0;
-    for (let i = 0; i < table.length; i++) total += table[i][1];
+    for (let i = 0; i < table.length; i++) if (!noBoats || this.models[SPECIES_INDEX[table[i][0]]].family !== 'boat') total += table[i][1];
     let r = this.rnd() * total;
     for (let i = 0; i < table.length; i++) {
+      if (noBoats && this.models[SPECIES_INDEX[table[i][0]]].family === 'boat') continue;
       r -= table[i][1];
       if (r <= 0) return SPECIES_INDEX[table[i][0]];
     }
-    return SPECIES_INDEX[table[table.length - 1][0]];
+    return SPECIES_INDEX[table[0][0]];
   }
 
   private validSite(def: AmbientModelDef, x: number, z: number, h: number): boolean {
@@ -423,6 +435,13 @@ export class AmbientLife {
     this.haveFocus = true;
     if (this.showcaseOn) return;
     this.cacheRoads();
+    // a town that shrank (or a cap that dropped) sends its extra boats home
+    let boats = this.activeBoats();
+    for (let i = 0; i < this.budget && boats > this.boatCap; i++) {
+      if (this.locked[i] || !this.active[i] || this.models[this.kind[i]].family !== 'boat') continue;
+      this.active[i] = 0;
+      boats--;
+    }
     for (let i = 0; i < this.budget; i++) {
       if (this.locked[i]) continue;
       const dx = this.x[i] - nx, dz = this.z[i] - nz;

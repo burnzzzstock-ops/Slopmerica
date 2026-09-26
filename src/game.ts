@@ -117,6 +117,7 @@ export class Game {
   readonly sim: Sim;
   readonly traffic: Traffic;
   readonly peds: Pedestrians;
+  readonly ambientLife: AmbientLife;
   readonly communes: Communes;
   readonly tools: Tools;
   readonly overlays: Overlays;
@@ -242,9 +243,13 @@ export class Game {
     this.rts.setView(start.x, start.z, IS_TOUCH ? 900 : 800, start.yaw, 0.72, true);
 
     // --- ambient life (codex) ---
-    const ambientLife = new AmbientLife(this.scene, this.terrain, opts.map, this.q);
+    const ambientLife = this.ambientLife = new AmbientLife(this.scene, this.terrain, opts.map, this.q);
     ambientLife.setRoadNetwork(this.net);
-    this.onFrame.push(dt => ambientLife.update(dt, this.camera, this.env.night, this.weather));
+    this.onFrame.push(dt => {
+      // a handful of boats for a small town, more as it grows
+      ambientLife.boatCap = Math.round(THREE.MathUtils.clamp(1 + this.sim.population / 120, 1, 40));
+      ambientLife.update(dt, this.camera, this.env.night, this.weather);
+    });
 
     this.wireEvents();
     // extension systems (transit, services, ...): init before a save restores their data

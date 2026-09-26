@@ -37,6 +37,8 @@ export interface Ped {
   leaving?: boolean;
   gone?: boolean;
   retries?: number;
+  /** the building this person came out of (each lets only a few of its occupants out at once) */
+  fromBld?: number;
 }
 
 const hippies = () => ARCHETYPES.map((a, i) => (a.hippie ? i : -1)).filter((i) => i >= 0);
@@ -101,11 +103,22 @@ export class Pedestrians {
     if (near) {
       this.spawnT -= dtReal;
       if (this.spawnT <= 0) {
-        this.spawnT = 0.08;
+        this.spawnT = 0.15;
+        // People out and about in proportion to the town: about 7% of residents
+        // near the camera, so a town of 200 shows a dozen or two, not a crowd.
+        // Commune members have their own budget (they live outside the town).
         // codex:policies begin -- Ban Bikes visibly reduces ambient walking
-        const budget = Math.floor(Math.min(this.max, 12 + this.population * 0.35 + this.communes.list.filter((c) => c.state !== 'gone').length * 6) * clamp(this.outdoorMul * this.policyOutdoorMul, 0.1, 1.2));
+        const townBudget = Math.floor(Math.min(this.max, 3 + this.population * 0.07) * clamp(this.outdoorMul * this.policyOutdoorMul, 0.1, 1.2));
         // codex:policies end
-        for (let k = 0; k < 4 && this.peds.length < budget; k++) this.trySpawn(cam, R);
+        const communeBudget = Math.min(this.max, this.communes.list.filter((c) => c.state !== 'gone').length * 6);
+        let town = 0, commune = 0;
+        for (const p of this.peds) if (p.kind === 'commune') commune++; else town++;
+        // a couple at a time: people trickle out rather than flood out
+        for (let k = 0; k < 2 && (town < townBudget || commune < communeBudget); k++) {
+          const n = this.peds.length;
+          this.trySpawn(cam, R, town < townBudget, commune < communeBudget);
+          if (this.peds.length > n) { if (this.peds[this.peds.length - 1].kind === 'commune') commune++; else town++; }
+        }
       }
     }
     const dt = dtReal * Math.max(0.0001, simSpeed);
@@ -236,10 +249,29 @@ export class Pedestrians {
     p.yaw = Math.atan2(tan.x * p.dir, tan.z * p.dir);
   }
 
-  private trySpawn(cam: THREE.Vector3, R: number) {
-    const r = Math.random();
+  /** how many people are outside from each building right now */
+  private outFrom() {
+    const m = new Map<number, number>();
+    for (const p of this.peds) if (p.fromBld !== undefined) m.set(p.fromBld, (m.get(p.fromBld) ?? 0) + 1);
+    return m;
+  }
+
+  /** a building picked in proportion to its occupants, among those with room for one more outside */
+  private pickBuilding(list: Bld[]): Bld | null {
+    const out = this.outFrom();
+    const ok = list.filter((b) => (out.get(b.id) ?? 0) < Math.max(1, Math.ceil(b.occ * 0.12)));
+    let total = 0;
+    for (const b of ok) total += Math.max(1, b.occ);
+    let r = Math.random() * total;
+    for (const b of ok) { r -= Math.max(1, b.occ); if (r <= 0) return b; }
+    return ok[ok.length - 1] ?? null;
+  }
+
+  private trySpawn(cam: THREE.Vector3, R: number, town = true, communeOk = true) {
+    const r = communeOk && !town ? 0.18 : Math.random();
+    if (!town && r >= 0.2) return;
     // codex:transit begin - turn simulated boardings into small visible waiting crowds
-    if (r < 0.16 && this.transitStops) {
+    if (r < 0.16 && this.transitStops && town) {
       const atStop = new Map<number, number>();
       for (const p of this.peds) if (p.transitStopId !== undefined) atStop.set(p.transitStopId, (atStop.get(p.transitStopId) ?? 0) + 1);
       const stops = this.transitStops().filter((s) => {
@@ -265,7 +297,7 @@ export class Pedestrians {
     }
     // codex:transit end
     // commune folks
-    if (r < 0.2) {
+    if (r < 0.2 && communeOk) {
       const c = this.communes.list.find((c) => c.state !== 'gone' && Math.abs(c.x - cam.x) < R && Math.abs(c.z - cam.z) < R && this.peds.filter((p) => p.communeId === c.id).length < Math.min(24, c.members));
       if (c) {
         const a = Math.random() * Math.PI * 2, d = Math.random() * c.r * 0.7;
@@ -280,6 +312,8 @@ export class Pedestrians {
         return;
       }
     }
+    // everything below is the town's own people: only when its budget has room
+    if (!town) return;
     // protesters on blocked segments
     if (r < 0.32) {
       for (const seg of this.net.segsNear(cam.x - R, cam.z - R, cam.x + R, cam.z + R)) {
@@ -299,9 +333,9 @@ export class Pedestrians {
     }
     // loiterers outside businesses
     if (r < 0.55) {
-      const list = this.b.near(cam.x, cam.z, R).filter((b) => b.state === 'active' && (b.zone === 'comLow' || b.zone === 'comHigh' || b.zone === 'office' || b.zone === 'resHigh'));
-      if (list.length) {
-        const bld = list[Math.floor(Math.random() * list.length)];
+      const list = this.b.near(cam.x, cam.z, R).filter((b) => b.state === 'active' && b.occ > 0 && (b.zone === 'comLow' || b.zone === 'comHigh' || b.zone === 'office' || b.zone === 'resHigh'));
+      const bld = list.length ? this.pickBuilding(list) : null;
+      if (bld) {
         const c = Math.cos(bld.yaw), s = Math.sin(bld.yaw);
         const lx = (Math.random() - 0.5) * bld.hw * 1.6, lz = bld.hd - 2 - Math.random() * 3;
         const x = bld.x + lx * c + lz * s, z = bld.z - lx * s + lz * c;
@@ -311,14 +345,14 @@ export class Pedestrians {
         if (this.policySmokingAllowedAt?.(x, z) === false) vices = vices.filter((a) => a !== 'smoke' && a !== 'vape');
         if (!vices.length) vices = ['phone'];
         // codex:policies end
-        this.addFrom({ arch, kind: 'loiter', action: vices[Math.floor(Math.random() * vices.length)], seg: 0, dir: 1, s: 0, side: 1, speed: 0, life: 25 + Math.random() * 40, x, y: bld.y + 0.05, z, yaw: bld.yaw + (Math.random() - 0.5) * 1.5, phase: Math.random() * 10, label: bld.label }, this.door(bld));
+        this.addFrom({ arch, kind: 'loiter', action: vices[Math.floor(Math.random() * vices.length)], seg: 0, dir: 1, s: 0, side: 1, speed: 0, life: 25 + Math.random() * 40, x, y: bld.y + 0.05, z, yaw: bld.yaw + (Math.random() - 0.5) * 1.5, phase: Math.random() * 10, label: bld.label, fromBld: bld.id }, this.door(bld));
         return;
       }
     }
     // sidewalk walkers walk out of a front door onto the sidewalk
     const homes = this.b.near(cam.x, cam.z, R).filter((b) => b.state === 'active' && isZoned(b) && b.abandoned === undefined && b.occ > 0);
-    if (!homes.length) return;
-    const bld = homes[Math.floor(Math.random() * homes.length)];
+    const bld = homes.length ? this.pickBuilding(homes) : null;
+    if (!bld) return;
     const seg: RSeg | undefined = this.net.segs.get(bld.seg);
     if (!seg || seg.type === 'highway') return;
     const c = closestOnSampled({ x: bld.x, z: bld.z }, seg.samp);
@@ -327,7 +361,7 @@ export class Pedestrians {
     const a = seg.samp.pts[i], b = seg.samp.pts[i + 1];
     const tan = norm(sub(b, a));
     const side: 1 | -1 = (bld.x - lerp(a.x, b.x, f)) * -tan.z + (bld.z - lerp(a.z, b.z, f)) * tan.x >= 0 ? 1 : -1;
-    const p: Omit<Ped, 'h'> = { arch: this.archFor('walk', bld.brand), kind: 'walk', action: Math.random() < 0.1 ? 'run' : 'walk', seg: seg.id, dir: Math.random() < 0.5 ? 1 : -1, s: sAt, side, speed: 1.1 + Math.random() * 0.6, life: 40 + Math.random() * 60, x: 0, y: 0, z: 0, yaw: 0, phase: Math.random() * 10, label: seg.name };
+    const p: Omit<Ped, 'h'> = { arch: this.archFor('walk', bld.brand), kind: 'walk', action: Math.random() < 0.1 ? 'run' : 'walk', seg: seg.id, dir: Math.random() < 0.5 ? 1 : -1, s: sAt, side, speed: 1.1 + Math.random() * 0.6, life: 40 + Math.random() * 60, x: 0, y: 0, z: 0, yaw: 0, phase: Math.random() * 10, label: seg.name, fromBld: bld.id };
     if (p.action === 'run') p.speed = 3;
     this.placeOnSidewalk(p as Ped);
     const dr = this.door(bld);

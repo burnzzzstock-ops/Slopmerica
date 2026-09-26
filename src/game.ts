@@ -1,6 +1,6 @@
 // Game: owns the scene and every subsystem, and runs the frame loop.
 import * as THREE from 'three';
-import { defaultQuality, HALF, IS_TOUCH, MIN_RENDER_SCALE, presetPixelRatio, QUALITY, Quality, saveQuality, storedQuality, WATER } from './config';
+import { defaultQuality, GLOW, HALF, IS_TOUCH, MIN_RENDER_SCALE, nightLift, presetPixelRatio, QUALITY, Quality, saveQuality, storedQuality, WATER } from './config';
 import type { FeedContext, FeedEventKind, LandmarkId } from './contracts';
 import { generateMap, MapData, MapId } from './world/maps';
 import { Terrain } from './world/terrain';
@@ -8,7 +8,7 @@ import { Trees } from './world/trees';
 import { GroundDetail } from './world/groundDetail';
 import { createWater } from './world/water';
 import { Environment } from './world/sky';
-import { NIGHT_EXPOSURE, WeatherSystem } from './world/weather';
+import { WeatherSystem } from './world/weather';
 import { PointerHandlers, RTSCamera } from './render/camera';
 import { PostFX } from './render/post';
 import { Particles } from './render/particles';
@@ -964,6 +964,7 @@ export class Game {
 
     // night lighting
     const n = this.env.night;
+    GLOW.value = 1 / nightLift(n, this.env.moonLight);
     this.env.lightPollution = Math.min(1, this.buildings.list.size / 900);
     setBuildingNight(n);
     setKitNight(n);
@@ -995,7 +996,7 @@ export class Game {
       this.renderer.info.reset();
       wu.uReflOn.value = this.water.reflection?.shouldRender(this.camera) ? 1 : 0;
       // Low quality renders straight to the canvas: same night exposure as the grade
-      this.renderer.toneMappingExposure = 0.95 * (this.post.active ? 1 : 1 + NIGHT_EXPOSURE * n);
+      this.renderer.toneMappingExposure = 0.95 * (this.post.active ? 1 : nightLift(n, this.env.moonLight));
       this.post.render(n);
       P.lap('render');
       if (this.blackChecks.length && performance.now() >= this.blackChecks[0] && !document.hidden) {

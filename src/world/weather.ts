@@ -13,7 +13,7 @@ import type { Terrain } from './terrain';
 import type { Trees } from './trees';
 import type { Quality } from '../config';
 import type { PostLook } from '../render/post';
-import { HALF, WATER, WORLD } from '../config';
+import { HALF, WATER, WORLD, GLOW, nightLift } from '../config';
 import { ATMOS } from './atmos';
 import { CloudLayer } from './clouds';
 import { applySeasonUniforms, atmo, ATMOS_EXTRA, newSeasonLook, sampleSeason, seasonOf, temperatureC, YEAR } from './seasons';
@@ -54,8 +54,6 @@ interface Look {
   exposure: number;
 }
 
-/** How much brighter the night is exposed than the day (post effects and Low alike). */
-export const NIGHT_EXPOSURE = 0.85;
 const L = (o: Partial<Look>): Look => ({
   cover: 0.3, overcast: 0, fog: 1, mist: 0, mistH: 30, rain: 0, snow: 0, ash: 0, wind: 1, dark: 0, whiteout: 0, smoke: 0, haze: 0, storm: 0, surge: 0, lightning: 0,
   tint: [1, 1, 1], sat: 1.0, contrast: 1.05, exposure: 1, ...o,
@@ -446,7 +444,7 @@ export class WeatherSystem {
     this.rainU = rainMat.uniforms;
     this.snowU = snowMat.uniforms;
     this.ashU = ashMat.uniforms;
-    (this.ashU.uEmber.value as THREE.Color).setRGB(3.2, 1.1, 0.25);
+    (this.ashU.uEmber.value as THREE.Color).setRGB(1.6, 0.55, 0.12);
     const snowGeo = quadGeometry(low ? 3000 : 11000, 23);
     this.rain = this.addFx(new THREE.Mesh(quadGeometry(low ? 4000 : 14000, 11), rainMat), 6);
     this.snow = this.addFx(new THREE.Mesh(snowGeo, snowMat), 6);
@@ -743,12 +741,13 @@ export class WeatherSystem {
       const golden = THREE.MathUtils.smoothstep(env.sunElevation, -2, 4) * (1 - THREE.MathUtils.smoothstep(env.sunElevation, 8, 22)) * (1 - c.overcast);
       const warm = S.wSummer * 0.04 + S.wFall * 0.1 - S.wWinter * 0.08 + golden * 0.08 - night * 0.04;
       const sat = S.wSpring * 1.05 + S.wSummer * 1.06 + S.wFall * 1.1 + S.wWinter * 0.92;
-      lk.tint.setRGB(c.tint[0] * (1 + warm * 0.25), c.tint[1] * (1 + warm * 0.04), c.tint[2] * (1 - warm * 0.3));
-      lk.sat = c.sat * sat * (1 - night * 0.12);
+      // moonlight is blue and colourless: night reads as night even when it's bright
+      lk.tint.setRGB(c.tint[0] * (1 + warm * 0.25) * (1 - night * 0.16), c.tint[1] * (1 + warm * 0.04) * (1 - night * 0.07), c.tint[2] * (1 - warm * 0.3) * (1 + night * 0.1));
+      lk.sat = c.sat * sat * (1 - night * 0.38);
       lk.contrast = c.contrast;
       // night: the eye adapts (the playtest found the town unreadable after dark),
       // and blacks lift to a moonlit blue; lit windows and street lights still pop
-      lk.exposure = c.exposure * (1 + NIGHT_EXPOSURE * night);
+      lk.exposure = c.exposure * nightLift(night, env.moonLight);
       lk.lift.setRGB(0.03, 0.03, 0.035).multiplyScalar(Math.min(1, (c.fog - 1) / 8 + c.mist * 0.05));
       lk.lift.r += 0.006 * night;
       lk.lift.g += 0.01 * night;
@@ -952,7 +951,7 @@ export class WeatherSystem {
     const light = THREE.MathUtils.clamp(env.lightLevel * 0.9 + this.flash * 1.5, 0.08, 2);
     // unlit particles take the scene's light, less the grade's night lift (bright
     // rain streaks after dark read as a glowing snowfall)
-    const lift = 1 + NIGHT_EXPOSURE * env.night;
+    const lift = nightLift(env.night, env.moonLight);
     const wd = this.windDir;
     const ws = THREE.MathUtils.clamp((c.wind - 0.6) / 4, 0.05, 1.2);
 
@@ -1004,6 +1003,10 @@ export class WeatherSystem {
       u.uWidth.value = S * 0.0012;
       u.uSwirl.value = S * 0.02;
       (u.uColor.value as THREE.Color).setRGB(0.42, 0.38, 0.35).multiplyScalar(Math.max(0.12, light) / lift);
+      // embers are decorative: close up only (zoomed out each one is metres
+      // wide and the countryside filled with amber discs), and no brighter at night
+      (u.uEmber.value as THREE.Color).setRGB(1.6, 0.55, 0.12).multiplyScalar(GLOW.value * (1 - THREE.MathUtils.smoothstep(alt, 180, 420)));
+      u.uAmount.value = c.ash * 0.45 * (1 - 0.7 * THREE.MathUtils.smoothstep(alt, 300, 1200));
     }
     // fireflies around where the camera looks, only when zoomed right in
     const ff = this.fireflies * 0.6 * (1 - THREE.MathUtils.smoothstep(alt, 90, 220));

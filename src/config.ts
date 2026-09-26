@@ -81,3 +81,22 @@ export function saveQuality(n: Quality['name'], auto = false): boolean {
 export function defaultQuality(): Quality {
   return QUALITY[storedQuality() ?? (IS_TOUCH ? 'low' : 'high')];
 }
+
+/** How much brighter the night is exposed than the day (post effects and Low alike). */
+export const NIGHT_EXPOSURE = 0.85;
+/**
+ * The night exposure lift, for how dark the night actually is: a moonlit
+ * night is already bright enough (lifting it too made a full-moon town look
+ * like noon); a moonless or overcast one gets the full lift.
+ */
+export const nightLift = (night: number, moonLight = 0) => {
+  const t = Math.min(1, Math.max(0, (moonLight - 0.15) / 0.45));
+  return 1 + NIGHT_EXPOSURE * night * (1 - t * t * (3 - 2 * t));
+};
+/**
+ * 1 / the night lift, shared by every self-lit material (windows, signs, lamps,
+ * headlights, embers) and the bloom: the eye adapts to the dark scene, but
+ * things that glow shouldn't glow brighter because of it (the playtest saw
+ * lamps bloom into white discs). Set once a frame by the game.
+ */
+export const GLOW = { value: 1 };

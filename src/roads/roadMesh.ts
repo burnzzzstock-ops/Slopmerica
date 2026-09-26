@@ -1,3 +1,4 @@
+import { GLOW } from '../config';
 // Turns the road network into meshes: textured ribbons per road type, junction
 // polygons, concrete skirts / bridge decks / barriers / pillars, and street lights.
 import * as THREE from 'three';
@@ -325,7 +326,7 @@ export class RoadRenderer {
   }
 
   setNight(n: number) {
-    this.lampMat.emissiveIntensity = n * 4;
+    this.lampMat.emissiveIntensity = n * 4 * GLOW.value;
   }
 
   /** Connects visible traffic lights to the simulation without coupling render and traffic modules. */

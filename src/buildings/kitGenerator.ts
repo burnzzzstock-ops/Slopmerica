@@ -3,7 +3,7 @@
 // (Zoned buildings, landmarks and billboards come from generator.ts, which has
 // its own atlas material; the two geometry formats can't share a batch.)
 import * as THREE from 'three';
-import { CELL } from '../config';
+import { CELL, GLOW } from '../config';
 import { mulberry32 } from '../core/rng';
 import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from '../world/atmos';
 import { facadeTexture, loadSignFonts, SIGN_BASE, T } from './atlas';
@@ -20,6 +20,7 @@ export function kitMaterial(): THREE.Material {
   m.onBeforeCompile = (sh) => {
     sh.uniforms.tFacade = { value: facadeTexture() };
     sh.uniforms.uNightB = nightUniform;
+    sh.uniforms.uGlow = GLOW;
     bindAtmos(sh);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float tile;\nvarying float vTile;\nvarying vec2 vUvT;\nvarying vec3 vBW;')
@@ -41,7 +42,7 @@ export function kitMaterial(): THREE.Material {
         `#include <common>
 precision highp sampler2DArray;
 uniform sampler2DArray tFacade;
-uniform float uNightB, uSnow, uSnowLine, uWet;
+uniform float uNightB, uSnow, uSnowLine, uWet, uGlow;
 varying float vTile;
 varying vec2 vUvT;
 varying vec3 vBW;
@@ -96,6 +97,7 @@ roughnessFactor = mix(roughnessFactor, 0.35, uWet * 0.6 * (1.0 - gGlass));`,
   boost = max(1.0, vColor.r);
 #endif
   totalEmissiveRadiance += gTex * gSign * (0.1 + uNightB * 0.75 * boost) * (boost > 1.5 ? 1.8 : 1.0);
+  totalEmissiveRadiance *= uGlow;
 }`,
       )
       .replace('#include <lights_fragment_end>', cloudShadowChunk('vBW'));

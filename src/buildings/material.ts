@@ -3,6 +3,7 @@
 // screens, lamps) faded in by setBuildingNight().
 import * as THREE from 'three';
 import { atlasTextures } from '../art';
+import { GLOW } from '../config';
 
 let material: THREE.MeshStandardMaterial | null = null;
 let night = 0;
@@ -32,7 +33,7 @@ export function buildingMaterial(): THREE.MeshStandardMaterial {
 
 export function setBuildingNight(n: number) {
   night = THREE.MathUtils.clamp(n, 0, 1);
-  if (material) material.emissiveIntensity = glow(night);
+  if (material) material.emissiveIntensity = glow(night) * GLOW.value;
 }
 
 export function buildingNight() {

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLOW } from '../config';
 import type { VehicleKind } from '../contracts';
 import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from '../world/atmos';
 import { buildVehicleModel, vehicleDecalAtlas, type VehicleLodGeometry } from './models/vehicleModels';
@@ -131,6 +132,7 @@ function lightMaterial(): THREE.MeshBasicMaterial {
   const material = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, toneMapped: false, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uVehicleNight = nightUniform;
+    shader.uniforms.uGlow = GLOW;
     shader.uniforms.uVehicleTime = timeUniform;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
@@ -140,7 +142,7 @@ varying float vSignal, vFade, vBrake, vSeed;`)
 vSignal = signal; vFade = fade; vBrake = iBrake; vSeed = iSeed;`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
-uniform float uVehicleNight, uVehicleTime;
+uniform float uVehicleNight, uVehicleTime, uGlow;
 varying float vSignal, vFade, vBrake, vSeed;`)
       .replace('#include <color_fragment>', `#include <color_fragment>
 {
@@ -155,10 +157,10 @@ varying float vSignal, vFade, vBrake, vSeed;`)
     power = uVehicleNight * 0.34;
     diffuseColor.a *= vFade * uVehicleNight * 0.58;
   }
-  diffuseColor.rgb *= power;
+  diffuseColor.rgb *= power * uGlow;
 }`);
   };
-  material.customProgramCacheKey = () => 'aa-vehicle-lights-v3';
+  material.customProgramCacheKey = () => 'aa-vehicle-lights-v4';
   return material;
 }
 

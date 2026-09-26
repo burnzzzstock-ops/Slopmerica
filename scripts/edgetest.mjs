@@ -1,6 +1,10 @@
-// Edge scrolling: the mouse against a window edge slides the map that way;
-// it stops in the middle of the screen, over a panel, when the setting is
-// off, and when the mouse leaves the window. Exits nonzero on failure.
+// Edge scrolling: the mouse against a window edge slides the map that way,
+// the top and bottom edges too (the top bar and toolbar cover most of them:
+// the outermost pixels scroll over anything); it stops in the middle of the
+// screen, over a panel away from the edge, and when the setting is off.
+// Leaving the window through an edge it was scrolling toward keeps going a
+// moment (inside the Claude page the game's top isn't the screen's top);
+// leaving from anywhere else stops at once. Exits nonzero on failure.
 import { chromium } from 'playwright-core';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
@@ -39,21 +43,33 @@ check(`mouse at the top edge scrolls up (${top.up} m)`, top.up > 50, top);
 await page.mouse.move(W / 2, H / 2);
 const stop = await drift(W / 2, H / 2, 800);
 check('back in the middle it stops', Math.abs(stop.right) < 5 && Math.abs(stop.up) < 5, stop);
-// over the toolbar at the bottom edge: that's a panel, not the map
-const bar = await page.evaluate(() => { const r = document.querySelector('.toolbar').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.bottom - 3, h: innerHeight }; });
-const overBar = bar.y > H - 18 ? await drift(bar.x, bar.y) : { right: 0, up: 0, skipped: true };
-check('over the toolbar near the bottom edge it does not scroll', Math.abs(overBar.up) < 5 && Math.abs(overBar.right) < 5, overBar);
-// the mouse leaves the window
-await page.mouse.move(W - 2, H / 2);
-await page.evaluate(() => window.dispatchEvent(new MouseEvent('mouseout', { relatedTarget: null })));
-const gone = await drift(W - 2, H / 2, 0).then(async () => {
+// the middle of the top and bottom edges, over the top bar and the toolbar
+const bars = await page.evaluate(() => { const t = document.querySelector('.topbar').getBoundingClientRect(), b = document.querySelector('.toolbar').getBoundingClientRect(); return { tx: t.left + t.width / 2, bx: b.left + b.width / 2, btop: b.top }; });
+const overTop = await drift(bars.tx, 1);
+check(`at the very top, over the top bar, it scrolls up (${overTop.up} m)`, overTop.up > 50, overTop);
+const overBottom = await drift(bars.bx, H - 2);
+check(`at the very bottom, over the toolbar, it scrolls down (${overBottom.up} m)`, overBottom.up < -50, overBottom);
+// over the toolbar but away from the edge: that's a panel, not the map
+const overBar = await drift(bars.bx, bars.btop + 6);
+check('over the toolbar away from the edge it does not scroll', Math.abs(overBar.up) < 5 && Math.abs(overBar.right) < 5, overBar);
+// leaving the window through the top edge (the Claude page's header): keeps going briefly
+const away = async (x, y) => {
+  await page.mouse.move(x, y);
+  await step(0.3);
   await page.evaluate(() => window.dispatchEvent(new MouseEvent('mouseout', { relatedTarget: null })));
-  const a = await page.evaluate(() => window.__game.rts.goal.target.x);
+  const a = await page.evaluate(() => { const r = window.__game.rts; return { x: r.goal.target.x, z: r.goal.target.z }; });
   await step(1);
-  const b = await page.evaluate(() => window.__game.rts.goal.target.x);
-  return Math.abs(b - a);
-});
-check(`leaving the window stops it (moved ${Math.round(gone)} m)`, gone < 5, gone);
+  const b = await page.evaluate(() => { const r = window.__game.rts; return { x: r.goal.target.x, z: r.goal.target.z }; });
+  await step(0.8); // the rest of the 1.5 s hold
+  const b2 = await page.evaluate(() => { const r = window.__game.rts; return { x: r.goal.target.x, z: r.goal.target.z }; });
+  await step(1.5);
+  const c = await page.evaluate(() => { const r = window.__game.rts; return { x: r.goal.target.x, z: r.goal.target.z }; });
+  return { first: Math.round(Math.hypot(b.x - a.x, b.z - a.z)), after: Math.round(Math.hypot(c.x - b2.x, c.z - b2.z)) };
+};
+const outTop = await away(W / 2, 3);
+check(`leaving through the top edge keeps scrolling a moment (${outTop.first} m), then stops (${outTop.after} m after)`, outTop.first > 30 && outTop.after < 5, outTop);
+const settle = await away(W / 2, H / 2);
+check(`leaving from the middle stops at once (${settle.first} m)`, settle.first < 5, settle);
 // Settings → Edge scrolling: off
 await page.mouse.move(W / 2, H / 2);
 await page.click('button.tbtn[data-t="help"]');

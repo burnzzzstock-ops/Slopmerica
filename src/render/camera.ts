@@ -30,6 +30,8 @@ export class RTSCamera {
   edgeScroll = true;
   /** last mouse position and whether it was over the map itself (not a panel) */
   private mouse: { x: number; y: number; overMap: boolean } | null = null;
+  /** the mouse left the game through an edge: keep scrolling that way briefly */
+  private edgeHold: { ex: number; ey: number; left: number } | null = null;
   /** seconds the mouse has rested in the edge band (a short delay avoids jolts on the way to a button) */
   private edgeT = 0;
   private ray = new THREE.Raycaster();
@@ -50,9 +52,20 @@ export class RTSCamera {
       this.keys.add(e.key.toLowerCase());
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
-    window.addEventListener('blur', () => { this.keys.clear(); this.mouse = null; });
-    // the mouse left the window (or the frame the game runs in): stop edge scrolling
-    window.addEventListener('mouseout', (e) => { if (!e.relatedTarget) this.mouse = null; });
+    window.addEventListener('blur', () => { this.keys.clear(); this.mouse = null; this.edgeHold = null; });
+    // the mouse left the window (or the frame the game runs in). Through an
+    // edge it was scrolling toward, keep going a moment: inside a page (the
+    // Claude frame) the top of the game isn't the top of the screen, so the
+    // cursor overshoots it. Coming back, or the window losing focus, stops it.
+    window.addEventListener('mouseout', (e) => {
+      if (e.relatedTarget) return;
+      const m = this.mouse, w = window.innerWidth, h = window.innerHeight, B = 24;
+      if (m && this.edgeScroll) {
+        const ex = m.x < B ? -1 : m.x > w - B ? 1 : 0, ey = m.y < B ? -1 : m.y > h - B ? 1 : 0;
+        this.edgeHold = ex || ey ? { ex, ey, left: 1.5 } : null;
+      }
+      this.mouse = null;
+    });
     dom.addEventListener('contextmenu', (e) => e.preventDefault());
     dom.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     dom.addEventListener('pointerdown', (e) => this.onDown(e));
@@ -129,7 +142,7 @@ export class RTSCamera {
   }
 
   private onMove(e: PointerEvent) {
-    if (e.pointerType === 'mouse') this.mouse = { x: e.clientX, y: e.clientY, overMap: e.target === this.dom };
+    if (e.pointerType === 'mouse') { this.mouse = { x: e.clientX, y: e.clientY, overMap: e.target === this.dom }; this.edgeHold = null; }
     const pt = this.pointers.get(e.pointerId);
     if (e.target === this.dom || pt) this.lastClient = { x: e.clientX, y: e.clientY };
     if (!pt) {
@@ -232,12 +245,20 @@ export class RTSCamera {
    * Off while a button is held (drawing, orbiting) or the tab is hidden.
    */
   private edgePan(dt: number) {
-    const EDGE = 18, m = this.mouse;
+    // within EDGE px over the map; within RIM px of the window edge over
+    // anything (the top bar and toolbar cover most of the top and bottom edges)
+    const EDGE = 18, RIM = 8, m = this.mouse;
     const w = window.innerWidth, h = window.innerHeight;
     let ex = 0, ey = 0;
-    if (this.edgeScroll && m && m.overMap && this.pointers.size === 0 && !document.hidden) {
-      if (m.x < EDGE) ex = -(1 - m.x / EDGE); else if (m.x > w - EDGE) ex = 1 - (w - m.x) / EDGE;
-      if (m.y < EDGE) ey = -(1 - m.y / EDGE); else if (m.y > h - EDGE) ey = 1 - (h - m.y) / EDGE;
+    if (this.edgeScroll && m && this.pointers.size === 0 && !document.hidden) {
+      const band = m.overMap ? EDGE : RIM;
+      if (m.x < band) ex = -(1 - m.x / EDGE); else if (m.x > w - band) ex = 1 - (w - m.x) / EDGE;
+      if (m.y < band) ey = -(1 - m.y / EDGE); else if (m.y > h - band) ey = 1 - (h - m.y) / EDGE;
+    }
+    const hold = this.edgeHold;
+    if (!ex && !ey && hold && this.edgeScroll && this.pointers.size === 0 && !document.hidden) {
+      hold.left -= dt;
+      if (hold.left > 0) { ex = hold.ex; ey = hold.ey; } else this.edgeHold = null;
     }
     if (!ex && !ey) { this.edgeT = 0; return; }
     this.edgeT += dt;

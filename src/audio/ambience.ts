@@ -50,6 +50,13 @@ export class Ambience {
       o.connect(g).connect(target);
       o.start();
     };
+    // an irregular swell (slow noise, not a sine): steady LFOs on noise beds
+    // pulse like a steam engine; water and crowds wander instead
+    const wander = (hz: number, depth: number, target: AudioParam) => {
+      const g = c.createGain();
+      g.gain.value = depth;
+      s.loop('pink').connect(filt('lowpass', hz, 0.5)).connect(filt('lowpass', hz, 0.5)).connect(g).connect(target);
+    };
     const bed = (...chain: AudioNode[]) => {
       for (let i = 0; i < chain.length - 1; i++) chain[i].connect(chain[i + 1]);
       const g = c.createGain();
@@ -66,8 +73,7 @@ export class Ambience {
     this.rainDrum = bed(s.loop('pink'), filt('bandpass', 420, 0.6));
     const babble = c.createGain();
     babble.gain.value = 0.55;
-    lfo(3.7, 0.28, babble.gain);
-    lfo(8.3, 0.18, babble.gain);
+    wander(7, 1.6, babble.gain);
     this.creek = bed(s.loop('pink'), filt('bandpass', 1300, 1.1), babble);
     this.traffic = bed(s.loop('brown'), filt('lowpass', 240));
     const buzz = c.createGain();
@@ -79,8 +85,7 @@ export class Ambience {
     this.cicada = bed(s.loop('white'), filt('bandpass', 4700, 7), buzz, swell);
     const walla = c.createGain();
     walla.gain.value = 0.6;
-    lfo(1.3, 0.3, walla.gain);
-    lfo(0.37, 0.2, walla.gain);
+    wander(1.5, 1.2, walla.gain);
     this.crowd = bed(s.loop('pink'), filt('bandpass', 650, 1), walla);
 
     this.voices = this.makeVoices();
@@ -220,7 +225,8 @@ export class Ambience {
       this.set(this.windHi, Math.max(0, windW - 0.45) * 0.4);
       this.set(this.rainHiss, rain * 0.26 * (0.7 + near * 0.3));
       this.set(this.rainDrum, rain * 0.16 * (0.4 + near * 0.6));
-      this.set(this.creek, nature * 0.1 * near * near * (m.season === 'winter' ? 0.5 : 1) * (1 - hush));
+      // only where there's water to hear (it played everywhere with the county's nature level)
+      this.set(this.creek, (m.water ?? 0) * nature * 0.1 * near * near * (m.season === 'winter' ? 0.5 : 1) * (1 - hush));
       this.set(this.traffic, m.traffic * (0.1 + z * 0.08) * (1 - hush * 0.5));
       const cicadaMap = this.mapId === 'norcal' ? 0.3 : 1;
       this.set(this.cicada, nature * day * summer * cicadaMap * 0.035 * (1 - rain) * (0.4 + near * 0.6) * (m.season === 'summer' ? 1 : 0.4));
@@ -261,7 +267,7 @@ export class Ambience {
     if (map === 'appalachia' && this.chance(nature * m.night * 0.025 * near, dt)) V.owl(t, 0.03, p());
     if (this.chance(m.traffic * 0.12 * (0.4 + near * 0.6) * (1 - hush * 0.5), dt)) honkVoice(this.s, this.out, 0.25 * far() * (0.4 + near * 0.6), rnd(0.85, 1.15), t, rnd(0.12, 0.4), p());
     if (this.chance(m.traffic * near * 0.7, dt)) V.passby(t, 0.035 * far(), p());
-    if (this.chance(m.construction * 2.2 * (0.4 + near * 0.6), dt)) V.clank(t, 0.05 * far(), p());
+    if (this.chance(m.construction * 0.8 * (0.4 + near * 0.6), dt)) V.clank(t, 0.05 * far(), p());
     if (this.chance(m.construction * 0.05, dt)) V.beeper(t, 0.05 * far(), p());
   }
 }

@@ -532,7 +532,8 @@ export class RoadNetwork {
 
   private finalizeSeg(seg: RSeg) {
     const t = this.type(seg.type);
-    this.terrain.gradeRoad(seg.samp.pts, seg.hs, t.width / 2);
+    // an overpass keeps its air: only a short fill at its ends
+    this.terrain.gradeRoad(seg.samp.pts, seg.hs, t.width / 2, seg.over ? 4.5 : 14);
     // clear far enough that crowns (about 4 m across) don't hang over the pavement
     const hw = t.width / 2 + 4;
     const pts = seg.samp.pts;
@@ -591,6 +592,7 @@ export class RoadNetwork {
     const seg = this.segs.get(id);
     if (!seg) return;
     this.detachSeg(seg);
+    this.terrain.forgetRoad(seg.samp.pts, this.type(seg.type).width / 2);
     for (const nid of [seg.a, seg.b]) {
       const n = this.nodes.get(nid);
       if (!n) continue;
@@ -622,7 +624,7 @@ export class RoadNetwork {
 
   private finalizeSegChanged(seg: RSeg) {
     const t = this.type(seg.type);
-    this.terrain.gradeRoad(seg.samp.pts, seg.hs, t.width / 2);
+    this.terrain.gradeRoad(seg.samp.pts, seg.hs, t.width / 2, seg.over ? 4.5 : 14);
     // clear far enough that crowns (about 4 m across) don't hang over the pavement
     const hw = t.width / 2 + 4;
     const pts = seg.samp.pts;

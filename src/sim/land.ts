@@ -123,9 +123,10 @@ function buildBorder(g: Game) {
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   if (!L.borderMat) {
     L.borderMat = new THREE.ShaderMaterial({
-      uniforms: { uOpacity: { value: 0.35 } },
+      // uLight: daylight (it was unlit, so at night it glowed as a bright yellow line across the county)
+      uniforms: { uOpacity: { value: 0.35 }, uLight: { value: 1 } },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-      fragmentShader: 'uniform float uOpacity; varying vec2 vUv; void main(){ float a = pow(1.0 - vUv.y, 1.6) * uOpacity; gl_FragColor = vec4(vec3(0.78, 0.96, 0.2) * 1.6, a); }',
+      fragmentShader: 'uniform float uOpacity; uniform float uLight; varying vec2 vUv; void main(){ float a = pow(1.0 - vUv.y, 1.6) * uOpacity * mix(0.35, 1.0, uLight); gl_FragColor = vec4(vec3(0.78, 0.96, 0.2) * 1.6 * uLight, a); }',
       transparent: true,
       depthWrite: false,
       side: THREE.DoubleSide,
@@ -276,6 +277,12 @@ function startBlock(g: Game) {
 
 registerSystem({
   id: 'land',
+  frame(g) {
+    // dim with the daylight; while buying land it stays readable at night
+    if (!L.borderMat) return;
+    const light = 1 - 0.85 * g.env.night;
+    L.borderMat.uniforms.uLight.value = L.panelOpen ? Math.max(0.75, light) : light;
+  },
   init(g) {
     L.all = g.sim.mode === 'sandbox';
     if (L.all) L.owned.fill(1);

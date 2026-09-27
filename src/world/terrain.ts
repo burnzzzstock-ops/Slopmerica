@@ -69,6 +69,8 @@ export class Terrain {
   readonly paint: Uint8Array;
   /** 1 where a road bed was graded (road surface + shoulders). */
   readonly roadMask: Uint8Array;
+  /** under a road: the height its bed needs (NaN = none); another road's cut stops there */
+  readonly roadBed: Float32Array;
   readonly group = new THREE.Group();
   readonly heightTex: THREE.DataTexture;
   readonly material: THREE.MeshStandardMaterial;
@@ -91,6 +93,7 @@ export class Terrain {
     this.cover = map.cover;
     this.paint = new Uint8Array(HM_N * HM_N);
     this.roadMask = new Uint8Array(HM_N * HM_N);
+    this.roadBed = new Float32Array(HM_N * HM_N).fill(NaN);
     this.lodDist = q.lod;
     for (const [k, v] of Object.entries(map.def.palette)) this.pal[k] = new THREE.Color(v);
 
@@ -388,14 +391,20 @@ if (uInfoOn > 0.0) {
   }
 
   /** Cut high ground and fill low ground under a road; deep gaps stay open for bridges. */
-  gradeRoad(pts: V2[], hs: number[], halfWidth: number) {
+  gradeRoad(pts: V2[], hs: number[], halfWidth: number, fillMax = 14) {
     this.surfaceVersion++;
-    const margin = 10;
     let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
-    for (const p of pts) {
+    // a road over a deep dip gets an embankment wide enough to stand on
+    // (fill used to stop at 4.5 m, leaving a slab hanging in the air)
+    let fill = 0;
+    for (let k = 0; k < pts.length; k++) {
+      const p = pts[k];
       minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
       minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+      const h = this.h(p.x, p.z);
+      if (h > WATER - 0.5) fill = Math.max(fill, Math.min(fillMax, hs[k] - 0.35 - h));
     }
+    const margin = 10 + clamp(fill * 1.2, 0, 16);
     const R = halfWidth + margin;
     this.forEachIn(minX - R, minZ - R, maxX + R, maxZ + R, (i, j, x, z, id) => {
       let bd = Infinity, bh = 0;
@@ -415,15 +424,22 @@ if (uInfoOn > 0.0) {
       const cur = this.heights[id];
       const w = 1 - smoothstep(halfWidth + 1, R, d);
       let next = cur;
-      if (cur > target) next = lerp(cur, target, w);
+      // cutting stops at another road's bed: a street cut into a slope beside a
+      // junction dug out the ground under the neighbouring road's end
+      if (cur > target) {
+        next = lerp(cur, target, w);
+        // (under this road's own pavement it always cuts: a road is never buried)
+        if (d > halfWidth + 0.5 && this.roadMask[id] && this.roadBed[id] > next) next = Math.min(cur, this.roadBed[id]);
+      }
       // never pile fill onto another road's bed (neighbouring segments at a
       // junction or a crossing on a slope): that's what buried roads in hillsides
-      else if (!this.roadMask[id] && target - cur < 4.5 && cur > WATER - 0.5) next = lerp(cur, target, w * 0.95);
+      else if (!this.roadMask[id] && target - cur < fillMax && cur > WATER - 0.5) next = lerp(cur, target, w * 0.95);
       if (next !== cur) {
         this.heights[id] = next;
         this.markDirty(i, j);
         if (cur < 1.5 || next < 1.5) this.markTex(j);
       }
+      if (d < halfWidth + 2.5 && Number.isNaN(this.roadBed[id])) this.roadBed[id] = target;
       if (d < halfWidth + 2.5 && !this.roadMask[id]) {
         this.roadMask[id] = 1;
         const ch = this.chunks[clamp(Math.floor(j / CQ), 0, CN - 1) * CN + clamp(Math.floor(i / CQ), 0, CN - 1)];
@@ -436,6 +452,20 @@ if (uInfoOn > 0.0) {
       }
     });
     this.onReshape?.(minX - R, minZ - R, maxX + R, maxZ + R);
+  }
+
+  /** a road is gone: its bed no longer stops another road's cut */
+  forgetRoad(pts: V2[], halfWidth: number) {
+    let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+    for (const p of pts) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z); }
+    const R = halfWidth + 2.5;
+    this.forEachIn(minX - R, minZ - R, maxX + R, maxZ + R, (_i, _j, x, z, id) => {
+      for (let k = 0; k < pts.length - 1; k++) {
+        const a = pts[k], b = pts[k + 1], abx = b.x - a.x, abz = b.z - a.z, l2 = abx * abx + abz * abz || 1;
+        const t = clamp(((x - a.x) * abx + (z - a.z) * abz) / l2, 0, 1);
+        if (Math.hypot(a.x + abx * t - x, a.z + abz * t - z) < R) { this.roadBed[id] = NaN; return; }
+      }
+    });
   }
 
   /**

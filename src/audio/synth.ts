@@ -36,13 +36,14 @@ export class Synth {
   noise(color: NoiseColor): AudioBuffer {
     let b = this.buffers.get(color);
     if (b) return b;
-    const len = Math.floor(this.ctx.sampleRate * 3);
-    b = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
-    const d = b.getChannelData(0);
+    // ~9 s, not 3: a short loop of low noise repeats audibly ("a train chugging"
+    // all game long); generated a little long so the seam can be crossfaded
+    const rate = this.ctx.sampleRate, len = Math.floor(rate * 9.3), fade = Math.floor(rate * 0.25);
+    const raw = new Float32Array(len + fade);
     let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0, last = 0;
-    for (let i = 0; i < len; i++) {
+    for (let i = 0; i < raw.length; i++) {
       const w = Math.random() * 2 - 1;
-      if (color === 'white') d[i] = w;
+      if (color === 'white') raw[i] = w;
       else if (color === 'pink') {
         // Paul Kellet's refined pink filter
         b0 = 0.99886 * b0 + w * 0.0555179;
@@ -51,18 +52,24 @@ export class Synth {
         b3 = 0.8665 * b3 + w * 0.3104856;
         b4 = 0.55 * b4 + w * 0.5329522;
         b5 = -0.7616 * b5 - w * 0.016898;
-        d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11;
+        raw[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11;
         b6 = w * 0.115926;
       } else {
         last = (last + 0.02 * w) / 1.02;
-        d[i] = last * 3.5;
+        raw[i] = last * 3.5;
       }
     }
-    // crossfade the loop seam
-    const fade = Math.floor(this.ctx.sampleRate * 0.05);
-    for (let i = 0; i < fade; i++) {
-      const t = i / fade;
-      d[len - fade + i] = d[len - fade + i] * (1 - t) + d[i] * t;
+    // no DC: a drifting offset thumps at the loop point
+    let mean = 0;
+    for (let i = 0; i < raw.length; i++) mean += raw[i];
+    mean /= raw.length;
+    b = this.ctx.createBuffer(1, len, rate);
+    const d = b.getChannelData(0);
+    // seamless loop: the start fades in from the samples that followed the end,
+    // so the last sample runs straight on into the first
+    for (let i = 0; i < len; i++) {
+      const v = raw[i] - mean;
+      if (i < fade) { const t = i / fade; d[i] = v * t + (raw[len + i] - mean) * (1 - t); } else d[i] = v;
     }
     this.buffers.set(color, b);
     return b;
@@ -73,7 +80,7 @@ export class Synth {
     const src = this.ctx.createBufferSource();
     src.buffer = this.noise(color);
     src.loop = true;
-    src.start(0, Math.random() * 2.5);
+    src.start(0, Math.random() * 9);
     return src;
   }
 

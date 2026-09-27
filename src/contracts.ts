@@ -235,6 +235,8 @@ export type SfxKind =
 export interface SoundMix {
   zoom: number; // 0 close .. 1 far
   nature: number; // birds/insects/creek
+  /** 0..1: how much water is around the view (the creek bed) */
+  water?: number;
   traffic: number;
   construction: number;
   people: number;

@@ -136,6 +136,8 @@ export class Game {
   readonly isTouch = IS_TOUCH;
   private undoStack: UndoAction[] = [];
   private raf = 0;
+  private waterT = 0;
+  private waterNear = 0;
   private ray = new THREE.Raycaster();
   private nightWas = false;
   readonly perf = { fps: 0, frameMs: 0, renderMs: 0, calls: 0, triangles: 0, resolution: 1, quality: 'high' as Quality['name'] };
@@ -1045,8 +1047,17 @@ export class Game {
     this.post.aoRadius = THREE.MathUtils.clamp(this.rts.distance * 0.011, 2.2, 16);
     wu.uPollution.value = Math.min(0.7, (1 - this.sim.naturePct) * 0.6 + this.buildings.counts().active / 4000);
 
+    // water around the view, for the creek (sampled twice a second)
+    this.waterT -= dt;
+    if (this.waterT <= 0) {
+      this.waterT = 0.5;
+      const T = this.rts.target, r = Math.max(60, this.rts.distance * 0.35);
+      let wet = 0;
+      for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) if (this.terrain.h(T.x + i * r / 2, T.z + j * r / 2) < WATER) wet++;
+      this.waterNear = Math.min(1, wet / 6);
+    }
     this.audio.update(dt, {
-      zoom: Math.min(1, this.rts.distance / 1500), nature: this.sim.naturePct, traffic: Math.min(1, this.traffic.count / 400),
+      zoom: Math.min(1, this.rts.distance / 1500), nature: this.sim.naturePct, water: this.waterNear, traffic: Math.min(1, this.traffic.count / 400),
       construction: Math.min(1, this.buildings.counts().building / 20), people: Math.min(1, this.peds.peds.length / 150), night: n,
       weather: this.weather.kind, weatherIntensity: this.weather.intensity, season: this.weather.season,
     });

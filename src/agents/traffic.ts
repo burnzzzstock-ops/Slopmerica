@@ -492,14 +492,16 @@ export class Traffic {
     // pull out of the origin lot / pull into the destination lot
     if (oB) {
       const st0 = rt.steps[0];
-      car.lotO = this.lotPoint(oB, firstSeg, st0.dir > 0 ? rt.startS : firstSeg.length - rt.startS);
+      // the building's own frontage, not where the lane entry slid to (±12-24 m
+      // to miss another car): trucks pulled out of the empty lot next door
+      car.lotO = this.lotPoint(oB, firstSeg, firstSeg.id === o.seg.id ? o.s : st0.dir > 0 ? rt.startS : firstSeg.length - rt.startS);
       car.dep = DEP_T;
       car.v = 0;
     }
     if (dB) {
       const stN = rt.steps[rt.steps.length - 1];
       const lastSeg = this.net.segs.get(stN.seg)!;
-      car.lotD = this.lotPoint(dB, lastSeg, stN.dir > 0 ? rt.endS : lastSeg.length - rt.endS);
+      car.lotD = this.lotPoint(dB, lastSeg, lastSeg.id === d.seg.id ? d.s : stN.dir > 0 ? rt.endS : lastSeg.length - rt.endS);
     }
     this.cars.push(car);
     this.totalTrips++;
@@ -805,13 +807,20 @@ export class Traffic {
         const e = m * m * (3 - 2 * m);
         const laneYaw = yaw;
         const toLane = Math.atan2(x - lot.x, z - lot.z);
+        const laneY = y, lanePitch = pitch;
         x = lerp(lot.x, x, e);
         z = lerp(lot.z, z, e);
-        y = lerp(this.groundAt ? this.groundAt(lot.x, lot.z) + 0.1 : y, y, e);
         // nose toward the road while pulling out, toward the lot while pulling in
         const along = c.dep > 0 ? toLane : toLane + Math.PI;
         yaw = angLerp(along, laneYaw, smooth01((m - 0.45) / 0.55));
-        pitch = 0;
+        // sit on the ground between road and lot, nose and tail on the slope
+        // (held level, a long truck on a hillside had one end buried and the other in the air)
+        if (this.groundAt) {
+          const half = c.len / 2, fx = Math.sin(yaw), fz = Math.cos(yaw);
+          const gF = this.groundAt(x + fx * half, z + fz * half), gB = this.groundAt(x - fx * half, z - fz * half);
+          y = lerp((gF + gB) / 2 + 0.1, laneY, e);
+          pitch = lerp(-Math.atan2(gF - gB, c.len), lanePitch, e);
+        } else pitch = lerp(0, lanePitch, e);
       }
       c.x = x; c.y = y; c.z = z; c.yaw = yaw;
       if (c.crashed > 0) R.set(c.h, x, y, z, yaw + c.crashYaw, pitch, c.crashRoll);

@@ -545,9 +545,13 @@ export class Tools implements PointerHandlers {
             // what the road commits you to, before you click: the forever cost, the
             // trees, the homes, and whether anything can drive to it
             const im = this.roadImpact(curve, end);
+            // what it does to the weekly balance, from the same forecast the HUD shows
+            const af = this.game.sim.afterSpend(net$, im.upkeep);
+            const rate = (v: number) => `${v >= 0 ? '+' : '−'}$${Math.abs(Math.round(v)).toLocaleString()}`;
             const bits = [
               `${Math.round(plan.length)} m · $${net$.toLocaleString()}${plan.grant ? ` (feds pay $${plan.grant.toLocaleString()})` : ''}`,
               `+$${im.upkeep}/wk upkeep (→ $${im.upkeepLater}/wk as it ages)`,
+              af.cash === Infinity ? '' : `weekly ${rate(af.before)} → ${rate(af.after)}`,
               plan.bridgeLen > 5 ? 'bridge' : '',
               plan.demolish ? `bulldozes ${plan.demolish} building${plan.demolish === 1 ? '' : 's'}` : '',
               im.trees ? `clears ~${im.trees} tree${im.trees === 1 ? '' : 's'}` : '',

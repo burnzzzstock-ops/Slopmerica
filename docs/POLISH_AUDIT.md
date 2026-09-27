@@ -124,6 +124,18 @@ inside the browser frame), which changed several conclusions.
 - **Daytime white orbs by trailers** were burn-barrel fire particles at night brightness; fire and sparks are a third as bright by day.
 - **Harness:** scripts/bldshots.mjs builds the same town each run and shoots it at neighbourhood zoom (triangles unchanged at ~0.85M for those views).
 
+## Round 4 (a Codex first-five-minutes review of Golden Coast, and the user's Sawgrass Springs screenshots)
+
+- **The first five minutes:** a "Next" line sits by the toolbar the whole game. A new town gets five steps (a street off Old County Road, zone homes, the first home, zone jobs, open the budget), each with a button that does it (opens Roads, starts zoning homes with the drawer open, speeds up time); after that it follows demand. It shows the next unlock ("250: Luxury Slop apartments (40 now)") and can be hidden.
+- **Wording:** demand no longer says "every lot is taken" in an empty town: it says "no lots are zoned for homes yet", "every lot zoned for homes has a building", and counts unzoned lots along roads separately.
+- **Construction consequences:** the road preview adds the weekly balance before and after ("weekly +$120 → −$64").
+- **Back to town:** H, or clicking the town's name, flies to the middle of the town.
+- **Toolbar:** on desktop it leads with the building tools (Roads, Zones, Services, Landmarks, Upgrade, Bulldoze) with bigger icons and bold labels, hotkeys in the tooltips; transit, communes, terrain and the rest are under More. Zoning types sit in a grid instead of a sideways-scrolling row.
+- **Zoning cells:** each cell is drawn with a light rim, so rows of lots read as lots, and the overlay is stronger while zoning.
+- **Feed:** opens as a peek at the newest post; click it (or ⤢) for the list.
+- **Screenshots:** chimney smoke from every house read as a town on fire in Florida in summer: chimneys smoke only in winter (and in the Appalachian autumn and spring), never in Florida, with smaller, fainter plumes. Storefront windows were a solid near-white tile at glow 2.2 and blew out at night: they're a lit interior now (warm gradient, dark shelves), glow 1.8. Notices sat in the middle of the screen over the town; on desktop they stack at the right. Need icons next to the camera no longer balloon to twice the size of the rest (their minimum size was 3.2 m, now 1 m).
+- **Not done yet from the review:** named save slots/checkpoints, undo for zoning, highlighting the exact plots the Next step means, a "why isn't this growing" inspector, Golden Coast terrain identity and more ground variation.
+
 ## Remaining (ranked)
 
 1. Cities saved before this build keep any dead end that was built over (a disc on a through road, unconnected): bulldoze and redraw that stub. A load-time repair would move road endpoints that zoning and buildings refer to, so it wasn't done blind.

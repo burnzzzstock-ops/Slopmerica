@@ -66,6 +66,7 @@ node scripts/rescheck.mjs        # render resolution vs the screen, per preset
 node scripts/musictest.mjs       # ambient piano renders offline: plays, never clips, stays in key
 node scripts/placetest.mjs       # services, depots and landmarks front the street on level pads; ghost = final
 node scripts/playtest3.mjs       # county road is the state's; road previews; undo replants; demand next step; goals
+node scripts/playtest4.mjs       # first-steps Next bar and its button; demand wording; weekly balance on road previews; H goes home; toolbar; notices; feed peek
 node scripts/bldshots.mjs tag    # neighbourhood-zoom shots of homes, shops, apartments, offices, factories, day and night (CLOSE=1 adds close-ups)
 ```
 

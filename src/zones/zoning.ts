@@ -44,6 +44,26 @@ export interface ZCell {
   bld: number; // building id occupying it, 0 = none
 }
 
+/**
+ * A lot cell: a solid rim and a light fill, so each cell reads as a lot with
+ * edges against grass instead of a faint wash (zoned cells take their zone's
+ * colour through the instance tint).
+ */
+function cellTexture(): THREE.Texture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const x = c.getContext('2d')!;
+  x.fillStyle = 'rgba(255,255,255,0.42)';
+  x.fillRect(0, 0, 64, 64);
+  x.strokeStyle = 'rgba(255,255,255,1)';
+  x.lineWidth = 6;
+  x.strokeRect(3, 3, 58, 58);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
 export class Zoning {
   cells = new Map<number, ZCell>();
   bySeg = new Map<number, ZCell[][][]>(); // seg -> [sideIdx][col][row]
@@ -69,7 +89,7 @@ export class Zoning {
   constructor(private net: RoadNetwork, private terrain: Terrain, scene: THREE.Scene) {
     const g = new THREE.PlaneGeometry(CELL - 0.7, CELL - 0.7);
     g.rotateX(-Math.PI / 2);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, map: cellTexture(), transparent: true, opacity: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
     this.overlayMesh = new THREE.InstancedMesh(g, mat, this.capacity);
     this.overlayMesh.count = 0;
     this.overlayMesh.renderOrder = 3;
@@ -399,7 +419,7 @@ export class Zoning {
     this.overlayMesh.count = n;
     // outside the zoning tool, empty zoned lots are only a hint: at 0.3 the town
     // read as a spreadsheet of coloured squares from every camera
-    (this.overlayMesh.material as THREE.MeshBasicMaterial).opacity = this.overlayOn ? 0.55 : 0.1;
+    (this.overlayMesh.material as THREE.MeshBasicMaterial).opacity = this.overlayOn ? 0.85 : 0.14;
     this.overlayMesh.instanceMatrix.needsUpdate = true;
     if (this.overlayMesh.instanceColor) this.overlayMesh.instanceColor.needsUpdate = true;
   }

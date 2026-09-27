@@ -27,7 +27,8 @@ interface Spec {
 }
 
 const SPECS: Record<ParticleKind, Spec> = {
-  smoke: { id: 0, additive: false, count: 3, spread: 1.5, vel: [0, 2.4, 0], jitter: 0.7, size: [2.2, 10], life: 6 },
+  // puffs, not fog banks: at 10 m and 6 s a town's chimneys and stacks blanketed the view
+  smoke: { id: 0, additive: false, count: 3, spread: 1.5, vel: [0, 2.4, 0], jitter: 0.7, size: [1.8, 6.5], life: 5 },
   cigarette: { id: 1, additive: false, count: 1, spread: 0.04, vel: [0, 0.45, 0], jitter: 0.12, size: [0.12, 0.8], life: 2.4 },
   fire: { id: 2, additive: true, count: 4, spread: 0.8, vel: [0, 3.2, 0], jitter: 0.9, size: [1.6, 0.3], life: 0.9 },
   dust: { id: 3, additive: false, count: 10, spread: 2.5, vel: [0, 0.9, 0], jitter: 3.2, size: [1.2, 5.5], life: 2.6 },
@@ -108,7 +109,7 @@ void main() {
   float a = 0.0;
   if (k == 0) { // smoke
     float n = pn(vUv * 1.8 + vSeed * 17.0) * 0.6 + pn(vUv * 3.7 - vSeed * 9.0) * 0.4;
-    a = smoothstep(1.0, 0.15, r + (n - 0.5) * 0.5) * 0.55 * (1.0 - vT) * fadeIn;
+    a = smoothstep(1.0, 0.15, r + (n - 0.5) * 0.5) * 0.42 * (1.0 - vT) * fadeIn;
     col = mix(vec3(0.14), vec3(0.3), vSeed) * mix(0.8, 1.5, vT) * uLight; // sooty, thinning out
   } else if (k == 1) { // cigarette
     a = smoothstep(1.0, 0.1, r) * 0.42 * (1.0 - vT) * fadeIn;

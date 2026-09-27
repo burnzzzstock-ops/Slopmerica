@@ -140,7 +140,7 @@ function shack(g: GenCtx) {
   // stovepipe
   const sx = cx + w / 4, sz = cz - d / 4;
   mb.cyl(sx, sz, 0.15, 3.0, 4.6, 6, M('plain', 2, 2, 0x333333));
-  g.em.push({ kind: 'smoke', pos: [sx, 4.8, sz] });
+  g.em.push({ kind: 'chimney', pos: [sx, 4.8, sz] });
   // yard: junk cars, woodpile, grill
   if (D >= 14 || W >= 14) car(g, cx + (cx > 0 ? -w / 2 - 3 : w / 2 + 3), D / 2 - 3.2, rng.float() * 1.2 - 0.6, 'junk');
   if (W >= 12) car(g, (rng.float() - 0.5) * (W - 6), -D / 2 + 2.5, rng.float() * 3, 'junk');
@@ -356,7 +356,7 @@ function mcmansion(g: GenCtx, mega: boolean) {
   // chimney (fake stone, of course)
   const chx = left ? x1 - 1.2 : x0 + 1.2;
   mb.boxC(chx, zb + 1.5, 1.2, 1.0, 0, H + 3.8, { side: front });
-  if (rng.chance(0.3)) g.em.push({ kind: 'smoke', pos: [chx, H + 4.1, zb + 1.5] });
+  if (rng.chance(0.3)) g.em.push({ kind: 'chimney', pos: [chx, H + 4.1, zb + 1.5] });
   // yard
   patch(g, x0, x1, zf + 0.05, zf + 1.3, M('mulch', 2, 2), 0.11);
   for (let x = x0 + 0.7; x < x1; x += 1.2) if ((x < ga - 0.4 || x > gb + 0.4) && Math.abs(x - fx) > 2.4) shrub(g, x, zf + 0.7, 0.7);

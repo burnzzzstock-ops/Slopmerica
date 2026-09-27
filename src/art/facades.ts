@@ -1125,8 +1125,18 @@ export function registerFacades() {
       const x = i * 256;
       const door = i === 0;
       if (L === 'e') {
-        c.fillStyle = rw.float() < 0.7 ? '#fff0cc' : '#dfe9ff';
+        // a lit shop interior, not a white sheet: bright ceiling fixtures,
+        // dimmer toward the floor, dark shelving (a solid near-white pane
+        // bloomed into a white block at night)
+        const warm = rw.float() < 0.7;
+        const ge = c.createLinearGradient(0, 40, 0, 240);
+        ge.addColorStop(0, warm ? '#d8b878' : '#b8c8e8');
+        ge.addColorStop(0.18, warm ? '#a88a52' : '#8a9ab8');
+        ge.addColorStop(1, warm ? '#4a3a22' : '#3a4458');
+        c.fillStyle = ge;
         c.fillRect(x + 14, 40, 228, 200);
+        c.fillStyle = 'rgba(0,0,0,0.55)';
+        for (let k = 0; k < 3; k++) c.fillRect(x + 20, 118 + k * 36, 216, 14);
         c.fillStyle = '#000';
         c.fillRect(x + 125, 40, 6, 200);
         continue;

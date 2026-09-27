@@ -13,7 +13,7 @@ function glow(n: number) {
   const t = THREE.MathUtils.smoothstep(n, 0.12, 0.85);
   // bright enough that a street of lit homes reads from neighbourhood zoom;
   // scripts/nightglow.mjs keeps it short of blowing out to white
-  return t * 2.2;
+  return t * 1.8;
 }
 
 export function buildingMaterial(): THREE.MeshStandardMaterial {

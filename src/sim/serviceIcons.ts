@@ -99,7 +99,8 @@ export class ProblemIcons {
           vec4 mv = modelViewMatrix * vec4(p, 1.0);
           float dist = -mv.z;
           // constant-ish screen size: grows with distance, clamped
-          float s = clamp(dist * 0.035, 3.2, 26.0);
+          // (a floor of 3.2 m made the ones next to the camera balloon to twice the others)
+          float s = clamp(dist * 0.03, 1.0, 22.0);
           mv.xy += position.xy * s;
           vFade = 1.0 - smoothstep(1400.0, 1900.0, dist);
           vUv = vec2((iIcon + uv.x) / ${COLS.toFixed(1)}, uv.y);
@@ -153,7 +154,7 @@ export class ProblemIcons {
       this.v.project(camera);
       if (this.v.z > 1) continue;
       const sx = rect.left + ((this.v.x + 1) / 2) * rect.width, sy = rect.top + ((1 - this.v.y) / 2) * rect.height;
-      const half = (Math.min(26, Math.max(3.2, dist * 0.035)) * k) / dist / 2 + 3;
+      const half = (Math.min(22, Math.max(1.0, dist * 0.03)) * k) / dist / 2 + 3;
       if (Math.abs(cx - sx) <= half && Math.abs(cy - sy) <= half * 1.4 && dist < bd) { bd = dist; best = it; }
     }
     return best;

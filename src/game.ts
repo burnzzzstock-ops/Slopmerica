@@ -28,6 +28,7 @@ import { Communes, Commune } from './agents/communes';
 import { EXT } from './ext/registry';
 import './ext/index';
 import { AmbientLife } from './agents/ambient';
+import { brandById } from './art/brands';
 import { Tools } from './tools/tools';
 import { setBuildingNight, loadArt, landmarkFootprint } from './buildings/generator';
 import { lineCubic, V2 } from './core/math';
@@ -41,6 +42,9 @@ import { applySave, type SaveData } from './sim/save';
 import { crumb } from './ui/bugreport';
 import { FrameProfiler } from './core/prof';
 import type { EmergencyView } from './sim/services';
+
+/** a building's brand as players read it (buildings store the brand id, e.g. 'tacoBull') */
+const brandName = (id?: string) => brandById(id)?.name;
 
 export type GameMode = Mode;
 
@@ -442,11 +446,11 @@ export class Game {
   private wireEvents() {
     this.buildings.onComplete = ((orig) => (b: Bld) => {
       orig?.(b);
-      if (b.zone !== 'resLow' && b.zone !== 'resHigh' && Math.random() < 0.35) this.feed.push('buildingOpened', { building: b.label, brand: b.brand });
+      if (b.zone !== 'resLow' && b.zone !== 'resHigh' && Math.random() < 0.35) this.feed.push('buildingOpened', { building: b.label, brand: brandName(b.brand) });
       if (this.near(b.x, b.z, 500)) this.audio.play('build', 0.3);
     })(this.buildings.onComplete);
     this.buildings.onLevel = (b) => {
-      if (Math.random() < 0.25) this.feed.push('buildingLeveled', { building: b.label, brand: b.brand, count: b.level });
+      if (Math.random() < 0.25) this.feed.push('buildingLeveled', { building: b.label, brand: brandName(b.brand), count: b.level });
       if (this.near(b.x, b.z, 400)) this.particles.emit('confetti', b.x, b.y + b.model.height, b.z, { count: 20, spread: 4 });
     };
     this.buildings.onDemolish = (b, reason) => {

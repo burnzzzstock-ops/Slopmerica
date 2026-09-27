@@ -89,7 +89,15 @@ const r = await page.evaluate(async () => {
   g.feed.push('laneAdded', { road: 'Route 9' });
   for (let i = 0; i < 40; i++) g.feed.update(0.5);
   const shown = [...document.querySelectorAll('.xfeed .xpost')].slice(0, Math.max(1, document.querySelectorAll('.xfeed .xpost').length - before)).map((e) => e.textContent.replace(/\s+/g, ' ').slice(0, 140));
-  return { tagged: F.feedTagged(), pools, empty, wrong: [...new Set(wrong)], loose: [...new Set(loose)], fm, lane, shown };
+  // a shop opening posts its brand's name, not its id ("Taco Bull", not "tacoBull")
+  const pushed = [];
+  const push = g.feed.push.bind(g.feed);
+  g.feed.push = (kind, extra) => { pushed.push({ kind, extra }); };
+  const rnd = Math.random;
+  Math.random = () => 0.01;
+  try { g.buildings.onComplete?.({ id: 1e9, zone: 'comLow', brand: 'tacoBull', label: 'Taco Bull', x: 1e5, z: 1e5, y: 0, level: 1, model: { height: 5 } }); } finally { Math.random = rnd; g.feed.push = push; }
+  const opened = pushed.find((p) => p.kind === 'buildingOpened');
+  return { tagged: F.feedTagged(), pools, empty, wrong: [...new Set(wrong)], loose: [...new Set(loose)], fm, lane, shown, opened: opened?.extra ?? null };
 });
 console.log(JSON.stringify({ ...r, wrong: r.wrong.slice(0, 5), loose: r.loose }).slice(0, 1500));
 check(`the tags are loaded in the game`, r.tagged, r);
@@ -99,6 +107,7 @@ check(`town size is only loosened where no line fits (${r.loose.length} event/si
 check(`Florida Man posts only in Gator Gulch (per 1,500 chatter posts: ${JSON.stringify(r.fm)})`, r.fm.florida > 0 && r.fm.appalachia === 0 && r.fm.norcal === 0, r.fm);
 check(`"one more lane" usually comes from Big Dale or the lane lobby (${r.lane.lobby}/${r.lane.n})`, r.lane.lobby / r.lane.n > 0.5, r.lane);
 check(`the game's feed panel posts it ("${(r.shown[0] ?? '').slice(0, 90)}")`, r.shown.length > 0, r.shown);
+check(`a shop opening names its brand for the feed ("${r.opened?.brand}")`, r.opened?.brand === 'Taco Bull', r.opened);
 check('no page errors', errs.length === 0, errs.slice(0, 3));
 await browser.close();
 process.exit(bad ? 1 : 0);

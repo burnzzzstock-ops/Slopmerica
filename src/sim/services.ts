@@ -21,9 +21,9 @@ import type { RSeg } from '../roads/network';
 import { CELL, HALF, WATER, WORLD } from '../config';
 import { INFO_OVERLAY, Paint } from '../world/terrain';
 import { Fields } from './pollution';
-import { ProblemIcons, type Problem } from './serviceIcons';
+import { ProblemIcons, type Problem, type ProblemItem } from './serviceIcons';
 import type { FeedContext, FeedEventKind, VehicleKind, ZoneType } from '../contracts';
-import type { DemandKey } from './sim';
+import type { DemandKey, LossCause } from './sim';
 import { POLICY } from './policyEffects';
 import { crumb } from '../ui/bugreport';
 import { frontageCandidates, inRect, rectCorners, specialAt, type Frontage } from './frontage';
@@ -87,6 +87,12 @@ const SVC: SvcDef[] = [
 ];
 export const SERVICE_DEFS = new Map<string, SvcDef>(SVC.map((d) => [d.id, d]));
 for (const d of SVC) CUSTOM_BUILDINGS.set(d.id, { label: d.name, w: d.w, d: d.d, buildDays: d.buildDays, model: () => serviceModel(d.id, d.w, d.d), paint: d.id === 'park' ? Paint.Lawn : Paint.Paved });
+/**
+ * A building unlocks when the city first reaches its population and stays
+ * unlocked (playtest 4: a garbage crisis emptied the city below 1,200 and
+ * took away the incinerator it needed to recover).
+ */
+const svcUnlocked = (g: Game, d: SvcDef) => g.sim.mode === 'sandbox' || g.sim.peakPop >= d.unlock;
 
 const CATS: { id: SvcCat; icon: string; label: string }[] = [
   { id: 'power', icon: '⚡', label: 'Power' },
@@ -133,8 +139,66 @@ function peopleOf(b: Bld): number {
   return isZoned(b) ? Math.max(b.occ, b.cap * 0.3) : 0;
 }
 const trashDaysOf = (b: ZB, bs: BS) => bs.garbage / Math.max(0.0005, trashOf(b));
+/** days a building can stay critical before it's abandoned */
+const ABANDON_DAYS = 14;
+/** "12 days", "5 months", "38 years" */
+const spanOf = (days: number) => (days < 120 ? `${Math.round(days)} day${Math.round(days) === 1 ? '' : 's'}` : days < 730 ? `${Math.round(days / 30.4)} months` : `${Math.round(days / 365)} years`);
+
+// ============================================================== emergencies
+/** A need that, left unmet, empties buildings (see consequences()). */
+export type Need = 'power' | 'water' | 'sewage' | 'garbage' | 'health';
+const NEED: Record<Need, { cat: SvcCat; icon: string; label: string; failing: string }> = {
+  power: { cat: 'power', icon: '⚡', label: 'Power', failing: 'without power' },
+  water: { cat: 'water', icon: '🚰', label: 'Water', failing: 'without water' },
+  sewage: { cat: 'sewage', icon: '🚽', label: 'Sewage', failing: 'without sewage' },
+  garbage: { cat: 'garbage', icon: '🗑️', label: 'Garbage', failing: 'piling up trash' },
+  health: { cat: 'health', icon: '🏥', label: 'Health', failing: 'too sick to live in' },
+};
+export interface EmergencyNeed {
+  need: Need;
+  /** the Services category that fixes it */
+  cat: SvcCat;
+  icon: string;
+  label: string;
+  failing: string;
+  buildings: number;
+  residents: number;
+  /** days until the first and the last of them are abandoned, if nothing changes */
+  eta: [number, number];
+  /** why it's failing, from the same numbers the Services panel shows */
+  why: string;
+}
+/** What the city's services are doing to it right now (the HUD's emergency card). */
+export interface EmergencyView {
+  /** crit: a city-wide failure; warn: something to fix soon; recovering: a crisis just ended */
+  level: 'none' | 'warn' | 'crit' | 'recovering';
+  /** the failing needs, worst first */
+  needs: EmergencyNeed[];
+  /** buildings counting down to abandonment, and the residents in them */
+  atRisk: number;
+  residents: number;
+  /** where they are: neighbourhoods, worst first, each with the building that empties soonest */
+  hot: { x: number; z: number; n: number; residents: number; id: number }[];
+  /** a slower failure that's coming (a landfill filling up) */
+  forecast: string | null;
+  /** the crisis's state machine (the day it began, what it peaked at, the low point) */
+  crisis: { since: number; cause: string; peakAtRisk: number; peakTrash: number; lowPop: number; popAtStart: number; endedAt: number };
+  /** buildings with trash piling up right now, and buildings standing abandoned */
+  trash: number;
+  abandoned: number;
+  day: number;
+}
 
 // ============================================================== state
+/**
+ * Why a building's trash is piling up (or that it's being collected):
+ * full = its landfill is full, reach = no truck reaches it and the county
+ * contract didn't take it, capacity = in reach but the trucks ran out of
+ * room today and the city makes more than it collects, clearing = picked
+ * up today (a backlog going down), queued = in reach and waiting its turn
+ * while the city collects everything it makes.
+ */
+type TrashWhy = 'full' | 'reach' | 'capacity' | 'clearing' | 'queued';
 interface BS {
   pw: boolean; wa: boolean; se: boolean;
   bad: number; // consecutive-ish critical days
@@ -146,6 +210,11 @@ interface BS {
   burning: number; // days left burning
   cov: Record<Cov, number>;
   dirty: boolean; // served by contaminated water
+  /** tons picked up today (a truck or the county contract) */
+  pick: number;
+  /** the garbage facility whose trucks reach it (-1: none) */
+  via: number;
+  trash: TrashWhy;
 }
 interface FS {
   stored: number; // landfill tons
@@ -154,6 +223,10 @@ interface FS {
   out: number; // dispatched vehicles on the road
   contaminated: boolean;
   full: boolean;
+  /** landfill: tons added per day lately (for "full in N days") */
+  rate: number;
+  /** landfill: the highest fill warning given (0, 75, 90, 100 %) */
+  warned: number;
 }
 /** unserved = noRoad + noLink + capped: why each cut-off building is cut off */
 interface UtilStat { supply: number; demand: number; served: number; imported: number; unserved: number; noRoad: number; noLink: number; capped: number }
@@ -173,10 +246,30 @@ const S = {
   utilT: {} as Partial<Record<Util, Map<number, number>>>,
   /** per coverage network: node -> {t, owner facility id} */
   covT: {} as Partial<Record<Cov, Map<number, { t: number; o: number }>>>,
+  /** the reach of full landfills (they collect nothing; this says whose buildings those are) */
+  fullT: new Map<number, { t: number; o: number }>(),
   util: { power: z0(), water: z0(), sewage: z0() } as Record<Util, UtilStat>,
   week: { power: 0, water: 0, sewage: 0, trash: 0 },
   counts: { noPower: 0, noWater: 0, noSewage: 0, trash: 0, fires: 0, burned: 0, abandoned: 0, crime: 0, sick: 0 },
-  garbage: { made: 0, collected: 0, exported: 0, stored: 0, capacity: 0 },
+  garbage: {
+    made: 0, collected: 0, exported: 0, stored: 0, capacity: 0,
+    /** what the trucks could still take today (landfills that aren't full, incinerators) */
+    room: 0,
+    /** landfill tons added per day lately, and days until every landfill is full (Infinity: not filling) */
+    fill: 0, daysLeft: Infinity,
+    /** names of the full landfills, and the occupied buildings only they reach (no truck comes) */
+    full: [] as string[],
+    fullServed: 0,
+    /** buildings with trash piling up, by why (see TrashWhy) */
+    why: { full: 0, reach: 0, capacity: 0, clearing: 0, queued: 0 } as Record<TrashWhy, number>,
+  },
+  /** the city's service emergency: its state machine and today's assessment */
+  crisis: { level: 'none' as 'none' | 'crit' | 'recovering', since: 0, cause: '' as string, peakAtRisk: 0, peakTrash: 0, lowPop: 0, popAtStart: 0, endedAt: 0 },
+  emergency: null as EmergencyView | null,
+  /** buildings abandoned on each of the last few days, newest last */
+  abandonedDays: [] as number[],
+  /** buildings cut off per utility yesterday (to note when a shortage starts) */
+  cutWas: { power: 0, water: 0, sewage: 0 } as Record<Util, number>,
   icons: null as ProblemIcons | null,
   iconT: 0,
   fireT: 0,
@@ -196,14 +289,14 @@ const S = {
 function bsOf(b: Bld): BS {
   let s = S.b.get(b.id);
   if (!s) {
-    s = { pw: true, wa: true, se: true, bad: 0, ok: 0, garbage: 0, crime: 8, sick: 0.02, edu: 0.15, burning: 0, cov: { fire: 0, police: 0, health: 0, school: 0, college: 0, parks: 0, garbage: 0 }, dirty: false };
+    s = { pw: true, wa: true, se: true, bad: 0, ok: 0, garbage: 0, crime: 8, sick: 0.02, edu: 0.15, burning: 0, cov: { fire: 0, police: 0, health: 0, school: 0, college: 0, parks: 0, garbage: 0 }, dirty: false, pick: 0, via: -1, trash: 'queued' };
     S.b.set(b.id, s);
   }
   return s;
 }
 function fsOf(b: Bld): FS {
   let s = S.f.get(b.id);
-  if (!s) S.f.set(b.id, (s = { stored: 0, load: 0, quality: 1, out: 0, contaminated: false, full: false }));
+  if (!s) S.f.set(b.id, (s = { stored: 0, load: 0, quality: 1, out: 0, contaminated: false, full: false, rate: 0, warned: 0 }));
   return s;
 }
 const defOf = (b: Bld) => (b.zone === 'service' && b.kind ? SERVICE_DEFS.get(b.kind) : undefined);
@@ -335,6 +428,13 @@ function rebuildGraph(g: Game) {
     for (const [k, v] of m) t.set(k, v.t);
     S.utilT[u] = t;
   }
+  // a full landfill's trucks don't run, so it covers nobody: the buildings
+  // nearest it go to the next facility in reach (playtest 4: a new landfill
+  // left the piles nearest the full one untouched). Its own reach is kept
+  // apart, to say why the buildings only it reaches are piling up.
+  const fullLandfill = (f: Fac) => !!f.def.store && fsOf(f).stored >= f.def.store;
+  const fullSrc: { node: number; t: number; o: number }[] = [];
+  let fullR = 0;
   for (const c of COVS) {
     const src: { node: number; t: number; o: number }[] = [];
     let maxR = 0;
@@ -343,11 +443,14 @@ function rebuildGraph(g: Game) {
       const s = segOf(g, f);
       if (!s) continue;
       const half = segTime(s) / 2;
-      src.push({ node: s.a, t: half, o: f.id }, { node: s.b, t: half, o: f.id });
-      maxR = Math.max(maxR, f.def.reach ?? 0);
+      const into = c === 'garbage' && fullLandfill(f) ? fullSrc : src;
+      into.push({ node: s.a, t: half, o: f.id }, { node: s.b, t: half, o: f.id });
+      if (into === fullSrc) fullR = Math.max(fullR, f.def.reach ?? 0);
+      else maxR = Math.max(maxR, f.def.reach ?? 0);
     }
     S.covT[c] = src.length ? dijkstra(g, src, maxR * 1.05) : new Map();
   }
+  S.fullT = fullSrc.length ? dijkstra(g, fullSrc, fullR * 1.05) : new Map();
   S.graphDirty = false;
 }
 
@@ -487,13 +590,14 @@ function coverage(g: Game, fac: Fac[], zoned: ZB[]) {
 }
 
 function garbage(g: Game, fac: Fac[], zoned: ZB[]) {
-  let made = 0, collected = 0, stored = 0, capacity = 0;
+  let made = 0, collected = 0, stored = 0, capacity = 0, room = 0;
   const cap = new Map<number, number>(); // facility -> tons it can still take today
   for (const f of fac) {
     if (f.def.cov !== 'garbage') continue;
     const fs = fsOf(f);
     if (f.def.store) { fs.full = fs.stored >= f.def.store; stored += fs.stored; capacity += f.def.store; }
     cap.set(f.id, fs.full ? 0 : f.def.collect ?? 0);
+    room += fs.full ? 0 : f.def.collect ?? 0;
   }
   const owned = new Map<number, ZB[]>();
   for (const b of zoned) {
@@ -501,18 +605,30 @@ function garbage(g: Game, fac: Fac[], zoned: ZB[]) {
     const bs = bsOf(b);
     const t = trashOf(b);
     bs.garbage += t;
+    bs.pick = 0;
+    bs.via = -1;
     made += t;
     const hit = reachOf(g, b, S.covT.garbage);
     if (hit && bs.cov.garbage > 0) {
+      bs.via = hit.o;
       let arr = owned.get(hit.o);
       if (!arr) owned.set(hit.o, (arr = []));
       arr.push(b);
+    } else {
+      // only a full landfill reaches it: that landfill's building, collected by nobody
+      const full = reachOf(g, b, S.fullT), fd = full && g.buildings.list.get(full.o);
+      if (full && fd && full.t < (defOf(fd)?.reach ?? 0)) bs.via = full.o;
     }
   }
+  // facilities whose trucks can't keep up with what their buildings make
+  const behind = new Set<number>();
   for (const [fid, arr] of owned) {
     const start = cap.get(fid) ?? 0;
     let left = start;
     if (left <= 0) continue;
+    let makes = 0;
+    for (const b of arr) makes += trashOf(b);
+    if (makes > start * 0.98) behind.add(fid);
     // route batching: the fullest bins first
     arr.sort((a, b) => bsOf(b).garbage - bsOf(a).garbage);
     for (const b of arr) {
@@ -520,6 +636,7 @@ function garbage(g: Game, fac: Fac[], zoned: ZB[]) {
       const bs = bsOf(b);
       const take = Math.min(bs.garbage * (0.35 + 0.65 * Math.min(1, bs.cov.garbage * 1.6)), left);
       bs.garbage -= take;
+      bs.pick += take;
       left -= take;
       collected += take;
     }
@@ -527,25 +644,25 @@ function garbage(g: Game, fac: Fac[], zoned: ZB[]) {
     const d = f && defOf(f);
     if (f && d?.store) {
       const fs = fsOf(f);
+      const was = fs.stored;
       fs.stored = Math.min(d.store, fs.stored + (start - left));
-      if (fs.stored >= d.store && !fs.full) {
-        fs.full = true;
-        post(g, 'landfillFull', { building: f.label }, 1);
-        g.toast(`${f.label} is full. Build another landfill or an incinerator.`, true);
-      }
+      fs.rate = fs.rate > 0 ? fs.rate * 0.85 + (fs.stored - was) * 0.15 : fs.stored - was;
+      landfillWarnings(g, f, d, fs, arr.length);
     }
     // a truck goes out on the route now and then (the visible part)
     if (f && arr.length && Math.random() < 0.5) dispatchFrom(g, f, arr[0], 'collecting trash', arr[0].label);
   }
-  // the county contractor hauls what nobody local picks up (capped, pricey)
+  // the county contractor hauls what no local truck reaches (capped, pricey); a
+  // full landfill's own buildings aren't its business (as before full landfills stopped covering)
   let exportLeft = TRASH_EXPORT;
-  const uncovered = zoned.filter((b) => b.state === 'active' && b.abandoned === undefined && bsOf(b).cov.garbage <= 0 && bsOf(b).garbage > 0.05 && onEdgeNet(g, b));
+  const uncovered = zoned.filter((b) => b.state === 'active' && b.abandoned === undefined && bsOf(b).cov.garbage <= 0 && bsOf(b).via < 0 && bsOf(b).garbage > 0.05 && onEdgeNet(g, b));
   uncovered.sort((a, b) => bsOf(b).garbage - bsOf(a).garbage);
   for (const b of uncovered) {
     if (exportLeft <= 0) break;
     const bs = bsOf(b);
     const take = Math.min(bs.garbage, exportLeft);
     bs.garbage -= take;
+    bs.pick += take;
     exportLeft -= take;
   }
   const exported = TRASH_EXPORT - exportLeft;
@@ -554,7 +671,55 @@ function garbage(g: Game, fac: Fac[], zoned: ZB[]) {
     const b = uncovered[0];
     g.traffic.dispatch('garbageTruck', 'edge', b, 'county waste contract', b.label, g.hour, { sober: true, local: false, onDone: (_c, ok) => { if (ok && g.buildings.list.has(b.id)) g.traffic.dispatch('garbageTruck', b, 'edge', 'hauling trash out of county', 'the next county', g.hour, { sober: true, local: false }); } });
   }
-  S.garbage = { made, collected, exported, stored, capacity };
+  // why each building's trash is where it is (the panel, the card and the icons say it)
+  const why: Record<TrashWhy, number> = { full: 0, reach: 0, capacity: 0, clearing: 0, queued: 0 };
+  let fullServed = 0;
+  for (const b of zoned) {
+    if (b.state !== 'active' || b.abandoned !== undefined) continue;
+    const bs = bsOf(b);
+    bs.trash = bs.pick > 0 ? 'clearing' : bs.via < 0 ? 'reach' : S.f.get(bs.via)?.full ? 'full' : behind.has(bs.via) ? 'capacity' : 'queued';
+    if (bs.trash === 'full') fullServed++;
+    if (trashDaysOf(b, bs) > TRASH_ICON) why[bs.trash]++;
+  }
+  // when the landfills fill up at today's pace
+  let fill = 0, left = 0;
+  const full: string[] = [];
+  for (const f of fac) {
+    if (!f.def.store) continue;
+    const fs = fsOf(f);
+    if (fs.full) { full.push(f.label); continue; }
+    fill += Math.max(0, fs.rate);
+    left += f.def.store - fs.stored;
+  }
+  S.garbage = { made, collected, exported, stored, capacity, room, fill, daysLeft: fill > 0.05 ? left / fill : Infinity, full, fullServed, why };
+}
+
+/**
+ * A landfill filling up warns at 75% and 90% with the days it has left, and
+ * when it's full says what that does: its trucks stop, and every building
+ * they served starts piling up trash.
+ */
+function landfillWarnings(g: Game, f: Bld, d: SvcDef, fs: FS, served: number) {
+  const store = d.store!, pctFull = fs.stored / store;
+  const days = fs.rate > 0.05 ? (store - fs.stored) / fs.rate : null;
+  const pace = days !== null ? `about ${spanOf(days)} left at ${fs.rate.toFixed(fs.rate < 10 ? 1 : 0)} t/day` : 'filling slowly';
+  if (fs.stored >= store && !fs.full) {
+    fs.full = true;
+    fs.warned = 100;
+    S.graphDirty = true; // it stops covering: its buildings go to the next facility in reach, if any
+    post(g, 'landfillFull', { building: f.label }, 1);
+    const msg = `${f.label} is full: its trucks stopped, and the ${served} building${served === 1 ? '' : 's'} they served will pile up trash (people start leaving in about ${TRASH_CRIT - TRASH_ICON + ABANDON_DAYS} days). Build another landfill or an incinerator (Services → Garbage).`;
+    g.sim.alert('crit', `🗑️ ${f.label} full (${store.toLocaleString()} t): trucks stopped`);
+    g.toast(msg, true);
+  } else if (pctFull >= 0.9 && fs.warned < 90) {
+    fs.warned = 90;
+    g.sim.alert('warn', `🗑️ ${f.label} 90% full: ${pace}`);
+    g.toast(`${f.label} is 90% full: ${pace}. When it's full its trucks stop. Build another landfill or an incinerator now (Services → Garbage).`, true);
+  } else if (pctFull >= 0.75 && fs.warned < 75) {
+    fs.warned = 75;
+    g.sim.alert('warn', `🗑️ ${f.label} 75% full: ${pace}`);
+    g.toast(`${f.label} is 75% full: ${pace}. Plan another landfill or an incinerator (Services → Garbage).`);
+  }
 }
 
 function wellbeing(g: Game, zoned: ZB[]) {
@@ -576,7 +741,8 @@ function wellbeing(g: Game, zoned: ZB[]) {
     }
     // health: pollution, no water/sewage, trash, dirty water; clinics treat
     const polHere = S.fields.sample(S.fields.pol, b.x, b.z);
-    const target = (0.02 + Math.min(0.3, polHere * 0.1) + (bs.wa ? 0 : 0.18) + (bs.se ? 0 : 0.12) + (trashDaysOf(b, bs) > TRASH_BAD ? 0.08 : 0) + (bs.dirty ? 0.12 : 0)) * (1 - 0.8 * bs.cov.health);
+    const polSick = Math.min(0.3, polHere * 0.1), trashSick = trashDaysOf(b, bs) > TRASH_BAD ? 0.08 : 0;
+    const target = (0.02 + polSick + (bs.wa ? 0 : 0.18) + (bs.se ? 0 : 0.12) + trashSick + (bs.dirty ? 0.12 : 0)) * (1 - 0.8 * bs.cov.health);
     bs.sick += (target - bs.sick) * 0.15;
     if (bs.sick > 0.18 && bs.cov.health > 0.2 && Math.random() < 0.05) {
       const hit = reachOf(g, b, S.covT.health);
@@ -587,8 +753,15 @@ function wellbeing(g: Game, zoned: ZB[]) {
     const eTarget = Math.min(1, (0.15 + 0.5 * bs.cov.school + 0.4 * bs.cov.college) * POLICY.educationMul(b));
     bs.edu += (eTarget - bs.edu) * 0.04;
     // sick people move out
-    if (isRes(b) && bs.sick > 0.2 && b.occ > 0 && Math.random() < bs.sick) b.occ--;
+    if (isRes(b) && bs.sick > 0.2 && b.occ > 0 && Math.random() < bs.sick) { b.occ--; g.sim.lose(1, sickRoot(bs, polSick, trashSick)); }
   }
+}
+
+/** What made a building sick, as a loss cause: the biggest thing feeding its sickness. */
+function sickRoot(bs: BS, polSick: number, trashSick: number): LossCause {
+  const parts: [LossCause, number][] = [['pollution', polSick], ['water', (bs.wa ? 0 : 0.18) + (bs.dirty ? 0.12 : 0)], ['sewage', bs.se ? 0 : 0.12], ['garbage', trashSick]];
+  const [cause, v] = parts.sort((a, b) => b[1] - a[1])[0];
+  return v >= 0.03 ? cause : 'health';
 }
 
 function fires(g: Game, zoned: ZB[]) {
@@ -695,13 +868,18 @@ function consequences(g: Game, zoned: ZB[]) {
     if (!bs.wa) c.noWater++;
     if (!bs.se) c.noSewage++;
     const td = trashDaysOf(b, bs);
-    if (td > TRASH_ICON) c.trash++;
+    // an abandoned building's trash stays where it was, but it isn't piling up any more
+    if (td > TRASH_ICON && b.abandoned === undefined) c.trash++;
     if (bs.crime > 55) c.crime++;
     if (bs.sick > 0.15) c.sick++;
     const critical = !bs.pw || !bs.wa || !bs.se || td > TRASH_CRIT || bs.sick > 0.35;
     if (b.abandoned === undefined) {
       bs.bad = critical && S.day >= S.graceUntil ? bs.bad + 1 : Math.max(0, bs.bad - 3);
-      if (bs.bad >= 14) { g.buildings.setAbandoned(b, true); bs.ok = 0; newlyAbandoned++; post(g, 'abandoned', { building: b.label }, 0.3); }
+      if (bs.bad >= ABANDON_DAYS) {
+        // its residents leave with it: book them to what emptied it (setAbandoned zeroes occ)
+        if (isRes(b) && b.occ > 0) loseToNeeds(g, b, bs, td);
+        g.buildings.setAbandoned(b, true); bs.ok = 0; newlyAbandoned++; post(g, 'abandoned', { building: b.label }, 0.3);
+      }
     } else {
       c.abandoned++;
       b.abandoned++;
@@ -718,7 +896,159 @@ function consequences(g: Game, zoned: ZB[]) {
   if (c.trash > 5 && share(c.trash) > 0.08) post(g, 'garbagePile', { count: c.trash }, 0.25);
   if (c.crime > 5 && share(c.crime) > 0.08) post(g, 'crimeWave', {}, 0.2);
   if (c.sick > 5 && share(c.sick) > 0.08) post(g, 'sickness', {}, 0.2);
-  if (newlyAbandoned >= 3) g.toast(`${newlyAbandoned} buildings abandoned. Check the Services info views.`, true);
+  S.abandonedDays.push(newlyAbandoned);
+  if (S.abandonedDays.length > 3) S.abandonedDays.shift();
+  for (const u of UTILS) {
+    const n = S.util[u].unserved;
+    if (n > 3 && S.cutWas[u] <= 3) g.sim.alert('warn', `${NEED[u].icon} ${n} buildings cut off from ${u}`);
+    S.cutWas[u] = n;
+  }
+  assess(g, zoned);
+  if (newlyAbandoned >= 3) {
+    const top = S.emergency?.needs[0];
+    g.toast(top ? `${newlyAbandoned} buildings abandoned over ${top.label.toLowerCase()}. Fix it in Services → ${NEED[top.need].label}.` : `${newlyAbandoned} buildings abandoned. Check the Services info views.`, true);
+  }
+}
+
+/** Book a building's residents to the needs that emptied it (split evenly when several failed). */
+function loseToNeeds(g: Game, b: ZB, bs: BS, td: number) {
+  const causes = new Set<LossCause>();
+  if (!bs.pw) causes.add('power');
+  if (!bs.wa) causes.add('water');
+  if (!bs.se) causes.add('sewage');
+  if (td > TRASH_CRIT) causes.add('garbage');
+  if (bs.sick > 0.35) causes.add(sickRoot(bs, Math.min(0.3, S.fields.sample(S.fields.pol, b.x, b.z) * 0.1), td > TRASH_BAD ? 0.08 : 0));
+  if (!causes.size) causes.add('demand');
+  for (const c of causes) g.sim.lose(b.occ / causes.size, c);
+}
+
+/** Why a need is failing, in the Services panel's own numbers. */
+function needWhy(need: Need): string {
+  if (need === 'garbage') {
+    const G = S.garbage, W = G.why, parts: string[] = [];
+    if (W.full) parts.push(`${G.full.length === 1 ? `${G.full[0]} is full` : `${G.full.length} landfills are full`}, so the trucks serving ${W.full} of them are idle`);
+    if (W.reach) parts.push(`${W.reach} ${W.reach === 1 ? 'is' : 'are'} out of every truck's reach${G.exported >= TRASH_EXPORT - 0.01 ? ` and the county contract is maxed (${TRASH_EXPORT} t/day)` : ''}`);
+    if (W.capacity) parts.push(`${W.capacity} wait on trucks at their daily limit (${G.room.toFixed(0)} t/day for ${G.made.toFixed(0)} t/day made)`);
+    return parts.join('; ') || 'trash is piling up';
+  }
+  if (need === 'health') return 'residents are too sick to stay: a clinic in reach treats them; pollution, dirty water and trash make them sick';
+  const st = S.util[need], parts: string[] = [];
+  // counts only when there's more than one cause (with one, it's all of them, and a
+  // building abandoned since the morning's count can't make the numbers disagree)
+  const n = (v: number) => ((st.capped ? 1 : 0) + (st.noLink ? 1 : 0) + (st.noRoad ? 1 : 0) > 1 ? `${v} ` : '');
+  if (st.capped) parts.push(`${n(st.capped)}past the highway's import limit: they need ${fmt(st.demand, need)}, your plants make ${fmt(st.supply, need)}, and imports top out at ${fmt(IMPORT_CAP[need], need)}`);
+  if (st.noLink) parts.push(`${n(st.noLink)}on roads with no ${UTIL_SOURCE[need]} and no route to the highway`);
+  if (st.noRoad) parts.push(`${n(st.noRoad)}not on a road`);
+  return parts.join('; ') || 'cut off';
+}
+const UTIL_SOURCE: Record<Util, string> = { power: 'plant', water: 'pump', sewage: 'outfall' };
+
+/**
+ * Buildings cut off from several utilities at once (a road network with no
+ * way to the highway) are one problem, not three: one line for all of them.
+ */
+function mergeUtilities(needs: EmergencyNeed[]): EmergencyNeed[] {
+  const utils = needs.filter((x) => x.need === 'power' || x.need === 'water' || x.need === 'sewage');
+  if (utils.length < 2 || !utils.every((x) => x.buildings === utils[0].buildings && x.residents === utils[0].residents)) return needs;
+  const list = (a: string[], or = 'and') => (a.length < 2 ? a.join('') : `${a.slice(0, -1).join(', ')} ${or} ${a[a.length - 1]}`);
+  const kinds = utils.map((x) => x.need as Util);
+  const noLink = utils.every((x) => /^on roads with no \w+ and no route to the highway$/.test(x.why));
+  const merged: EmergencyNeed = {
+    ...utils[0], icon: utils.map((x) => x.icon).join(''), label: 'Utilities', failing: `without ${list(kinds)}`,
+    eta: [Math.min(...utils.map((x) => x.eta[0])), Math.max(...utils.map((x) => x.eta[1]))],
+    why: noLink ? `on roads with no ${list(kinds.map((k) => UTIL_SOURCE[k]), 'or')} and no route to the highway` : utils.map((x) => `${x.need}: ${x.why}`).join('; '),
+  };
+  return [merged, ...needs.filter((x) => !utils.includes(x))].sort((a, b) => b.residents - a.residents || b.buildings - a.buildings);
+}
+
+/**
+ * The daily emergency assessment: which needs are failing, how many
+ * buildings and residents that puts on the clock to abandonment, how long
+ * they have, and where they are. A failure big enough to empty a real share
+ * of the city is an emergency (the HUD keeps a card up and slows the clock);
+ * a smaller one, or a landfill that will fill soon, is a warning.
+ */
+function assess(g: Game, zoned: ZB[]) {
+  const agg = new Map<Need, { buildings: number; residents: number; lo: number; hi: number }>();
+  const cells = new Map<string, { x: number; z: number; n: number; residents: number; id: number; eta: number }>();
+  let atRisk = 0, residents = 0, active = 0;
+  const grace = Math.max(0, S.graceUntil - S.day);
+  for (const b of zoned) {
+    if (b.state !== 'active' || b.abandoned !== undefined || !g.buildings.list.has(b.id)) continue;
+    active++;
+    const bs = bsOf(b), td = trashDaysOf(b, bs);
+    const needs: Need[] = [];
+    if (!bs.pw) needs.push('power');
+    if (!bs.wa) needs.push('water');
+    if (!bs.se) needs.push('sewage');
+    // piling up and nobody's coming for it (a backlog being collected is recovering)
+    if (td > TRASH_CRIT || (td > TRASH_ICON && (bs.trash === 'full' || bs.trash === 'reach' || bs.trash === 'capacity'))) needs.push('garbage');
+    if (bs.sick > 0.35 && !needs.length) needs.push('health');
+    if (!needs.length) continue;
+    const critical = !bs.pw || !bs.wa || !bs.se || td > TRASH_CRIT || bs.sick > 0.35;
+    const eta = (critical ? 0 : Math.ceil(TRASH_CRIT - td)) + Math.max(1, ABANDON_DAYS - bs.bad) + grace;
+    const people = isRes(b) ? b.occ : 0;
+    atRisk++;
+    residents += people;
+    for (const n of needs) {
+      const a = agg.get(n) ?? { buildings: 0, residents: 0, lo: Infinity, hi: 0 };
+      a.buildings++;
+      a.residents += people;
+      a.lo = Math.min(a.lo, eta);
+      a.hi = Math.max(a.hi, eta);
+      agg.set(n, a);
+    }
+    const key = `${Math.floor(b.x / 240)},${Math.floor(b.z / 240)}`;
+    const cell = cells.get(key) ?? { x: 0, z: 0, n: 0, residents: 0, id: b.id, eta };
+    cell.x += b.x; cell.z += b.z; cell.n++; cell.residents += people;
+    if (eta < cell.eta) { cell.eta = eta; cell.id = b.id; }
+    cells.set(key, cell);
+  }
+  const needs: EmergencyNeed[] = mergeUtilities([...agg].map(([need, a]) => ({ need, ...NEED[need], buildings: a.buildings, residents: a.residents, eta: [a.lo, a.hi] as [number, number], why: needWhy(need) }))
+    .sort((a, b) => b.residents - a.residents || b.buildings - a.buildings));
+  const hot = [...cells.values()].map((c) => ({ x: c.x / c.n, z: c.z / c.n, n: c.n, residents: c.residents, id: c.id })).sort((a, b) => b.residents + b.n * 3 - (a.residents + a.n * 3)).slice(0, 6);
+  const G = S.garbage;
+  const forecast = G.fullServed && !G.why.full ? `🗑️ ${G.full.length === 1 ? `${G.full[0]} is full` : `${G.full.length} landfills are full`}: the ${G.fullServed} building${G.fullServed === 1 ? '' : 's'} only it reaches will pile up trash`
+    : G.daysLeft < 60 ? `🗑️ Landfills full in about ${spanOf(G.daysLeft)} at ${G.fill.toFixed(G.fill < 10 ? 1 : 0)} t/day (${Math.round(G.stored).toLocaleString()} / ${Math.round(G.capacity).toLocaleString()} t)` : null;
+  const pop = g.sim.population;
+  const recent = S.abandonedDays.reduce((a, v) => a + v, 0);
+  const crit = atRisk > 0 && (residents >= Math.max(30, pop * 0.08) || atRisk >= Math.max(10, active * 0.06) || recent >= Math.max(5, active * 0.03));
+  const warn = atRisk >= 3 || !!forecast;
+  const C = S.crisis;
+  // a garbage emergency isn't over because the city emptied: abandoned
+  // buildings keep their trash, and nothing comes back while the only
+  // landfill is full (the playtest's city sat at 9 people until a new one)
+  const trashStuck = G.full.length > 0 && G.room < Math.max(1, G.made);
+  const holding = C.level === 'crit' && C.cause === 'garbage' && trashStuck;
+  if (holding && !needs.some((x) => x.need === 'garbage'))
+    needs.unshift({ need: 'garbage', ...NEED.garbage, buildings: 0, residents: 0, eta: [0, 0], why: `${G.full.length === 1 ? `${G.full[0]} is full` : `${G.full.length} landfills are full`} and nothing else collects trash, so anything that comes back piles up again` });
+  let onset = false;
+  if (crit || holding) {
+    if (C.level !== 'crit') {
+      const top = needs[0];
+      Object.assign(C, { level: 'crit', since: S.day, cause: top.need, peakAtRisk: atRisk, peakTrash: S.counts.trash, lowPop: pop, popAtStart: pop, endedAt: 0 });
+      g.sim.alert('crit', `🚨 ${top.label} emergency: ${atRisk} buildings, ${residents.toLocaleString()} residents on the clock (first abandoned in ~${top.eta[0]} days)`);
+      onset = true;
+    } else {
+      C.cause = needs[0].need;
+      C.peakAtRisk = Math.max(C.peakAtRisk, atRisk);
+      C.peakTrash = Math.max(C.peakTrash, S.counts.trash);
+      C.lowPop = Math.min(C.lowPop, pop);
+    }
+  } else if (C.level === 'crit') {
+    C.level = 'recovering';
+    C.endedAt = S.day;
+    C.lowPop = Math.min(C.lowPop, pop);
+    g.sim.alert('info', `✅ Recovering from the ${NEED[C.cause as Need]?.label.toLowerCase() ?? 'service'} emergency: ${C.peakAtRisk} → ${atRisk} buildings at risk`);
+  } else if (C.level === 'recovering') {
+    C.lowPop = Math.min(C.lowPop, pop);
+    if (S.day - C.endedAt > 30 || (atRisk === 0 && S.counts.trash <= 5 && S.day - C.endedAt > 7)) C.level = 'none';
+  }
+  S.emergency = {
+    level: C.level === 'crit' ? 'crit' : C.level === 'recovering' ? 'recovering' : warn ? 'warn' : 'none',
+    needs, atRisk, residents, hot, forecast, crisis: { ...C }, trash: S.counts.trash, abandoned: S.counts.abandoned, day: S.day,
+  };
+  if (onset) g.ui.emergency?.(S.emergency);
 }
 
 /** Feed post with a per-kind cooldown in game days. */
@@ -869,13 +1199,21 @@ export function problemText(g: Game, id: number): string | null {
   const bs = S.b.get(b.id);
   const p = problemOf(b);
   if (!p || !bs) return null;
+  const days = Math.round(trashDaysOf(b, bs)), via = bs.via >= 0 ? g.buildings.list.get(bs.via) : undefined;
+  const trash: Record<TrashWhy, string> = {
+    full: `${via?.label ?? 'its landfill'} is full, so its trucks stopped. Build another landfill or an incinerator within reach (Services → Garbage).`,
+    reach: 'no garbage truck reaches it, and the county contract is full. Build a landfill within reach (Services → Garbage).',
+    capacity: `the trucks that reach it (${via?.label ?? 'a landfill'}) are at their daily limit. Add a landfill or an incinerator (Services → Garbage).`,
+    clearing: 'the trucks are collecting it again: the backlog is clearing.',
+    queued: 'waiting its turn on the trucks: the backlog is clearing.',
+  };
   const why: Record<Problem, string> = {
     fire: 'On fire! A fire station within reach puts it out; without one it can spread (Services → Fire).',
     abandoned: 'Abandoned: its people moved out. It needs its utilities and services back, or bulldoze it.',
     power: 'No electricity: its roads reach no power plant and no highway to import from. Build a plant or connect its roads (Services → Power).',
     water: 'No running water: its roads reach no pump and no highway to import from. Build one or connect its roads (Services → Water).',
     sewage: 'No sewage: its roads reach no outfall and no highway to export to. Build one or connect its roads (Services → Sewage).',
-    garbage: `Trash piling up for ${Math.round(trashDaysOf(b, bs))} days: no garbage truck reaches it, or the county contract is full. Build a landfill within reach (Services → Garbage).`,
+    garbage: `Trash piling up for ${days} days: ${trash[bs.trash]}`,
     sick: `Sick residents (${Math.round(bs.sick * 100)}%): no clinic within reach. Sick people move out (Services → Health).`,
     crime: 'High crime: no sheriff within reach. Crime drives people and shops away (Services → Police).',
     education: 'Needs a school within reach to grow (Services → Education).',
@@ -884,16 +1222,71 @@ export function problemText(g: Game, id: number): string | null {
   return `${b.label}: ${why[p]}`;
 }
 
+/** an info view shows only its own service's bubbles (the playtest: a crisis buried the map in icons) */
+const VIEW_PROBLEMS: Partial<Record<ViewId, Problem[]>> = { power: ['power'], water: ['water'], sewage: ['sewage'], garbage: ['garbage'], fire: ['fire'], police: ['crime'], health: ['sick'] };
+/** zoomed out past this, a neighbourhood's bubbles merge into one with a count */
+const CLUSTER_FROM = 600;
+/** which problem a merged bubble shows when two are equally common */
+const SEVERITY: Problem[] = ['fire', 'power', 'water', 'sewage', 'garbage', 'sick', 'abandoned', 'crime', 'education', 'pollution'];
+const PROBLEM_WORDS: Record<Problem, string> = {
+  power: 'without power', water: 'without water', sewage: 'without sewage', garbage: 'piling up trash', fire: 'on fire',
+  crime: 'with high crime', sick: 'with sick residents', abandoned: 'abandoned', education: 'needing a school', pollution: 'polluted',
+};
+
 function refreshIcons(g: Game) {
-  const cam = g.rts.target;
-  const items: { x: number; y: number; z: number; p: Problem; id: number }[] = [];
-  for (const b of g.buildings.near(cam.x, cam.z, 1500)) {
+  const cam = g.rts.target, dist = g.rts.distance, merge = dist > CLUSTER_FROM;
+  const only = S.view ? VIEW_PROBLEMS[S.view] : undefined;
+  const raw: ProblemItem[] = [];
+  for (const b of g.buildings.near(cam.x, cam.z, merge ? Math.min(4000, Math.max(1500, dist * 1.3)) : 1500)) {
     const p = problemOf(b);
-    if (!p) continue;
-    items.push({ x: b.x, y: b.y + b.model.height + 5, z: b.z, p, id: b.id });
-    if (items.length >= 600) break;
+    if (!p || (only && !only.includes(p))) continue;
+    raw.push({ x: b.x, y: b.y + b.model.height + 5, z: b.z, p, id: b.id });
+    if (!merge && raw.length >= 600) break;
   }
-  S.icons!.set(items);
+  S.icons!.set(merge ? clusterIcons(raw, Math.min(360, Math.max(90, dist * 0.16))) : raw);
+}
+
+/** a merged bubble's problem: the commonest, the most severe on a tie */
+const dominant = (mix: Partial<Record<Problem, number>>) => (Object.keys(mix) as Problem[]).sort((a, b) => mix[b]! - mix[a]! || SEVERITY.indexOf(a) - SEVERITY.indexOf(b))[0];
+
+/**
+ * One bubble per grid cell of `cell` m holding three or more: its commonest
+ * problem, and a count. Then bubbles closer than half a cell (either side of a
+ * cell edge) merge too, so none sit on top of each other.
+ */
+function clusterIcons(raw: ProblemItem[], cell: number): ProblemItem[] {
+  const cells = new Map<string, ProblemItem[]>();
+  for (const it of raw) {
+    const k = `${Math.floor(it.x / cell)},${Math.floor(it.z / cell)}`;
+    const arr = cells.get(k);
+    if (arr) arr.push(it); else cells.set(k, [it]);
+  }
+  const out: ProblemItem[] = [];
+  let id = -1;
+  for (const arr of cells.values()) {
+    if (arr.length < 3) { out.push(...arr); continue; }
+    const mix: Partial<Record<Problem, number>> = {};
+    let x = 0, z = 0, y = 0;
+    for (const it of arr) { mix[it.p] = (mix[it.p] ?? 0) + 1; x += it.x; z += it.z; y = Math.max(y, it.y); }
+    out.push({ x: x / arr.length, y: y + 6, z: z / arr.length, p: dominant(mix), id: id--, n: arr.length, mix });
+  }
+  out.sort((a, b) => (b.n ?? 1) - (a.n ?? 1));
+  const merged: ProblemItem[] = [];
+  for (const it of out) {
+    const m = merged.find((o) => Math.hypot(o.x - it.x, o.z - it.z) < cell * 0.5);
+    if (!m) { merged.push(it); continue; }
+    const na = m.n ?? 1, nb = it.n ?? 1, n = na + nb;
+    const mix: Partial<Record<Problem, number>> = { ...(m.mix ?? { [m.p]: 1 }) };
+    for (const [p, c] of Object.entries(it.mix ?? { [it.p]: 1 }) as [Problem, number][]) mix[p] = (mix[p] ?? 0) + c;
+    Object.assign(m, { x: (m.x * na + it.x * nb) / n, z: (m.z * na + it.z * nb) / n, y: Math.max(m.y, it.y), n, mix, p: dominant(mix), id: m.id < 0 ? m.id : id-- });
+  }
+  return merged;
+}
+
+/** What a merged bubble stands for (hovering it says this). */
+function clusterText(it: ProblemItem): string {
+  const parts = (Object.entries(it.mix ?? {}) as [Problem, number][]).sort((a, b) => b[1] - a[1]).map(([p, n]) => `${n} ${PROBLEM_WORDS[p]}`);
+  return `${it.n} buildings with problems here: ${parts.join(', ')}. Zoom in to see each one.`;
 }
 
 // ---------------------------------------------------------------- info views
@@ -1084,7 +1477,7 @@ let lastCheck: { ok: boolean; reason?: string; snapped?: boolean; road?: string 
 let panelCat: SvcCat = 'power';
 
 
-export function canPlaceService(g: Game, id: ServiceModelId, x: number, z: number, yawIn?: number): { ok: boolean; reason?: string; yaw: number } {
+export function canPlaceService(g: Game, id: ServiceModelId, x: number, z: number, yawIn?: number): { ok: boolean; reason?: string; yaw: number; blocker?: Bld } {
   const d = SERVICE_DEFS.get(id)!;
   const hw = (d.w * CELL) / 2, hd = (d.d * CELL) / 2;
   const pick = g.net.pickSeg(x, z, Math.max(hw, hd) + 40);
@@ -1094,7 +1487,7 @@ export function canPlaceService(g: Game, id: ServiceModelId, x: number, z: numbe
     const p = pts[Math.min(pts.length - 1, Math.round((pick.s / pick.seg.length) * (pts.length - 1)))];
     yaw = Math.atan2(p.x - x, p.z - z);
   }
-  if (g.sim.mode !== 'sandbox' && g.sim.population < d.unlock) return { ok: false, yaw, reason: `Unlocks at ${d.unlock.toLocaleString()} people` };
+  if (!svcUnlocked(g, d)) return { ok: false, yaw, reason: `Unlocks at ${d.unlock.toLocaleString()} people (and stays unlocked)` };
   if (!g.terrain.inBounds(x, z, Math.max(hw, hd) + 12)) return { ok: false, yaw, reason: 'Outside the county' };
   if (g.net.allowed && !g.net.allowed(x, z)) return { ok: false, yaw, reason: "You don't own this land yet. Buy it in 🏞️ Land." };
   if (!pick) return { ok: false, yaw, reason: d.nearWater ? 'Needs a road within 40 m: run one down to the shore first' : 'Needs a road within 40 m' };
@@ -1111,7 +1504,7 @@ export function canPlaceService(g: Game, id: ServiceModelId, x: number, z: numbe
   }
   for (const b of g.buildings.near(x, z, hw + hd + 40)) {
     if (cs.some((p) => g.buildings.contains(b, p.x, p.z, 0.5)) || g.buildings.corners(b).some((p) => inRect(p.x, p.z, x, z, hw, hd, yaw)) || g.buildings.contains(b, x, z))
-      return { ok: false, yaw, reason: `Overlaps ${b.label}` };
+      return { ok: false, yaw, reason: `Overlaps ${b.label}`, blocker: b };
   }
   if (g.communes.at(x, z)) return { ok: false, yaw, reason: 'Hippies live here' };
   if (d.nearWater) {
@@ -1132,7 +1525,7 @@ export function canPlaceService(g: Game, id: ServiceModelId, x: number, z: numbe
 /** Problems moving the building a bit can fix (not money, unlocks or land). */
 const snappable = (reason?: string) => !!reason && !/money|Needs \$|Unlocks|own this land|county/i.test(reason);
 
-export interface ServiceSpot { x: number; z: number; yaw: number; snapped: boolean; reason?: string; front?: Frontage }
+export interface ServiceSpot { x: number; z: number; yaw: number; snapped: boolean; reason?: string; front?: Frontage; blocker?: Bld }
 
 /**
  * Where the building goes for a cursor at (x, z): square to the nearest road,
@@ -1149,17 +1542,18 @@ export function findServiceSpot(g: Game, id: ServiceModelId, x: number, z: numbe
   // pointing straight at a building means "that one", not "somewhere near it":
   // no snapping, so a double-click doesn't buy a second office next door
   const on = g.buildings.at(x, z);
-  if (on) return { x, z, yaw: here.yaw, snapped: false, reason: `${on.label} is already here` };
+  if (on) return { x, z, yaw: here.yaw, snapped: false, reason: `${on.label} is already here`, blocker: on };
   const hw = (d.w * CELL) / 2;
   let first: string | undefined;
+  let blocker: Bld | undefined;
   let k = 0;
   for (const f of frontageCandidates(g.net, x, z, hd, hd + 40)) {
     // the spot facing the cursor already holds a special building: that one,
     // not "slide along and build another" (four quick clicks bought four)
-    if (k === 0) { const on = specialAt(g.buildings, f, hw, hd); if (on) return { x: f.x, z: f.z, yaw: f.yaw, snapped: false, reason: `${on.label} is already here`, front: f }; }
+    if (k === 0) { const on = specialAt(g.buildings, f, hw, hd); if (on) return { x: f.x, z: f.z, yaw: f.yaw, snapped: false, reason: `${on.label} is already here`, front: f, blocker: on }; }
     const c = canPlaceService(g, id, f.x, f.z, f.yaw);
     if (c.ok) return { x: f.x, z: f.z, yaw: f.yaw, snapped: k > 0, front: f };
-    first ??= c.reason;
+    if (first === undefined) { first = c.reason; blocker = c.blocker; }
     k++;
   }
   if (d.nearWater) {
@@ -1174,7 +1568,7 @@ export function findServiceSpot(g: Game, id: ServiceModelId, x: number, z: numbe
       }
     }
   }
-  return { x, z, yaw: here.yaw, snapped: false, reason: first ?? here.reason ?? 'Needs a road within 40 m' };
+  return { x, z, yaw: here.yaw, snapped: false, reason: first ?? here.reason ?? 'Needs a road within 40 m', blocker: first !== undefined ? blocker : here.blocker };
 }
 
 let spotCache: { id: string; x: number; z: number; r: ServiceSpot } | null = null;
@@ -1199,6 +1593,8 @@ function updateGhost(g: Game, p: THREE.Vector3 | null) {
   const hw = (d.w * CELL) / 2, hd = (d.d * CELL) / 2;
   const y = g.buildings.padHeight(spot.x, spot.z, hw, hd, spot.yaw);
   gh.show(`svc|${placing}`, () => CUSTOM_BUILDINGS.get(placing)!.model().geometry, spot.x, y, spot.z, spot.yaw, hw, hd, ok, spot.front?.door ?? null);
+  // what's in the way, outlined where it stands (hard to pick out at a distance or at night)
+  gh.showBlocker(!ok && spot.blocker ? spot.blocker : null);
 }
 
 /** Place a service building (the tool, tests and future AI all use this). */
@@ -1217,39 +1613,70 @@ export function placeService(g: Game, id: ServiceModelId, x: number, z: number, 
   S.graphDirty = true;
   g.audio.play('build');
   g.particles.emit('dust', b.x, b.y + 2, b.z, { count: 40, spread: b.hw });
+  g.floatText(`✅ ${d.name}`, new THREE.Vector3(b.x, b.y + d.height, b.z), '#9dff3c');
   post(g, 'serviceBuilt', { building: d.name }, 0.6);
   return b;
 }
 
 // touch: a tap previews the building there; the action-bar Build places it
 let planned: THREE.Vector3 | null = null;
+/**
+ * The building the last click bought. Until the pointer leaves it, the tip
+ * confirms the purchase and a second click on it does nothing (the playtest
+ * saw a red "already here" right after a good build, from the tool re-checking
+ * the spot it had just filled).
+ */
+let built: { id: number; t: number; x: number; z: number } | null = null;
+/** still on what was just built: over it, or hardly moved from the click (it may have slid along the road) */
+const onBuilt = (g: Game, p: THREE.Vector3 | null) => {
+  const b = built && g.buildings.list.get(built.id);
+  if (!b || !p || !built) return false;
+  return g.buildings.contains(b, p.x, p.z, 6) || Math.hypot(p.x - built.x, p.z - built.z) < Math.max(10, g.rts.distance * 0.03);
+};
 
 registerTool({
   id: 'svcPlace',
   touchLift: 64,
   placing: () => { const d = SERVICE_DEFS.get(placing); return d ? `${d.icon} ${d.name}` : null; },
-  move: (g, p) => { if (!planned) updateGhost(g, p); },
+  move: (g, p) => {
+    if (planned) return;
+    if (built && onBuilt(g, p)) { ghost?.hide(); lastCheck = null; return; }
+    built = null;
+    updateGhost(g, p);
+  },
   up: (g, p, e, wasDrag) => {
     if (!p || wasDrag) return;
     if (e.pointerType !== 'mouse') {
+      built = null;
       planned = p.clone();
       updateGhost(g, planned);
       return;
     }
+    // a second click on what was just built is a double-click, not another purchase
+    if (built && onBuilt(g, p)) return;
+    built = null;
     const spot = spotFor(g, placing, p.x, p.z);
-    if (placeService(g, placing, spot.x, spot.z, spot.yaw)) spotCache = null;
+    const b = placeService(g, placing, spot.x, spot.z, spot.yaw);
+    if (b) { spotCache = null; built = { id: b.id, t: g.time, x: p.x, z: p.z }; ghost?.hide(); lastCheck = null; return; }
     updateGhost(g, p);
   },
   pending: () => (planned ? { cost: lastCheck?.ok ? SERVICE_DEFS.get(placing)!.cost : null } : null),
   confirm: (g) => {
     if (!planned) return;
     const spot = spotFor(g, placing, planned.x, planned.z);
-    if (placeService(g, placing, spot.x, spot.z, spot.yaw)) { spotCache = null; planned = null; ghost?.hide(); lastCheck = null; }
+    const b = placeService(g, placing, spot.x, spot.z, spot.yaw);
+    if (b) { spotCache = null; built = { id: b.id, t: g.time, x: planned.x, z: planned.z }; planned = null; ghost?.hide(); lastCheck = null; }
     else updateGhost(g, planned);
   },
-  cancel: () => { planned = null; ghost?.hide(); lastCheck = null; },
+  cancel: () => { planned = null; built = null; ghost?.hide(); lastCheck = null; },
   tip: (g) => {
     const d = SERVICE_DEFS.get(placing)!;
+    const b = built && g.buildings.list.get(built.id);
+    // just bought: say so (phones for a few seconds, desktop until the pointer moves off it)
+    if (built && b && (g.isTouch ? g.time - built.t < 3 : onBuilt(g, g.tools.hoverPoint))) {
+      const def = defOf(b) ?? d;
+      return { text: `✅ Built ${def.icon} ${def.name}: ${usd(def.cost)} paid, ${usd(def.upkeep)}/wk upkeep. ${g.isTouch ? 'Tap where the next one goes.' : 'Move off it to place another.'}`, good: true };
+    }
     if (lastCheck && !lastCheck.ok) return { text: `${d.name}: ${lastCheck.reason}`, bad: true };
     if (g.isTouch && !planned) return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} · tap where it goes` };
     // what this purchase does to the budget, from the same forecast the HUD shows
@@ -1262,8 +1689,7 @@ registerTool({
 const usd = (n: number) => `$${Math.round(n).toLocaleString()}`;
 /** the cheapest local building for a category that the city can build now */
 function cheapestLocal(g: Game, c: SvcCat, has: (d: SvcDef) => boolean): SvcDef | null {
-  const pop = g.sim.population, sandbox = g.sim.mode === 'sandbox';
-  return SVC.filter((d) => d.cat === c && has(d) && (sandbox || pop >= d.unlock)).sort((a, b) => a.cost - b.cost)[0] ?? null;
+  return SVC.filter((d) => d.cat === c && has(d) && svcUnlocked(g, d)).sort((a, b) => a.cost - b.cost)[0] ?? null;
 }
 
 /**
@@ -1292,12 +1718,22 @@ function statusLine(c: SvcCat, g: Game): string {
     return `<div class="svc-stat ${short ? 'bad' : ''}">${rows.join('<br>')}</div>`;
   }
   if (c === 'garbage') {
-    const G = S.garbage, piling = S.counts.trash;
+    const G = S.garbage, W = G.why, piling = S.counts.trash;
     const head = piling ? `⚠️ <b>Trash piling up at ${piling} building${piling === 1 ? '' : 's'}</b> (sickness, fire risk, nobody moves in)` : G.made <= 0.01 ? 'No trash yet' : G.exported > 0.01 ? '✅ All trash handled · the county contractor hauls some (paid)' : '✅ All trash handled by your trucks';
     const rows = [head, `Made ${G.made.toFixed(1)} t/day · your trucks ${G.collected.toFixed(1)} · county contract ${G.exported.toFixed(1)} t/day (<b>${usd(G.exported * TRASH_PRICE * 7)}/wk</b>; takes at most ${TRASH_EXPORT} t/day)${G.capacity ? ` · landfill ${Math.round(G.stored).toLocaleString()}/${Math.round(G.capacity).toLocaleString()} t` : ''}`];
+    // why the trash is piling up: no room left, no truck in reach, trucks at their limit, or a backlog clearing
+    if (G.full.length) rows.push(`<b class="neg">🚫 Trucks idle: ${esc(G.full.length === 1 ? `${G.full[0]} is full` : `${G.full.length} landfills are full`)}.</b> A full landfill takes no more trash, so its trucks stop.`);
+    const whyBits = [
+      W.full && `<b class="neg">${W.full}</b> served by a full landfill`,
+      W.reach && `<b class="neg">${W.reach}</b> out of every truck's reach${G.exported >= TRASH_EXPORT - 0.01 ? ' (county contract maxed)' : ''}: build closer`,
+      W.capacity && `<b class="neg">${W.capacity}</b> waiting on trucks at their limit (${G.room.toFixed(0)} t/day for ${G.made.toFixed(0)} made): add capacity`,
+      W.clearing + W.queued && `<b>${W.clearing + W.queued}</b> clearing a backlog: trucks are collecting, give it time`,
+    ].filter(Boolean);
+    if (piling && whyBits.length) rows.push(`Why: ${whyBits.join(' · ')}`);
+    if (G.capacity && !G.full.length && G.daysLeft < Infinity) rows.push(`${G.daysLeft < 45 ? '⚠️ ' : ''}Landfills full in <b class="${G.daysLeft < 45 ? 'neg' : ''}">about ${spanOf(G.daysLeft)}</b> at ${G.fill.toFixed(G.fill < 10 ? 1 : 0)} t/day. Then their trucks stop.`);
     const d = cheapestLocal(g, 'garbage', (x) => !!x.collect);
-    if (d && (G.exported > 0.01 || piling)) rows.push(`<span class="svc-trade">${d.icon} A ${esc(d.name)} (${usd(d.cost)} + ${usd(d.upkeep)}/wk) collects ${d.collect} t/day within ${((d.reach ?? 0) / 60).toFixed(1)} min${G.exported > 0.01 ? `: saves about <b class="pos">${usd(Math.min(d.collect ?? 0, G.exported) * TRASH_PRICE * 7 - d.upkeep)}/wk</b> on the contract` : ''}.</span>`);
-    return `<div class="svc-stat ${piling ? 'bad' : ''}">${rows.join('<br>')}</div>`;
+    if (d && (G.exported > 0.01 || piling || G.daysLeft < 45)) rows.push(`<span class="svc-trade">${d.icon} A ${esc(d.name)} (${usd(d.cost)} + ${usd(d.upkeep)}/wk) collects ${d.collect} t/day within ${((d.reach ?? 0) / 60).toFixed(1)} min${d.store ? ` and holds ${d.store.toLocaleString()} t` : ' and never fills'}${G.exported > 0.01 ? `: saves about <b class="pos">${usd(Math.min(d.collect ?? 0, G.exported) * TRASH_PRICE * 7 - d.upkeep)}/wk</b> on the contract` : ''}.</span>`);
+    return `<div class="svc-stat ${piling || G.full.length ? 'bad' : ''}">${rows.join('<br>')}</div>`;
   }
   const covs: Record<string, Cov[]> = { fire: ['fire'], police: ['police'], health: ['health'], education: ['school', 'college'], parks: ['parks'] };
   const why: Record<string, string> = {
@@ -1323,7 +1759,6 @@ registerPanel({
   order: 35,
   render(el, g, rerender) {
     const pop = g.sim.population;
-    const sandbox = g.sim.mode === 'sandbox';
     const list = SVC.filter((d) => d.cat === panelCat);
     const sel = SERVICE_DEFS.get(placing);
     el.innerHTML = `
@@ -1331,11 +1766,13 @@ registerPanel({
       <div class="sp-row svc-cats">${CATS.map((c) => `<button class="chip ${c.id === panelCat ? 'on' : ''}" data-cat="${c.id}">${c.icon} ${c.label}</button>`).join('')}</div>
       <div class="svc-live">${statusLine(panelCat, g)}</div>
       <div class="sp-grid">${list.map((d) => {
-        const locked = !sandbox && pop < d.unlock;
+        const locked = !svcUnlocked(g, d);
         const on = g.tools.active === 'ext' && g.tools.extTool === 'svcPlace' && placing === d.id;
         // what it does, in numbers: output for plants, reach for everything else
         const does = d.power ? fmt(d.power, 'power') : d.water ? fmt(d.water, 'water') : d.sewage ? fmt(d.sewage, 'sewage') : d.collect ? `${d.collect} t/day` : d.reach ? `${(d.reach / 60).toFixed(1)} min reach` : '';
-        return `<button class="card ${on ? 'on' : ''}" data-svc="${d.id}" ${locked ? 'disabled' : ''} title="${esc(d.blurb)}"><span class="ci">${d.icon}</span><b>${esc(d.name)}</b><small>${locked ? `🔒 Pop ${d.unlock.toLocaleString()}` : `$${d.cost.toLocaleString()} · $${d.upkeep}/wk${does ? ` · ${does}` : ''}`}</small></button>`;
+        // the unlock rule, said where it matters: earned once, kept for good
+        const rule = !d.unlock || g.sim.mode === 'sandbox' ? '' : locked ? ` Unlocks at ${d.unlock.toLocaleString()} people, and stays unlocked even if the city shrinks.` : pop < d.unlock ? ` Earned at ${d.unlock.toLocaleString()} people: yours to keep while the city is smaller.` : '';
+        return `<button class="card ${on ? 'on' : ''}" data-svc="${d.id}" ${locked ? 'disabled' : ''} title="${esc(d.blurb + rule)}"><span class="ci">${d.icon}</span><b>${esc(d.name)}</b><small>${locked ? `🔒 Pop ${d.unlock.toLocaleString()}` : `$${d.cost.toLocaleString()} · $${d.upkeep}/wk${does ? ` · ${does}` : ''}`}</small></button>`;
       }).join('')}</div>
       <div class="svc-blurb">${esc(sel && sel.cat === panelCat ? sel.blurb : list[0]?.blurb ?? '')}</div>`;
     el.querySelectorAll<HTMLButtonElement>('[data-cat]').forEach((b) => b.addEventListener('click', () => {
@@ -1359,6 +1796,15 @@ registerPanel({
     if (g.tools.active === 'ext' && g.tools.extTool === 'svcPlace') g.tools.set('inspect');
     if (S.view) g.overlays.setExt(null);
   },
+  // the emergency card's "Fix …": that category, with its info view on (affected buildings in red)
+  focus(g, key) {
+    const cat = CATS.find((c) => c.id === key)?.id;
+    if (!cat) return;
+    if (panelCat !== cat && g.tools.active === 'ext' && g.tools.extTool === 'svcPlace') g.tools.set('inspect');
+    panelCat = cat;
+    const v = VIEW_FOR_CAT[cat];
+    g.overlays.setExt(v ? viewObjs.get(v)! : null);
+  },
   // the status line follows the city while the panel stays open
   refresh(el, g) {
     const live = el.querySelector('.svc-live');
@@ -1377,7 +1823,11 @@ registerInspector((sel, g) => {
     const fs = fsOf(b);
     const rows: string[] = [`<div><span>Upkeep</span><b>$${d.upkeep}/wk</b></div>`];
     for (const u of UTILS) if (d[u]) rows.push(`<div><span>Supplies</span><b>${fmt(d.id === 'solarFarm' ? (d[u] ?? 0) * solarFactor(g) : d[u] ?? 0, u)}</b></div>`);
-    if (d.store) rows.push(`<div><span>Landfill</span><b class="${fs.full ? 'neg' : ''}">${Math.round(fs.stored).toLocaleString()} / ${d.store.toLocaleString()} t</b></div>`);
+    if (d.store) {
+      const days = fs.rate > 0.05 ? Math.round((d.store - fs.stored) / fs.rate) : null;
+      rows.push(`<div><span>Landfill</span><b class="${fs.full ? 'neg' : ''}">${Math.round(fs.stored).toLocaleString()} / ${d.store.toLocaleString()} t</b></div>`);
+      rows.push(`<div><span>Full in</span><b class="${fs.full || (days !== null && days < 45) ? 'neg' : ''}">${fs.full ? 'Full: trucks idle' : days !== null ? `~${spanOf(days)} (${fs.rate.toFixed(fs.rate < 10 ? 1 : 0)} t/day)` : 'not filling'}</b></div>`);
+    }
     if (d.collect) rows.push(`<div><span>Collects</span><b>${d.collect} t/day</b></div>`);
     if (d.reach) rows.push(`<div><span>Reach</span><b>${(d.reach / 60).toFixed(1)} min drive</b></div>`);
     if (d.capacity) rows.push(`<div><span>Load</span><b class="${fs.quality < 1 ? 'neg' : ''}">${Math.round(fs.load).toLocaleString()} / ${d.capacity.toLocaleString()}${fs.quality < 1 ? ' overloaded' : ''}</b></div>`);
@@ -1408,8 +1858,9 @@ registerSystem({
     S.icons = new ProblemIcons(g.scene);
     g.problemAt = (cx, cy) => {
       const hit = S.icons?.pick(g.camera, g.renderer.domElement.getBoundingClientRect(), cx, cy);
-      return hit ? { id: hit.id, text: problemText(g, hit.id) } : null;
+      return hit ? { id: hit.id, text: (hit.n ?? 1) > 1 ? clusterText(hit) : problemText(g, hit.id) } : null;
     };
+    g.emergency = () => S.emergency;
     g.net.events.on('changed', () => { S.graphDirty = true; });
   },
   daily: (g, day) => { const t0 = performance.now(); daily(g, day); S.perf.ms += performance.now() - t0; S.perf.n++; },
@@ -1422,10 +1873,10 @@ registerSystem({
     }
     const fac: [number, number, number][] = [];
     for (const [id, fs] of S.f) { const b = g.buildings.list.get(id); if (b && fs.stored > 0) fac.push([Math.round(b.x), Math.round(b.z), Math.round(fs.stored)]); }
-    return { v: 1, bld, fac, pol: S.fields.save(), counts: S.counts, grace: S.graceUntil, week: { ...S.week } };
+    return { v: 1, bld, fac, pol: S.fields.save(), counts: S.counts, grace: S.graceUntil, week: { ...S.week }, crisis: { ...S.crisis } };
   },
   load(g, data) {
-    const d = data as { bld?: [number, number, number, number, number, number, number?][]; fac?: [number, number, number][]; pol?: [number, number][]; counts?: typeof S.counts; grace?: number; week?: typeof S.week } | undefined;
+    const d = data as { bld?: [number, number, number, number, number, number, number?][]; fac?: [number, number, number][]; pol?: [number, number][]; counts?: typeof S.counts; grace?: number; week?: typeof S.week; crisis?: typeof S.crisis } | undefined;
     if (!d) return;
     S.loaded = true;
     S.graceUntil = d.grace ?? 0;
@@ -1440,15 +1891,23 @@ registerSystem({
       Object.assign(bsOf(b), { garbage, crime, edu, sick });
       if (gone !== undefined && gone >= 0 && isZoned(b)) { g.buildings.setAbandoned(b, true); b.abandoned = gone; }
     }
-    for (const [x, zz, stored] of d.fac ?? []) { const b = byPos.get(key(x, zz)); if (b) fsOf(b).stored = stored; }
+    for (const [x, zz, stored] of d.fac ?? []) {
+      const b = byPos.get(key(x, zz));
+      if (!b) continue;
+      const fs = fsOf(b), store = defOf(b)?.store ?? Infinity;
+      fs.stored = stored;
+      // warnings already given before the save aren't given again
+      fs.warned = stored >= store ? 100 : stored >= store * 0.9 ? 90 : stored >= store * 0.75 ? 75 : 0;
+    }
     S.fields.load(d.pol);
     if (d.counts) Object.assign(S.counts, d.counts);
+    if (d.crisis && typeof d.crisis === 'object') Object.assign(S.crisis, d.crisis);
     S.graphDirty = true;
   },
 });
 
 /** Read-only snapshot for other systems and tests. */
 export function servicesSnapshot() {
-  return { util: S.util, counts: { ...S.counts }, garbage: { ...S.garbage }, facilities: S.f.size, buildings: S.b.size };
+  return { util: S.util, counts: { ...S.counts }, garbage: { ...S.garbage }, facilities: S.f.size, buildings: S.b.size, emergency: S.emergency };
 }
 (globalThis as unknown as { __services?: unknown }).__services = { snapshot: servicesSnapshot, place: placeService, canPlace: canPlaceService, findSpot: findServiceSpot, S };

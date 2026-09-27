@@ -7,6 +7,8 @@ import type { Game, Selection } from '../game';
 export interface ToolTipLike {
   text: string;
   bad?: boolean;
+  /** a success to confirm (drawn green) */
+  good?: boolean;
 }
 
 /** A pointer tool. Activate with `game.tools.setExt(id)`. */
@@ -47,6 +49,8 @@ export interface ExtPanel {
   close?(g: Game): void;
   /** called twice a second while open, to update live numbers without a re-render */
   refresh?(el: HTMLElement, g: Game): void;
+  /** show one part of the panel (a category) the next time it renders */
+  focus?(g: Game, key: string): void;
 }
 
 /** An info view (overlay) listed in the Info Views panel. */

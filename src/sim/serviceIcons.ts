@@ -1,12 +1,34 @@
 // Problem notification bubbles over buildings (no power, no water, trash,
 // fire, crime, sick, abandoned...). One instanced billboard draw call with a
 // small vector-drawn icon atlas (no emoji fonts: those differ per device).
+// Zoomed out, a neighbourhood's bubbles merge into one bigger bubble showing
+// its most common problem and a count badge.
 import * as THREE from 'three';
 
 export type Problem = 'power' | 'water' | 'sewage' | 'garbage' | 'fire' | 'crime' | 'sick' | 'abandoned' | 'education' | 'pollution';
 export const PROBLEMS: Problem[] = ['power', 'water', 'sewage', 'garbage', 'fire', 'crime', 'sick', 'abandoned', 'education', 'pollution'];
 const COLS = 10;
 const S = 96;
+
+/** One bubble: a building's problem, or (n > 1) a neighbourhood's, with how many of each. */
+export interface ProblemItem { x: number; y: number; z: number; p: Problem; id: number; n?: number; mix?: Partial<Record<Problem, number>> }
+
+/** 0-9 and "+" for the count badges, white on clear (11 cells of 40 x 64 px) */
+function drawDigits(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 40 * 11; c.height = 64;
+  const x = c.getContext('2d')!;
+  x.fillStyle = '#fff';
+  x.textAlign = 'center';
+  x.textBaseline = 'middle';
+  x.font = '900 54px Overpass, "Arial Narrow", Arial, sans-serif';
+  for (let i = 0; i < 11; i++) x.fillText(i < 10 ? String(i) : '+', i * 40 + 20, 35, 38);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.minFilter = THREE.LinearFilter;
+  t.generateMipmaps = false;
+  return t;
+}
 
 function drawAtlas(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
@@ -68,11 +90,19 @@ function drawAtlas(): THREE.CanvasTexture {
   return t;
 }
 
+/** How big a bubble is in the world at `dist` from the camera (the shader and pick() share it). */
+function bubbleSize(dist: number, n: number) {
+  if (n <= 1) return Math.min(26, Math.max(3.2, dist * 0.035));
+  // a neighbourhood's bubble keeps a readable size far out, and grows a little with its count
+  return Math.min(140, Math.max(3.2, dist * 0.035)) * Math.min(2, 1.25 + 0.12 * Math.log2(n));
+}
+
 export class ProblemIcons {
   readonly mesh: THREE.Mesh;
   private geo: THREE.InstancedBufferGeometry;
   private pos: THREE.InstancedBufferAttribute;
   private icon: THREE.InstancedBufferAttribute;
+  private count: THREE.InstancedBufferAttribute;
   private cap = 0;
   private mat: THREE.ShaderMaterial;
 
@@ -84,33 +114,61 @@ export class ProblemIcons {
     this.geo.setAttribute('uv', q.getAttribute('uv'));
     this.pos = new THREE.InstancedBufferAttribute(new Float32Array(0), 4);
     this.icon = new THREE.InstancedBufferAttribute(new Float32Array(0), 1);
+    this.count = new THREE.InstancedBufferAttribute(new Float32Array(0), 1);
     this.grow(256);
     this.mat = new THREE.ShaderMaterial({
-      uniforms: { tIcons: { value: drawAtlas() }, uTime: { value: 0 }, uPx: { value: 1 } },
+      uniforms: { tIcons: { value: drawAtlas() }, tDigits: { value: drawDigits() }, uTime: { value: 0 }, uPx: { value: 1 } },
       vertexShader: /* glsl */ `
         attribute vec4 iPos; // xyz + phase
         attribute float iIcon;
+        attribute float iCount; // buildings behind this bubble (1 = one building)
         uniform float uTime;
         varying vec2 vUv;
+        varying vec2 vQ;
         varying float vFade;
+        varying float vCount;
         void main() {
           vec3 p = iPos.xyz;
           p.y += sin(uTime * 2.4 + iPos.w) * 0.6;
           vec4 mv = modelViewMatrix * vec4(p, 1.0);
           float dist = -mv.z;
-          // constant-ish screen size: grows with distance, clamped
-          float s = clamp(dist * 0.035, 3.2, 26.0);
+          // constant-ish screen size: grows with distance, clamped (bubbleSize() in JS)
+          bool many = iCount > 1.5;
+          float s = many ? clamp(dist * 0.035, 3.2, 140.0) * min(2.0, 1.25 + 0.12 * log2(iCount)) : clamp(dist * 0.035, 3.2, 26.0);
           mv.xy += position.xy * s;
-          vFade = 1.0 - smoothstep(1400.0, 1900.0, dist);
+          vFade = 1.0 - (many ? smoothstep(3600.0, 4400.0, dist) : smoothstep(1400.0, 1900.0, dist));
           vUv = vec2((iIcon + uv.x) / ${COLS.toFixed(1)}, uv.y);
+          vQ = uv;
+          vCount = iCount;
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: /* glsl */ `
         uniform sampler2D tIcons;
+        uniform sampler2D tDigits;
         varying vec2 vUv;
+        varying vec2 vQ;
         varying float vFade;
+        varying float vCount;
         void main() {
           vec4 c = texture2D(tIcons, vUv);
+          if (vCount > 1.5) {
+            // the count: a dark disc with a white ring at the top right, "99+" past 99
+            vec2 q = (vQ - vec2(0.79, 0.79)) / 0.21;
+            float d = length(q);
+            if (d < 1.0) {
+              vec3 col = d > 0.84 ? vec3(1.0) : vec3(0.012, 0.01, 0.02);
+              float n = min(floor(vCount + 0.5), 100.0);
+              float digits = n > 99.5 ? 3.0 : n > 9.5 ? 2.0 : 1.0;
+              float w = 1.3 / digits;
+              float gx = (q.x + 0.65) / w;
+              if (abs(q.y) < 0.62 && gx >= 0.0 && gx < digits) {
+                float k = floor(gx);
+                float glyph = digits > 2.5 ? (k > 1.5 ? 10.0 : 9.0) : digits > 1.5 ? (k < 0.5 ? floor(n / 10.0) : mod(n, 10.0)) : n;
+                col = mix(col, vec3(1.0), texture2D(tDigits, vec2((glyph + fract(gx)) / 11.0, q.y / 1.24 + 0.5)).a);
+              }
+              c = vec4(col, 1.0);
+            }
+          }
           if (c.a < 0.08) discard;
           gl_FragColor = vec4(c.rgb, c.a * vFade);
           #include <colorspace_fragment>
@@ -129,47 +187,58 @@ export class ProblemIcons {
     this.cap = n;
     this.pos = new THREE.InstancedBufferAttribute(new Float32Array(n * 4), 4);
     this.icon = new THREE.InstancedBufferAttribute(new Float32Array(n), 1);
+    this.count = new THREE.InstancedBufferAttribute(new Float32Array(n), 1);
     this.pos.setUsage(THREE.DynamicDrawUsage);
     this.icon.setUsage(THREE.DynamicDrawUsage);
+    this.count.setUsage(THREE.DynamicDrawUsage);
     this.geo.setAttribute('iPos', this.pos);
     this.geo.setAttribute('iIcon', this.icon);
+    this.geo.setAttribute('iCount', this.count);
   }
 
-  private items: { x: number; y: number; z: number; p: Problem; id: number }[] = [];
+  private items: ProblemItem[] = [];
   private v = new THREE.Vector3();
+
+  /** the bubbles shown right now (tests, the hover tip) */
+  get shown(): readonly ProblemItem[] {
+    return this.items;
+  }
 
   /**
    * The icon under a screen point (client px), nearest the camera first. The
    * shader sizes icons by distance; the same rule is used here.
    */
-  pick(camera: THREE.PerspectiveCamera, rect: DOMRect, cx: number, cy: number): { p: Problem; id: number } | null {
+  pick(camera: THREE.PerspectiveCamera, rect: DOMRect, cx: number, cy: number): ProblemItem | null {
     if (!this.mesh.visible) return null;
-    let best: { p: Problem; id: number } | null = null, bd = Infinity;
+    let best: ProblemItem | null = null, bd = Infinity;
     const k = rect.height / (2 * Math.tan((camera.fov * Math.PI) / 360));
     for (const it of this.items) {
+      const n = it.n ?? 1;
       this.v.set(it.x, it.y, it.z);
       const dist = this.v.distanceTo(camera.position);
-      if (dist > 1900) continue;
+      if (dist > (n > 1 ? 4400 : 1900)) continue;
       this.v.project(camera);
       if (this.v.z > 1) continue;
       const sx = rect.left + ((this.v.x + 1) / 2) * rect.width, sy = rect.top + ((1 - this.v.y) / 2) * rect.height;
-      const half = (Math.min(26, Math.max(3.2, dist * 0.035)) * k) / dist / 2 + 3;
+      const half = (bubbleSize(dist, n) * k) / dist / 2 + 3;
       if (Math.abs(cx - sx) <= half && Math.abs(cy - sy) <= half * 1.4 && dist < bd) { bd = dist; best = it; }
     }
     return best;
   }
 
-  /** Replace all icons. items: x,y,z,problem */
-  set(items: { x: number; y: number; z: number; p: Problem; id: number }[]) {
+  /** Replace all icons. */
+  set(items: ProblemItem[]) {
     this.items = items.slice();
     if (items.length > this.cap) this.grow(Math.ceil(items.length * 1.5));
-    const P = this.pos.array as Float32Array, I = this.icon.array as Float32Array;
+    const P = this.pos.array as Float32Array, I = this.icon.array as Float32Array, N = this.count.array as Float32Array;
     items.forEach((it, i) => {
-      P[i * 4] = it.x; P[i * 4 + 1] = it.y; P[i * 4 + 2] = it.z; P[i * 4 + 3] = (it.id * 1.7) % 6.28;
+      P[i * 4] = it.x; P[i * 4 + 1] = it.y; P[i * 4 + 2] = it.z; P[i * 4 + 3] = (Math.abs(it.id) * 1.7) % 6.28;
       I[i] = PROBLEMS.indexOf(it.p);
+      N[i] = it.n ?? 1;
     });
     this.pos.needsUpdate = true;
     this.icon.needsUpdate = true;
+    this.count.needsUpdate = true;
     this.geo.instanceCount = items.length;
   }
 

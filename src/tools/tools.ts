@@ -19,6 +19,8 @@ export type RoadMode = 'straight' | 'curve' | 'freeform';
 export interface ToolTip {
   text: string;
   bad?: boolean;
+  /** a success to confirm (drawn green) */
+  good?: boolean;
 }
 
 const BRUSH_SEGS = 72;
@@ -171,6 +173,24 @@ export class Tools implements PointerHandlers {
       joins,
     };
     return this.impact;
+  }
+
+  /**
+   * The Growth Ponzi at the moment of choosing: the weekly balance before and
+   * after this road, and where it lands once today's roads (this one too)
+   * have aged four years at today's taxes. Null in sandbox.
+   */
+  private budgetAfter(upkeep: number, upkeepLater: number): { text: string; flips: boolean; now: number; after: number } | null {
+    const s = this.game.sim;
+    if (s.money === Infinity) return null;
+    const rate = (v: number) => `${v < 0 ? '−' : '+'}$${Math.abs(Math.round(v)).toLocaleString()}`;
+    const now = s.forecastWeek().net, after = now - upkeep;
+    const aged = after - (this.game.net.upkeep(365 * 4) - this.game.net.upkeep()) - (upkeepLater - upkeep);
+    const flips = now >= 0 && after < 0;
+    return {
+      now, after, flips,
+      text: `${flips ? '⚠️ ' : ''}budget ${rate(now)} → ${rate(after)}/wk${aged < after - 1 ? ` (${rate(aged)}/wk once roads age)` : ''}`,
+    };
   }
 
   brushRadius() {
@@ -418,16 +438,24 @@ export class Tools implements PointerHandlers {
       if (c) this.game.select({ kind: 'commune', c });
       return;
     }
+    const sim = this.game.sim;
+    const weekBefore = sim.money === Infinity ? null : sim.forecastWeek().net;
     this.game.trees.recordCuts();
     const segs = net.build(this.start, end, curve, this.roadType);
     const trees = this.game.trees.takeCuts();
     if (segs.length) {
-      this.game.sim.spend(plan.cost, 'Road construction');
-      if (plan.grant > 0) this.game.sim.earn(plan.grant, 'grants');
+      sim.spend(plan.cost, 'Road construction');
+      if (plan.grant > 0) sim.earn(plan.grant, 'grants');
       if (plan.grant > 0) this.game.floatText(`+$${plan.grant.toLocaleString()} Federal Slop Grant`, p, '#9dff3c');
       this.game.onRoadBuilt(segs, plan);
       this.game.pushUndo({ kind: 'build', segIds: segs.map((x) => x.id), refund: plan.cost - plan.grant, label: ROAD_TYPES[this.roadType].name, trees });
       crumb(`built ${ROAD_TYPES[this.roadType].name} ${Math.round(plan.length)} m ($${plan.cost - plan.grant})`);
+      // the Ponzi's turn: this road tipped the weekly balance into the red
+      const weekAfter = weekBefore === null ? null : sim.forecastWeek().net;
+      if (weekBefore !== null && weekAfter !== null && weekBefore >= 0 && weekAfter < 0) {
+        sim.alert('warn', `🛣️ A new road put the weekly budget in the red (${Math.round(weekAfter)}/wk)`);
+        this.game.toast(`That road put the weekly budget in the red: +$${Math.round(weekBefore).toLocaleString()} → −$${Math.abs(Math.round(weekAfter)).toLocaleString()}/wk. New buildings' fees cover it while the town grows; they stop when growth stops, and the upkeep doesn't.`, true);
+      }
       // continue drawing from the end like Skylines
       const last = segs[segs.length - 1];
       const endNode = net.nodes.get(last.b)!;
@@ -545,15 +573,17 @@ export class Tools implements PointerHandlers {
             // what the road commits you to, before you click: the forever cost, the
             // trees, the homes, and whether anything can drive to it
             const im = this.roadImpact(curve, end);
+            const budget = this.budgetAfter(im.upkeep, im.upkeepLater);
             const bits = [
               `${Math.round(plan.length)} m · $${net$.toLocaleString()}${plan.grant ? ` (feds pay $${plan.grant.toLocaleString()})` : ''}`,
               `+$${im.upkeep}/wk upkeep (→ $${im.upkeepLater}/wk as it ages)`,
+              budget?.text ?? '',
               plan.bridgeLen > 5 ? 'bridge' : '',
               plan.demolish ? `bulldozes ${plan.demolish} building${plan.demolish === 1 ? '' : 's'}` : '',
               im.trees ? `clears ~${im.trees} tree${im.trees === 1 ? '' : 's'}` : '',
               im.joins ? `joins ${im.joins}` : '⚠️ not connected to any road',
             ].filter(Boolean);
-            this.tip = { text: bits.join(' · ') + (this.pendingEnd && !this.touchDown ? ' · tap Build, or drag to re-aim' : ''), bad: !!plan.demolish || !im.joins };
+            this.tip = { text: bits.join(' · ') + (this.pendingEnd && !this.touchDown ? ' · tap Build, or drag to re-aim' : ''), bad: !!plan.demolish || !im.joins || !!budget?.flips };
           } else this.tip = { text: plan.reason ?? 'Nope', bad: true };
         }
       } else {
@@ -581,6 +611,7 @@ export class Tools implements PointerHandlers {
       const y = this.game.buildings.padHeight(spot.x, spot.z, hw, hd, spot.yaw);
       const id = this.landmark;
       this.ghost.show(`lm|${id}`, () => generateLandmark(id, 1).geometry, spot.x, y, spot.z, spot.yaw, hw, hd, spot.ok, spot.front?.door ?? null);
+      this.ghost.showBlocker(!spot.ok && spot.blocker ? spot.blocker : null);
       const cost = LANDMARK_COST[this.landmark];
       this.pendingCost = this.landmarkAt && spot.ok && cost <= this.game.sim.spendable() ? cost : null;
       const where = spot.front ? `fronts ${spot.front.seg.name}` : 'no road here yet: it faces the one you build';

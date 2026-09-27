@@ -16,7 +16,8 @@ import { MERCH_URL, brandById } from '../art/brands';
 import { BUILD, crumb, onCapturedError, openBugReport } from './bugreport';
 import { IS_TOUCH } from '../config';
 import { QUALITY, type Quality } from '../config';
-import { BANKRUPT_AT, BANKRUPT_WEEKS, CREDIT_LINE, LEDGER_LABEL, ONE_TIME, RECURRING, SPEEDS, Sim, UNLOCKS, usd, type DemandKey } from '../sim/sim';
+import { BANKRUPT_AT, BANKRUPT_WEEKS, CREDIT_LINE, LEDGER_LABEL, LOSS_LABEL, ONE_TIME, RECURRING, SPEEDS, Sim, UNLOCKS, usd, type DemandKey } from '../sim/sim';
+import type { EmergencyView } from '../sim/services';
 import { isZoned } from '../sim/buildings';
 import type { ViewMode } from '../render/overlays';
 import { ARCHETYPES } from '../agents/people';
@@ -44,6 +45,18 @@ type PanelId = 'roads' | 'zones' | 'landmarks' | 'views' | 'budget' | 'communes'
 const PHONE_PRIMARY = ['inspect', 'roads', 'zones', 'ext:services', 'views', 'bulldoze'];
 const COMPACT = IS_TOUCH || (typeof window !== 'undefined' && window.innerWidth < 700);
 
+/**
+ * What the clock does when a city-wide emergency begins (Settings →
+ * Emergencies): drop to normal speed (the default), pause, or keep going.
+ */
+type EmergencySpeed = 'slow' | 'pause' | 'off';
+const EMERGENCY_SPEED_LABEL: Record<EmergencySpeed, string> = { slow: 'slow to ▶', pause: 'pause', off: 'keep speed' };
+function emergencySpeed(): EmergencySpeed {
+  try { const v = localStorage.getItem('slopmerica.emergencySpeed'); return v === 'pause' || v === 'off' ? v : 'slow'; } catch { return 'slow'; }
+}
+/** "~6 days", "6–20 days", "any day now" */
+const etaText = ([lo, hi]: [number, number]) => (hi <= 1 ? 'any day now' : lo === hi ? `~${lo} days` : `${Math.max(1, lo)}–${hi} days`);
+
 export class Hud implements UiSink {
   root: HTMLElement;
   feed: FeedPanel;
@@ -67,6 +80,19 @@ export class Hud implements UiSink {
   private crisis: HTMLElement | null = null;
   private crisisHtml = '';
   private crisisDismissed = false;
+  /** the right-hand column the in-the-red and emergency cards stack in */
+  private sideCards!: HTMLElement;
+  private emergencyEl: HTMLElement | null = null;
+  private emergencyHtml = '';
+  /** the warning the player closed (it comes back when the situation changes), and the one showing */
+  private emergencyDismissed = '';
+  private emergencyKey = '';
+  private emergencyMin = false;
+  /** what the clock did when this emergency began */
+  private emergencyNote = '';
+  /** the neighbourhood "Worst area" goes to next */
+  private hotIdx = 0;
+  private popPop: HTMLElement | null = null;
   private demandKey: DemandKey | null = null;
   private demandHtml = '';
   private demandCells: ZCell[] = [];
@@ -88,6 +114,7 @@ export class Hud implements UiSink {
     this.wirePanelMinimize();
     this.inspector = this.mk('aside', 'inspector');
     this.inspector.hidden = true;
+    this.sideCards = this.mk('div', 'side-cards');
     this.toasts = this.mk('div', 'toasts');
     this.tip = this.mk('div', 'cursor-tip');
     this.tip.hidden = true;
@@ -109,6 +136,7 @@ export class Hud implements UiSink {
     document.addEventListener('pointerdown', (e) => {
       const t = e.target as HTMLElement;
       if (this.meterPop && !this.meterPop.hidden && !this.meterPop.contains(t) && !t.closest?.('#tb-meters')) this.closeMeters();
+      if (this.popPop && !this.popPop.hidden && !this.popPop.contains(t) && !t.closest?.('#tb-popstat')) this.closePop();
       if (!this.demandKey) return;
       if (this.demandPop.contains(t) || t.closest?.('[data-dem]')) return;
       this.closeDemand();
@@ -226,7 +254,7 @@ export class Hud implements UiSink {
         <button data-speed="2" title="Speed 2 (2)">▶▶</button>
         <button data-speed="3" title="Speed 3 (3)">▶▶▶</button>
       </div>
-      <div class="tb-stat"><span class="tb-lbl">Pop</span><b id="tb-pop">0</b></div>
+      <div class="tb-stat tb-popstat" role="button" tabindex="0" id="tb-popstat" aria-haspopup="dialog"><span class="tb-lbl">Pop</span><b id="tb-pop">0</b></div>
       <div class="tb-stat tb-money" role="button" tabindex="0" id="tb-treasury"><span class="tb-lbl">Treasury</span><b id="tb-money">$0</b><i id="tb-net"></i></div>
       <div class="tb-demand" role="group" aria-label="Demand">
         ${DEMAND_KEYS.map((k) => `<button class="dbar" data-dem="${k}" aria-haspopup="dialog" aria-expanded="false"><span class="dtrack"><span class="dfill" id="d-${k}" style="--c:var(--${k})"></span><em>${DEM[k].letter}</em></span></button>`).join('')}
@@ -243,6 +271,11 @@ export class Hud implements UiSink {
     const toggleMeters = () => { this.game.audio.play('click', 0.4); if (this.meterPop && !this.meterPop.hidden) this.closeMeters(); else this.openMeters(); };
     meters.addEventListener('click', toggleMeters);
     meters.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleMeters(); } });
+    // who moved in, who left and why
+    const popStat = this.top.querySelector('#tb-popstat') as HTMLElement;
+    const togglePop = () => { this.game.audio.play('click', 0.4); if (this.popPop && !this.popPop.hidden) this.closePop(); else this.openPop(); };
+    popStat.addEventListener('click', togglePop);
+    popStat.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePop(); } });
     const treasury = this.top.querySelector('#tb-treasury') as HTMLElement;
     const openBudget = () => { if (this.panel !== 'budget') this.onTool('budget'); };
     treasury.addEventListener('click', openBudget);
@@ -359,7 +392,7 @@ export class Hud implements UiSink {
     if (!red) { this.crisisDismissed = false; if (this.crisis) this.crisis.hidden = true; return; }
     if (this.crisisDismissed) return;
     if (!this.crisis) {
-      this.crisis = this.mk('aside', 'crisis');
+      this.crisis = this.mk('aside', 'crisis', this.sideCards);
       this.crisis.setAttribute('role', 'status');
       this.crisis.addEventListener('click', (e) => {
         const a = (e.target as HTMLElement).closest<HTMLElement>('[data-crisis]')?.dataset.crisis;
@@ -382,6 +415,182 @@ export class Hud implements UiSink {
       <div class="crisis-acts"><button class="chip on" data-crisis="budget">💰 Budget</button>${s.speed ? '<button class="chip" data-crisis="pause">❚❚ Pause</button>' : ''}</div>`;
     if (html !== this.crisisHtml) { this.crisisHtml = html; this.crisis.innerHTML = html; }
     this.crisis.hidden = false;
+  }
+
+  // ------------------------------------------------------------------ service emergencies
+  /**
+   * A city-wide service failure just began (services' daily assessment).
+   * Playtest 4: at top speed a full landfill emptied a 5,141-person city in
+   * eleven game days (about seven real seconds) while the warnings were
+   * toasts among crash and Florida Man posts. So: slow the clock (or pause,
+   * per Settings) and keep a card up that says what, why, how long, and where.
+   */
+  emergency(e: EmergencyView) {
+    const s = this.game.sim, top = e.needs[0];
+    const mode = emergencySpeed(), was = s.speed;
+    if (mode === 'pause' && s.speed) s.speed = 0;
+    else if (mode === 'slow' && s.speed > 1) s.speed = 1;
+    this.emergencyNote = s.speed === was ? '' : `${s.speed ? 'Slowed to ▶ normal speed' : 'Paused'} for this emergency (Settings → Emergencies)`;
+    this.emergencyMin = false;
+    this.hotIdx = 0;
+    crumb(`emergency: ${top?.need ?? '?'} · ${e.atRisk} buildings, ${e.residents} residents · speed ${was}→${s.speed}`);
+    this.game.audio.play('siren', 0.5);
+    this.toast(`🚨 ${top?.label ?? 'Service'} emergency: ${e.atRisk} buildings ${top?.failing ?? 'failing'}.${s.speed === was ? '' : s.speed ? ' Slowed to normal speed.' : ' Paused.'}`, true);
+    this.refreshTop();
+  }
+
+  /** open Services on one category, with its info view on (the affected buildings show red) */
+  private openServices(cat: string) {
+    const ep = EXT.panels.find((p) => p.id === 'services');
+    if (!ep) return;
+    if (this.panel !== 'ext:services') this.openPanel('ext:services');
+    ep.focus?.(this.game, cat);
+    this.renderPanel();
+  }
+
+  /** fly to the next worst neighbourhood and select the building there that empties soonest */
+  private showWorst(e: EmergencyView) {
+    const h = e.hot[this.hotIdx % e.hot.length];
+    if (!h) return;
+    this.hotIdx++;
+    const g = this.game, top = e.needs[0];
+    if (top) EXT.panels.find((p) => p.id === 'services')?.focus?.(g, top.cat);
+    g.rts.setView(h.x, h.z, Math.min(g.rts.distance, 460));
+    const b = g.buildings.list.get(h.id);
+    if (b) g.select({ kind: 'building', b });
+    crumb(`emergency: show area ${this.hotIdx} (${h.n} buildings)`);
+  }
+
+  private syncEmergency() {
+    const e = this.game.emergency?.() ?? null;
+    const lvl = e?.level ?? 'none';
+    const key = e ? `${lvl}|${e.needs.map((n) => n.need).join(',')}|${e.crisis.since}|${e.forecast ? 'f' : ''}` : '';
+    if (!e || lvl === 'none' || (lvl !== 'crit' && this.emergencyDismissed === key)) {
+      if (this.emergencyEl) this.emergencyEl.hidden = true;
+      return;
+    }
+    if (!this.emergencyEl) {
+      // first in the column: an emergency outranks being in the red
+      this.emergencyEl = document.createElement('aside');
+      this.emergencyEl.setAttribute('role', 'alert');
+      this.sideCards.prepend(this.emergencyEl);
+      this.emergencyEl.addEventListener('click', (ev) => {
+        const a = (ev.target as HTMLElement).closest<HTMLElement>('[data-em]')?.dataset.em;
+        const now = this.game.emergency?.();
+        if (!a || !now) return;
+        this.game.audio.play('click', 0.4);
+        crumb(`emergency card: ${a}`);
+        if (a.startsWith('fix:')) this.openServices(a.slice(4));
+        else if (a === 'show') this.showWorst(now);
+        else if (a === 'pause') this.game.sim.speed = 0;
+        else if (a === 'play') this.game.sim.speed = 1;
+        else if (a === 'min') this.emergencyMin = !this.emergencyMin;
+        else if (a === 'close') this.emergencyDismissed = this.emergencyKey;
+        this.emergencyHtml = '';
+        this.refreshTop();
+      });
+    }
+    this.emergencyKey = key;
+    const html = this.emergencyCard(e);
+    this.emergencyEl.className = `emergency em-${lvl}${this.emergencyMin && lvl === 'crit' ? ' min' : ''}`;
+    if (html !== this.emergencyHtml) {
+      const open = this.emergencyEl.querySelector('details')?.open ?? false;
+      this.emergencyHtml = html;
+      this.emergencyEl.innerHTML = html;
+      const d = this.emergencyEl.querySelector('details');
+      if (d) d.open = open;
+    }
+    this.emergencyEl.hidden = false;
+  }
+
+  private emergencyCard(e: EmergencyView): string {
+    const g = this.game, s = g.sim, top = e.needs[0];
+    const n = (v: number) => Math.round(v).toLocaleString();
+    const plural = (v: number, one: string, many = `${one}s`) => `${n(v)} ${v === 1 ? one : many}`;
+    const fix = (x: EmergencyView['needs'][number]) => `<button class="chip on" data-em="fix:${x.cat}">${x.icon} Fix ${esc(x.label.toLowerCase())}</button>`;
+    const show = e.hot.length ? `<button class="chip" data-em="show">📍 Worst area${e.hot.length > 1 ? ` (${(this.hotIdx % e.hot.length) + 1}/${e.hot.length})` : ''}</button>` : '';
+    const clock = s.speed ? '<button class="chip" data-em="pause">❚❚ Pause</button>' : '<button class="chip" data-em="play">▶ Resume</button>';
+    if (e.level === 'crit' && top) {
+      const head = `<div class="em-head"><b>🚨 ${esc(top.label)} emergency</b><span class="em-since">since ${esc(s.dateOf(e.crisis.since, false))}</span><button data-em="min" aria-label="${this.emergencyMin ? 'Expand' : 'Minimize'}">${this.emergencyMin ? '+' : '–'}</button></div>`;
+      if (this.emergencyMin) return `${head}<p class="em-lead">${e.atRisk ? `${plural(e.atRisk, 'building')} ${esc(top.failing)} · first empty ${etaText(top.eta)}` : `${plural(e.abandoned, 'building')} abandoned`}</p>`;
+      const flow = s.popFlow(14);
+      const lost = flow.causes.slice(0, 4).map((c) => `${esc(LOSS_LABEL[c.cause])} ${n(c.n)}`).join(' · ');
+      const log = s.alerts.slice(-8).reverse();
+      const onClock = e.needs.filter((x) => x.buildings > 0);
+      // nothing left on the clock but still broken: the city emptied out
+      const lead = e.atRisk && onClock.length
+        ? `<b>${plural(e.atRisk, 'building')}</b> on the clock${e.residents ? `, <b>${plural(e.residents, 'resident')}</b>` : ''}: abandoned in ${etaText([Math.min(...onClock.map((x) => x.eta[0])), Math.max(...onClock.map((x) => x.eta[1]))])} unless it's fixed.`
+        : `The city has emptied out: <b>${plural(e.abandoned, 'building')}</b> stand abandoned. Nothing comes back until it's fixed.`;
+      return `${head}
+        <p class="em-lead">${lead}</p>
+        <ul class="em-needs">${e.needs.slice(0, 3).map((x) => `<li><div><span>${x.icon} ${x.buildings ? `${plural(x.buildings, 'building')} ${esc(x.failing)}${x.residents ? ` (${n(x.residents)} people)` : ''}` : `${esc(x.label)} still failing`}</span>${x.buildings ? `<b>${etaText(x.eta)}</b>` : ''}</div><small>Why: ${esc(x.why)}.</small></li>`).join('')}</ul>
+        ${lost ? `<p class="em-lost">Left in the last 14 days: ${lost}${flow.in ? ` · moved in ${n(flow.in)}` : ''}</p>` : ''}
+        <div class="em-acts">${fix(top)}${show}${clock}</div>
+        ${this.emergencyNote ? `<p class="em-note">${esc(this.emergencyNote)}</p>` : ''}
+        ${log.length ? `<details class="em-log"><summary>What happened</summary><ol>${log.map((a) => `<li class="em-${a.level}"><span>${esc(s.dateOf(a.day, false))}</span> ${esc(a.text)}</li>`).join('')}</ol></details>` : ''}`;
+    }
+    if (e.level === 'recovering') {
+      const c = e.crisis;
+      const still = e.needs.filter((x) => x.buildings >= 3);
+      return `<div class="em-head"><b>✅ Recovering${c.cause ? ` from the ${esc(c.cause)} emergency` : ''}</b><button data-em="close" aria-label="Dismiss">✕</button></div>
+        <p class="em-lead">Buildings at risk <b>${n(c.peakAtRisk)} → ${n(e.atRisk)}</b>${c.peakTrash ? ` · trash piling up ${n(c.peakTrash)} → ${n(e.trash)}` : ''} · population ${n(c.lowPop)} at the low → <b>${n(s.population)}</b></p>
+        ${still.length ? `<p>Still failing: ${still.map((x) => `${x.icon} ${plural(x.buildings, 'building')} ${esc(x.failing)}`).join(' · ')}.</p>` : ''}
+        ${e.forecast ? `<p>${esc(e.forecast)}</p>` : ''}
+        <div class="em-acts">${still[0] ? fix(still[0]) : ''}${still.length ? show : ''}</div>`;
+    }
+    // a warning: something to fix before it becomes an emergency
+    return `<div class="em-head"><b>⚠️ ${top ? `${plural(top.buildings, 'building')} ${esc(top.failing)}` : 'Coming up'}</b><button data-em="close" aria-label="Dismiss">✕</button></div>
+      ${top ? `<p class="em-lead">Abandoned in ${etaText(top.eta)} unless fixed. Why: ${esc(top.why)}.</p>` : ''}
+      ${e.forecast ? `<p>${esc(e.forecast)}</p>` : ''}
+      <div class="em-acts">${top ? fix(top) : e.forecast ? '<button class="chip on" data-em="fix:garbage">🗑️ Garbage</button>' : ''}${top ? show : ''}</div>`;
+  }
+
+  // ------------------------------------------------------------------ population explainer
+  private openPop() {
+    this.closeDemand();
+    this.closeMeters();
+    if (!this.popPop) {
+      this.popPop = this.mk('div', 'demand-pop pop-pop');
+      this.popPop.setAttribute('role', 'dialog');
+      this.popPop.setAttribute('aria-label', 'Population: who moved in, who left and why');
+      this.popPop.addEventListener('click', (ev) => {
+        const a = (ev.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+        if (a === 'close') this.closePop();
+        else if (a === 'show') { const e = this.game.emergency?.(); if (e?.hot.length) { this.closePop(); this.showWorst(e); } }
+      });
+    }
+    crumb('opened population');
+    this.popPop.hidden = false;
+    this.renderPop();
+    const r = this.top.querySelector('#tb-popstat')!.getBoundingClientRect();
+    const W = window.innerWidth, w = Math.min(320, W - 32);
+    const left = Math.max(16, Math.min(W - 16 - w, r.left + r.width / 2 - w / 2));
+    Object.assign(this.popPop.style, { width: `${w}px`, left: `${left}px`, top: `${r.bottom + 10}px` });
+    this.popPop.style.setProperty('--caret', `${Math.max(14, Math.min(w - 14, r.left + r.width / 2 - left))}px`);
+  }
+
+  private closePop() {
+    if (this.popPop) this.popPop.hidden = true;
+  }
+
+  /** How many people, the most ever, and who moved in and out (and why) lately. */
+  private renderPop() {
+    if (!this.popPop || this.popPop.hidden) return;
+    const g = this.game, s = g.sim, n = (v: number) => Math.round(v).toLocaleString();
+    const flow = s.popFlow(30);
+    const back = s.history.find((h) => h.day >= Math.floor(s.day) - 14);
+    const trend = back ? s.population - back.pop : 0;
+    const e = g.emergency?.();
+    const risk = e && e.atRisk && e.needs[0] ? `<p class="dp-next">⚠️ <b>${n(e.atRisk)} building${e.atRisk === 1 ? '' : 's'}</b>${e.residents ? ` (${n(e.residents)} people)` : ''} on the clock: ${esc(e.needs[0].failing)}, abandoned in ${etaText(e.needs[0].eta)}.</p><div class="dp-acts">${e.hot.length ? '<button class="dp-go" data-act="show">📍 Show me</button>' : ''}</div>` : '';
+    const html = `
+      <div class="dp-head"><b>Population</b><button class="dp-x" data-act="close" aria-label="Close">✕</button></div>
+      <div class="dp-title" style="--c:var(--res)"><span class="dp-name">👥 Residents</span><span class="dp-val">${n(s.population)}</span><span class="dp-trend ${trend > 3 ? 'up' : trend < -3 ? 'down' : ''}">${back ? `${trend > 0 ? '▲' : trend < 0 ? '▼' : ''} ${signed(Math.round(trend))} in 14d` : 'new'}</span></div>
+      <p class="dp-status">Most ever: <b>${n(Math.max(s.peakPop, s.population))}</b>. Tools unlocked by population stay unlocked if the city shrinks.</p>
+      <div class="dp-h">Last 30 days</div>
+      <ul><li class="dp-up"><span>Moved in</span><b>+${n(flow.in)}</b></li>${flow.causes.slice(0, 6).map((c) => `<li class="dp-down"><span>${esc(LOSS_LABEL[c.cause])}</span><b>−${n(c.n)}</b></li>`).join('')}${flow.causes.length ? '' : '<li class="dp-na"><span>Nobody left</span></li>'}</ul>
+      ${risk}
+      <div class="dp-base">People who left are booked to the root cause: trash that made them sick counts as garbage.</div>`;
+    if (this.popPop.innerHTML !== html) this.popPop.innerHTML = html;
   }
 
   // ------------------------------------------------------------------ nature & sprawl explainer
@@ -607,6 +816,7 @@ export class Hud implements UiSink {
       if (tr.title !== tip) { tr.title = tip; tr.setAttribute('aria-label', `Treasury ${usd(s.money)}, ${usd(net)} per week. ${tip}`); }
     }
     this.syncCrisis();
+    this.syncEmergency();
     for (const k of DEMAND_KEYS) {
       const v = s.demand[k], el = $('d-' + k);
       el.style.height = `${Math.max(2, Math.min(100, Math.abs(v)))}%`;
@@ -620,9 +830,14 @@ export class Hud implements UiSink {
       this.nextStepT = this.game.time;
       const t = `Next: ${this.nextStep()} Click a bar for why.`;
       for (const b of this.top.querySelectorAll<HTMLElement>('.dbar')) if (b.title !== t) b.title = t;
+      // hovering the population says who left lately and why
+      const f = s.popFlow(14), pe = $('tb-popstat');
+      const pt = `Population ${s.population.toLocaleString()} (most ever ${Math.max(s.peakPop, s.population).toLocaleString()}). Last 14 days: +${f.in.toLocaleString()} moved in, −${Math.round(f.out).toLocaleString()} left${f.causes.length ? ` (${f.causes.slice(0, 3).map((c) => `${LOSS_LABEL[c.cause]} ${Math.round(c.n).toLocaleString()}`).join(', ')})` : ''}. Click for the breakdown.`;
+      if (pe.title !== pt) { pe.title = pt; pe.setAttribute('aria-label', pt); }
     }
     if (this.demandKey) this.renderDemand();
     this.renderMeters();
+    this.renderPop();
     $('m-nature').style.width = `${Math.round(s.naturePct * 100)}%`;
     $('m-nature-t').textContent = `${Math.round(s.naturePct * 100)}%`;
     $('m-sprawl').style.width = `${Math.round(s.sprawlPct * 100)}%`;
@@ -794,7 +1009,7 @@ export class Hud implements UiSink {
             <span class="ci">${r.icon}</span><b>${esc(r.name)}</b><small>${locked ? `🔒 Pop ${r.unlockPop.toLocaleString()}` : `$${r.costPerM}/m · ${r.lanesPerDir * 2} lanes${r.centerTurn ? ' + turn' : ''}`}</small></button>`;
         }).join('')}<span class="sp-sep" aria-hidden="true"></span>${LAYOUT_ORDER.map((id) => {
           const l = LAYOUTS[id];
-          const locked = g.sim.mode !== 'sandbox' && g.sim.population < l.unlockPop;
+          const locked = g.sim.mode !== 'sandbox' && g.sim.peakPop < l.unlockPop;
           return `<button class="card layout ${currentLayout(g) === id ? 'on' : ''}" data-layout="${id}" ${locked ? 'disabled' : ''} title="${esc(l.blurb)}"><span class="ci">${l.icon}</span><b>${esc(l.name)}</b><small>${locked ? `🔒 Pop ${l.unlockPop.toLocaleString()}` : id === 'diamond' ? 'Interchange · overpass' : 'Roundabout'}</small></button>`;
         }).join('')}${currentLayout(g) ? `<button class="chip" id="layout-rotate" title="Rotate (, and .)">↻ Rotate</button>` : ''}</div>`;
       this.sub.querySelectorAll<HTMLButtonElement>('[data-layout]').forEach((b) => b.addEventListener('click', () => { selectLayout(g, b.dataset.layout as LayoutId); this.renderPanel(); }));
@@ -883,6 +1098,7 @@ export class Hud implements UiSink {
           ${IS_TOUCH ? '' : `<button class="chip ${g.rts.edgeScroll ? 'on' : ''}" id="edge-toggle" aria-pressed="${g.rts.edgeScroll}">Edge scrolling: ${g.rts.edgeScroll ? 'on' : 'off'}</button>`}
           ${g.pendingQuality ? '<button class="chip on" id="quality-reload">Reload to finish applying</button>' : ''}
           ${IS_TOUCH ? '' : `<button class="chip ${g.resolutionMode === 'full' ? 'on' : ''}" id="res-toggle" title="Auto lowers the resolution when frames are slow; Always full keeps it sharp">Resolution: ${g.resolutionMode === 'full' ? 'always full' : 'auto'}</button>`}
+          <button class="chip ${emergencySpeed() !== 'off' ? 'on' : ''}" id="emergency-toggle" title="When a city-wide service emergency begins: slow the clock to normal speed, pause it, or keep going">🚨 Emergencies: ${EMERGENCY_SPEED_LABEL[emergencySpeed()]}</button>
           <button class="chip ${g.audio.musicOn ? 'on' : ''}" id="music-toggle" aria-pressed="${g.audio.musicOn}">🎹 Music: ${g.audio.musicOn ? 'on' : 'off'}</button>
           <label class="fov-ctl" for="music-range">Music volume <input type="range" id="music-range" min="5" max="100" step="5" value="${Math.round(g.audio.musicVolume * 100)}"></label>
           <label class="fov-ctl" for="fov-range">Field of view <input type="range" id="fov-range" min="35" max="75" step="1" value="${Math.round(g.camera.fov)}"><b id="fov-v">${Math.round(g.camera.fov)}°</b></label>
@@ -921,6 +1137,12 @@ export class Hud implements UiSink {
       }));
       this.sub.querySelector('#quality-reload')?.addEventListener('click', () => location.reload());
       this.sub.querySelector('#perf-toggle')?.addEventListener('click', () => { this.togglePerf(); this.renderPanel(); });
+      this.sub.querySelector('#emergency-toggle')?.addEventListener('click', () => {
+        const next: EmergencySpeed = ({ slow: 'pause', pause: 'off', off: 'slow' } as const)[emergencySpeed()];
+        try { localStorage.setItem('slopmerica.emergencySpeed', next); } catch { /* not remembered */ }
+        crumb(`emergencies: ${next}`);
+        this.renderPanel();
+      });
       this.sub.querySelector('#music-toggle')?.addEventListener('click', () => {
         g.audio.unlock();
         g.audio.musicOn = !g.audio.musicOn;
@@ -987,6 +1209,9 @@ export class Hud implements UiSink {
     } else if (e.key === 'Escape' && this.meterPop && !this.meterPop.hidden) {
       this.closeMeters();
       (this.top.querySelector('#tb-meters') as HTMLElement | null)?.focus();
+    } else if (e.key === 'Escape' && this.popPop && !this.popPop.hidden) {
+      this.closePop();
+      (this.top.querySelector('#tb-popstat') as HTMLElement | null)?.focus();
     } else if (e.key === 'Escape') { this.openPanel(null); this.game.tools.set('inspect'); this.select(null); }
     this.refreshTop();
   }
@@ -1258,6 +1483,7 @@ export class Hud implements UiSink {
       const badge = !IS_TOUCH && placingLabel ? `Placing ${placingLabel} · Esc or right-click to cancel` : '';
       tipEl.textContent = IS_TOUCH ? tip?.text ?? '' : badge;
       tipEl.classList.toggle('bad', IS_TOUCH && !!tip?.bad);
+      tipEl.classList.toggle('good', IS_TOUCH && !tip?.bad && !!tip?.good);
       tipEl.hidden = IS_TOUCH ? !tip : !badge;
       const done = this.actions.querySelector('#ta-done') as HTMLElement;
       done.hidden = IS_TOUCH ? false : !t.drawing && !placingLabel;
@@ -1287,6 +1513,7 @@ export class Hud implements UiSink {
       this.tip.hidden = false;
       if (text !== tip.text) this.tip.textContent = tip.text;
       this.tip.classList.toggle('bad', !!tip.bad);
+      this.tip.classList.toggle('good', !tip.bad && 'good' in tip && !!tip.good);
       if (was || text !== tip.text) this.placeTip();
     } else this.tip.hidden = true;
     // floating texts

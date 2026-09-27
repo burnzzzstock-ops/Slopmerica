@@ -199,6 +199,61 @@ export function createFoliageAtlas(renderer: THREE.WebGLRenderer): THREE.DataTex
   return tex;
 }
 
+/**
+ * A full mip chain whose alpha keeps each tile's coverage: averaging blurs
+ * alpha, so a small tree picture's whole card crept over the alpha test and
+ * distant trees drew as opaque rectangles (playtest: "rectangular cards on
+ * thin dark stems"). Each level's alpha is rescaled per tile (a tree sprite,
+ * or a patch of the leaf atlas) so the share of texels that pass `thr` matches
+ * the full-size picture. Colour is averaged by alpha so edges don't darken.
+ */
+export function coverageMipmaps(base: Uint8Array, w: number, h: number, tileW: number, tileH: number, thr: number) {
+  const levels: { data: Uint8Array; width: number; height: number }[] = [{ data: base, width: w, height: h }];
+  const T = thr * 255;
+  const tilesX = Math.max(1, Math.round(w / tileW)), tilesY = Math.max(1, Math.round(h / tileH));
+  const coverOf = (d: Uint8Array, W: number, x0: number, y0: number, x1: number, y1: number, sc: number) => {
+    let n = 0, c = 0;
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { n++; if (d[(y * W + x) * 4 + 3] * sc >= T) c++; }
+    return n ? c / n : 0;
+  };
+  const want = new Float32Array(tilesX * tilesY);
+  for (let ty = 0; ty < tilesY; ty++) for (let tx = 0; tx < tilesX; tx++)
+    want[ty * tilesX + tx] = coverOf(base, w, Math.floor((tx * w) / tilesX), Math.floor((ty * h) / tilesY), Math.floor(((tx + 1) * w) / tilesX), Math.floor(((ty + 1) * h) / tilesY), 1);
+  let prev = base, pw = w, ph = h;
+  while (pw > 1 || ph > 1) {
+    const nw = Math.max(1, pw >> 1), nh = Math.max(1, ph >> 1);
+    const d = new Uint8Array(nw * nh * 4);
+    for (let y = 0; y < nh; y++)
+      for (let x = 0; x < nw; x++) {
+        let r = 0, g = 0, b = 0, a = 0, rr = 0, gg = 0, bb = 0, n = 0;
+        for (let oy = 0; oy < 2; oy++) for (let ox = 0; ox < 2; ox++) {
+          const sx = Math.min(pw - 1, x * 2 + ox), sy = Math.min(ph - 1, y * 2 + oy), i = (sy * pw + sx) * 4, al = prev[i + 3];
+          r += prev[i] * al; g += prev[i + 1] * al; b += prev[i + 2] * al; a += al;
+          rr += prev[i]; gg += prev[i + 1]; bb += prev[i + 2]; n++;
+        }
+        const o = (y * nw + x) * 4;
+        if (a > 0) { d[o] = r / a; d[o + 1] = g / a; d[o + 2] = b / a; } else { d[o] = rr / n; d[o + 1] = gg / n; d[o + 2] = bb / n; }
+        d[o + 3] = a / n;
+      }
+    // keep each tile's coverage down to a texel a tile (a tree a pixel or two
+    // on screen still shows); past that, tiles merge and just average
+    if (nw / tilesX >= 1 && nh / tilesY >= 1)
+      for (let ty = 0; ty < tilesY; ty++)
+        for (let tx = 0; tx < tilesX; tx++) {
+          const goal = want[ty * tilesX + tx];
+          if (goal <= 0) continue;
+          const x0 = Math.floor((tx * nw) / tilesX), y0 = Math.floor((ty * nh) / tilesY), x1 = Math.floor(((tx + 1) * nw) / tilesX), y1 = Math.floor(((ty + 1) * nh) / tilesY);
+          let lo = 0.05, hi = 8;
+          for (let it = 0; it < 14; it++) { const mid = (lo + hi) / 2; if (coverOf(d, nw, x0, y0, x1, y1, mid) < goal) lo = mid; else hi = mid; }
+          const sc = (lo + hi) / 2;
+          for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const i = (y * nw + x) * 4 + 3; d[i] = Math.min(255, Math.round(d[i] * sc)); }
+        }
+    levels.push({ data: d, width: nw, height: nh });
+    prev = d; pw = nw; ph = nh;
+  }
+  return levels;
+}
+
 /** Fill the RGB of (nearly) transparent texels with the average color of nearby
  *  opaque ones, so filtering and mipmaps don't pull edges toward black. */
 export function padTransparent(d: Uint8Array, w: number, h: number, block = 16) {

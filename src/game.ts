@@ -273,7 +273,7 @@ export class Game {
       const under = this.buildings.underPavement(pts, hw);
       const keep = under.find((b) => !isZoned(b));
       if (keep) return { reason: `${keep.label} is in the way: bulldoze it first, or go around.`, demolish: 0 };
-      return { demolish: under.length };
+      return { demolish: under.length, ids: under.map((b) => b.id) };
     };
     // zoned lots are dimmed while their zone is waiting for demand (overlay only)
     this.zones.growable = (z) => this.tools.zoneDemand(z).ok;

@@ -62,8 +62,9 @@ export interface Plan {
   reason?: string;
   /** the commune whose land the road would cross (the tool offers its buy-out / lawsuit) */
   blocker?: number;
-  /** homes and shops this road would bulldoze */
+  /** homes and shops this road would bulldoze (and which: the preview outlines them) */
   demolish?: number;
+  demolishIds?: number[];
   length: number;
   cost: number;
   grant: number;
@@ -100,8 +101,8 @@ export class RoadNetwork {
   /** the rule and the way out when a road would cross a commune (set by the game, which knows the prices) */
   blockerReason?: (id: number) => string;
   /** buildings under a planned road's pavement: a reason it can't go (a service
-   * or landmark in the way), and how many zoned buildings it would bulldoze */
-  buildingsUnder?: (pts: V2[], halfWidth: number) => { reason?: string; demolish: number };
+   * or landmark in the way), and which zoned buildings it would bulldoze */
+  buildingsUnder?: (pts: V2[], halfWidth: number) => { reason?: string; demolish: number; ids?: number[] };
   /** land the player may build on (null = everywhere); see sim/land.ts */
   allowed: ((x: number, z: number) => boolean) | null = null;
 
@@ -264,6 +265,7 @@ export class RoadNetwork {
       const u = this.buildingsUnder(samp.pts, t.width / 2);
       if (u.reason) return { ...res, ok: false, reason: u.reason };
       res.demolish = u.demolish;
+      res.demolishIds = u.ids;
     }
     res.bridgeLen = water;
     // an overpass is mostly bridge and embankment

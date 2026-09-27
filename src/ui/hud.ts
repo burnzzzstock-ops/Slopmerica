@@ -18,7 +18,7 @@ import { BUILD, crumb, onCapturedError, openBugReport } from './bugreport';
 import { IS_TOUCH } from '../config';
 import { QUALITY, type Quality } from '../config';
 import { BANKRUPT_AT, BANKRUPT_WEEKS, CREDIT_LINE, LEDGER_LABEL, LOSS_LABEL, ONE_TIME, RECURRING, SPEEDS, Sim, UNLOCKS, usd, type DemandKey } from '../sim/sim';
-import { SERVICE_DEFS, type EmergencyView } from '../sim/services';
+import { SERVICE_DEFS, overloadedServices, type EmergencyView } from '../sim/services';
 import { MILESTONES, lockText, milestoneAt, nameUnlock, unlockNames, unlockPop } from '../sim/milestones';
 import { isZoned } from '../sim/buildings';
 import type { ViewMode } from '../render/overlays';
@@ -83,6 +83,8 @@ export class Hud implements UiSink {
   private meterPop: HTMLElement | null = null;
   /** tools unlocked this session and not used yet (their cards say NEW) */
   private fresh = new Set<string>();
+  /** zoned empty street-front lots and the day each was first seen waiting (Next hint) */
+  private lotSeen = new Map<number, number>();
   private budgetHtml = '';
   private crisis: HTMLElement | null = null;
   private crisisHtml = '';
@@ -716,6 +718,13 @@ export class Hud implements UiSink {
    */
   nextAction(): { text: string; act?: string; label?: string } {
     const g = this.game, s = g.sim, cells: ZCell[] = [];
+    // what's failing comes before what to zone next (playtest: an overloaded
+    // fire station with five fires while the hint still said to grow)
+    const em = g.emergency?.();
+    const top = em && em.level !== 'none' && em.level !== 'recovering' ? em.needs.find((x) => x.buildings > 0) : undefined;
+    if (top) return { text: `${top.icon} ${top.buildings} building${top.buildings === 1 ? '' : 's'} ${top.failing}: ${top.why}.`, act: `fix:${top.cat}`, label: `${top.icon} Fix ${top.label.toLowerCase()}` };
+    const over = overloadedServices(g)[0];
+    if (over) return { text: `${over.icon} ${over.name} is overloaded (${over.load.toLocaleString()} of ${over.capacity.toLocaleString()}): everything it covers gets slower, worse service. Build another one nearby.`, act: `fix:${over.cat}`, label: `${over.icon} Services` };
     let free = 0;
     const zonedAny = new Map<string, number>();
     for (const c of g.zones.cells.values()) {
@@ -723,11 +732,25 @@ export class Hud implements UiSink {
       if (c.zone) zonedAny.set(c.zone, (zonedAny.get(c.zone) ?? 0) + 1);
       else if (c.row === 0 && !c.bld && (!g.net.allowed || g.net.allowed(c.x, c.z))) free++;
     }
+    // a lot that has sat zoned and empty for a month isn't one builders are about to use
+    // (the playtest's "wait for shops on one zoned lot" never went away)
+    const day = Math.floor(s.day), seen = this.lotSeen;
+    const waiting = (z: ZoneType) => {
+      let fresh = 0, stale = 0;
+      for (const c of g.zones.candidates(z, cells)) {
+        const since = seen.get(c.id) ?? (seen.set(c.id, day), day);
+        if (day - since > 30) stale++;
+        else fresh++;
+      }
+      return { fresh, stale };
+    };
+    if (seen.size > 20000) seen.clear();
     const ranked = DEMAND_KEYS.map((k) => {
       const zone = this.demandZone(k);
-      const open = zone ? DEM[k].zones.reduce((n, z) => n + (z && s.isUnlocked({ zone: z }) ? g.zones.candidates(z, cells).length : 0), 0) : 0;
+      let open = 0, stale = 0;
+      if (zone) for (const z of DEM[k].zones) if (z && s.isUnlocked({ zone: z })) { const w = waiting(z); open += w.fresh; stale += w.stale; }
       const zoned = DEM[k].zones.reduce((n, z) => n + (z ? zonedAny.get(z) ?? 0 : 0), 0);
-      return { k, v: Math.round(s.demand[k]), zone, open, zoned };
+      return { k, v: Math.round(s.demand[k]), zone, open, stale, zoned };
     }).sort((a, b) => b.v - a.v);
     for (const r of ranked) {
       if (r.v < 5) break;
@@ -736,7 +759,7 @@ export class Hud implements UiSink {
       const why = `${D.letter} ${signed(r.v)}`;
       if (r.open > 0) return { text: `Wait: builders are putting up ${D.noun} on ${r.open} zoned lot${r.open === 1 ? '' : 's'} (${why}). Speed up to watch it happen.`, act: 'speed', label: '▶▶▶ Speed up' };
       if (free > 0) {
-        const state = r.zoned ? `every lot zoned for ${D.noun} has a building` : `no lots are zoned for ${D.noun} yet`;
+        const state = r.stale ? `the ${r.stale} lot${r.stale === 1 ? '' : 's'} zoned for ${D.noun} ${r.stale === 1 ? 'has' : 'have'} sat empty for a month (too cramped or awkward for builders)` : r.zoned ? `every lot zoned for ${D.noun} has a building` : `no lots are zoned for ${D.noun} yet`;
         return { text: `Zone ${D.noun} beside a road: builders want them (${why}) and ${state}. ${free} unzoned lots line your roads.`, act: `zone:${r.zone}`, label: `${ZONE_ICON[r.zone]} Zone ${D.noun}` };
       }
       return { text: `Build a street: builders want ${D.noun} (${why}) but every lot along your roads is zoned. Short streets off existing ones are cheapest.`, act: 'road', label: '🛣️ Roads' };
@@ -785,6 +808,7 @@ export class Hud implements UiSink {
       this.renderPanel();
     } else if (act === 'road') { if (this.panel !== 'roads') this.onTool('roads'); }
     else if (act === 'speed') g.sim.speed = 3;
+    else if (act.startsWith('fix:')) this.openServices(act.slice(4));
     else if (act === 'budget') this.openPanel('budget');
     this.refreshTop();
   }

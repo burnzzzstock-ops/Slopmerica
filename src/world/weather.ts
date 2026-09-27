@@ -130,6 +130,13 @@ function pick(t: Table, r: number): WeatherKind {
 
 const C_SODIUM = new THREE.Color(0xff9a4a);
 
+/** weather days (the day/night clock, 360 s at ▶) per calendar day (2.5 s at ▶) */
+const CAL_PER_WDAY = 360 / 2.5;
+/** a spell shows for at least this many real seconds at the current speed, so top speed doesn't strobe */
+const SPELL_MIN_REAL = 12;
+
+const isWet = (k: WeatherKind) => k === 'rain' || k === 'storm' || k === 'snow' || k === 'blizzard' || k === 'hurricane';
+
 /** Florida's "snow" is a single flake: everything else about the day stays cloudy. */
 const isFlakeJoke = (map: MapId, kind: WeatherKind) => map === 'florida' && (kind === 'snow' || kind === 'blizzard');
 
@@ -161,7 +168,7 @@ void main() {
   toCam /= max(dist, 1e-3);
   // never thinner than ~1px: widen far drops and fade them instead
   float px = dist * uPixel;
-  vA *= smoothstep(uSize * 0.05, uSize * 0.16, dist); // nothing smeared across the lens
+  vA *= smoothstep(uSize * 0.1, uSize * 0.28, dist); // nothing smeared across the lens
 #ifdef STREAK
   float w = max(uWidth, px * 0.9);
   vA *= clamp(uWidth / max(px, 1e-4), 0.4, 1.0);
@@ -358,6 +365,15 @@ export class WeatherSystem {
   private gameDays = 0;
   private spellEnd = 0.6;
   private spellStart = 0;
+  // Spells are timed in calendar days (the weather clock follows the day/night
+  // cycle, about 360 s a day, while the calendar runs a day every 2.5 s: a
+  // spell of three weather days used to be a year of rain, or summer snow).
+  /** ease in and out (weather days): a sixth of a short spell, 0.18 at most */
+  private ease = 0.18;
+  private spdNow = 1;
+  /** the spell's calendar length (weather days), before the on-screen floor */
+  private spellCal = 0;
+  private spellForced = false;
   private strength = 0.8;
   private realT = 0;
   private windAngle = 0.46;
@@ -514,9 +530,9 @@ export class WeatherSystem {
     this.boltU = (this.bolt.material as THREE.ShaderMaterial).uniforms;
     this.boltGlowU = (this.boltGlow.material as THREE.ShaderMaterial).uniforms;
 
-    // start the county on a nice day
+    // start the county on a nice couple of weeks
     this.kind = 'clear';
-    this.spellEnd = 1.2 + Math.random();
+    this.spellEnd = this.spellCal = (10 + Math.random() * 15) / CAL_PER_WDAY;
   }
 
   private addFx<T extends THREE.Mesh>(m: T, order: number) {
@@ -540,20 +556,35 @@ export class WeatherSystem {
 
   // ---------------------------------------------------------------- spells
   private pickKind(): WeatherKind {
-    let kind = pick(CLIMATE[this.ctx.mapId][this.season], Math.random());
-    // temperature decides rain vs snow in the hollers
-    if (this.ctx.mapId === 'appalachia') {
-      if (kind === 'rain' && this.temperature < 0.5) kind = 'snow';
-      else if ((kind === 'snow' || kind === 'blizzard') && this.temperature > 5) kind = 'rain';
-    }
-    return kind;
+    const one = () => {
+      let kind = pick(CLIMATE[this.ctx.mapId][this.season], Math.random());
+      // temperature decides rain vs snow in the hollers
+      if (this.ctx.mapId === 'appalachia') {
+        if (kind === 'rain' && this.temperature < 0.5) kind = 'snow';
+        else if ((kind === 'snow' || kind === 'blizzard') && this.temperature > 5) kind = 'rain';
+      }
+      return kind;
+    };
+    // wet weather breaks between spells (back-to-back rain spells read as a month of rain)
+    let kind = one();
+    for (let i = 0; i < 4 && isWet(kind) && isWet(this.kind); i++) kind = one();
+    return isWet(kind) && isWet(this.kind) ? 'cloudy' : kind;
   }
 
   private startSpell(kind: WeatherKind, days: number, forced: boolean) {
     const changed = kind !== this.kind;
     this.kind = kind;
     this.spellStart = this.gameDays;
+    // on the calendar: fair spells last one to a few weeks, rain and snow a few days, storms a day or two
+    // (forced spells keep their weather-day length)
+    if (!forced) {
+      const cal = kind === 'clear' ? 5 + Math.random() * 20 : kind === 'storm' || kind === 'hurricane' || kind === 'blizzard' ? 1 + Math.random() * 2 : 2 + Math.random() * 6;
+      this.spellCal = cal / CAL_PER_WDAY;
+      days = Math.max(this.spellCal, (SPELL_MIN_REAL * Math.max(1, this.spdNow)) / 360);
+    }
+    this.spellForced = forced;
     this.spellEnd = this.gameDays + days;
+    this.ease = Math.min(0.18, days / 6);
     this.strength = forced ? 1 : kind === 'clear' ? 1 : 0.55 + Math.random() * 0.45;
     this.nextStrike = 1 + Math.random() * 2.5;
     if (!(changed || forced)) return;
@@ -566,12 +597,12 @@ export class WeatherSystem {
   force(kind: WeatherKind, days = 3) {
     this.startSpell(kind, days, true);
     // skip the slow ease-in so the button feels instant
-    this.spellStart = this.gameDays - 0.18;
+    this.spellStart = this.gameDays - this.ease;
   }
 
   /** Jump every visual straight to the current state (after a calendar scrub or a scripted change). */
   settle() {
-    this.spellStart = Math.min(this.spellStart, this.gameDays - 0.18);
+    this.spellStart = Math.min(this.spellStart, this.gameDays - this.ease);
     this.intensity = this.strength;
     this.computeTarget(this.ctx.env.hour);
     const c = this.cur, t = this.target;
@@ -594,6 +625,12 @@ export class WeatherSystem {
     this.realT += dt;
     const dDays = (dt * spd) / 360;
     this.gameDays += dDays;
+    if (spd > 0 && spd !== this.spdNow) {
+      this.spdNow = spd;
+      // a spell begun at another speed keeps to the calendar at this one (slowing down from
+      // top speed doesn't leave three weeks of rain on the clock)
+      if (!this.spellForced) this.spellEnd = Math.max(this.spellStart + Math.max(this.spellCal, (SPELL_MIN_REAL * spd) / 360), this.gameDays + this.ease);
+    }
 
     // calendar, smoothed so an integer day counter never steps the colors
     const doy = ((time.dayOfYear % YEAR) + YEAR) % YEAR;
@@ -625,8 +662,8 @@ export class WeatherSystem {
     this.pendingNotify = false;
 
     // next spell, and its ease in/out
-    if (this.gameDays >= this.spellEnd) this.startSpell(this.pickKind(), 0.5 + Math.random() * 2.5, false);
-    const into = (this.gameDays - this.spellStart) / 0.18, left = (this.spellEnd - this.gameDays) / 0.18;
+    if (this.gameDays >= this.spellEnd) this.startSpell(this.pickKind(), 0, false);
+    const into = (this.gameDays - this.spellStart) / this.ease, left = (this.spellEnd - this.gameDays) / this.ease;
     this.intensity = Math.max(0, Math.min(1, into, left)) * this.strength;
 
     // blend every look parameter toward the target (game time, with a real-time floor)
@@ -963,14 +1000,15 @@ export class WeatherSystem {
       (u.uCenter.value as THREE.Vector3).copy(this.v3b);
       u.uSize.value = S;
       u.uTime.value = time;
-      u.uAmount.value = Math.min(1, c.rain * 0.5);
-      const side = S * (0.12 + ws * ws * 1.1);
+      // the city stays readable in the rain (playtest: streaks "large and bright enough to obscure the city")
+      u.uAmount.value = Math.min(1, c.rain * 0.4);
+      const side = S * (0.1 + Math.min(0.7, ws * ws * 0.8));
       (u.uVel.value as THREE.Vector3).set(wd.x * side, -S * 1.25, wd.y * side);
-      u.uLen.value = S * 0.035;
-      u.uWidth.value = S * 0.0011;
+      u.uLen.value = S * 0.022;
+      u.uWidth.value = S * 0.0008;
       u.uLevel.value = this.surge;
       (u.uColor.value as THREE.Color).setRGB(0.7, 0.75, 0.82).multiplyScalar(Math.max(0.12, light) / lift);
-      u.uOpacity.value = (0.16 + rainAmt * 0.16) * (1 - 0.45 * env.night);
+      u.uOpacity.value = (0.09 + rainAmt * 0.09) * (1 - 0.45 * env.night);
     }
     // snow
     const snowAmt = this.ctx.mapId === 'florida' ? 0 : Math.min(1, c.snow);

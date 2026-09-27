@@ -12,6 +12,7 @@ import { PlacementGhost } from './placementGhost';
 import { LANDMARK_COST, LANDMARKS, type Game } from '../game';
 import { EXT, type ExtTool } from '../ext/registry';
 import { crumb } from '../ui/bugreport';
+import type { Bld } from '../sim/buildings';
 import { buildGrid, GRID_BLOCKS, gridShape, gridSpacing, planGrid, type GridBlock, type GridLineState, type GridShape } from './gridRoads';
 
 export type ToolId = 'inspect' | 'road' | 'upgrade' | 'bulldoze' | 'zone' | 'dezone' | 'landmark' | 'ext';
@@ -100,6 +101,38 @@ export class Tools implements PointerHandlers {
   private marker: THREE.Mesh;
   /** where the road being drawn starts (lime ring) */
   private startPin: THREE.Mesh;
+  /** red outlines on the buildings a planned road would bulldoze */
+  private razeGroup = new THREE.Group();
+  private razeBox = new THREE.BoxGeometry(1, 1, 1);
+  private razeEdges = new THREE.EdgesGeometry(this.razeBox);
+  private razeFill = new THREE.MeshBasicMaterial({ color: 0xff3b30, transparent: true, opacity: 0.22, depthWrite: false, depthTest: false });
+  private razeLine = new THREE.LineBasicMaterial({ color: 0xff5a4a, transparent: true, depthTest: false });
+  /** ": 4 residents, 2 jobs" for buildings a road would take */
+  private static whoLives(blds: Bld[]) {
+    const home = (b: Bld) => b.zone === 'resLow' || b.zone === 'resHigh';
+    const res = blds.filter(home).reduce((a, b) => a + b.occ, 0), jobs = blds.filter((b) => !home(b)).reduce((a, b) => a + b.occ, 0);
+    const bits = [res ? `${res} resident${res === 1 ? '' : 's'}` : '', jobs ? `${jobs} job${jobs === 1 ? '' : 's'}` : ''].filter(Boolean);
+    return bits.length ? `: ${bits.join(', ')}` : '';
+  }
+  /** outline these buildings (a pool of boxes; none when empty) */
+  private showRaze(blds: { x: number; y: number; z: number; yaw: number; hw: number; hd: number; model: { height: number } }[]) {
+    const G = this.razeGroup;
+    while (G.children.length < Math.min(40, blds.length)) {
+      const m = new THREE.Group();
+      const fill = new THREE.Mesh(this.razeBox, this.razeFill), edge = new THREE.LineSegments(this.razeEdges, this.razeLine);
+      fill.renderOrder = edge.renderOrder = 8;
+      m.add(fill, edge);
+      G.add(m);
+    }
+    G.children.forEach((m, i) => {
+      const b = blds[i];
+      m.visible = !!b;
+      if (!b) return;
+      m.position.set(b.x, b.y - 0.3 + (Math.max(4, b.model.height) + 1.5) / 2, b.z);
+      m.rotation.set(0, b.yaw, 0);
+      m.scale.set(b.hw * 2 + 1.2, Math.max(4, b.model.height) + 1.5, b.hd * 2 + 1.2);
+    });
+  }
   private highlight: THREE.Mesh;
   private brushRing: THREE.Mesh;
   private ghost: PlacementGhost;
@@ -134,7 +167,7 @@ export class Tools implements PointerHandlers {
     this.brushRing.renderOrder = 6;
     this.brushRing.frustumCulled = false;
     this.brushRing.visible = false;
-    game.scene.add(this.preview, this.marker, this.startPin, this.highlight, this.brushRing);
+    game.scene.add(this.preview, this.marker, this.startPin, this.highlight, this.brushRing, this.razeGroup);
     this.ghost = new PlacementGhost(game.scene, 'landmark-ghost');
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') this.cancel();
@@ -719,6 +752,8 @@ export class Tools implements PointerHandlers {
     this.startPin.visible = false;
     this.highlight.visible = false;
     this.brushRing.visible = false;
+    let razing: Bld[] = [];
+    for (const m of this.razeGroup.children) m.visible = false;
     this.ghost.hide();
     // road rings stay a readable size on screen at any zoom (bigger on phones)
     this.marker.scale.setScalar(Math.max(1, this.game.rts.distance * (this.game.isTouch ? 0.009 : 0.005)));
@@ -761,12 +796,13 @@ export class Tools implements PointerHandlers {
             // trees, the homes, and whether anything can drive to it
             const im = this.roadImpact(curve, end);
             const budget = this.budgetAfter(im.upkeep, im.upkeepLater);
+            if (plan.demolish) razing = (plan.demolishIds ?? []).map((id) => this.game.buildings.list.get(id)).filter((b): b is Bld => !!b);
             const bits = [
               `${Math.round(plan.length)} m · $${net$.toLocaleString()}${plan.grant ? ` (feds pay $${plan.grant.toLocaleString()})` : ''}`,
               `+$${im.upkeep}/wk upkeep (→ $${im.upkeepLater}/wk as it ages)`,
               budget?.text ?? '',
               plan.bridgeLen > 5 ? 'bridge' : '',
-              plan.demolish ? `bulldozes ${plan.demolish} building${plan.demolish === 1 ? '' : 's'}` : '',
+              plan.demolish ? `⚠️ bulldozes ${plan.demolish} building${plan.demolish === 1 ? '' : 's'} (outlined in red${Tools.whoLives(razing)}; Undo takes the road back but can't rebuild them)` : '',
               im.trees ? `clears ~${im.trees} tree${im.trees === 1 ? '' : 's'}` : '',
               im.joins ? `joins ${im.joins}` : '⚠️ not connected to any road',
             ].filter(Boolean);
@@ -819,6 +855,7 @@ export class Tools implements PointerHandlers {
         this.tip = { text: `${ZONE_LABEL[this.zoneType]}: ${d.ok ? `builders want it (${d.letter} +${d.v})` : `waiting for demand (${d.letter} ${d.v > 0 ? '+' : ''}${d.v}; starts at +5)`} · dim lots are waiting` };
       }
     } else this.tip = null;
+    this.showRaze(razing);
   }
 
   /** " · ends the 69 Express bus line" when a road carries bus stops */

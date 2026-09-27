@@ -414,6 +414,68 @@ function runningCosts(g: Game, fac = facilities(g)): Map<number, number> {
   return out;
 }
 
+/**
+ * What a new building's running cost would come to a week at today's use, the
+ * way the weekly bill counts it (runningCosts), and how that's worked out
+ * (playtest: the clinic preview showed its $130 upkeep but left out the
+ * $0.08 a person, and a water tower's $0.05/kL had to be multiplied out by
+ * hand). Plants take their share of what your own plants would make once it
+ * replaces imports; dumps their share of the town's trash; stations the people
+ * (or, for fire, the buildings) in reach that nothing covers yet, and half of
+ * those something does, up to capacity.
+ */
+export function estimateRun(g: Game, d: SvcDef, x: number, z: number): { perWk: number; how: string } | null {
+  if (!d.run) return null;
+  const money = (v: number) => `$${v < 1 ? v.toFixed(2) : Math.round(v).toLocaleString()}`;
+  for (const u of UTILS) {
+    const mine = (d[u] ?? 0) * (d.id === 'solarFarm' ? solarFactor(g) : 1);
+    if (mine <= 0) continue;
+    const others = facilities(g, false).filter((f) => f.def.cat === u && (f.def[u] ?? 0) > 0).reduce((a, f) => a + (f.def[u] ?? 0), 0);
+    const made = Math.min(S.util[u].demand, others + mine) * (mine / (others + mine));
+    return { perWk: made * d.run * 7, how: `${fmt(made, u)} × ${money(d.run)} × 7 days` };
+  }
+  if (d.collect) {
+    const others = facilities(g, false).filter((f) => f.def.collect).reduce((a, f) => a + (f.def.collect ?? 0), 0);
+    const tons = Math.min(S.garbage.made, others + d.collect) * (d.collect / (others + d.collect));
+    return { perWk: tons * d.run * 7, how: `${tons.toFixed(1)} t/day × ${money(d.run)} × 7 days` };
+  }
+  if (d.capacity && d.cov && d.reach) {
+    const c = d.cov as Cov, R = d.reach * 10; // drive time to a rough straight-line reach
+    let load = 0;
+    for (const b of g.buildings.near(x, z, R)) {
+      if (!isZoned(b) || b.state !== 'active' || Math.hypot(b.x - x, b.z - z) > R) continue;
+      const n = c === 'fire' ? 1 + (b.level - 1) * 0.5 : c === 'school' || c === 'college' ? (isRes(b) ? peopleOf(b) : 0) : peopleOf(b);
+      const had = S.b.get(b.id)?.cov[c] ?? 0;
+      load += n * (had >= 0.5 ? 0.5 : 1);
+    }
+    const served = Math.min(load, d.capacity);
+    return { perWk: served * d.run, how: `${Math.round(served).toLocaleString()} ${c === 'fire' ? 'buildings' : 'people'} in reach × ${money(d.run)}` };
+  }
+  return null;
+}
+
+/** Stations serving more than they can handle, worst first (the Next hint puts these ahead of zoning tips) */
+export function overloadedServices(g: Game): { name: string; icon: string; cat: SvcCat; load: number; capacity: number }[] {
+  const out: { name: string; icon: string; cat: SvcCat; load: number; capacity: number }[] = [];
+  for (const f of facilities(g)) {
+    if (!f.def.capacity) continue;
+    const load = fsOf(f).load;
+    if (load > f.def.capacity * 1.05) out.push({ name: f.def.name, icon: f.def.icon, cat: f.def.cat, load: Math.round(load), capacity: f.def.capacity });
+  }
+  return out.sort((a, b) => b.load / b.capacity - a.load / a.capacity);
+}
+
+/** Facilities being built: they cost nothing until they open, then upkeep plus running (the budget should know) */
+export function committedServices(g: Game): { n: number; perWk: number } {
+  let n = 0, perWk = 0;
+  for (const f of facilities(g, false)) {
+    if (f.state === 'active') continue;
+    n++;
+    perWk += f.def.upkeep + (estimateRun(g, f.def, f.x, f.z)?.perWk ?? 0);
+  }
+  return { n, perWk };
+}
+
 /** "$12/MW a day", "$0.08 a week per person served": what SvcDef.run means for one def */
 export function runText(d: SvcDef): string {
   if (!d.run) return '';
@@ -875,9 +937,17 @@ function landfillWarnings(g: Game, f: Bld, d: SvcDef, fs: FS, served: number) {
     fs.warned = 100;
     S.graphDirty = true; // it stops covering: its buildings go to the next facility in reach, if any
     post(g, 'landfillFull', { building: f.label }, 1);
-    const msg = `${f.label} is full: its trucks stopped, and the ${served} building${served === 1 ? '' : 's'} they served will pile up trash (people start leaving in about ${TRASH_CRIT - TRASH_ICON + ABANDON_DAYS} days). Build another landfill or an incinerator (Services → Garbage).`;
-    g.sim.alert('crit', `🗑️ ${f.label} full (${store.toLocaleString()} t): trucks stopped`);
-    g.toast(msg, true);
+    // the rest of the garbage system may already handle the whole town (playtest: a full site read as an
+    // emergency while another one took all the trash)
+    const others = facilities(g).filter((o) => o.id !== f.id && o.def.collect && !fsOf(o).full).reduce((a, o) => a + (o.def.collect ?? 0), 0);
+    if (others >= S.garbage.made && others > 0) {
+      g.sim.alert('info', `🗑️ ${f.label} full (${store.toLocaleString()} t): its trucks stopped; your other sites (${others} t/day) handle the town's ${S.garbage.made.toFixed(1)} t/day`);
+      g.toast(`${f.label} is full and its trucks stopped, but your other garbage sites (${others} t/day) handle all of the town's trash (${S.garbage.made.toFixed(1)} t/day). It still costs $${d.upkeep}/wk while it sits idle: bulldoze it if you don't need it.`);
+    } else {
+      const msg = `${f.label} is full: its trucks stopped, and the ${served} building${served === 1 ? '' : 's'} they served will pile up trash (people start leaving in about ${TRASH_CRIT - TRASH_ICON + ABANDON_DAYS} days). Build another landfill or an incinerator (Services → Garbage).`;
+      g.sim.alert('crit', `🗑️ ${f.label} full (${store.toLocaleString()} t): trucks stopped`);
+      g.toast(msg, true);
+    }
   } else if (pctFull >= 0.9 && fs.warned < 90) {
     fs.warned = 90;
     g.sim.alert('warn', `🗑️ ${f.label} 90% full: ${pace}`);
@@ -1474,6 +1544,10 @@ export function problemText(g: Game, id: number): string | null {
     clearing: 'the trucks are collecting it again: the backlog is clearing.',
     queued: 'waiting its turn on the trucks: the backlog is clearing.',
   };
+  // the building that fixes it, if the town hasn't unlocked it yet: say when it will
+  const FIX: Partial<Record<Problem, string>> = { crime: 'sheriff', sick: 'clinic', education: 'school', garbage: 'landfill', fire: 'fireStation' };
+  const fixDef = FIX[p] ? SERVICE_DEFS.get(FIX[p]!) : undefined;
+  const notYet = fixDef && !svcUnlocked(g, fixDef) ? ` (${fixDef.name} unlocks at ${unlockAt(fixDef.unlock)}; until then it's a cost of growing)` : '';
   const why: Record<Problem, string> = {
     fire: 'On fire! A fire station within reach puts it out; without one it can spread (Services → Fire).',
     abandoned: 'Abandoned: its people moved out. It needs its utilities and services back, or bulldoze it.',
@@ -1487,7 +1561,7 @@ export function problemText(g: Game, id: number): string | null {
     pollution: 'Polluted: too close to industry or a dirty plant.',
     road: 'Not connected to the road network.',
   };
-  return `${b.label}: ${why[p]}`;
+  return `${b.label}: ${why[p]}${notYet}`;
 }
 
 /** an info view shows only its own service's bubbles (the playtest: a crisis buried the map in icons) */
@@ -1743,7 +1817,7 @@ const VIEW_FOR_CAT: Partial<Record<SvcCat, ViewId>> = { power: 'power', water: '
 // ============================================================== placement tool
 let placing: SvcId = 'gasPeaker';
 let ghost: PlacementGhost | null = null;
-let lastCheck: { ok: boolean; reason?: string; snapped?: boolean; road?: string; linked?: boolean } | null = null;
+let lastCheck: { ok: boolean; reason?: string; snapped?: boolean; road?: string; linked?: boolean; run?: { perWk: number; how: string } | null } | null = null;
 let panelCat: SvcCat = 'power';
 
 
@@ -1859,7 +1933,7 @@ function updateGhost(g: Game, p: THREE.Vector3 | null) {
   const d = SERVICE_DEFS.get(placing)!;
   const spot = spotFor(g, placing, p.x, p.z);
   const ok = !spot.reason;
-  lastCheck = { ok, reason: spot.reason, snapped: spot.snapped, road: spot.front?.seg.name, linked: !spot.front || segLinked(g, spot.front.seg) };
+  lastCheck = { ok, reason: spot.reason, snapped: spot.snapped, road: spot.front?.seg.name, linked: !spot.front || segLinked(g, spot.front.seg), run: ok ? estimateRun(g, d, spot.x, spot.z) : null };
   const hw = (d.w * CELL) / 2, hd = (d.d * CELL) / 2;
   const y = g.buildings.padHeight(spot.x, spot.z, hw, hd, spot.yaw);
   gh.show(`svc|${placing}|${vaultLook(placing) ? 'vault' : 'classic'}`, () => CUSTOM_BUILDINGS.get(placing)!.model().geometry, spot.x, y, spot.z, spot.yaw, hw, hd, ok, spot.front?.door ?? null);
@@ -1950,9 +2024,13 @@ registerTool({
     }
     if (lastCheck && !lastCheck.ok) return { text: `${d.name}: ${lastCheck.reason}${snappable(lastCheck.reason) ? ' · green rings: spots where it fits' : ''}`, bad: true };
     if (g.isTouch && !planned) return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} · tap where it goes` };
-    // what this purchase does to the budget, from the same forecast the HUD shows
-    const after = g.sim.afterSpend(d.cost, d.upkeep);
-    return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} now + $${d.upkeep}/wk${d.run ? ` + ${runText(d)}` : ''} · ${after.text}${lastCheck?.road ? ` · fronts ${esc(lastCheck.road)}${lastCheck.snapped ? ' (slid to the nearest spot that fits)' : ''}` : lastCheck?.snapped ? ' · 📍 moved to the nearest good spot' : ''}${lastCheck?.road && !lastCheck.linked ? ` · 🚧 ${esc(lastCheck.road)} doesn't join the rest of your roads: it would only serve that road` : ''}${planned ? ' · tap Build, or tap elsewhere to move it' : ''}`, bad: after.credit || (!!lastCheck?.road && !lastCheck.linked) };
+    // what this purchase does to the budget, from the same forecast the HUD shows:
+    // its upkeep, its running cost at today's use, and what's already being built
+    const run = lastCheck?.run ?? null, com = committedServices(g);
+    const after = g.sim.afterSpend(d.cost, d.upkeep + (run?.perWk ?? 0) + com.perWk);
+    const runBit = run ? ` + ≈${usd(run.perWk)}/wk running (${run.how})` : d.run ? ` + ${runText(d)}` : '';
+    const comBit = com.n ? ` · ${com.n} being built add ${usd(com.perWk)}/wk when ${com.n === 1 ? 'it opens' : 'they open'}` : '';
+    return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} now + $${d.upkeep}/wk${runBit}${comBit} · ${after.text}${lastCheck?.road ? ` · fronts ${esc(lastCheck.road)}${lastCheck.snapped ? ' (slid to the nearest spot that fits)' : ''}` : lastCheck?.snapped ? ' · 📍 moved to the nearest good spot' : ''}${lastCheck?.road && !lastCheck.linked ? ` · 🚧 ${esc(lastCheck.road)} doesn't join the rest of your roads: it would only serve that road` : ''}${planned ? ' · tap Build, or tap elsewhere to move it' : ''}`, bad: after.credit || (!!lastCheck?.road && !lastCheck.linked) };
   },
 });
 
@@ -2102,9 +2180,21 @@ registerInspector((sel, g) => {
   const d = defOf(b);
   if (d) {
     const fs = fsOf(b);
-    const run = b.state === 'active' ? Math.round(runningCosts(g).get(b.id) ?? 0) : 0;
+    const active = b.state === 'active';
+    const run = active ? Math.round(runningCosts(g).get(b.id) ?? 0) : 0;
     const rows: string[] = [`<div><span>Upkeep</span><b>$${d.upkeep}/wk</b></div>`];
-    if (d.run) rows.push(`<div><span>Running cost</span><b>$${run.toLocaleString()}/wk <small>(${runText(d)})</small></b></div>`);
+    if (!active) {
+      // under construction: nothing billed yet; say when it opens and what it will cost
+      const est = estimateRun(g, d, b.x, b.z);
+      rows.push(`<div><span>Opens in</span><b>~${Math.max(1, Math.ceil((b.buildDays ?? 6) * (1 - b.progress)))} day${Math.ceil((b.buildDays ?? 6) * (1 - b.progress)) === 1 ? '' : 's'}</b></div>`);
+      rows.push(`<div><span>Then costs</span><b>$${d.upkeep}/wk${est ? ` + ≈${usd(est.perWk)}/wk running` : ''}</b></div>`);
+    } else if (d.run) {
+      // the running cost multiplied out, so the units reconcile (kL/day to $/wk)
+      const perUnit = d.run < 1 ? `$${d.run.toFixed(2)}` : `$${d.run}`;
+      const u = UTILS.find((x) => (d[x] ?? 0) > 0);
+      const how = u ? `${fmt(run / (d.run * 7), u)} × ${perUnit} × 7 days` : d.collect ? `${(run / (d.run * 7)).toFixed(1)} t/day × ${perUnit} × 7 days` : d.capacity ? `${Math.round(run / d.run).toLocaleString()} ${d.cov === 'fire' ? 'buildings' : 'people'} served × ${perUnit}` : runText(d);
+      rows.push(`<div><span>Running cost</span><b>$${run.toLocaleString()}/wk <small>(${how})</small></b></div>`);
+    }
     for (const u of UTILS) if (d[u]) rows.push(`<div><span>Supplies</span><b>${fmt(d.id === 'solarFarm' ? (d[u] ?? 0) * solarFactor(g) : d[u] ?? 0, u)}</b></div>`);
     if (d.store) {
       const days = fs.rate > 0.05 ? Math.round((d.store - fs.stored) / fs.rate) : null;
@@ -2197,4 +2287,4 @@ registerSystem({
 export function servicesSnapshot() {
   return { util: S.util, counts: { ...S.counts }, garbage: { ...S.garbage }, facilities: S.f.size, buildings: S.b.size, emergency: S.emergency };
 }
-(globalThis as unknown as { __services?: unknown }).__services = { snapshot: servicesSnapshot, place: placeService, canPlace: canPlaceService, findSpot: findServiceSpot, S, mergeUtilities, problemText };
+(globalThis as unknown as { __services?: unknown }).__services = { snapshot: servicesSnapshot, place: placeService, canPlace: canPlaceService, findSpot: findServiceSpot, S, mergeUtilities, problemText, estimateRun: (g: Game, id: string, x: number, z: number) => estimateRun(g, SERVICE_DEFS.get(id)!, x, z), committedServices, overloadedServices, runningCosts: (g: Game) => runningCosts(g) };

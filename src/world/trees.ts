@@ -7,7 +7,7 @@ import { HALF, Quality, WATER, WORLD } from '../config';
 import { hash2, Rng } from '../core/rng';
 import type { MapData, TreeKind } from './maps';
 import type { Terrain } from './terrain';
-import { createFoliageAtlas, makeTreeModel, padTransparent } from './foliage';
+import { coverageMipmaps, createFoliageAtlas, makeTreeModel, padTransparent } from './foliage';
 import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from './atmos';
 import { newSeasonLook, sampleSeason } from './seasons';
 import type { MapId } from './maps';
@@ -35,15 +35,19 @@ const BASE_COLOR: Record<TreeKind, number> = {
   decid: 0x6f9a45, pine: 0x557f48, redwood: 0x527a45, oak: 0x7f9852, palm: 0x7aa84a, cypress: 0x7a9a50, mangrove: 0x55803e, shrub: 0x7a9448,
 };
 // Alpha test for card foliage. Mip levels average alpha down, which makes
-// distant canopies go see-through, so alpha is boosted per mip level. Deciduous
-// leaves thin out in winter by raising the threshold.
-const LEAF_ALPHA = `
+// distant canopies go see-through, so leaf cards boost alpha per mip level,
+// capped: unbounded, a far card's whole quad passed the test. Deciduous leaves
+// thin out in winter by raising the threshold.
+const LEAF_BOOST = `
 #ifdef USE_MAP
   vec2 tsz = vec2(textureSize(map, 0));
   vec2 dxu = dFdx(vMapUv * tsz), dyu = dFdy(vMapUv * tsz);
   float mipL = max(0.0, 0.5 * log2(max(dot(dxu, dxu), dot(dyu, dyu))));
-  diffuseColor.a *= 1.0 + mipL * 0.3;
-#endif
+  diffuseColor.a *= 1.0 + min(mipL, 3.0) * 0.3;
+#endif`;
+// (the far tree pictures don't boost: their mip chain keeps each tree's
+// coverage, see coverageMipmaps; the boost made them opaque rectangles)
+const LEAF_ALPHA = `
 float thr = mix(0.42, 0.995, (1.0 - uLeaf) * step(0.5, vCanopy));
 #ifdef ALPHA_TO_COVERAGE
   diffuseColor.a = smoothstep(thr, thr + fwidth(diffuseColor.a), diffuseColor.a);
@@ -134,7 +138,7 @@ vCanopy = canopy;`)
 #endif`);
         sh.fragmentShader = sh.fragmentShader
           .replace('#include <common>', `#include <common>\nuniform float uLeaf, uSnow, uSnowLine;\nvarying float vCanopy;\nvarying vec3 vTWPos;\n${CLOUD_GLSL}`)
-          .replace('#include <alphatest_fragment>', LEAF_ALPHA)
+          .replace('#include <alphatest_fragment>', LEAF_BOOST + LEAF_ALPHA)
           .replace('#include <color_fragment>', `#include <color_fragment>
 {
   vec3 wN = normalize((vec4(vNormal, 0.0) * viewMatrix).xyz);
@@ -166,7 +170,7 @@ vCanopy = canopy;`)
           .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCanopy = canopy;');
         sh.fragmentShader = sh.fragmentShader
           .replace('#include <common>', `#include <common>\nuniform float uLeaf, uSnow, uSnowLine;\nvarying float vCanopy;\nvarying vec3 vTWPos;\n${CLOUD_GLSL}`)
-          .replace('#include <alphatest_fragment>', LEAF_ALPHA)
+          .replace('#include <alphatest_fragment>', LEAF_BOOST + LEAF_ALPHA)
           .replace('#include <color_fragment>', `#include <color_fragment>
 {
   vec3 wN = normalize((vec4(vNormal, 0.0) * viewMatrix).xyz);
@@ -419,12 +423,14 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
     // texture also survives render-target churn.
     padTransparent(px, W, H, 8);
     const tex = new THREE.DataTexture(px, W, H, THREE.RGBAFormat);
+    // each tree picture keeps its silhouette at every size (see coverageMipmaps)
+    tex.mipmaps = coverageMipmaps(px, W, H, SPRITE_W, SPRITE_H, 0.3);
     // three renders into a target in linear (working) space: the pixels read
     // back are linear. Tagging them sRGB decoded them a second time and made
     // every distant tree ~3x too dark (the dark flat silhouettes at the edge
     // of the detailed-tree radius).
     tex.colorSpace = THREE.LinearSRGBColorSpace;
-    tex.generateMipmaps = true;
+    tex.generateMipmaps = false;
     tex.magFilter = THREE.LinearFilter;
     tex.minFilter = THREE.LinearMipmapLinearFilter;
     tex.needsUpdate = true;

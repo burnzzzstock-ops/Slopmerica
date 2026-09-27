@@ -129,6 +129,25 @@ const A = tr.at;
 check(`zoomed in, the trees around you are detailed (${A[0].near} at ${A[0].dist} m in woods of ${tr.most})`, A[0].near > 100, tr);
 check(`zoomed out, no disc of detailed trees follows the camera (${A[2].near} at ${A[2].dist} m, ${A[3].near} at ${A[3].dist} m)`, A[2].near === 0 && A[3].near === 0, tr);
 check(`swapping detail for sprites leaves no gaps (${A.map((a) => `${a.drawn}/${a.want}`).join(', ')} trees within 200 m drawn)`, A.every((a) => a.want > 0 && a.drawn === a.want), tr);
+// far tree pictures keep their silhouette at every mip level (playtest 5:
+// distant trees drew as "opaque rectangular cards on thin dark stems": the old
+// per-mip alpha boost let a small picture's whole card pass the alpha test)
+const mips = await page.evaluate(() => {
+  const T = window.__game.trees, far = T.far?.[0] ?? T.group.children.find((m) => !T.near.includes(m));
+  const tex = far?.material?.map;
+  if (!tex?.mipmaps?.length) return null;
+  const kinds = 8, rows = 2, thr = 0.3 * 255;
+  const fill = (lv) => {
+    const { data, width: w, height: h } = tex.mipmaps[lv], tw = w / kinds, th = h / rows, out = [];
+    for (let k = 0; k < kinds; k++) { let n = 0, c = 0; for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) { n++; if (data[((Math.floor(y)) * w + Math.floor(k * tw + x)) * 4 + 3] >= thr) c++; } out.push(c / n); }
+    return out;
+  };
+  const base = fill(0), worst = [];
+  for (let lv = 2; lv <= 6; lv++) { const f = fill(lv); worst.push(Math.max(...f.map((v, i) => Math.abs(v - base[i])))); }
+  return { base: base.map((v) => +v.toFixed(2)), worst: worst.map((v) => +v.toFixed(2)), full: fill(4).map((v) => +v.toFixed(2)) };
+});
+console.log(JSON.stringify(mips));
+check(`distant tree pictures keep their shape, not a filled card (coverage drift by mip level ${mips?.worst?.join(', ')}; at 1/16 size ${mips?.full?.join(', ')})`, !!mips && mips.worst.every((v) => v <= 0.12) && mips.full.every((v, i) => v < 0.85 && v <= mips.base[i] + 0.12), mips);
 check('no page errors', errs.length === 0, errs.slice(0, 3));
 await browser.close();
 process.exit(bad ? 1 : 0);

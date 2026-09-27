@@ -32,6 +32,7 @@ import { setBuildingNight, loadArt, landmarkFootprint } from './buildings/genera
 import { lineCubic, V2 } from './core/math';
 import { Overlays } from './render/overlays';
 import { buildingMaterial } from './buildings/generator';
+import { CivicLayer } from './civic/layer';
 import { loadKitArt, setKitNight } from './buildings/kitGenerator';
 import { applySave, type SaveData } from './sim/save';
 import { crumb } from './ui/bugreport';
@@ -122,6 +123,7 @@ export class Game {
   readonly sim: Sim;
   readonly traffic: Traffic;
   readonly peds: Pedestrians;
+  readonly civic: CivicLayer;
   readonly ambientLife: AmbientLife;
   /** the building problem icon under a screen point, and what it means (set by services) */
   problemAt?: (clientX: number, clientY: number) => { id: number; text: string | null } | null;
@@ -265,6 +267,9 @@ export class Game {
       return t - phase * cycle > 11 ? 'yellow' : 'green';
     });
     this.peds = new Pedestrians(this.scene, this.net, this.buildings, this.terrain, this.communes, this.q.maxPeople);
+    // Civic Foundry street furniture, street trees and bus shelters (streamed in; low quality skips it)
+    this.civic = new CivicLayer(this);
+    if (this.q.name !== 'low') this.civic.load();
     this.overlays = new Overlays(this);
     this.tools = new Tools(this);
 
@@ -561,7 +566,7 @@ export class Game {
 
   onLaneAdded(segs: RSeg[], to: RoadTypeId) {
     this.audio.play('build');
-    this.feed.push('laneAdded', { road: segs[0]?.name, count: ROAD_TYPES[to].lanesPerDir * 2 });
+    this.feed.push('laneAdded', { road: segs[0]?.name, count: ROAD_TYPES[to].lanesPerDir * (ROAD_TYPES[to].oneWay ? 1 : 2) });
   }
 
   // ------------------------------------------------------------------ tool helpers
@@ -981,6 +986,7 @@ export class Game {
     P.lap('traffic');
     this.peds.population = this.sim.population;
     this.peds.update(dt, spd, this.rts.target, this.rts.distance, this.time);
+    this.civic.update(dt);
     P.lap('people');
     this.communes.update(dt, this.env.night, this.time, this.camera.position);
     this.emitT -= dt;

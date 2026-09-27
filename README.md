@@ -27,9 +27,13 @@ npm run assets:check   # validate all generated geometry, maps, and references
 npm run assets:build   # standalone catalog in dist-assets/
 ```
 
-See [the integration and authoring guide](docs/ASSET_LIBRARY.md). The exported
-library is staged for integration; it does not replace the game's building
-renderer. Normal and single-file game builds exclude the optional art pack.
+See [the integration and authoring guide](docs/ASSET_LIBRARY.md). The game uses
+31 of the components (street furniture, bus shelters, street trees, planters,
+utility cabinets and service equipment) through `src/civic/layer.ts`: instanced
+LOD1/LOD2 meshes with the library's PBR materials, streamed in after the town is
+up (Low quality skips them). `node scripts/civic-pack.mjs` rebuilds the pack
+(`public/civic/pack.json` + `pack.bin` + the material maps it needs); builds copy
+`public/civic` next to the page. The rest of the library stays catalog-only.
 
 ## Playtesting
 
@@ -85,6 +89,11 @@ node scripts/playtest3.mjs       # county road is the state's; road previews; un
 node scripts/playtest4.mjs       # landfill 75/90/full warnings; emergency card + slowdown, Fix / Worst area, Recovering; why trash piles up; departures by cause; earned unlocks stay; "Built", not "already here"; blocker outline; road budget preview; merged icons
 node scripts/firststeps.mjs      # first-steps Next bar and its button; demand wording; weekly balance on road previews; H goes home; toolbar; notices; feed peek
 node scripts/playtest5.mjs       # transit lines survive a street joining their road; bulldoze names the line; transit list refreshes; per-ride costs; green "Built" after placing; valid-site rings; save on page hide
+node scripts/housetown.mjs       # a dense town of every house style: variety, model cost, building batch budget (SHOTS=prefix)
+node scripts/motiontest.mjs      # cars: no heading snaps, brake for turns, change lanes, blink, never wrong-way on a one-way; walkers' stride, no teleports
+node scripts/civictest.mjs       # Civic Foundry pack streams in: street trees, furniture, bus shelters; instanced LODs; Low skips it
+node scripts/roadgrade.mjs       # a road across a dip stands on an embankment, not a floating slab
+node scripts/audiotest.mjs       # ambience loops have no seam thump and no steady beat (no "train chugging")
 node scripts/econtest.mjs [map] [days]  # a town grown like a player grows one: weekly bill vs population (CHECK=1 gates it, OUT=file dumps rows)
 node scripts/bldshots.mjs tag    # neighbourhood-zoom shots of homes, shops, apartments, offices, factories, day and night (CLOSE=1 adds close-ups)
 ```

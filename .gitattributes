@@ -5,3 +5,6 @@ public/asset-library/models/*.gltf text eol=lf
 public/asset-library/**/*.png binary
 public/asset-library/**/*.json text eol=lf
 public/asset-library/manifest.json text eol=lf
+public/civic/*.bin binary
+public/civic/**/*.png binary
+public/civic/*.json text eol=lf

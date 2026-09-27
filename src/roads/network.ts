@@ -604,6 +604,25 @@ export class RoadNetwork {
     this.events.emit('changed', undefined);
   }
 
+  /** Turn a one-way around: its lanes run b -> a from now on. */
+  flip(id: number): RSeg | null {
+    const seg = this.segs.get(id);
+    if (!seg || !this.type(seg.type).oneWay) return null;
+    [seg.a, seg.b] = [seg.b, seg.a];
+    const c = seg.curve;
+    seg.curve = { p0: c.p3, p1: c.p2, p2: c.p1, p3: c.p0 };
+    seg.samp = sampleCubic(seg.curve, 2);
+    seg.length = seg.samp.length;
+    [seg.trimA, seg.trimB] = [seg.trimB, seg.trimA];
+    seg.load = [seg.load[1], seg.load[0]];
+    this.computeProfile(seg);
+    this.updateTrims(seg.a);
+    this.updateTrims(seg.b);
+    this.finalizeSegChanged(seg);
+    this.events.emit('changed', undefined);
+    return seg;
+  }
+
   /** ONE MORE LANE: bump a segment to the next road type. */
   upgrade(id: number, to?: RoadTypeId): RSeg | null {
     const seg = this.segs.get(id);

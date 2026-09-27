@@ -1490,7 +1490,7 @@ export class Hud implements UiSink {
           const q = g.quoteUpgrade([s], t.next);
           const short = q.net > g.sim.spendable();
           return `<button id="in-lane" ${short ? 'disabled title="Not enough money"' : ''}>➕ ONE MORE LANE · ${money(q.net)}</button>`;
-        })() : '<button disabled>MAX LANES</button>'}<button class="danger" id="in-bulldoze">💣 Bulldoze</button></div>`;
+        })() : '<button disabled>MAX LANES</button>'}${t.oneWay ? '<button id="in-flip" title="The arrows point the other way">⇅ Flip direction</button>' : ''}<button class="danger" id="in-bulldoze">💣 Bulldoze</button></div>`;
     }
     let extra = '';
     for (const f of EXT.inspector) extra += f(sel, g) ?? '';
@@ -1509,6 +1509,11 @@ export class Hud implements UiSink {
       if (sel.kind !== 'road') return;
       // the same command as the map tool: price, affordability check and undo
       if (g.upgradeRoads([sel.s]).ok) crumb(`one more lane: ${sel.s.name} (inspector)`);
+      this.renderInspector();
+    });
+    this.inspector.querySelector('#in-flip')?.addEventListener('click', () => {
+      if (sel.kind !== 'road') return;
+      if (g.net.flip(sel.s.id)) { crumb(`flipped one-way ${sel.s.name} (inspector)`); g.audio.play('click'); }
       this.renderInspector();
     });
     this.inspector.querySelector('#in-why')?.addEventListener('click', () => { if (sel.kind === 'lot') { const st = g.lotStatus(sel.cell); if (st.demand) this.openDemand(st.demand.key); } });

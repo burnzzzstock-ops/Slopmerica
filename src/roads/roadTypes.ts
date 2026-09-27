@@ -1,6 +1,6 @@
 // Road catalog. The One More Lane button walks up the `next` chain.
 
-export type RoadTypeId = 'gravel' | 'twoLane' | 'stroad4' | 'stroad6' | 'stroad8' | 'highway';
+export type RoadTypeId = 'gravel' | 'twoLane' | 'oneWay1' | 'oneWay2' | 'stroad4' | 'stroad6' | 'stroad8' | 'highway';
 
 export interface RoadType {
   id: RoadTypeId;
@@ -22,10 +22,12 @@ export interface RoadType {
   next?: RoadTypeId;
   unlockPop: number;
   icon: string;
+  /** every lane runs a -> b, the way it was drawn (arrows on the paint) */
+  oneWay?: boolean;
 }
 
 function mk(t: Omit<RoadType, 'width'>): RoadType {
-  const lanes = t.lanesPerDir * 2 * t.laneW + (t.centerTurn ? t.laneW : 0) + t.median;
+  const lanes = t.lanesPerDir * (t.oneWay ? 1 : 2) * t.laneW + (t.centerTurn ? t.laneW : 0) + t.median;
   return { ...t, width: lanes + t.sidewalk * 2 + 0.6 };
 }
 
@@ -37,6 +39,14 @@ export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
   twoLane: mk({
     id: 'twoLane', name: 'Two-Lane Road', blurb: 'Sidewalks! How European.', lanesPerDir: 1, laneW: 3.5, centerTurn: false, median: 0,
     sidewalk: 2.6, speed: 14, costPerM: 8, upkeepPerM: 0.35, zoneable: true, signals: false, capacityPerLane: 800, fedGrant: 0, next: 'stroad4', unlockPop: 0, icon: '🛣️',
+  }),
+  oneWay1: mk({
+    id: 'oneWay1', name: 'One-Lane One-Way', blurb: 'One lane, one direction, zero patience. It runs the way you draw it.', lanesPerDir: 1, laneW: 4.2, centerTurn: false, median: 0,
+    sidewalk: 2.2, speed: 12, costPerM: 7, upkeepPerM: 0.3, zoneable: true, signals: false, capacityPerLane: 750, fedGrant: 0, next: 'oneWay2', unlockPop: 0, icon: '⬆️', oneWay: true,
+  }),
+  oneWay2: mk({
+    id: 'oneWay2', name: 'One-Way Couplet', blurb: 'Two lanes, one way, downtown energy. Pair it with one going back.', lanesPerDir: 2, laneW: 3.5, centerTurn: false, median: 0,
+    sidewalk: 2.4, speed: 16, costPerM: 13, upkeepPerM: 0.55, zoneable: true, signals: true, capacityPerLane: 850, fedGrant: 0.2, unlockPop: 0, icon: '⏫', oneWay: true,
   }),
   stroad4: mk({
     id: 'stroad4', name: 'Freedom Stroad', blurb: '4 lanes + a center turn lane. Half street, half road, bad at both.', lanesPerDir: 2, laneW: 3.5, centerTurn: true, median: 0,
@@ -56,15 +66,18 @@ export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
   }),
 };
 
-export const ROAD_ORDER: RoadTypeId[] = ['gravel', 'twoLane', 'stroad4', 'stroad6', 'stroad8', 'highway'];
+export const ROAD_ORDER: RoadTypeId[] = ['gravel', 'twoLane', 'oneWay1', 'oneWay2', 'stroad4', 'stroad6', 'stroad8', 'highway'];
 
 /** Lateral offset (right of centerline, meters) of lane k (0 = innermost) for travel in +tangent direction. */
 export function laneOffset(t: RoadType, k: number): number {
+  // one-way: the lanes fill the whole carriageway, 0 on the left
+  if (t.oneWay) return (k + 0.5) * t.laneW - (t.lanesPerDir * t.laneW) / 2;
   const inner = (t.centerTurn ? t.laneW / 2 : 0) + t.median / 2;
   return inner + (k + 0.5) * t.laneW;
 }
 
 /** Outer edge of the driving surface (where the sidewalk starts). */
 export function carriageHalf(t: RoadType): number {
+  if (t.oneWay) return (t.lanesPerDir * t.laneW) / 2;
   return t.lanesPerDir * t.laneW + (t.centerTurn ? t.laneW / 2 : 0) + t.median / 2;
 }

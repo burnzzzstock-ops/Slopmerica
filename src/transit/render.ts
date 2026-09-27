@@ -11,11 +11,12 @@ function stopGroup(stop: TransitStop) {
   const g = new THREE.Group();
   // Concrete pad, bench, glass shelter and the tall roundel sign.
   const pad = box(5.8, 0.14, 2.3, 0xb7b4ab); pad.position.y = 0.07; g.add(pad);
-  const seat = box(3.1, 0.18, 0.55, 0x6f472a); seat.position.set(-0.5, 0.78, -0.55); g.add(seat);
-  for (const x of [-1.65, 0.65]) { const leg = box(0.14, 0.72, 0.14, 0x34363b); leg.position.set(x, 0.39, -0.55); g.add(leg); }
-  const back = box(4.2, 2.55, 0.08, 0x9ed4dc, 0.34); back.position.set(-0.15, 1.4, -0.95); g.add(back);
-  const roof = box(4.6, 0.16, 2.1, 0x39434b); roof.position.set(-0.15, 2.74, -0.2); g.add(roof);
-  for (const x of [-2.25, 1.95]) { const post = box(0.1, 2.6, 0.1, 0x777b80); post.position.set(x, 1.36, -0.92); g.add(post); }
+  const shelter = new THREE.Group(); shelter.name = 'box-shelter'; g.add(shelter);
+  const seat = box(3.1, 0.18, 0.55, 0x6f472a); seat.position.set(-0.5, 0.78, -0.55); shelter.add(seat);
+  for (const x of [-1.65, 0.65]) { const leg = box(0.14, 0.72, 0.14, 0x34363b); leg.position.set(x, 0.39, -0.55); shelter.add(leg); }
+  const back = box(4.2, 2.55, 0.08, 0x9ed4dc, 0.34); back.position.set(-0.15, 1.4, -0.95); shelter.add(back);
+  const roof = box(4.6, 0.16, 2.1, 0x39434b); roof.position.set(-0.15, 2.74, -0.2); shelter.add(roof);
+  for (const x of [-2.25, 1.95]) { const post = box(0.1, 2.6, 0.1, 0x777b80); post.position.set(x, 1.36, -0.92); shelter.add(post); }
   const pole = box(0.12, 3.35, 0.12, 0x777b80); pole.position.set(2.55, 1.72, 0); g.add(pole);
   const sign = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.13, 16), new THREE.MeshStandardMaterial({ color: 0x168bc0, emissive: 0x06384c }));
   sign.rotation.x = Math.PI / 2; sign.position.set(2.55, 3.15, 0); g.add(sign);
@@ -62,6 +63,9 @@ export class TransitRenderer {
       let node = this.stopGroups.get(s.id);
       if (!node) { node = stopGroup(s); this.stopGroups.set(s.id, node); this.group.add(node); }
       node.visible = true;
+      // the Civic Foundry shelter stands here once its art has streamed in
+      const box = node.getObjectByName('box-shelter');
+      if (box) box.visible = this.g.civic?.status !== 'ready';
       const scale = 1 + Math.min(0.8, Math.sqrt(Math.max(0, s.boardings)) / 18);
       node.scale.setScalar(scale);
     }

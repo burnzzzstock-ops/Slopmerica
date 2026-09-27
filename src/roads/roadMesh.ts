@@ -96,6 +96,28 @@ function noiseFill(ctx: CanvasRenderingContext2D, w: number, h: number, base: [n
   ctx.putImageData(img, 0, 0);
 }
 
+/** Where a block's driveway aprons are (arc length, side): the curb dips there and nothing stands in them. */
+export function segDriveways(net: RoadNetwork, seg: RSeg): { d: number; side: number }[] {
+  const t = ROAD_TYPES[seg.type];
+  const out: { d: number; side: number }[] = [];
+  if (t.sidewalk <= 0) return out;
+  const s0 = visualTrim(net, seg, seg.a), s1 = seg.length - visualTrim(net, seg, seg.b);
+  for (let d = s0 + 18 + (seg.id % 5) * 4; d < s1 - 12; d += 34 + (seg.id % 3) * 5) out.push({ d, side: ((Math.floor(d / 30) + seg.id) & 1) ? 1 : -1 });
+  return out;
+}
+
+/** Where a block's street lamps stand (arc length, side), alternating sides. */
+export function segLamps(net: RoadNetwork, seg: RSeg): { d: number; side: number }[] {
+  const t = ROAD_TYPES[seg.type];
+  const out: { d: number; side: number }[] = [];
+  if (!(t.sidewalk > 0 || t.id === 'highway')) return out;
+  const s0 = visualTrim(net, seg, seg.a), s1 = seg.length - visualTrim(net, seg, seg.b);
+  const spacing = t.id === 'highway' ? 40 : 30;
+  let side = 1;
+  for (let d = s0 + 8; d < s1 - 4; d += spacing) { out.push({ d, side }); side = -side; }
+  return out;
+}
+
 function roadTexture(t: RoadType, maxAniso: number): THREE.CanvasTexture {
   const W = 256, H = 512;
   const c = document.createElement('canvas');
@@ -130,6 +152,26 @@ function roadTexture(t: RoadType, maxAniso: number): THREE.CanvasTexture {
       if (!dashed) ctx.fillRect(x, 0, wPx, H);
       else for (let y = 0; y < H; y += py(12)) ctx.fillRect(x, y, wPx, py(3.5));
     };
+    if (t.oneWay) {
+      // one-way: yellow on the left edge, white on the right, dashes between lanes, arrows the way it runs
+      line(-ch + 0.3, '#e8c33a', false);
+      line(ch - 0.3, '#e8e8e2', false);
+      for (let k = 1; k < t.lanesPerDir; k++) line(-ch + k * t.laneW, '#e8e8e2', true);
+      ctx.fillStyle = '#ecece6';
+      for (let k = 0; k < t.lanesPerDir; k++) {
+        const x = cx + px(-ch + (k + 0.5) * t.laneW);
+        const aw = px(1.3), sw = px(0.36), y0 = py(3.4), y1 = py(8.6), head = py(2.2);
+        // (v runs up the canvas: the texture's top is further along a -> b)
+        ctx.fillRect(x - sw / 2, y0 + head * 0.9, sw, y1 - y0 - head * 0.9);
+        ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x + aw / 2, y0 + head); ctx.lineTo(x - aw / 2, y0 + head); ctx.closePath(); ctx.fill();
+      }
+      const tex = new THREE.CanvasTexture(c);
+      tex.wrapS = THREE.ClampToEdgeWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.anisotropy = maxAniso;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return tex;
+    }
     // edge lines
     line(-ch + 0.3, '#e8e8e2', false);
     line(ch - 0.3, '#e8e8e2', false);
@@ -420,12 +462,7 @@ export class RoadRenderer {
     const s0 = visualTrim(this.net, seg, seg.a);
     const s1 = seg.length - visualTrim(this.net, seg, seg.b);
     if (s1 - s0 < 0.5) return { surf, conc, lights };
-    const driveways: { d: number; side: number }[] = [];
-    if (t.sidewalk > 0) {
-      for (let d = s0 + 18 + (seg.id % 5) * 4; d < s1 - 12; d += 34 + (seg.id % 3) * 5) {
-        driveways.push({ d, side: ((Math.floor(d / 30) + seg.id) & 1) ? 1 : -1 });
-      }
-    }
+    const driveways = segDriveways(this.net, seg);
     const steps: number[] = [s0];
     for (const c of seg.samp.cum) if (c > s0 + 0.2 && c < s1 - 0.2) steps.push(c);
     // Add three curb samples per apron for a cheap, visible driveway dip.
@@ -517,19 +554,14 @@ export class RoadRenderer {
       }
       conc.box(F.p.x, top - 0.6, F.p.z, hw * 0.9, 0.5, 1.1, ya, CONCRETE);
     }
-    if (t.sidewalk > 0 || t.id === 'highway') {
-      const spacing = t.id === 'highway' ? 40 : 30;
-      let side = 1;
-      for (let d = s0 + 8; d < s1 - 4; d += spacing) {
-        const F = RoadRenderer.frame(seg, d);
-        const r = { x: -F.t.z, z: F.t.x };
-        const off = hw - 0.5;
-        const x = F.p.x + r.x * off * side, z = F.p.z + r.z * off * side;
-        // lamp arm points toward the road center (arm is along local -Z)
-        const ang = Math.atan2(r.x * side, r.z * side);
-        lights.push({ x, y: F.y, z, yaw: ang });
-        side = -side;
-      }
+    for (const { d, side } of segLamps(this.net, seg)) {
+      const F = RoadRenderer.frame(seg, d);
+      const r = { x: -F.t.z, z: F.t.x };
+      const off = hw - 0.5;
+      const x = F.p.x + r.x * off * side, z = F.p.z + r.z * off * side;
+      // lamp arm points toward the road center (arm is along local -Z)
+      const ang = Math.atan2(r.x * side, r.z * side);
+      lights.push({ x, y: F.y, z, yaw: ang });
     }
     return { surf, conc, lights };
   }

@@ -137,18 +137,27 @@ function lightMaterial(): THREE.MeshBasicMaterial {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
 attribute float signal, fade, iBrake, iSeed;
-varying float vSignal, vFade, vBrake, vSeed;`)
+varying float vSignal, vFade, vBrake, vSeed, vSide;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-vSignal = signal; vFade = fade; vBrake = iBrake; vSeed = iSeed;`);
+vSignal = signal; vFade = fade; vBrake = iBrake; vSeed = iSeed; vSide = position.x;`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
 uniform float uVehicleNight, uVehicleTime, uGlow;
-varying float vSignal, vFade, vBrake, vSeed;`)
+varying float vSignal, vFade, vBrake, vSeed, vSide;`)
       .replace('#include <color_fragment>', `#include <color_fragment>
 {
   float power = 1.0;
+  // iBrake packs the brake (0/1) and the turn signal (-1 right, 0, 1 left): brake + (turn + 1) * 2
+  float brakeOn = mod(vBrake, 2.0);
+  float turnDir = floor(vBrake * 0.5 + 0.01) - 1.0;
   if (vSignal < 1.5) power = 0.22 + uVehicleNight * 3.7;
-  else if (vSignal < 2.5) power = 0.28 + uVehicleNight * 0.55 + vBrake * 4.2;
+  else if (vSignal < 2.5) power = 0.28 + uVehicleNight * 0.55 + brakeOn * 4.2;
+  // the blinker: the lamps on the turning side (+x is the car's left) flash amber
+  if (vSignal < 2.5 && turnDir != 0.0 && vSide * turnDir > 0.0) {
+    float blink = step(0.0, sin(uVehicleTime * 9.4 + vSeed * 6.0));
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.52, 0.06), 0.92);
+    power = 0.2 + blink * 4.4;
+  }
   else if (vSignal < 4.5) {
     float side = step(3.5, vSignal);
     float flash = step(0.15, sin(uVehicleTime * 19.0 + vSeed * 13.0 + side * 3.14159));
@@ -160,7 +169,7 @@ varying float vSignal, vFade, vBrake, vSeed;`)
   diffuseColor.rgb *= power * uGlow;
 }`);
   };
-  material.customProgramCacheKey = () => 'aa-vehicle-lights-v4';
+  material.customProgramCacheKey = () => 'aa-vehicle-lights-v5';
   return material;
 }
 
@@ -187,7 +196,7 @@ interface KindBatch {
   near: LodBatch; far: LodBatch; pickMesh: THREE.InstancedMesh; free: number[]; used: number;
   active: Uint8Array; initialized: Uint8Array; handleByInstance: Int32Array;
   matrices: Float32Array; colors: Float32Array; previousX: Float32Array; previousZ: Float32Array; previousYaw: Float32Array;
-  spin: Float32Array; steer: Float32Array; braking: Uint8Array; damaged: Uint8Array; dirt: Float32Array; lod: Int8Array;
+  spin: Float32Array; steer: Float32Array; braking: Uint8Array; turn: Int8Array; damaged: Uint8Array; dirt: Float32Array; lod: Int8Array;
   revision: Uint32Array;
   wheelRadius: number; nearTriangles: number; farTriangles: number;
 }
@@ -304,7 +313,7 @@ export class VehicleRenderer {
         near, far, pickMesh, free: [], used: 0, active: new Uint8Array(this.perKind), initialized: new Uint8Array(this.perKind),
         handleByInstance: new Int32Array(this.perKind).fill(-1), matrices: new Float32Array(this.perKind * 16), colors: new Float32Array(this.perKind * 3),
         previousX: new Float32Array(this.perKind), previousZ: new Float32Array(this.perKind), previousYaw: new Float32Array(this.perKind),
-        spin: new Float32Array(this.perKind), steer: new Float32Array(this.perKind), braking: new Uint8Array(this.perKind), damaged: new Uint8Array(this.perKind),
+        spin: new Float32Array(this.perKind), steer: new Float32Array(this.perKind), braking: new Uint8Array(this.perKind), turn: new Int8Array(this.perKind), damaged: new Uint8Array(this.perKind),
         dirt: new Float32Array(this.perKind), lod: new Int8Array(this.perKind), revision: new Uint32Array(this.perKind), wheelRadius: model.wheelRadius,
         nearTriangles: model.nearTriangles, farTriangles: model.farTriangles,
       });
@@ -325,7 +334,7 @@ export class VehicleRenderer {
     if (instance < 0) return -1;
     const handle = this.freeHandles.length ? this.freeHandles.pop()! : this.slots.length;
     this.slots[handle] = { kind, instance }; batch.active[instance] = 1; batch.initialized[instance] = 0;
-    batch.handleByInstance[instance] = handle; batch.braking[instance] = 0; batch.damaged[instance] = 0;
+    batch.handleByInstance[instance] = handle; batch.braking[instance] = 0; batch.turn[instance] = 0; batch.damaged[instance] = 0;
     batch.spin[instance] = 0; batch.steer[instance] = 0;
     batch.revision[instance]++;
     batch.dirt[instance] = 0.1 + (((handle * 1103515245 + 12345) >>> 8) & 255) / 255 * 0.72;
@@ -362,6 +371,10 @@ export class VehicleRenderer {
   setBraking(handle: number, on: boolean): void {
     const slot = this.slots[handle]; if (slot) this.batches.get(slot.kind)!.braking[slot.instance] = on ? 1 : 0;
   }
+  /** Turn signal: -1 right, 0 off, 1 left. */
+  setTurn(handle: number, dir: number): void {
+    const slot = this.slots[handle]; if (slot) this.batches.get(slot.kind)!.turn[slot.instance] = dir > 0 ? 1 : dir < 0 ? -1 : 0;
+  }
   setDamaged(handle: number, on: boolean): void {
     const slot = this.slots[handle];
     if (slot) {
@@ -393,7 +406,7 @@ export class VehicleRenderer {
       lod.staticDirtyStart = Math.min(lod.staticDirtyStart, target); lod.staticDirtyEnd = Math.max(lod.staticDirtyEnd, target + 1);
     }
     lod.detailAttrs.spin?.setX(target, batch.spin[source]); lod.detailAttrs.steer?.setX(target, batch.steer[source]);
-    const brake = batch.braking[source];
+    const brake = batch.braking[source] + (batch.turn[source] + 1) * 2;
     if (staticChanged || lod.lastBrake[target] !== brake) {
       lod.lastBrake[target] = brake; lod.lightAttrs?.brake?.setX(target, brake);
       lod.brakeDirtyStart = Math.min(lod.brakeDirtyStart, target); lod.brakeDirtyEnd = Math.max(lod.brakeDirtyEnd, target + 1);

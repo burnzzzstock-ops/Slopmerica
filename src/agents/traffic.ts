@@ -39,7 +39,20 @@ export interface Car {
   smoker: boolean;
   redsRun: number;
   wob: number;
-  junction: null | { t: number; len: number; p0: V2; p1: V2; p2: V2; y0: number; y1: number; node: number; fromSeg: number };
+  /** crossing a junction on a cubic from the lane it left to the lane it joins; t is the share of the curve's length covered */
+  junction: null | { t: number; len: number; p0: V2; c1: V2; c2: V2; p2: V2; t1: V2; t2: V2; lut: number[]; y0: number; y1: number; node: number; fromSeg: number; lane2: number };
+  /** drawn lateral offset (m right of the centreline): eases across on a lane change */
+  lat: number;
+  /** its rate (m/s), which leans the nose into the change */
+  latV: number;
+  /** drawn heading, eased so nothing snaps */
+  ryaw: number;
+  /** the turn at the end of the current step (-1 right, 0 straight, 1 left), the speed to take it at, and the step it was worked out for */
+  turn: number;
+  turnV: number;
+  turnFor: number;
+  /** seconds until this driver will change lanes again */
+  laneCd: number;
   crashed: number;
   crashYaw: number;
   crashRoll: number;
@@ -65,6 +78,8 @@ export interface Car {
   wait?: number;
   /** set when the trip reached its destination */
   arrived?: boolean;
+  /** seconds of brake lights left (set when slowing hard) */
+  brakeT: number;
   /** called once when the car leaves the simulation (arrived, wrecked, or its road was removed) */
   onDone?: (c: Car, arrived: boolean) => void;
 }
@@ -89,6 +104,18 @@ const angLerp = (a: number, b: number, t: number) => {
 };
 const DEP_T = 2.6;
 const ARR_T = 2.2;
+
+function cubicAt(p0: V2, p1: V2, p2: V2, p3: V2, u: number): V2 {
+  const v = 1 - u, a = v * v * v, b = 3 * v * v * u, c = 3 * v * u * u, d = u * u * u;
+  return { x: a * p0.x + b * p1.x + c * p2.x + d * p3.x, z: a * p0.z + b * p1.z + c * p2.z + d * p3.z };
+}
+function cubicTan(p0: V2, p1: V2, p2: V2, p3: V2, u: number): V2 {
+  const v = 1 - u;
+  return {
+    x: 3 * v * v * (p1.x - p0.x) + 6 * v * u * (p2.x - p1.x) + 3 * u * u * (p3.x - p2.x),
+    z: 3 * v * v * (p1.z - p0.z) + 6 * v * u * (p2.z - p1.z) + 3 * u * u * (p3.z - p2.z),
+  };
+}
 
 interface Signal {
   phaseOf: Map<number, number>;
@@ -153,7 +180,8 @@ export class Traffic {
     const nx = c.path[c.pi + 1];
     const ns = nx && this.net.segs.get(nx.seg);
     if (!ns) return true;
-    const lane = Math.min(c.lane, ROAD_TYPES[ns.type].lanesPerDir - 1);
+    const lanesN = ROAD_TYPES[ns.type].lanesPerDir;
+    const lane = c.turn < 0 ? lanesN - 1 : c.turn > 0 ? 0 : Math.min(c.lane, lanesN - 1);
     const k = nx.seg * 16 + (nx.dir > 0 ? 0 : 8) + lane;
     const entryS = nx.dir > 0 ? ns.trimA : ns.trimB;
     const q = this.buckets.get(k);
@@ -239,11 +267,13 @@ export class Traffic {
 
   /** A* from a point on segO to a point on segD. Positions are arc lengths along each seg. */
   route(segO: RSeg, sO: number, segD: RSeg, sD: number): { steps: Step[]; startS: number; endS: number } | null {
-    if (segO.id === segD.id) {
+    const oneO = !!ROAD_TYPES[segO.type].oneWay, oneD = !!ROAD_TYPES[segD.type].oneWay;
+    if (segO.id === segD.id && !(oneO && sD < sO)) {
       const dir: 1 | -1 = sD >= sO ? 1 : -1;
       if (Math.abs(sD - sO) < 15) return null;
       return { steps: [{ seg: segO.id, dir }], startS: dir > 0 ? sO : segO.length - sO, endS: dir > 0 ? sD : segD.length - sD };
     }
+    // (a one-way trip back up its own street goes round the block)
     const vmax = 31;
     const goal = { x: 0, z: 0 };
     const gp = segD.samp.pts[Math.floor(segD.samp.pts.length / 2)];
@@ -256,9 +286,11 @@ export class Traffic {
     const speedO = ROAD_TYPES[segO.type].speed;
     // leaving segO toward a (dir -1) or b (dir +1)
     const A = this.net.nodes.get(segO.a)!, B = this.net.nodes.get(segO.b)!;
-    g.set(A.id, sO / speedO);
-    came.set(A.id, { prev: -1, seg: segO.id, dir: -1 });
-    open.push(A.id, sO / speedO + H(A));
+    if (!oneO) {
+      g.set(A.id, sO / speedO);
+      came.set(A.id, { prev: -1, seg: segO.id, dir: -1 });
+      open.push(A.id, sO / speedO + H(A));
+    }
     const gb = (segO.length - sO) / speedO;
     if (!g.has(B.id) || gb < g.get(B.id)!) {
       g.set(B.id, gb);
@@ -280,7 +312,7 @@ export class Traffic {
       exp++;
       const gc = g.get(cur.k)!;
       if (cur.k === segD.a && gc + extraA < bestGoal) { bestGoal = gc + extraA; bestEnd = { node: cur.k, dir: 1 }; }
-      if (cur.k === segD.b && gc + extraB < bestGoal) { bestGoal = gc + extraB; bestEnd = { node: cur.k, dir: -1 }; }
+      if (cur.k === segD.b && !oneD && gc + extraB < bestGoal) { bestGoal = gc + extraB; bestEnd = { node: cur.k, dir: -1 }; }
       const node = this.net.nodes.get(cur.k);
       if (!node) continue;
       const sigPenalty = this.signals.has(node.id) ? 5 : 0;
@@ -288,6 +320,7 @@ export class Traffic {
         const s = this.net.segs.get(sid);
         if (!s || s.id === segD.id) continue;
         const dir: 1 | -1 = s.a === node.id ? 1 : -1;
+        if (dir < 0 && ROAD_TYPES[s.type].oneWay) continue; // wrong way down a one-way
         const to = dir > 0 ? s.b : s.a;
         const ng = gc + this.segCost(s, dir > 0 ? 0 : 1) + sigPenalty;
         if (ng < (g.get(to) ?? Infinity)) {
@@ -486,6 +519,7 @@ export class Traffic {
       len: spec.length, drunk, reckless: drunk || (!sober && Math.random() < 0.08), smoker: !sober && (!oB || this.policySmokingAllowed?.(oB) !== false) && (!dB || this.policySmokingAllowed?.(dB) !== false) && Math.random() < 0.2, redsRun: 0, wob: Math.random() * 10,
       // codex:policies end
       junction: null, crashed: 0, crashYaw: 0, crashRoll: 0, x: 0, y: 0, z: 0, yaw: 0, purpose, dest,
+      lat: NaN, latV: 0, ryaw: NaN, turn: 0, turnV: Infinity, turnFor: -1, laneCd: 2 + Math.random() * 3, brakeT: 0,
       driver: Math.floor(Math.random() * ARCHETYPES.length), smokeT: Math.random() * 2, bac: drunk ? 0.09 + Math.random() * 0.2 : 0,
       dep: 0, arr: -1, lotO: null, lotD: null, local,
     };
@@ -523,8 +557,14 @@ export class Traffic {
     for (let k = 0; k < steps; k++) this.step(dtReal / steps, simSpeed, hour, population, jobs, camTarget, k === steps - 1);
   }
 
+  /** why blinkers are on (debug tallies) */
+  sigWhy = { box: 0, lot: 0, lane: 0, queue: 0, approach: 0, off: 0 };
+  /** sim seconds in the last step (drives the drawn easing) */
+  private lastDt = 0.016;
+
   private step(dtReal: number, simSpeed: number, hour: number, population: number, jobs: number, camTarget: THREE.Vector3, last: boolean) {
     const dt = dtReal * Math.max(0.0001, simSpeed);
+    this.lastDt = Math.max(dtReal, dt);
     if (simSpeed > 0) for (const s of this.signals.values()) s.t += dt;
 
     // demand for trips: population & jobs, time of day, induced demand
@@ -564,7 +604,7 @@ export class Traffic {
         const nx = c.path[c.pi + 1];
         const ns = nx && this.net.segs.get(nx.seg);
         if (ns) {
-          const k = nx.seg * 16 + (nx.dir > 0 ? 0 : 8) + Math.min(c.lane, ROAD_TYPES[ns.type].lanesPerDir - 1);
+          const k = nx.seg * 16 + (nx.dir > 0 ? 0 : 8) + c.junction.lane2;
           this.junctionTargets.set(k, (this.junctionTargets.get(k) ?? 0) + 1);
         }
         continue;
@@ -591,7 +631,12 @@ export class Traffic {
         const T = ROAD_TYPES[seg.type];
         const last = c.pi === c.path.length - 1;
         const exitS = last ? c.endS : seg.length - (st.dir > 0 ? seg.trimB : seg.trimA);
-        const v0 = T.speed * this.speedMul * c.v0mul * (c.drunk ? 0.9 + Math.sin(c.wob * 0.7) * 0.3 : 1);
+        let v0 = T.speed * this.speedMul * c.v0mul * (c.drunk ? 0.9 + Math.sin(c.wob * 0.7) * 0.3 : 1);
+        // ease off for the turn ahead: brake early and smoothly, not in the box
+        if (!last) {
+          this.planTurn(c);
+          if (Number.isFinite(c.turnV)) v0 = Math.min(v0, Math.sqrt(c.turnV * c.turnV + 2 * 2.1 * Math.max(0, exitS - c.s - 1)));
+        }
         // obstacles: leader, red light, blocked seg
         let gap = Infinity, dv = 0;
         const lead = arr[i + 1];
@@ -619,11 +664,52 @@ export class Traffic {
           const mid = seg.length / 2 - c.len;
           if (c.s < mid) { const g3 = mid - c.s; if (g3 < gap) { gap = g3; dv = c.v; } }
         }
+        // no lights here: wait at the line while someone from another road is crossing near your entry
+        if (!last && exitS - c.s < 22) {
+          const nodeId = st.dir > 0 ? seg.b : seg.a;
+          const inBox = !this.signals.has(nodeId) && this.junctionCars.get(nodeId);
+          if (inBox && inBox.length) {
+            const e = this.frameAt(seg, st.dir, exitS);
+            const ex = e.x + e.r.x * c.lat, ez = e.z + e.r.z * c.lat;
+            if (inBox.some((o) => o.crashed === 0 && o.junction && o.junction.fromSeg !== seg.id && o.junction.t < 0.85 && Math.hypot(o.x - ex, o.z - ez) < 7.5)) {
+              const g5 = exitS - 1.5 - c.s;
+              if (g5 < gap) { gap = g5; dv = c.v; }
+            }
+          }
+        }
+        // lanes: get over for the turn, or pass someone slow
+        const lanes = T.lanesPerDir;
+        c.laneCd -= dt;
+        if (lanes > 1 && c.laneCd <= 0 && c.v > 1) {
+          const toExit = exitS - c.s;
+          let want = c.lane;
+          if (!last && c.turn !== 0 && toExit < 140) want = c.turn > 0 ? 0 : lanes - 1;
+          else if (lead && gap < 35 && lead.v < v0 * 0.75 && toExit > 50) {
+            const side = c.lane === 0 ? 1 : c.lane === lanes - 1 ? -1 : Math.random() < 0.6 ? 1 : -1;
+            if (this.laneGap(st, c.lane + side, c) > gap + 12) want = c.lane + side;
+          }
+          want = clamp(want, 0, lanes - 1);
+          if (want !== c.lane) {
+            const to = c.lane + Math.sign(want - c.lane);
+            if (this.laneFree(st, to, c)) { c.lane = to; c.laneCd = 2.5 + Math.random() * 3; }
+            else c.laneCd = 0.4;
+          }
+        }
+        {
+          const tl = laneOffset(T, Math.min(c.lane, lanes - 1));
+          if (!Number.isFinite(c.lat)) c.lat = tl;
+          // drift across at a pace that suits the speed (a crawl doesn't swerve)
+          const rate = clamp(c.v * 0.26, 0.35, 2.4);
+          const step = clamp(tl - c.lat, -rate * dt, rate * dt);
+          c.latV = dt > 0 ? step / dt : 0;
+          c.lat += step;
+        }
         // IDM
         const a = 1.7, bdec = 2.8, Th = c.drunk ? 0.8 : 1.3, s0 = c.drunk ? 1.5 : 2.5;
         const sStar = s0 + Math.max(0, c.v * Th + (c.v * dv) / (2 * Math.sqrt(a * bdec)));
         let acc = a * (1 - Math.pow(c.v / Math.max(1, v0), 4) - (gap < Infinity ? Math.pow(sStar / Math.max(0.1, gap), 2) : 0));
         acc = clamp(acc, -12, a);
+        c.brakeT = acc < -1.2 ? 0.6 : Math.max(0, c.brakeT - dt);
         c.v = Math.max(0, c.v + acc * dt);
         const move = Math.min(c.v * dt, Math.max(0, gap + 0.5));
         c.s += move;
@@ -659,14 +745,14 @@ export class Traffic {
         const nseg = next && this.net.segs.get(next.seg);
         if (!nseg) { c.crashed = -1; continue; }
         // spillback: wait if the entry of the next segment is full
-        const key = nseg.id * 16 + (next.dir > 0 ? 0 : 8) + Math.min(c.lane, ROAD_TYPES[nseg.type].lanesPerDir - 1);
+        const key = nseg.id * 16 + (next.dir > 0 ? 0 : 8) + J.lane2;
         const q = this.buckets.get(key);
         const entryS = next.dir > 0 ? nseg.trimA : nseg.trimB;
         const entered = this.enteredAt.get(key);
         const frontS = Math.min(q && q.length ? q[0].s - q[0].len : Infinity, entered ?? Infinity);
         const blocked = frontS - entryS < 3 && J.t > 0.7;
-        const vt = blocked ? 0 : Math.min(9, ROAD_TYPES[nseg.type].speed);
-        c.v += clamp(vt - c.v, -8 * dt, 2 * dt);
+        const vt = blocked ? 0 : Number.isFinite(c.turnV) ? c.turnV : Math.min(13, ROAD_TYPES[nseg.type].speed);
+        c.v += clamp(vt - c.v, -6 * dt, 2.2 * dt);
         J.t += (c.v * dt) / Math.max(1, J.len);
         // red-light runners get T-boned
         if (c.redsRun > 0) {
@@ -681,7 +767,9 @@ export class Traffic {
           c.pi++;
           c.s = entryS;
           this.enteredAt.set(key, entryS - c.len);
-          c.lane = Math.min(c.lane, ROAD_TYPES[nseg.type].lanesPerDir - 1);
+          c.lane = J.lane2;
+          c.lat = laneOffset(ROAD_TYPES[nseg.type], c.lane);
+          c.latV = 0;
           c.redsRun = 0;
         }
       }
@@ -744,14 +832,96 @@ export class Traffic {
     const nseg = this.net.segs.get(next.seg);
     if (!nseg) { c.crashed = -1; return; }
     const nodeId = st.dir > 0 ? seg.b : seg.a;
-    const p0 = this.lanePos(seg, st.dir, c.s, c.lane);
-    const lane2 = Math.min(c.lane, ROAD_TYPES[nseg.type].lanesPerDir - 1);
+    this.planTurn(c);
+    const f0 = this.frameAt(seg, st.dir, c.s);
+    const lat = Number.isFinite(c.lat) ? c.lat : laneOffset(ROAD_TYPES[seg.type], c.lane);
+    const p0 = { x: f0.x + f0.r.x * lat, z: f0.z + f0.r.z * lat };
+    // turning right lands in the kerb lane, left in the inside lane
+    const lanesN = ROAD_TYPES[nseg.type].lanesPerDir;
+    const lane2 = c.turn < 0 ? lanesN - 1 : c.turn > 0 ? 0 : Math.min(c.lane, lanesN - 1);
     const entryS = next.dir > 0 ? nseg.trimA : nseg.trimB;
     const p2 = this.lanePos(nseg, next.dir, entryS, lane2);
-    const t1 = p0.t, t2 = p2.t;
-    const d = Math.hypot(p2.p.x - p0.p.x, p2.p.z - p0.p.z);
-    const p1 = { x: (p0.p.x + t1.x * d * 0.5 + p2.p.x - t2.x * d * 0.5) / 2, z: (p0.p.z + t1.z * d * 0.5 + p2.p.z - t2.z * d * 0.5) / 2 };
-    c.junction = { t: 0, len: Math.max(2, d * 1.1), p0: p0.p, p1, p2: p2.p, y0: p0.y, y1: p2.y, node: nodeId, fromSeg: seg.id };
+    const t1 = f0.t, t2 = p2.t;
+    const d = Math.hypot(p2.p.x - p0.x, p2.p.z - p0.z);
+    const k = d * 0.42;
+    const c1 = { x: p0.x + t1.x * k, z: p0.z + t1.z * k };
+    const c2 = { x: p2.p.x - t2.x * k, z: p2.p.z - t2.z * k };
+    // arc length table so the car crosses at an even speed
+    const lut = [0];
+    let px = p0.x, pz = p0.z, L = 0;
+    for (let i = 1; i <= 10; i++) {
+      const q = cubicAt(p0, c1, c2, p2.p, i / 10);
+      L += Math.hypot(q.x - px, q.z - pz);
+      lut.push(L);
+      px = q.x; pz = q.z;
+    }
+    for (let i = 1; i <= 10; i++) lut[i] /= Math.max(1e-6, L);
+    c.junction = { t: 0, len: Math.max(2, L), p0, c1, c2, p2: p2.p, t1, t2, lut, y0: f0.y, y1: p2.y, node: nodeId, fromSeg: seg.id, lane2 };
+  }
+
+  /** Travel-direction tangent at the far end (exit) or near end (entry) of a step. */
+  private endTangent(seg: RSeg, dir: 1 | -1, exit: boolean): V2 {
+    const P = seg.samp.pts, n = P.length;
+    const atB = exit ? dir > 0 : dir < 0;
+    const a = atB ? P[Math.max(0, n - 3)] : P[0], b = atB ? P[n - 1] : P[Math.min(n - 1, 2)];
+    const t = norm(sub(b, a));
+    return dir > 0 ? t : { x: -t.x, z: -t.z };
+  }
+
+  /**
+   * The turn at the end of the car's current step and the speed to take it
+   * at: full speed through a bend in the road, 13 m/s straight over a
+   * crossroads, down to walking pace for a hairpin.
+   */
+  private planTurn(c: Car) {
+    if (c.turnFor === c.pi) return;
+    c.turnFor = c.pi;
+    c.turn = 0;
+    c.turnV = Infinity;
+    const st = c.path[c.pi], nx = c.path[c.pi + 1];
+    if (!nx) return;
+    const seg = this.net.segs.get(st.seg), ns = this.net.segs.get(nx.seg);
+    if (!seg || !ns) return;
+    const t1 = this.endTangent(seg, st.dir, true), t2 = this.endTangent(ns, nx.dir, false);
+    const ang = Math.abs(Math.atan2(t1.x * t2.z - t1.z * t2.x, t1.x * t2.x + t1.z * t2.z));
+    // lanes sit to the right, (-t.z, t.x): heading that way is a right turn
+    const right = t2.x * -t1.z + t2.z * t1.x > 0;
+    const node = this.net.nodes.get(st.dir > 0 ? seg.b : seg.a);
+    const through = (node?.segs.length ?? 0) <= 2;
+    const vNext = ROAD_TYPES[ns.type].speed * this.speedMul;
+    if (ang < 0.35) { c.turnV = through ? vNext : Math.min(vNext, 13); return; }
+    c.turn = through ? 0 : right ? -1 : 1;
+    c.turnV = lerp(through ? 12 : 8.5, right ? 4.2 : 5.2, clamp(ang / (Math.PI / 2), 0, 1));
+  }
+
+  /** Room to move into lane `to` of this step beside the car? */
+  private laneFree(st: Step, to: number, c: Car): boolean {
+    const q = this.buckets.get(st.seg * 16 + (st.dir > 0 ? 0 : 8) + to);
+    if (!q) return true;
+    for (const o of q) {
+      if (o === c) continue;
+      if (o.s >= c.s) { if (o.s - o.len - c.s < 7 + Math.max(0, c.v - o.v) * 1.2) return false; }
+      else if (c.s - c.len - o.s < 5 + Math.max(0, o.v - c.v) * 1.5) return false;
+    }
+    return true;
+  }
+
+  /** How far the nearest car ahead in lane `to` is (Infinity = open road). */
+  private laneGap(st: Step, to: number, c: Car): number {
+    const q = this.buckets.get(st.seg * 16 + (st.dir > 0 ? 0 : 8) + to);
+    let g = Infinity;
+    if (q) for (const o of q) if (o !== c && o.s > c.s) g = Math.min(g, o.s - o.len - c.s);
+    return g;
+  }
+
+  /** Centreline point, travel tangent, right vector and height at travel distance s. */
+  private frameAt(seg: RSeg, dir: 1 | -1, s: number) {
+    const arc = dir > 0 ? s : seg.length - s;
+    const { i, f } = locate(seg.samp, clamp(arc, 0, seg.length));
+    const a = seg.samp.pts[i], b = seg.samp.pts[i + 1];
+    const tt = norm(sub(b, a));
+    const t = { x: tt.x * dir, z: tt.z * dir };
+    return { x: lerp(a.x, b.x, f), z: lerp(a.z, b.z, f), t, r: { x: -t.z, z: t.x }, y: lerp(seg.hs[i], seg.hs[i + 1], f) };
   }
 
   /** World position of a lane at travel distance s. */
@@ -769,50 +939,82 @@ export class Traffic {
 
   private place(dtReal: number) {
     const R = this.renderer;
+    const ease = 1 - Math.exp(-this.lastDt * 14);
     for (const c of this.cars) {
       if (c.crashed === -1) continue;
       c.wob += dtReal * (c.drunk ? 1.6 : 0);
       let x: number, y: number, z: number, yaw: number, pitch = 0;
+      let signal = 0;
       if (c.junction) {
         const J = c.junction;
-        const t = clamp(J.t, 0, 1), u = 1 - t;
-        x = u * u * J.p0.x + 2 * u * t * J.p1.x + t * t * J.p2.x;
-        z = u * u * J.p0.z + 2 * u * t * J.p1.z + t * t * J.p2.z;
-        const dx = 2 * u * (J.p1.x - J.p0.x) + 2 * t * (J.p2.x - J.p1.x);
-        const dz = 2 * u * (J.p1.z - J.p0.z) + 2 * t * (J.p2.z - J.p1.z);
-        yaw = Math.atan2(dx, dz);
-        y = lerp(J.y0, J.y1, t) + 0.12;
+        // share of length covered -> curve parameter
+        const f = clamp(J.t, 0, 1);
+        let i = 1;
+        while (i < 10 && J.lut[i] < f) i++;
+        const u = (i - 1 + (f - J.lut[i - 1]) / Math.max(1e-6, J.lut[i] - J.lut[i - 1])) / 10;
+        const q = cubicAt(J.p0, J.c1, J.c2, J.p2, u);
+        const dq = cubicTan(J.p0, J.c1, J.c2, J.p2, u);
+        x = q.x;
+        z = q.z;
+        // a bend in the road with no junction box is a zero-length curve: head along the lanes
+        yaw = J.len > 2.05 && Math.hypot(dq.x, dq.z) > 1e-3 ? Math.atan2(dq.x, dq.z) : Math.atan2(lerp(J.t1.x, J.t2.x, f), lerp(J.t1.z, J.t2.z, f));
+        y = lerp(J.y0, J.y1, f) + 0.12;
+        pitch = -Math.atan2(J.y1 - J.y0, J.len);
+        signal = c.turn;
       } else {
         const st = c.path[c.pi];
         const seg = this.net.segs.get(st.seg);
         if (!seg) continue;
-        const lp = this.lanePos(seg, st.dir, c.s, c.lane);
-        x = lp.p.x;
-        z = lp.p.z;
-        y = lp.y + 0.12;
-        yaw = Math.atan2(lp.t.x, lp.t.z);
+        if (!Number.isFinite(c.lat)) c.lat = laneOffset(ROAD_TYPES[seg.type], c.lane);
+        const F = this.frameAt(seg, st.dir, c.s);
+        x = F.x + F.r.x * c.lat;
+        z = F.z + F.r.z * c.lat;
+        y = F.y + 0.12;
+        // heading from where the front and back wheels are: smooth round bends (no snap at each sample)
+        const half = c.len * 0.36;
+        const fF = this.frameAt(seg, st.dir, c.s + half), fR = this.frameAt(seg, st.dir, c.s - half);
+        let hx = fF.x + fF.r.x * c.lat - (fR.x + fR.r.x * c.lat), hz = fF.z + fF.r.z * c.lat - (fR.z + fR.r.z * c.lat);
+        const hl = Math.hypot(hx, hz) || 1;
+        // lean the nose into a lane change
+        const v = Math.max(3, c.v);
+        hx = (hx / hl) * v + F.r.x * c.latV;
+        hz = (hz / hl) * v + F.r.z * c.latV;
+        yaw = Math.atan2(hx, hz);
         if (c.drunk && c.crashed === 0) {
           const w = Math.sin(c.wob) * 1.1;
-          x += -lp.t.z * w;
-          z += lp.t.x * w;
+          x += -F.t.z * w;
+          z += F.t.x * w;
           yaw += Math.cos(c.wob) * 0.12;
         }
-        const ahead = this.lanePos(seg, st.dir, Math.min(seg.length, c.s + 2), c.lane);
-        pitch = -Math.atan2(ahead.y - lp.y, 2);
+        pitch = -Math.atan2(fF.y - fR.y, Math.max(0.5, half * 2));
+        const lastStep = c.pi === c.path.length - 1;
+        const exitS = lastStep ? c.endS : seg.length - (st.dir > 0 ? seg.trimB : seg.trimA);
+        if (!lastStep && exitS - c.s < 32) signal = c.turn;
+        else if (Math.abs(c.latV) > 0.2) signal = c.latV > 0 ? -1 : 1;
+        else if (lastStep && c.lotD && exitS - c.s < 22) signal = this.lotSide(seg, st.dir, c.s, c.lotD);
       }
-      // driveway animation: slide between the lot point and the lane
+      // driveway: an arc between the lot and the lane, nose first both ways
       const lot = c.dep > 0 ? c.lotO : c.arr >= 0 ? c.lotD : null;
       if (lot && !c.junction) {
-        const m = c.dep > 0 ? 1 - c.dep / DEP_T : 1 - c.arr / ARR_T; // 1 = on the lane
+        const m = c.dep > 0 ? 1 - c.dep / DEP_T : 1 - c.arr / ARR_T; // 0 = in the lot, 1 = on the lane
         const e = m * m * (3 - 2 * m);
-        const laneYaw = yaw;
-        const toLane = Math.atan2(x - lot.x, z - lot.z);
         const laneY = y, lanePitch = pitch;
-        x = lerp(lot.x, x, e);
-        z = lerp(lot.z, z, e);
-        // nose toward the road while pulling out, toward the lot while pulling in
-        const along = c.dep > 0 ? toLane : toLane + Math.PI;
-        yaw = angLerp(along, laneYaw, smooth01((m - 0.45) / 0.55));
+        const tx = Math.sin(yaw), tz = Math.cos(yaw);
+        const d = Math.max(2, Math.hypot(x - lot.x, z - lot.z));
+        const out = c.dep > 0;
+        const toRoad = { x: (x - lot.x) / d, z: (z - lot.z) / d };
+        const P0 = lot, P3 = { x, z };
+        const P1 = { x: lot.x + toRoad.x * d * 0.45, z: lot.z + toRoad.z * d * 0.45 };
+        const P2 = { x: x - (out ? 1 : -1) * tx * d * 0.55, z: z - (out ? 1 : -1) * tz * d * 0.55 };
+        const q = cubicAt(P0, P1, P2, P3, e), dq = cubicTan(P0, P1, P2, P3, e);
+        x = q.x;
+        z = q.z;
+        if (Math.hypot(dq.x, dq.z) > 1e-4) yaw = out ? Math.atan2(dq.x, dq.z) : Math.atan2(-dq.x, -dq.z);
+        if (out) {
+          // pulling out: blink toward the way the lane runs
+          const k = tx * -Math.cos(yaw) + tz * Math.sin(yaw);
+          signal = k > 0.05 ? -1 : k < -0.05 ? 1 : 0;
+        }
         // sit on the ground between road and lot, nose and tail on the slope
         // (held level, a long truck on a hillside had one end buried and the other in the air)
         if (this.groundAt) {
@@ -822,13 +1024,25 @@ export class Traffic {
           pitch = lerp(-Math.atan2(gF - gB, c.len), lanePitch, e);
         } else pitch = lerp(0, lanePitch, e);
       }
-      c.x = x; c.y = y; c.z = z; c.yaw = yaw;
+      // the drawn heading eases (the junction and lane seams used to snap it)
+      if (!Number.isFinite(c.ryaw) || c.crashed > 0) c.ryaw = yaw;
+      else c.ryaw = angLerp(c.ryaw, yaw, ease);
+      c.x = x; c.y = y; c.z = z; c.yaw = c.ryaw;
       if (c.crashed > 0) R.set(c.h, x, y, z, yaw + c.crashYaw, pitch, c.crashRoll);
-      else R.set(c.h, x, y, z, yaw, pitch, 0);
-      R.setBraking(c.h, c.v < 3);
+      else R.set(c.h, x, y, z, c.ryaw, pitch, 0);
+      R.setBraking(c.h, c.v < 3 || (c.crashed === 0 && c.v > 3 && c.brakeT > 0));
+      R.setTurn(c.h, c.crashed > 0 ? 0 : signal);
+      if (signal) this.sigWhy[c.junction ? 'box' : lot ? 'lot' : Math.abs(c.latV) > 0.2 ? 'lane' : c.v < 1 ? 'queue' : 'approach']++;
+      else this.sigWhy.off++;
       R.setDamaged(c.h, c.crashed > 0); // AA vehicle shader darkens crumpled cars until cleanup.
     }
     R.flush();
+  }
+
+  /** Which side of the lane a lot is on: -1 right, 1 left (the blinker for pulling in). */
+  private lotSide(seg: RSeg, dir: 1 | -1, s: number, lot: V2): number {
+    const F = this.frameAt(seg, dir, s);
+    return (lot.x - F.x) * F.r.x + (lot.z - F.z) * F.r.z > 0 ? -1 : 1;
   }
 
   crash(cars: Car[], seg: RSeg | undefined, drunk: boolean) {

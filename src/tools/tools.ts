@@ -1,7 +1,7 @@
 // Player tools: inspect, road (straight / curve / freeform), One More Lane,
 // bulldoze, zoning brush. Converts pointer input into world edits.
 import * as THREE from 'three';
-import { add, Cubic, dist, lineCubic, norm, quadCubic, sampleCubic, scale, sub, V2, closestOnSampled } from '../core/math';
+import { add, Cubic, dist, lineCubic, locate, norm, quadCubic, sampleCubic, scale, sub, V2, closestOnSampled } from '../core/math';
 import type { PointerHandlers } from '../render/camera';
 import type { Snap } from '../roads/network';
 import { ROAD_TYPES, RoadTypeId } from '../roads/roadTypes';
@@ -102,7 +102,7 @@ export class Tools implements PointerHandlers {
   private ghost: PlacementGhost;
 
   constructor(private game: Game) {
-    this.previewMat = new THREE.MeshBasicMaterial({ color: 0x7fd8ff, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide });
+    this.previewMat = new THREE.MeshBasicMaterial({ color: 0x7fd8ff, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, vertexColors: true });
     this.preview = new THREE.Mesh(new THREE.BufferGeometry(), this.previewMat);
     this.preview.renderOrder = 5;
     this.preview.visible = false;
@@ -564,7 +564,7 @@ export class Tools implements PointerHandlers {
         else curve = this.curveTo(end);
         if (curve) {
           const plan = net.plan(this.start, curve, this.roadType, this.game.sim.spendable());
-          this.drawRibbon(this.preview, curve, ROAD_TYPES[this.roadType].width);
+          this.drawRibbon(this.preview, curve, ROAD_TYPES[this.roadType].width, !!ROAD_TYPES[this.roadType].oneWay);
           this.preview.visible = true;
           this.previewMat.color.set(plan.ok ? 0x7fd8ff : 0xff4d4d);
           const net$ = plan.cost - plan.grant;
@@ -648,9 +648,10 @@ export class Tools implements PointerHandlers {
     }
   }
 
-  private drawRibbon(mesh: THREE.Mesh, c: Cubic, width: number) {
+  private drawRibbon(mesh: THREE.Mesh, c: Cubic, width: number, oneWay = false) {
     const s = sampleCubic(c, 3);
     const pos: number[] = [];
+    const col: number[] = [];
     const idx: number[] = [];
     const hw = width / 2;
     for (let i = 0; i < s.pts.length; i++) {
@@ -660,13 +661,27 @@ export class Tools implements PointerHandlers {
       const r = { x: -t.z, z: t.x };
       const y = Math.max(this.game.terrain.h(p.x, p.z), 0) + 0.9;
       pos.push(p.x - r.x * hw, y, p.z - r.z * hw, p.x + r.x * hw, y, p.z + r.z * hw);
+      col.push(1, 1, 1, 1, 1, 1);
       if (i > 0) {
         const a = (i - 1) * 2;
         idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
       }
     }
+    // a one-way shows which way it will run: chevrons the way you're dragging
+    if (oneWay) for (let d = 5; d < s.length - 3; d += 11) {
+      const { i, f } = locate(s, d);
+      const a = s.pts[i], b = s.pts[i + 1];
+      const t = norm(sub(b, a)), r = { x: -t.z, z: t.x };
+      const px = a.x + (b.x - a.x) * f, pz = a.z + (b.z - a.z) * f;
+      const y = Math.max(this.game.terrain.h(px, pz), 0) + 0.95;
+      const k = pos.length / 3, w = Math.min(1.6, hw * 0.6);
+      pos.push(px + t.x * 2.2, y, pz + t.z * 2.2, px - t.x * 0.9 + r.x * w, y, pz - t.z * 0.9 + r.z * w, px - t.x * 0.9 - r.x * w, y, pz - t.z * 0.9 - r.z * w);
+      col.push(0.15, 0.15, 0.2, 0.15, 0.15, 0.2, 0.15, 0.15, 0.2);
+      idx.push(k, k + 1, k + 2);
+    }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     g.setIndex(idx);
     mesh.geometry.dispose();
     mesh.geometry = g;

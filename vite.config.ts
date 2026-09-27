@@ -1,6 +1,21 @@
 import { execSync } from 'node:child_process';
 import { defineConfig } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
+import { cpSync, existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import type { Plugin } from 'vite';
+
+/** public/ isn't copied (the asset catalog is big): ship only the game's Civic Foundry pack beside the page. */
+function civicPack(outDir: string): Plugin {
+  return {
+    name: 'slop-civic-pack',
+    apply: 'build',
+    closeBundle() {
+      const src = resolve('public/civic');
+      if (existsSync(src)) cpSync(src, resolve(outDir, 'civic'), { recursive: true });
+    },
+  };
+}
 
 // short commit + date, shown on the title screen and in bug reports
 function buildId() {
@@ -15,7 +30,7 @@ function buildId() {
 export default defineConfig(({ mode }) => ({
   base: './',
   define: { __BUILD__: JSON.stringify(buildId()) },
-  plugins: mode === 'single' ? [viteSingleFile()] : [],
+  plugins: [...(mode === 'single' ? [viteSingleFile()] : []), civicPack(mode === 'single' ? 'dist-single' : 'dist')],
   build: {
     // The optional art library has its own catalog build; keep game downloads lean.
     copyPublicDir: false,

@@ -17,6 +17,8 @@ const MEME = [
 const SUFFIX: Record<RoadTypeId, string[]> = {
   gravel: ['Holler Rd', 'Hollow Rd', 'Lane', 'Trail', 'Pike'],
   twoLane: ['Dr', 'Ln', 'Ct', 'Way', 'Rd', 'Circle', 'Trace'],
+  oneWay1: ['Alley', 'Row', 'Mews', 'Ln', 'St'],
+  oneWay2: ['St', 'Ave', 'Main St', 'Market St'],
   stroad4: ['Pkwy', 'Blvd', 'Hwy', 'Crossing', 'Commons Dr'],
   stroad6: ['Pkwy', 'Blvd', 'Freedom Hwy', 'Expressway'],
   stroad8: ['Mega Pkwy', 'Freedom Blvd', 'Hwy'],

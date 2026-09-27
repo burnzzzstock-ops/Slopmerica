@@ -39,7 +39,21 @@ export interface Ped {
   retries?: number;
   /** the building this person came out of (each lets only a few of its occupants out at once) */
   fromBld?: number;
+  /** drawn heading, eased round corners */
+  ryaw?: number;
+  /** extra step to the walker's right (m): walking side by side, keeping right */
+  lat?: number;
 }
+
+/** Leg cycles per metre: a stride (two steps) is about 1.4 m walking, 2.2 m running. */
+const STRIDE = { walk: 1.42, run: 2.2 };
+
+const angEase = (a: number, b: number, t: number) => {
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return a + d * t;
+};
 
 const hippies = () => ARCHETYPES.map((a, i) => (a.hippie ? i : -1)).filter((i) => i >= 0);
 const normies = () => ARCHETYPES.map((a, i) => (!a.hippie ? i : -1)).filter((i) => i >= 0);
@@ -137,21 +151,25 @@ export class Pedestrians {
         const g = p.go;
         const k = Math.max(0.3, Math.min(simSpeed, 3));
         g.t += dtReal * k;
-        p.phase += dtReal * 1.9 * k;
+        const gd = Math.hypot(g.tx - g.fx, g.tz - g.fz);
+        p.phase += (dtReal * k * (gd / Math.max(0.4, g.T))) / STRIDE.walk;
         const u = Math.min(1, g.t / g.T);
         p.x = lerp(g.fx, g.tx, u);
         p.z = lerp(g.fz, g.tz, u);
         p.y = this.terrain.h(p.x, p.z) + 0.06;
-        if (Math.hypot(g.tx - g.fx, g.tz - g.fz) > 0.2) p.yaw = Math.atan2(g.tx - g.fx, g.tz - g.fz);
+        if (gd > 0.2) p.yaw = Math.atan2(g.tx - g.fx, g.tz - g.fz);
+        p.ryaw = p.ryaw === undefined ? p.yaw : angEase(p.ryaw, p.yaw, 1 - Math.exp(-dtReal * 9));
         if (u >= 1) {
           delete p.go;
           if (g.remove) { p.gone = true; continue; }
           if (p.kind === 'walk') this.placeOnSidewalk(p);
         }
-        this.renderer.set(p.h, p.x, p.y, p.z, p.yaw, p.go ? 'walk' : p.action, p.phase);
+        this.renderer.set(p.h, p.x, p.y, p.z, p.ryaw ?? p.yaw, p.go ? 'walk' : p.action, p.phase);
         continue;
       }
-      p.phase += dtReal * (p.kind === 'walk' ? p.speed * 1.6 : 1) * Math.max(0.3, Math.min(simSpeed, 3));
+      // feet planted: the legs cycle as fast as the body moves (they used to shuffle at 3x)
+      const k = Math.max(0.3, Math.min(simSpeed, 3));
+      p.phase += dtReal * k * (p.kind === 'walk' ? p.speed / (p.action === 'run' ? STRIDE.run : STRIDE.walk) : 1);
       if (p.kind === 'walk') {
         const seg = this.net.segs.get(p.seg);
         if (!seg) continue;
@@ -172,13 +190,39 @@ export class Pedestrians {
           const nodeId = p.s > seg.length ? seg.b : seg.a;
           const node = this.net.nodes.get(nodeId);
           const opts = node ? node.segs.filter((id) => id !== seg.id) : [];
-          if (!opts.length) { p.dir = -p.dir as 1 | -1; p.s = clamp(p.s, 0, seg.length); }
-          else {
+          if (!opts.length) {
+            // dead end: turn round on the same sidewalk (stepping over to keep right)
+            const fx = p.x, fz = p.z;
+            p.dir = -p.dir as 1 | -1;
+            p.s = clamp(p.s, 0, seg.length);
+            this.placeOnSidewalk(p);
+            const gd = Math.hypot(p.x - fx, p.z - fz);
+            if (gd > 0.3) {
+              this.goTo(p, fx, fz, p.x, p.z, false);
+              const go = (p as Ped).go as Ped['go'];
+              if (go) go.T = Math.max(0.4, gd / Math.max(0.8, p.speed));
+              continue;
+            }
+          } else {
             const nid = opts[Math.floor(Math.random() * opts.length)];
             const ns = this.net.segs.get(nid)!;
+            // the side is relative to the road's direction: keep the walker on
+            // their own hand (they used to pop across the street at corners)
+            const hand = p.side * p.dir;
+            const fx = p.x, fz = p.z;
             p.seg = nid;
             p.dir = ns.a === nodeId ? 1 : -1;
+            p.side = (hand * p.dir) as 1 | -1;
             p.s = p.dir > 0 ? 0.5 : ns.length - 0.5;
+            this.placeOnSidewalk(p);
+            // round the corner (or over the crosswalk) on foot
+            const gd = Math.hypot(p.x - fx, p.z - fz);
+            if (gd > 0.3) {
+              this.goTo(p, fx, fz, p.x, p.z, false);
+              const go = (p as Ped).go as Ped['go'];
+              if (go) go.T = Math.max(0.4, gd / Math.max(0.8, p.speed));
+              continue;
+            }
           }
         }
         this.placeOnSidewalk(p);
@@ -186,7 +230,8 @@ export class Pedestrians {
         const seg = this.net.segs.get(p.seg);
         if (!seg || seg.blocked <= 0) { p.life = 0; continue; }
       }
-      this.renderer.set(p.h, p.x, p.y, p.z, p.yaw, p.action, p.phase);
+      p.ryaw = p.ryaw === undefined ? p.yaw : angEase(p.ryaw, p.yaw, 1 - Math.exp(-dtReal * 8));
+      this.renderer.set(p.h, p.x, p.y, p.z, p.ryaw, p.action, p.phase);
     }
     this.renderer.flush();
   }
@@ -252,8 +297,10 @@ export class Pedestrians {
     const tan = norm(sub(b, a));
     const r = { x: -tan.z, z: tan.x };
     const off = t.sidewalk > 0 ? t.width / 2 - t.sidewalk / 2 : t.width / 2 + 1.3; // no sidewalk: walk in the grass
-    p.x = lerp(a.x, b.x, f) + r.x * off * p.side;
-    p.z = lerp(a.z, b.z, f) + r.z * off * p.side;
+    // walkers keep to their right, so two coming the other way pass instead of walking through each other
+    const keep = p.kind === 'walk' ? Math.min(0.45, t.sidewalk * 0.22) * p.dir + (p.lat ?? 0) * p.dir : 0;
+    p.x = lerp(a.x, b.x, f) + r.x * (off * p.side + keep);
+    p.z = lerp(a.z, b.z, f) + r.z * (off * p.side + keep);
     p.y = t.sidewalk > 0 ? lerp(seg.hs[i], seg.hs[i + 1], f) + 0.08 : this.terrain.h(p.x, p.z);
     p.yaw = Math.atan2(tan.x * p.dir, tan.z * p.dir);
   }
@@ -375,9 +422,18 @@ export class Pedestrians {
     const a = seg.samp.pts[i], b = seg.samp.pts[i + 1];
     const tan = norm(sub(b, a));
     const side: 1 | -1 = (bld.x - lerp(a.x, b.x, f)) * -tan.z + (bld.z - lerp(a.z, b.z, f)) * tan.x >= 0 ? 1 : -1;
-    const p: Omit<Ped, 'h'> = { arch: this.archFor('walk', bld.brand), kind: 'walk', action: Math.random() < 0.1 ? 'run' : 'walk', seg: seg.id, dir: Math.random() < 0.5 ? 1 : -1, s: sAt, side, speed: 1.1 + Math.random() * 0.6, life: 40 + Math.random() * 60, x: 0, y: 0, z: 0, yaw: 0, phase: Math.random() * 10, label: seg.name, fromBld: bld.id };
+    const p: Omit<Ped, 'h'> = { arch: this.archFor('walk', bld.brand), kind: 'walk', action: Math.random() < 0.1 ? 'run' : 'walk', seg: seg.id, dir: Math.random() < 0.5 ? 1 : -1, s: sAt, side, speed: 1.1 + Math.random() * 0.6, life: 40 + Math.random() * 60, x: 0, y: 0, z: 0, yaw: 0, phase: Math.random() * 10, label: seg.name, fromBld: bld.id, lat: 0 };
     if (p.action === 'run') p.speed = 3;
     this.placeOnSidewalk(p as Ped);
+    // a quarter walk with someone, side by side, in step-ish
+    if (p.action === 'walk' && (ROAD_TYPES[seg.type].sidewalk > 1.5) && Math.random() < 0.25 && this.peds.length < this.max - 1) {
+      const q: Omit<Ped, 'h'> = { ...p, arch: this.archFor('walk', bld.brand), lat: -0.72, phase: p.phase + 0.45 + Math.random() * 0.1, x: 0, y: 0, z: 0 };
+      this.placeOnSidewalk(q as Ped);
+      const dr = this.door(bld);
+      this.goTo(q as Ped, dr.x, dr.z, q.x, q.z, false);
+      if (q.go) q.go.T += 0.5;
+      this.add(q);
+    }
     const dr = this.door(bld);
     this.goTo(p, dr.x, dr.z, p.x, p.z, false);
     this.add(p);

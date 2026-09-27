@@ -357,7 +357,7 @@ class LegacyPeopleRenderer {
     p.crouch = p.rootPitch = p.rootRoll = 0;
     const s = Math.sin(t), c = Math.cos(t);
     switch (action) {
-      case 'walk': p.leftLeg = s * 0.55; p.rightLeg = -p.leftLeg; p.leftCalf = Math.max(0, -s) * 0.55; p.rightCalf = Math.max(0, s) * 0.55; p.leftArm = -s * 0.45; p.rightArm = s * 0.45; p.bob = Math.abs(c) * 0.035; break;
+      case 'walk': p.leftLeg = s * 0.42; p.rightLeg = -p.leftLeg; p.leftCalf = Math.max(0, -s) * 0.62; p.rightCalf = Math.max(0, s) * 0.62; p.leftArm = -s * 0.36; p.rightArm = s * 0.36; p.leftFore = 0.18 + Math.max(0, -s) * 0.2; p.rightFore = 0.18 + Math.max(0, s) * 0.2; p.torsoRoll = s * 0.035; p.torsoPitch = 0.03; p.bob = Math.abs(c) * 0.03; break;
       case 'run': p.leftLeg = s * 0.9; p.rightLeg = -p.leftLeg; p.leftCalf = 0.25 + Math.max(0, -s) * 0.9; p.rightCalf = 0.25 + Math.max(0, s) * 0.9; p.leftArm = -s * 0.8; p.rightArm = s * 0.8; p.leftFore = p.leftArm + 0.65; p.rightFore = p.rightArm + 0.65; p.torsoPitch = 0.18; p.bob = Math.abs(c) * 0.07; break;
       case 'idle': p.bob = s * 0.008; p.torsoRoll = s * 0.015; break;
       case 'smoke': p.rightArm = 1.82 + s * 0.05; p.rightFore = 2.38 + s * 0.04; p.leftSide = 0.08; p.torsoRoll = -0.035; break;

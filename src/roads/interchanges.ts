@@ -11,13 +11,15 @@ import { bezPoint, Cubic, lineCubic, norm, quadCubic, sampleCubic, sub, tangentA
 import { crumb } from '../ui/bugreport';
 import type { Plan, RSeg } from './network';
 import { ROAD_TYPES, RoadTypeId } from './roadTypes';
+import { nameUnlock, unlockPop } from '../sim/milestones';
 
 export type LayoutId = 'roundabout' | 'diamond';
 
 export const LAYOUTS: Record<LayoutId, { name: string; icon: string; blurb: string; unlockPop: number }> = {
-  roundabout: { name: 'Freedom Circle', icon: '⭕', blurb: 'A roundabout with four stubs to connect. Traffic keeps moving; drivers keep circling.', unlockPop: 0 },
-  diamond: { name: 'Diamond Interchange', icon: '💎', blurb: 'The cross street bridges the highway on an overpass; four ramps join them. Place it on a Slopway to use that one.', unlockPop: ROAD_TYPES.highway.unlockPop },
+  roundabout: { name: 'Freedom Circle', icon: '⭕', blurb: 'A roundabout with four stubs to connect. Traffic keeps moving; drivers keep circling.', unlockPop: unlockPop.layout('roundabout') },
+  diamond: { name: 'Diamond Interchange', icon: '💎', blurb: 'The cross street bridges the highway on an overpass; four ramps join them. Place it on a Slopway to use that one.', unlockPop: unlockPop.layout('diamond') },
 };
+for (const [id, l] of Object.entries(LAYOUTS)) nameUnlock(`layout:${id}`, `${l.icon} ${l.name}`);
 export const LAYOUT_ORDER: LayoutId[] = ['roundabout', 'diamond'];
 
 /** clearance of the diamond's overpass above the ground (m) */

@@ -1,3 +1,4 @@
+import { unlockPop } from '../sim/milestones';
 import * as THREE from 'three';
 import { WATER } from '../config';
 import { closestOnSampled, clamp, lerp, locate, norm, sub } from '../core/math';
@@ -126,8 +127,8 @@ export class TransitSystem {
     g.net.events.on('changed', () => { this.settleSplits(); this.accessDirty = true; this.visualDirty = true; });
   }
 
-  /** earned at 300 people and kept (a city that shrinks keeps its buses) */
-  get unlocked() { return this.g.sim.peakPop >= 300; }
+  /** earned at a milestone and kept (a city that shrinks keeps its buses) */
+  get unlocked() { return this.g.sim.mode === 'sandbox' || this.g.sim.peakPop >= unlockPop.transit(); }
   get drawing() { return this.draft.length > 0; }
   get draftStops() { return this.draft.length; }
 
@@ -142,7 +143,7 @@ export class TransitSystem {
       const p = pick.seg.samp.pts[Math.min(pick.seg.samp.pts.length - 1, Math.round((pick.s / pick.seg.length) * (pick.seg.samp.pts.length - 1)))];
       return Math.atan2(p.x - x, p.z - z);
     })() : 0);
-    if (!this.unlocked) return { ok: false, yaw, reason: `Unlocks at 300 population (${this.g.sim.population}/300)` };
+    if (!this.unlocked) return { ok: false, yaw, reason: `Buses unlock at ${unlockPop.transit().toLocaleString()} people (${this.g.sim.population.toLocaleString()} now)` };
     if (!this.g.terrain.inBounds(x, z, r + 10)) return { ok: false, yaw, reason: 'Outside the county' };
     if (this.g.net.allowed && !this.g.net.allowed(x, z)) return { ok: false, yaw, reason: "You don't own this land yet. Buy it in 🏞️ Land." };
     if (this.g.terrain.h(x, z) < WATER + 0.8) return { ok: false, yaw, reason: 'The buses are not amphibious' };
@@ -192,7 +193,7 @@ export class TransitSystem {
   }
 
   addDraftPoint(x: number, z: number) {
-    if (!this.unlocked) { this.g.toast(`Transit unlocks at 300 population (${this.g.sim.population}/300)`, true); return false; }
+    if (!this.unlocked) { this.g.toast(`Buses unlock at ${unlockPop.transit().toLocaleString()} people (${this.g.sim.population.toLocaleString()} now)`, true); return false; }
     const hit = this.g.net.pickSeg(x, z, 8);
     if (!hit || hit.seg.type === 'highway') { this.g.toast('Put the stop on a non-highway road', true); return false; }
     const first = this.stops.get(this.draft[0]);
@@ -678,7 +679,7 @@ export class TransitSystem {
     this.panelRerender = rerender;
     this.panelKey = this.panelSignature();
     if (!this.unlocked) {
-      el.innerHTML = `<div class="sp-title">Public Transit <small>Population unlock</small></div><p>Reach 300 residents to unlock buses. Current population: <b>${this.g.sim.population}/300</b>.</p>`;
+      el.innerHTML = `<div class="sp-title">Public Transit <small>Population unlock</small></div><p>Buses unlock at the Speed Trap Town milestone: reach ${unlockPop.transit().toLocaleString()} residents. Current population: <b>${this.g.sim.population.toLocaleString()}/${unlockPop.transit().toLocaleString()}</b>.</p>`;
       return;
     }
     const depotCount = this.depots().length;

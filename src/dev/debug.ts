@@ -26,6 +26,10 @@ export function debugApi(g: Game) {
       g.zones.update();
       return g.zones.paint(x, z, r, zone);
     },
+    /** every milestone's unlocks now (no grants): for checks that aren't about progression */
+    unlockAll() {
+      g.sim.unlockAll();
+    },
     run(days: number) {
       const speed = g.sim.speed;
       g.sim.speed = 3;

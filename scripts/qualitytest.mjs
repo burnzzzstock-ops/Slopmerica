@@ -19,7 +19,8 @@ const probe = async (quality) => {
     const samples = [];
     for (let i = -5; i <= 5; i++) for (let j = -5; j <= 5; j++) samples.push(g.trees.countIn(i * 480, j * 480, 70));
     const S = g.startView();
-    window.__dbg.road(S.x - 150, S.z + 40, S.x + 150, S.z + 40, 'twoLane');
+    // a street off the end of the county road (the town site), so a trip has a route
+    window.__dbg.road(S.x, S.z, S.x + 150, S.z + 40, 'twoLane');
     t.update(0.1, 1, 8, 20000, 5000, g.rts.target);
     const budget = t.targetCars;
     // fill every drawable vehicle slot, then ask for one more trip

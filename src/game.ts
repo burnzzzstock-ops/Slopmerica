@@ -1,4 +1,5 @@
 // Game: owns the scene and every subsystem, and runs the frame loop.
+import { milestoneAt, nameUnlock, unlockPop } from './sim/milestones';
 import * as THREE from 'three';
 import { defaultQuality, GLOW, HALF, IS_TOUCH, MIN_RENDER_SCALE, nightLift, presetPixelRatio, QUALITY, Quality, saveQuality, storedQuality, WATER } from './config';
 import type { FeedContext, FeedEventKind, LandmarkId } from './contracts';
@@ -80,8 +81,8 @@ export interface UiSink {
   floatText(text: string, p: THREE.Vector3, color: string): void;
   select(sel: Selection): void;
   banner(title: string, sub: string): void;
-  /** a new tool unlocked at `pop`: say where it is, without covering the map */
-  unlocked?(label: string, pop: number): void;
+  /** a milestone reached (its index in MILESTONES): what it unlocked and where, without covering the map */
+  milestone?(i: number): void;
   /** a city-wide service emergency just began: get the player's attention (and time) */
   emergency?(e: EmergencyView): void;
   ending(kind: 'sprawl' | 'bankrupt'): void;
@@ -107,6 +108,8 @@ export const LANDMARKS: { id: LandmarkId; name: string; icon: string }[] = [
   { id: 'megachurch', name: 'Megachurch', icon: '⛪' },
   { id: 'waterTower', name: 'Water Tower', icon: '🗼' },
 ];
+
+for (const l of LANDMARKS) nameUnlock(`lm:${l.id}`, `${l.icon} ${l.name}`);
 
 export const LANDMARK_COST: Record<LandmarkId, number> = {
   slopCannon: 25000, slop69Field: 60000, pigCabanaResort: 45000, neuralFlyDatacenter: 80000, propaneParadise: 18000,
@@ -457,7 +460,7 @@ export class Game {
       if (m.kind === 'population') this.feed.push('populationMilestone', { count: m.value });
       if (m.kind === 'nature') this.feed.push('natureMilestone', { count: Math.round(m.value * 100) });
       if (m.kind === 'sprawl') this.feed.push('sprawlMilestone', { count: Math.round(m.value * 100) });
-      if (m.kind === 'unlock' && this.ui.unlocked) this.ui.unlocked(m.label, m.value);
+      if (m.kind === 'tier' && this.ui.milestone) this.ui.milestone(m.value);
       else this.ui.banner(m.label, m.kind === 'nature' ? 'The trees had it coming.' : m.kind === 'unlock' ? 'New stuff in the toolbar.' : this.cityName);
       this.audio.play('levelUp');
     });
@@ -635,6 +638,8 @@ export class Game {
       const p = pick.seg.samp.pts[Math.min(pick.seg.samp.pts.length - 1, Math.round((pick.s / pick.seg.length) * (pick.seg.samp.pts.length - 1)))];
       return Math.atan2(p.x - x, p.z - z);
     })() : 0);
+    const need = unlockPop.landmark(id);
+    if (this.sim.mode !== 'sandbox' && this.sim.peakPop < need) return { ok: false, yaw, reason: `Unlocks at ${need.toLocaleString()} people (${milestoneAt(need)?.name ?? 'a later milestone'})` };
     if (!this.terrain.inBounds(x, z, r + 10)) return { ok: false, yaw, reason: 'Outside the county' };
     if (this.net.allowed && !this.net.allowed(x, z)) return { ok: false, yaw, reason: "You don't own this land yet. Buy it in 🏞️ Land." };
     const cs = rectCorners(x, z, hw, hd, yaw);
@@ -664,7 +669,7 @@ export class Game {
       const c = this.canPlaceLandmark(id, f.x, f.z, f.yaw);
       if (c.ok) return { x: f.x, z: f.z, yaw: f.yaw, ok: true, front: f };
       // money, land and unlocks don't change by sliding along the road
-      if (c.reason && /Needs \$|money|own this land|county/i.test(c.reason)) return { x: f.x, z: f.z, yaw: f.yaw, ok: false, reason: c.reason, front: f };
+      if (c.reason && /Needs \$|money|own this land|county|Unlocks at/i.test(c.reason)) return { x: f.x, z: f.z, yaw: f.yaw, ok: false, reason: c.reason, front: f };
       if (first === undefined) { first = c.reason; blocker = c.blocker; }
     }
     const here = this.canPlaceLandmark(id, x, z);

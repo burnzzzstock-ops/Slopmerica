@@ -32,6 +32,7 @@ import { crumb } from '../ui/bugreport';
 import { frontageCandidates, frontageOn, inRect, rectCorners, specialAt, type Frontage } from './frontage';
 import { pointAt, tangentAt } from '../core/math';
 import { PlacementGhost } from '../tools/placementGhost';
+import { lockText, milestoneAt, nameUnlock, unlockPop } from './milestones';
 
 type ZB = Bld & { zone: ZoneType };
 
@@ -111,7 +112,7 @@ for (const f of VAULT_FAMILIES) {
   const cells = p.w * p.d, tier = cells <= 2 ? 0 : cells <= 4 ? 1 : 2;
   SVC.push({
     id: `va:${f.id}`, cat: 'parks', name: f.label, blurb: `${p.desc} ${f.satire}`, icon: p.icon, w: p.w, d: p.d,
-    cost: [4500, 8000, 14000][tier], upkeep: [30, 55, 90][tier], buildDays: 4 + tier * 2, unlock: [0, 300, 800][tier],
+    cost: [4500, 8000, 14000][tier], upkeep: [30, 55, 90][tier], buildDays: 4 + tier * 2, unlock: unlockPop.attraction(tier),
     cov: 'parks', reach: [55, 75, 100][tier], height: Math.max(3, p.h),
   });
 }
@@ -133,7 +134,12 @@ function svcLook(): 'vault' | 'classic' {
   try { return localStorage.getItem(LOOK_KEY) === 'classic' ? 'classic' : 'vault'; } catch { return 'vault'; }
 }
 const vaultLook = (id: string) => (vaultReady() && svcLook() === 'vault' ? VAULT_LOOK[id as ServiceModelId] : undefined);
+// when each service unlocks comes from the milestone table (src/sim/milestones.ts)
+for (const d of SVC) if (!d.id.startsWith('va:')) d.unlock = unlockPop.service(d.id);
+for (const d of SVC) nameUnlock(`svc:${d.id}`, `${d.icon} ${d.name}`);
 export const SERVICE_DEFS = new Map<string, SvcDef>(SVC.map((d) => [d.id, d]));
+/** "1,800 people (Exurb)" */
+const unlockAt = (pop: number) => `${pop.toLocaleString()} people${milestoneAt(pop) ? ` (${milestoneAt(pop)!.name})` : ''}`;
 for (const d of SVC) {
   if (isAttraction(d.id)) {
     const fam = d.id.slice(3), variant = VAULT_FAMILIES.find((f) => f.id === fam)?.park?.variant ?? 0;
@@ -1751,7 +1757,7 @@ export function canPlaceService(g: Game, id: SvcId, x: number, z: number, yawIn?
     const p = pts[Math.min(pts.length - 1, Math.round((pick.s / pick.seg.length) * (pts.length - 1)))];
     yaw = Math.atan2(p.x - x, p.z - z);
   }
-  if (!svcUnlocked(g, d)) return { ok: false, yaw, reason: `Unlocks at ${d.unlock.toLocaleString()} people (and stays unlocked)` };
+  if (!svcUnlocked(g, d)) return { ok: false, yaw, reason: `Unlocks at ${unlockAt(d.unlock)}, and stays unlocked` };
   if (!g.terrain.inBounds(x, z, Math.max(hw, hd) + 12)) return { ok: false, yaw, reason: 'Outside the county' };
   if (g.net.allowed && !g.net.allowed(x, z)) return { ok: false, yaw, reason: "You don't own this land yet. Buy it in 🏞️ Land." };
   if (!pick) return { ok: false, yaw, reason: d.nearWater ? 'Needs a road within 40 m: run one down to the shore first' : 'Needs a road within 40 m' };
@@ -2037,8 +2043,8 @@ registerPanel({
         // what it does, in numbers: output for plants, reach for everything else
         const does = d.power ? fmt(d.power, 'power') : d.water ? fmt(d.water, 'water') : d.sewage ? fmt(d.sewage, 'sewage') : d.collect ? `${d.collect} t/day` : d.reach ? `${(d.reach / 60).toFixed(1)} min reach` : '';
         // the unlock rule, said where it matters: earned once, kept for good
-        const rule = !d.unlock || g.sim.mode === 'sandbox' ? '' : locked ? ` Unlocks at ${d.unlock.toLocaleString()} people, and stays unlocked even if the city shrinks.` : pop < d.unlock ? ` Earned at ${d.unlock.toLocaleString()} people: yours to keep while the city is smaller.` : '';
-        return `<button class="card ${on ? 'on' : ''}" data-svc="${d.id}" ${locked ? 'disabled' : ''} title="${esc(d.blurb + rule)}${d.run ? ` Costs $${d.upkeep}/wk plus ${esc(runText(d))}.` : ''}"><span class="ci">${d.icon}</span><b>${esc(d.name)}</b><small>${locked ? `🔒 Pop ${d.unlock.toLocaleString()}` : `$${d.cost.toLocaleString()} · $${d.upkeep}/wk${d.run ? '+' : ''}${does ? ` · ${does}` : ''}`}</small></button>`;
+        const rule = !d.unlock || g.sim.mode === 'sandbox' ? '' : locked ? ` Unlocks at ${unlockAt(d.unlock)}, and stays unlocked even if the city shrinks.` : pop < d.unlock ? ` Earned at ${unlockAt(d.unlock)}: yours to keep while the city is smaller.` : '';
+        return `<button class="card ${on ? 'on' : ''}" data-svc="${d.id}" ${locked ? 'disabled' : ''} title="${esc(d.blurb + rule)}${d.run ? ` Costs $${d.upkeep}/wk plus ${esc(runText(d))}.` : ''}"><span class="ci">${d.icon}</span><b>${esc(d.name)}</b><small>${locked ? lockText(d.unlock) : `$${d.cost.toLocaleString()} · $${d.upkeep}/wk${d.run ? '+' : ''}${does ? ` · ${does}` : ''}`}</small></button>`;
       }).join('')}</div>
       <div class="svc-blurb">${esc(sel && sel.cat === panelCat ? sel.blurb : list[0]?.blurb ?? '')}</div>
       ${vaultReady() ? `<div class="sp-row svc-look">Looks: <button class="chip ${svcLook() === 'vault' ? 'on' : ''}" data-look="vault" title="The Asset Vault's versions: the Very Clean Coal Plant, the County Water Tower, Copay Castle...">🏛️ Asset Vault</button><button class="chip ${svcLook() === 'classic' ? 'on' : ''}" data-look="classic">Classic</button></div>` : ''}`;

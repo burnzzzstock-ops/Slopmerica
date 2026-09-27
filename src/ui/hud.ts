@@ -18,7 +18,8 @@ import { BUILD, crumb, onCapturedError, openBugReport } from './bugreport';
 import { IS_TOUCH } from '../config';
 import { QUALITY, type Quality } from '../config';
 import { BANKRUPT_AT, BANKRUPT_WEEKS, CREDIT_LINE, LEDGER_LABEL, LOSS_LABEL, ONE_TIME, RECURRING, SPEEDS, Sim, UNLOCKS, usd, type DemandKey } from '../sim/sim';
-import type { EmergencyView } from '../sim/services';
+import { SERVICE_DEFS, type EmergencyView } from '../sim/services';
+import { MILESTONES, lockText, milestoneAt, nameUnlock, unlockNames, unlockPop } from '../sim/milestones';
 import { isZoned } from '../sim/buildings';
 import type { ViewMode } from '../render/overlays';
 import { ARCHETYPES } from '../agents/people';
@@ -30,6 +31,7 @@ const money = (n: number) => (n === Infinity ? '∞' : (n < 0 ? '-$' : '$') + Ma
 
 
 const ZONE_ICON: Record<ZoneType, string> = { resLow: '🏡', resHigh: '🏢', comLow: '🛒', comHigh: '🏬', industry: '🏭', office: '💻' };
+for (const z of ZONE_TYPES) nameUnlock(`zone:${z}`, `${ZONE_ICON[z]} ${ZONE_LABEL[z]}`);
 const DEMAND_KEYS: DemandKey[] = ['res', 'com', 'ind', 'off'];
 const DEM: Record<DemandKey, { name: string; letter: string; noun: string; one: string; zones: [ZoneType, ZoneType?] }> = {
   res: { name: 'Residential', letter: 'R', noun: 'homes', one: 'home', zones: ['resLow', 'resHigh'] },
@@ -803,7 +805,7 @@ export class Hud implements UiSink {
     const fs = this.firstSteps();
     const a = fs ?? this.nextAction();
     const G = this.game.sim.nextGoals();
-    const unlock = G.unlock ? `<span class="nb-unlock" title="Next unlock">🔓 ${G.unlock.pop.toLocaleString()}: ${esc(G.unlock.what)} <small>(${this.game.sim.population.toLocaleString()} now)</small></span>` : '';
+    const unlock = G.unlock ? `<span class="nb-unlock" title="Next milestone: ${esc(G.unlock.what)}">🔓 ${G.unlock.pop.toLocaleString()}: ${esc(G.unlock.name)} <small>(${this.game.sim.population.toLocaleString()} now)</small></span>` : '';
     const key = a.text;
     this.nextKey = key;
     const busy = this.game.tools.active !== 'inspect' || !!this.game.tools.placingLabel;
@@ -880,7 +882,7 @@ export class Hud implements UiSink {
     const lock = zone ? null : UNLOCKS.find((u) => u.zone === D.zones[0]);
     const open = zone ? D.zones.reduce((n, z) => n + (z && s.isUnlocked({ zone: z }) ? g.zones.candidates(z, this.demandCells).length : 0), 0) : 0;
     let status: string;
-    if (!zone) status = `🔒 ${D.noun[0].toUpperCase() + D.noun.slice(1)} unlock at ${lock?.pop.toLocaleString() ?? 'a bigger'} people.`;
+    if (!zone) status = `🔒 ${D.noun[0].toUpperCase() + D.noun.slice(1)} unlock at ${lock?.pop.toLocaleString() ?? 'a bigger'} people${lock && milestoneAt(lock.pop) ? ` (the ${milestoneAt(lock.pop)!.name} milestone)` : ''}.`;
     else if (v >= 5) {
       const zoned = [...g.zones.cells.values()].some((c) => c.zone === D.zones[0] || (!!D.zones[1] && c.zone === D.zones[1]));
       status = open ? `Builders are putting up ${D.noun} on the ${open} zoned lot${open === 1 ? '' : 's'} with no building yet.`
@@ -948,7 +950,7 @@ export class Hud implements UiSink {
   private refreshTop() {
     const g = this.game, s = g.sim;
     const $ = (id: string) => this.top.querySelector('#' + id) as HTMLElement;
-    $('tb-date').textContent = `${s.dateLabel()} · ${fmtHour(g.hour)}`;
+    $('tb-date').textContent = `${s.mode !== 'sandbox' && window.innerWidth > 900 ? `🏅 ${MILESTONES[s.tier].name} · ` : ''}${s.dateLabel()} · ${fmtHour(g.hour)}`;
     $('tb-pop').textContent = s.population.toLocaleString();
     $('tb-money').textContent = money(s.money);
     $('tb-money').classList.toggle('neg', s.money < 0);
@@ -1167,11 +1169,11 @@ export class Hud implements UiSink {
           const r = ROAD_TYPES[id];
           const locked = !g.sim.isUnlocked({ road: id });
           return `<button class="card ${t.roadType === id && t.active === 'road' ? 'on' : ''} ${this.fresh.has(`road:${id}`) ? 'new' : ''}" data-road="${id}" ${locked ? 'disabled' : ''} title="${esc(r.blurb)}">
-            <span class="ci">${r.icon}</span><b>${esc(r.name)}</b><small>${locked ? `🔒 Pop ${r.unlockPop.toLocaleString()}` : `$${r.costPerM}/m · ${r.oneWay ? `${r.lanesPerDir} lane${r.lanesPerDir > 1 ? 's' : ''}, one way` : `${r.lanesPerDir * 2} lanes${r.centerTurn ? ' + turn' : ''}`}`}</small></button>`;
+            <span class="ci">${r.icon}</span><b>${esc(r.name)}</b><small>${locked ? lockText(r.unlockPop) : `$${r.costPerM}/m · ${r.oneWay ? `${r.lanesPerDir} lane${r.lanesPerDir > 1 ? 's' : ''}, one way` : `${r.lanesPerDir * 2} lanes${r.centerTurn ? ' + turn' : ''}`}`}</small></button>`;
         }).join('')}<span class="sp-sep" aria-hidden="true"></span>${LAYOUT_ORDER.map((id) => {
           const l = LAYOUTS[id];
           const locked = g.sim.mode !== 'sandbox' && g.sim.peakPop < l.unlockPop;
-          return `<button class="card layout ${currentLayout(g) === id ? 'on' : ''}" data-layout="${id}" ${locked ? 'disabled' : ''} title="${esc(l.blurb)}"><span class="ci">${l.icon}</span><b>${esc(l.name)}</b><small>${locked ? `🔒 Pop ${l.unlockPop.toLocaleString()}` : id === 'diamond' ? 'Interchange · overpass' : 'Roundabout'}</small></button>`;
+          return `<button class="card layout ${currentLayout(g) === id ? 'on' : ''}" data-layout="${id}" ${locked ? 'disabled' : ''} title="${esc(l.blurb)}"><span class="ci">${l.icon}</span><b>${esc(l.name)}</b><small>${locked ? lockText(l.unlockPop) : id === 'diamond' ? 'Interchange · overpass' : 'Roundabout'}</small></button>`;
         }).join('')}${currentLayout(g) ? `<button class="chip" id="layout-rotate" title="Rotate (, and .)">↻ Rotate</button>` : ''}</div>`;
       this.sub.querySelectorAll<HTMLButtonElement>('[data-layout]').forEach((b) => b.addEventListener('click', () => { selectLayout(g, b.dataset.layout as LayoutId); this.renderPanel(); }));
       this.sub.querySelector('#layout-rotate')?.addEventListener('click', () => rotateLayout(g));
@@ -1186,7 +1188,7 @@ export class Hud implements UiSink {
           const locked = !g.sim.isUnlocked({ zone: z });
           const need = UNLOCKS.find((u) => u.zone === z)?.pop;
           return `<button class="card zone ${t.active === 'zone' && t.zoneType === z ? 'on' : ''} ${this.fresh.has(`zone:${z}`) ? 'new' : ''}" data-zone="${z}" style="--zc:#${ZONE_COLORS[z].toString(16).padStart(6, '0')}" ${locked ? 'disabled' : ''}>
-            <span class="ci">${ZONE_ICON[z]}</span><b>${esc(ZONE_LABEL[z])}</b><small>${locked ? `🔒 Pop ${need?.toLocaleString() ?? '?'}` : `Levels 1–${MAX_LEVEL[z]}`}</small></button>`;
+            <span class="ci">${ZONE_ICON[z]}</span><b>${esc(ZONE_LABEL[z])}</b><small>${locked ? lockText(need ?? 0) : `Levels 1–${MAX_LEVEL[z]}`}</small></button>`;
         }).join('')}
           <button class="card zone ${t.active === 'dezone' ? 'on' : ''}" data-zone="none" style="--zc:#888"><span class="ci">🧽</span><b>Dezone</b><small>Unzone empty cells</small></button>
         </div>`;
@@ -1200,7 +1202,10 @@ export class Hud implements UiSink {
     } else if (p === 'landmarks') {
       this.sub.innerHTML = `
         <div class="sp-title">Landmarks <small>Monuments to Slopmerica. Place one, then build around it.</small></div>
-        <div class="sp-grid">${LANDMARKS.map((l) => `<button class="card ${t.active === 'landmark' && t.landmark === l.id ? 'on' : ''}" data-lm="${l.id}"><span class="ci">${l.icon}</span><b>${esc(l.name)}</b><small>${money(LANDMARK_COST[l.id])}</small></button>`).join('')}</div>`;
+        <div class="sp-grid">${LANDMARKS.map((l) => {
+          const need = unlockPop.landmark(l.id), locked = g.sim.mode !== 'sandbox' && g.sim.peakPop < need;
+          return `<button class="card ${t.active === 'landmark' && t.landmark === l.id ? 'on' : ''}" data-lm="${l.id}" ${locked ? 'disabled' : ''}><span class="ci">${l.icon}</span><b>${esc(l.name)}</b><small>${locked ? lockText(need) : money(LANDMARK_COST[l.id])}</small></button>`;
+        }).join('')}</div>`;
       this.sub.querySelectorAll<HTMLButtonElement>('[data-lm]').forEach((b) => b.addEventListener('click', () => { t.landmark = b.dataset.lm as LandmarkId; t.set('landmark'); this.renderPanel(); }));
     } else if (p === 'views') {
       const mode = g.overlays.mode;
@@ -1567,27 +1572,35 @@ export class Hud implements UiSink {
     this.floats.push({ el, p: p.clone(), t: 0 });
   }
 
-  /** New tool unlocked: a small card that says where it is, with a way there. */
-  unlocked(label: string, pop: number) {
-    const u = UNLOCKS.find((x) => x.pop === pop);
-    if (!u) { this.toast(label); return; }
-    const key = u.zone ? `zone:${u.zone}` : `road:${u.road}`;
-    this.fresh.add(key);
-    const where = u.zone ? `Zoning → ${ZONE_ICON[u.zone]} ${ZONE_LABEL[u.zone]}` : `Roads → ${ROAD_TYPES[u.road as RoadTypeId]?.name ?? u.what}`;
-    crumb(`unlocked ${u.what}`);
+  /**
+   * A milestone reached: its name, the grant, and everything it unlocked,
+   * with a way to the first of them (the new zone or road is marked NEW).
+   */
+  milestone(i: number) {
+    const m = MILESTONES[i];
+    if (!m) return;
+    const names = unlockNames(m);
+    for (const z of m.zones ?? []) this.fresh.add(`zone:${z}`);
+    for (const r of m.roads ?? []) this.fresh.add(`road:${r}`);
+    crumb(`milestone ${m.name}`);
     const t = document.createElement('div');
-    t.className = 'toast unlock';
-    t.innerHTML = `<span><b>🔓 Unlocked at ${pop.toLocaleString()} people:</b> ${esc(u.what)}<small>${esc(where)}</small></span><button class="chip on">Open</button>`;
-    t.querySelector('button')!.addEventListener('click', () => {
-      this.game.audio.play('click', 0.4);
-      if (u.zone) { this.game.tools.zoneType = u.zone; if (this.panel !== 'zones') this.onTool('zones'); this.game.tools.set('zone'); }
-      else if (u.road) { this.game.tools.roadType = u.road as RoadTypeId; if (this.panel !== 'roads') this.onTool('roads'); this.game.tools.set('road'); }
+    t.className = 'toast unlock milestone';
+    const next = MILESTONES[i + 1];
+    t.innerHTML = `<span><b>🏅 ${esc(m.name)}</b> · ${m.pop.toLocaleString()} people${m.reward ? ` · <b class="pos">+${usd(m.reward)}</b> state grant` : ''}<small>${names.length ? `Unlocked: ${esc(names.join(', '))}` : esc(m.blurb)}</small>${next ? `<small>Next: ${esc(next.name)} at ${next.pop.toLocaleString()} people</small>` : ''}</span>${names.length ? '<button class="chip on">Open</button>' : ''}`;
+    t.querySelector('button')?.addEventListener('click', () => {
+      const g = this.game;
+      g.audio.play('click', 0.4);
+      const z = m.zones?.[0], r = m.roads?.[0], svc = m.services?.[0], lm = m.landmarks?.[0];
+      if (z) { g.tools.zoneType = z; if (this.panel !== 'zones') this.onTool('zones'); g.tools.set('zone'); }
+      else if (svc && SERVICE_DEFS.get(svc)) this.openServices(SERVICE_DEFS.get(svc)!.cat);
+      else if (r) { g.tools.roadType = r; if (this.panel !== 'roads') this.onTool('roads'); g.tools.set('road'); }
+      else if (lm) { g.tools.landmark = lm; if (this.panel !== 'landmarks') this.onTool('landmarks'); g.tools.set('landmark'); }
       this.renderPanel();
       t.remove();
     });
     this.toasts.appendChild(t);
-    setTimeout(() => t.classList.add('out'), 9000);
-    setTimeout(() => t.remove(), 9600);
+    setTimeout(() => t.classList.add('out'), 15000);
+    setTimeout(() => t.remove(), 15600);
     while (this.toasts.children.length > 3) this.toasts.firstChild?.remove();
   }
 

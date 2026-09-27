@@ -16,6 +16,8 @@ const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 const base = process.argv[2] || process.env.BASE_URL || 'http://127.0.0.1:5173';
+// a test town with no services has service emergencies; they mustn't slow the clock the buses run on
+await page.addInitScript(() => { try { localStorage.setItem('slopmerica.emergencySpeed', 'off'); } catch { /* */ } });
 await page.goto(`${base}/#skip&map=florida&mode=sandbox`, { waitUntil: 'load', timeout: 120000 });
 try {
   await page.waitForFunction(() => window.__game?.transit && window.__dbg, null, { timeout: 120000 });
@@ -29,13 +31,14 @@ const out = await page.evaluate(() => {
   cancelAnimationFrame(g.raf);
   for (const c of g.communes.list) { c.state = 'gone'; c.group.removeFromParent(); }
   g.syncBlockers();
-  const cx = 60, cz = 60;
+  // the test town goes on the town site, where the county road (and the utilities it imports) arrives
+  const S = g.startView(), cx = Math.round(S.x), cz = Math.round(S.z);
   for (let k = -3; k <= 3; k++) {
     d.road(cx - 300, cz + k * 90, cx + 300, cz + k * 90, k === 0 ? 'stroad4' : 'twoLane');
     d.road(cx + k * 90, cz - 300, cx + k * 90, cz + 300, k === 0 ? 'stroad4' : 'twoLane');
   }
   g.sim.population = 400;
-  const depotPlaced = t.placeDepot(390, 85);
+  const depotPlaced = t.placeDepot(cx + 330, cz + 25);
   const depot = [...g.buildings.list.values()].find((b) => b.kind === 'busDepot');
   if (depot) { depot.state = 'active'; depot.progress = 1; }
   d.zone(cx - 170, cz - 170, 150, 'resHigh');
@@ -47,7 +50,7 @@ const out = await page.evaluate(() => {
   // Make the test independent of growth variance while preserving real generated lots and road anchors.
   for (const b of g.buildings.list.values()) if (b.zone !== 'service' && b.zone !== 'landmark') { b.state = 'active'; b.progress = 1; b.occ = Math.max(1, b.cap); }
   g.sim.population = Math.max(400, [...g.buildings.list.values()].filter((b) => b.zone === 'resLow' || b.zone === 'resHigh').reduce((n, b) => n + b.occ, 0));
-  const points = [[-180, 60], [0, 60], [180, 60]];
+  const points = [[cx - 240, cz], [cx - 60, cz], [cx + 120, cz]];
   const stopResults = points.map(([x, z]) => t.addDraftPoint(x, z));
   const lineFinished = t.finishDraft();
   const line = [...t.lines.values()][0];

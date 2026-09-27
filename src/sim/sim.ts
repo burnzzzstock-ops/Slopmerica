@@ -10,6 +10,7 @@ import type { Zoning, ZCell } from '../zones/zoning';
 import type { Terrain } from '../world/terrain';
 import type { Trees } from '../world/trees';
 import { HALF, WATER } from '../config';
+import { MILESTONES, unlockNames } from './milestones';
 
 export const DAY_SECONDS = 2.5;
 export const SPEEDS = [0, 1, 2, 4];
@@ -78,14 +79,20 @@ export interface Tx { day: number; label: string; amount: number; kind: LedgerKi
 /** one line of a weekly bill or forecast (amount signed like the ledger) */
 export interface WeekLine { label: string; amount: number; kind: LedgerKind }
 
-export const UNLOCKS: { pop: number; what: string; zone?: ZoneType; road?: string }[] = [
-  { pop: 250, what: 'Luxury Slop apartments', zone: 'resHigh' },
-  { pop: 400, what: 'Big Box commercial', zone: 'comHigh' },
-  { pop: 600, what: 'MEGA Stroad (6 lanes)', road: 'stroad6' },
-  { pop: 700, what: 'Content Farms (office)', zone: 'office' },
-  { pop: 1500, what: 'Slopway highway', road: 'highway' },
-  { pop: 2500, what: 'Katy Stroad (8 lanes)', road: 'stroad8' },
-];
+/**
+ * Zones and roads that unlock with a milestone (src/sim/milestones.ts), by
+ * the name saves remember them by (a city keeps what it had unlocked).
+ */
+const UNLOCK_WHAT: Record<string, string> = {
+  resHigh: 'Luxury Slop apartments', comHigh: 'Big Box commercial', office: 'Content Farms (office)',
+  stroad4: 'Freedom Stroad (4 lanes)', oneWay2: 'One-Way Couplet', stroad6: 'MEGA Stroad (6 lanes)', highway: 'Slopway highway', stroad8: 'Katy Stroad (8 lanes)',
+};
+export const UNLOCKS: { pop: number; what: string; zone?: ZoneType; road?: string }[] = MILESTONES.flatMap((m) => m.pop <= 0 ? [] : [
+  ...(m.zones ?? []).map((zone) => ({ pop: m.pop, what: UNLOCK_WHAT[zone] ?? zone, zone })),
+  ...(m.roads ?? []).map((road) => ({ pop: m.pop, what: UNLOCK_WHAT[road] ?? road, road })),
+]);
+/** a milestone reached, as the unlocked set remembers it */
+const tierKey = (i: number) => `tier:${MILESTONES[i].name}`;
 
 /**
  * Why residents left, as far as the simulation knows: the root cause (trash
@@ -139,7 +146,7 @@ export interface SimHooks {
 }
 
 type Events = {
-  milestone: { kind: 'population' | 'nature' | 'sprawl' | 'unlock' | 'maxLevel'; value: number; label: string };
+  milestone: { kind: 'population' | 'nature' | 'sprawl' | 'unlock' | 'maxLevel' | 'tier'; value: number; label: string };
   lowMoney: number;
   bankrupt: number;
   week: Ledger;
@@ -216,10 +223,11 @@ export class Sim {
   serviceCostPerCapita = 0.55;
 
   constructor(public mode: Mode, private b: Buildings, private zones: Zoning, private net: RoadNetwork, private terrain: Terrain, private trees: Trees) {
-    this.money = mode === 'sandbox' ? Infinity : mode === 'speedrun' ? 150000 : mode === 'hippie' ? 70000 : 90000;
+    // a new county can afford its first streets and utilities, not the whole city (milestones pay for what comes next)
+    this.money = mode === 'sandbox' ? Infinity : mode === 'speedrun' ? 150000 : mode === 'hippie' ? 55000 : 70000;
     this.weekStartCash = this.money;
     if (mode === 'speedrun') this.growthMul = 2;
-    if (mode === 'sandbox') for (const u of UNLOCKS) this.unlocked.add(u.what);
+    if (mode === 'sandbox') { for (const u of UNLOCKS) this.unlocked.add(u.what); MILESTONES.forEach((_, i) => this.unlocked.add(tierKey(i))); }
     // sample buildable land once (for the sprawl meter)
     for (let z = -HALF + 16; z < HALF; z += 32)
       for (let x = -HALF + 16; x < HALF; x += 32) {
@@ -535,7 +543,8 @@ export class Sim {
     };
     // Builders start a steady number of new sites per day (more as the town
     // grows), handed to the zones with the most demand.
-    this.growthAcc = Math.min(3, this.growthAcc + Math.min(5, (0.8 + P / 800) * this.growthMul));
+    // (a small town grows like one: a new site every two or three days at first)
+    this.growthAcc = Math.min(3, this.growthAcc + Math.min(4, (0.4 + P / 1300) * this.growthMul));
     const wants: [ZoneType, number][] = [];
     for (const z of ZONE_TYPES) {
       if (!this.isUnlocked({ zone: z })) continue;
@@ -677,10 +686,30 @@ export class Sim {
     }
   }
 
-  /** The nearest things to aim for: the next population mark, unlock and sprawl mark. */
+  /** every milestone reached at once, quietly, with no grants (tests and tools that aren't about progression) */
+  unlockAll() {
+    for (const u of UNLOCKS) this.unlocked.add(u.what);
+    MILESTONES.forEach((_, i) => { if (i > 0) this.unlocked.add(tierKey(i)); });
+    this.peakSeen = Math.max(this.peakSeen, MILESTONES[MILESTONES.length - 1].pop);
+  }
+
+  /** the milestone reached (its index in MILESTONES): the best the city has ever been */
+  get tier() {
+    let t = 0;
+    for (let i = 1; i < MILESTONES.length; i++) if (this.unlocked.has(tierKey(i))) t = i;
+    return t;
+  }
+
+  /** The nearest things to aim for: the next population mark, milestone (and what it unlocks) and sprawl mark. */
   nextGoals() {
-    const unlock = UNLOCKS.filter((u) => !this.unlocked.has(u.what)).sort((a, b) => a.pop - b.pop)[0];
-    return { pop: this.popMarks[0] ?? null, unlock: unlock ? { pop: unlock.pop, what: unlock.what } : null, sprawl: this.sprawlMarks[0] ?? null };
+    const i = MILESTONES.findIndex((m, k) => k > 0 && !this.unlocked.has(tierKey(k)));
+    const m = i > 0 ? MILESTONES[i] : null;
+    const names = m ? unlockNames(m) : [];
+    return {
+      pop: this.popMarks[0] ?? null,
+      unlock: m ? { pop: m.pop, what: `${m.name}${names.length ? `: ${names.slice(0, 4).join(', ')}${names.length > 4 ? '…' : ''}` : ''}`, tier: i, name: m.name } : null,
+      sprawl: this.sprawlMarks[0] ?? null,
+    };
   }
 
   private checkMilestones() {
@@ -696,17 +725,21 @@ export class Sim {
       const v = this.sprawlMarks.shift()!;
       this.events.emit('milestone', { kind: 'sprawl', value: v, label: `${Math.round(v * 100)}% Endless Sprawl` });
     }
-    for (const u of UNLOCKS) {
-      if (!this.unlocked.has(u.what) && this.population >= u.pop) {
-        this.unlocked.add(u.what);
-        this.events.emit('milestone', { kind: 'unlock', value: u.pop, label: `Unlocked: ${u.what}` });
-      }
+    // milestones: each unlocks its batch at once, with a state grant toward building it
+    for (let i = 1; i < MILESTONES.length; i++) {
+      const m = MILESTONES[i];
+      if (this.unlocked.has(tierKey(i)) || this.population < m.pop) continue;
+      this.unlocked.add(tierKey(i));
+      for (const u of UNLOCKS) if (u.pop <= m.pop) this.unlocked.add(u.what);
+      if (m.reward && this.money !== Infinity) this.earn(m.reward, 'grants', `${m.name} milestone grant`);
+      this.alert('info', `🏅 Milestone: ${m.name} (${m.pop.toLocaleString()} people). Unlocked: ${unlockNames(m).join(', ') || 'bragging rights'}${m.reward ? `; +$${m.reward.toLocaleString()} state grant` : ''}`);
+      this.events.emit('milestone', { kind: 'tier', value: i, label: m.name });
     }
   }
 
   private onBuildingComplete(bld: Bld) {
     if (!isZoned(bld) || bld.level > 1) return;
-    const perCell = { resLow: 110, resHigh: 130, comLow: 190, comHigh: 210, industry: 160, office: 240 }[bld.zone];
+    const perCell = { resLow: 75, resHigh: 90, comLow: 130, comHigh: 150, industry: 110, office: 170 }[bld.zone];
     this.earn(Math.round(perCell * bld.w * bld.d), 'impact');
   }
 
@@ -757,6 +790,8 @@ export class Sim {
     this.natureMarks = this.natureMarks.filter((m) => m < nature);
     this.sprawlMarks = this.sprawlMarks.filter((m) => m > sprawl);
     for (const u of UNLOCKS) if (pop >= u.pop) this.unlocked.add(u.what);
+    // milestones already passed (saves from before milestones get theirs back, without the grants)
+    MILESTONES.forEach((m, i) => { if (i > 0 && Math.max(pop, this.peakSeen) >= m.pop) this.unlocked.add(tierKey(i)); });
   }
 
   /** State that shapes what happens next but isn't in the core save fields. */
@@ -789,8 +824,9 @@ export class Sim {
     // saves from before peakPop: the best the history and the unlocks remember
     let peak = Number.isFinite(x.peakPop) ? x.peakPop : 0;
     for (const h of this.history) if (h.pop > peak) peak = h.pop;
-    if (this.mode !== 'sandbox') for (const u of UNLOCKS) if (this.unlocked.has(u.what) && u.pop > peak) peak = u.pop;
+    if (this.mode !== 'sandbox' && !Number.isFinite(x.peakPop)) for (const u of UNLOCKS) if (this.unlocked.has(u.what) && u.pop > peak) peak = u.pop;
     this.peakSeen = Math.max(this.peakSeen, peak);
+    MILESTONES.forEach((m, i) => { if (i > 0 && this.peakSeen >= m.pop) this.unlocked.add(tierKey(i)); });
   }
 
   /** The weekly rate at today's rates (recurring lines only; see forecastWeek). */

@@ -1,8 +1,11 @@
-// Progression is findable and never in the way: an unlock says what and
-// where, its Open button goes there with the new thing selected, the card
-// is marked NEW until used, locked cards give the population they need,
-// and a celebration during placement is a small notice, not a banner over
-// the map. Exits nonzero on failure.
+// Progression is findable and never in the way. Milestones (as in Cities:
+// Skylines) unlock services, zones, roads and landmarks in batches at real
+// populations, each with a state grant: a new county can't build every
+// service on day one. A milestone says what it unlocked and where, its Open
+// button goes there with the new thing selected, the card is marked NEW
+// until used, locked cards name the milestone and population they need, the
+// top bar names the town's milestone, and a celebration during placement is
+// a small notice, not a banner over the map. Exits nonzero on failure.
 import { chromium } from 'playwright-core';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
@@ -20,17 +23,32 @@ const settle = () => page.evaluate(() => { const g = window.__game; g.frame(0.05
 // locked cards say how many people they need
 await page.click('button.tbtn[data-t="zones"]');
 const locked = await page.evaluate(() => [...document.querySelectorAll('.card.zone:disabled small')].map((e) => e.textContent));
-check(`locked zones give the population they need (${locked.join(', ')})`, locked.length > 0 && locked.every((t) => /🔒 Pop [\d,]+/.test(t)), locked);
+check(`locked zones name the milestone and population they need (${locked.join(', ')})`, locked.length > 0 && locked.every((t) => /🔒 .+ · [\d,]+/.test(t)), locked);
 await page.keyboard.press('Escape');
 
-// reaching 250 people: the sim's own milestone path
-await page.evaluate(() => { const s = window.__game.sim; s.population = 260; s.checkMilestones(); });
+// a new county: the basics only (no landfill, fire station, sheriff or school yet)
+const start = await page.evaluate(() => {
+  const g = window.__game, SV = window.__services, S = g.startView();
+  const why = (id) => SV.findSpot(g, id, S.x + 60, S.z + 60).reason ?? 'ok';
+  return { money: Math.round(g.sim.money), well: why('wellTower'), landfill: why('landfill'), fire: why('fireStation'), school: why('school'), top: document.querySelector('#tb-date')?.textContent ?? '' };
+});
+console.log(JSON.stringify(start));
+check(`a new county starts with $${start.money.toLocaleString()} and the utilities, not every service (landfill: "${start.landfill}")`, start.money <= 70000 && !/Unlocks/.test(start.well) && /Unlocks at 150 people \(Wide Spot in the Road\)/.test(start.landfill) && /Unlocks at 350 people/.test(start.fire) && /Unlocks at 650 people/.test(start.school), start);
+
+// reaching 1,150 people: the sim's own milestone path, four milestones at once
+const m0 = await page.evaluate(() => Math.round(window.__game.sim.money));
+await page.evaluate(() => { const s = window.__game.sim; s.population = 1150; s.checkMilestones(); });
 await settle();
-const note = await page.evaluate(() => { const t = document.querySelector('.toast.unlock'); return t ? t.textContent : null; });
-check(`the unlock says what and where ("${note}")`, !!note && /Unlocked at 250 people/.test(note) && /Zoning → /.test(note), note);
-const bigBanner = await page.evaluate(() => [...document.querySelectorAll('.banner')].some((b) => /Unlocked/.test(b.textContent)));
+const cards = await page.evaluate(() => [...document.querySelectorAll('.toast.unlock')].map((t) => t.textContent));
+const note = cards[cards.length - 1] ?? null;
+const m1 = await page.evaluate(() => Math.round(window.__game.sim.money));
+check(`the milestone says what it unlocked and where ("${note}")`, !!note && /🏅 Boomburb/.test(note) && /1,100 people/.test(note) && /Unlocked: .*Luxury Slop/.test(note) && /Next: Exurb at 1,800 people/.test(note), cards);
+check(`each milestone passed pays its state grant (+$${(m1 - m0).toLocaleString()} for four)`, m1 - m0 === 5000 + 10000 + 15000 + 20000, { m0, m1 });
+const bigBanner = await page.evaluate(() => [...document.querySelectorAll('.banner')].some((b) => /Unlocked|Boomburb/.test(b.textContent)));
 check('and no banner covers the middle of the map for it', !bigBanner);
-await page.click('.toast.unlock button');
+const hud = await page.evaluate(() => { const g = window.__game; g.ui.nextStepT = -1e9; g.ui.refreshNow?.(); return { top: document.querySelector('#tb-date')?.textContent ?? '', chip: document.querySelector('.next-bar .nb-unlock')?.textContent ?? '', log: g.sim.alerts.map((a) => a.text).filter((t) => /Milestone/.test(t)).length }; });
+check(`the top bar names the milestone ("${hud.top}") and the next one is in view ("${hud.chip}")`, /🏅 Boomburb/.test(hud.top) && (!hud.chip || /1,800: Exurb/.test(hud.chip)) && hud.log === 4, hud);
+await page.evaluate(() => { const b = [...document.querySelectorAll('.toast.unlock button')].pop(); b?.click(); });
 await settle();
 const opened = await page.evaluate(() => {
   const g = window.__game;
@@ -39,13 +57,13 @@ const opened = await page.evaluate(() => {
 check(`Open goes to Zoning with the new zone in hand (${opened.zone})`, opened.tool === 'zone' && opened.zone === 'resHigh' && /Zoning/.test(opened.title), opened);
 check('its card is marked NEW until used', opened.newCards.includes('resHigh'), opened.newCards);
 await page.click('[data-zone="resHigh"]');
-const cleared = await page.evaluate(() => [...document.querySelectorAll('.card.new')].length);
-check('using it clears the NEW mark', cleared === 0, cleared);
+const cleared = await page.evaluate(() => [...document.querySelectorAll('.card.new')].map((c) => c.dataset.zone ?? c.dataset.road));
+check(`using it clears its NEW mark (still new: ${cleared.join(', ') || 'none'})`, !cleared.includes('resHigh'), cleared);
 await page.keyboard.press('Escape');
 
 // a milestone while placing something: a notice, not a banner
-await page.evaluate(() => { const g = window.__game; g.tools.landmark = 'waterTower'; g.tools.set('landmark'); g.ui.banner('Population 500', 'San Slopcisco'); });
-const during = await page.evaluate(() => ({ banners: [...document.querySelectorAll('.banner')].filter((b) => /Population 500/.test(b.textContent)).length, toast: [...document.querySelectorAll('.toast')].some((t) => /Population 500/.test(t.textContent)) }));
+await page.evaluate(() => { const g = window.__game; g.tools.landmark = 'waterTower'; g.tools.set('landmark'); g.ui.banner('Population 9,999', 'San Slopcisco'); });
+const during = await page.evaluate(() => ({ banners: [...document.querySelectorAll('.banner')].filter((b) => /Population 9,999/.test(b.textContent)).length, toast: [...document.querySelectorAll('.toast')].some((t) => /Population 9,999/.test(t.textContent)) }));
 check('a celebration while placing is a small notice', during.banners === 0 && during.toast, during);
 // the two meters explain themselves
 await page.evaluate(() => window.__game.tools.set('inspect'));

@@ -188,17 +188,20 @@ The land is finite, and on your timescale it doesn't come back.
 **The Waffle Hut Index** (after FEMA's real, informal Waffle House Index) is the disaster-severity meter. Green: full menu. Yellow: limited menu. Red: closed, and God help you.
 
 ### 5.9 Progression
-Unlocks come with population, and each stage is named for a classic stage of American growth.
+Unlocks come with population, as milestones in the manner of Cities: Skylines, and each is named for a classic stage of American growth. A new county can't build every service at once: garbage and health wait for 150 people, fire and police for 350, schools for 650. Each milestone pays a state grant toward what it unlocks. The implemented table is in the README and src/sim/milestones.ts.
 
-| Pop. | Title | Unlocks |
+| Pop. | Title | Unlocks (headline) |
 |---|---|---|
-| 0 | **Wide Spot in the Road** | Dirt roads, trailers, gas station, logging |
-| 500 | **Crossroads** | 2-lane highway, Dollar Colonel, first drive-thru |
-| 2,000 | **Exit Town** | 4-lane stroad, strip mall, tract homes |
-| 5,000 | **Boomburb** | SprawlMart, McMansions, HOAs, parking minimums, 6 lanes |
-| 15,000 | **Edge City** | Freeway, cloverleaf, lifestyle center, megachurch, stadium |
-| 50,000 | **Metroplex** | Stacks, 8 lanes + frontage roads, data center, 5-over-1s |
-| 100,000+ | **The Katy** | 26-lane freeway, 5-level stack, the 120-pump Dillo's |
+| 0 | **Unincorporated Land** | Gravel and two-lane roads, low-density zones, a gas peaker, a well, a sewage outfall |
+| 150 | **Wide Spot in the Road** | Landfill, urgent care, the Freedom Stroad |
+| 350 | **Census-Designated Place** | Fire station, sheriff, roadside attractions |
+| 650 | **Speed Trap Town** | Big-box stores, schools, buses, the coal plant |
+| 1,100 | **Boomburb** | Luxury Slop apartments, 6 lanes, the Slop Cannon |
+| 1,800 | **Exurb** | Offices, treatment plant, incinerator, megachurch |
+| 2,800 | **Edge City** | The Slopway and interchanges, the hospital |
+| 4,200 | **Metroplex** | 8 lanes, the university, the stadium |
+| 6,500 | **Megalopolis** | Nuclear power, the data center |
+| 10,000 | **Capital of Slop** | Bragging rights (later: the 26-lane Katy, the 5-level stack) |
 
 ### 5.10 How it ends
 - **Sandbox:** it doesn't.

@@ -1,5 +1,7 @@
 // Road catalog. The One More Lane button walks up the `next` chain.
 
+import { MILESTONES, nameUnlock } from '../sim/milestones';
+
 export type RoadTypeId = 'gravel' | 'twoLane' | 'oneWay1' | 'oneWay2' | 'stroad4' | 'stroad6' | 'stroad8' | 'highway';
 
 export interface RoadType {
@@ -65,6 +67,10 @@ export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
     sidewalk: 0, speed: 31, costPerM: 70, upkeepPerM: 3.4, zoneable: false, signals: false, capacityPerLane: 1900, fedGrant: 0.9, unlockPop: 1500, icon: '🚀',
   }),
 };
+
+// unlock populations come from the milestone table (src/sim/milestones.ts)
+for (const m of MILESTONES) for (const r of m.roads ?? []) ROAD_TYPES[r].unlockPop = m.pop;
+for (const t of Object.values(ROAD_TYPES)) nameUnlock(`road:${t.id}`, `${t.icon} ${t.name}`);
 
 export const ROAD_ORDER: RoadTypeId[] = ['gravel', 'twoLane', 'oneWay1', 'oneWay2', 'stroad4', 'stroad6', 'stroad8', 'highway'];
 

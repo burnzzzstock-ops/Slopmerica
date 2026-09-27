@@ -15,6 +15,23 @@ npm run build:single   # dist-single/index.html, one file, works offline
 
 `#skip&map=florida&mode=sandbox` on the URL skips the title screen (maps: `appalachia`, `norcal`, `florida`; modes: `ponzi`, `sandbox`, `hippie`, `speedrun`).
 
+## Milestones
+
+As in Cities: Skylines, the town earns its tools by growing (src/sim/milestones.ts). A new county has $70,000, low-density zones, three kinds of road and the basic utilities; each milestone unlocks the next batch and pays a state grant toward building it. Unlocks are kept if the city shrinks. Sandbox has everything.
+
+| Milestone | People | Grant | Unlocks |
+|---|---:|---:|---|
+| Unincorporated Land | 0 | | homes, shops, industry; gravel, two-lane, one-lane one-way; gas peaker, well tower, river pump, sewage outfall, pocket park; roundabout; Water Tower |
+| Wide Spot in the Road | 150 | $5,000 | landfill, urgent care; Freedom Stroad, one-way couplet |
+| Census-Designated Place | 350 | $10,000 | fire station, sheriff; small roadside attractions; Propane Paradise |
+| Speed Trap Town | 650 | $15,000 | big-box commercial; school, coal plant; buses; Fill Er Up Mega Station |
+| Boomburb | 1,100 | $20,000 | high-density homes; MEGA Stroad; solar farm; bigger attractions; the Slop Cannon |
+| Exurb | 1,800 | $30,000 | offices; treatment plant, incinerator; Megachurch |
+| Edge City | 2,800 | $45,000 | the Slopway and diamond interchanges; hospital; the biggest attractions; Pig Cabana Resort |
+| Metroplex | 4,200 | $60,000 | Katy Stroad; university; Slop 69 Field |
+| Megalopolis | 6,500 | $90,000 | nuclear plant; Neural Fly Datacenter |
+| Capital of Slop | 10,000 | $150,000 | bragging rights |
+
 ## Civic Foundry asset library
 
 83 original architectural, vegetation, service, and streetscape components, with
@@ -99,7 +116,7 @@ node scripts/tooltest.mjs        # one active tool: tab switches, Esc, right-cli
 node scripts/roadrules.mjs       # a blocked road says the rule and the way out (communes)
 node scripts/zonetest.mjs        # zoning strokes report what they did; lots say why they wait
 node scripts/svcstatus.mjs       # services: covered / paid fallback / short, costs, why cut off
-node scripts/progresstest.mjs    # unlocks say where; NEW badges; locked cards; nature & sprawl meters
+node scripts/progresstest.mjs    # milestones: a new county can't build every service; batches unlock at real populations with grants; the card says what and where; NEW badges; locked cards; nature & sprawl meters
 node scripts/edgetest.mjs        # mouse at a screen edge scrolls the map
 node scripts/scaletest.mjs       # people, cars and boats in proportion to the town; one person out of a door at a time
 node scripts/hudfootprint.mjs    # how much of the height the HUD leaves for the map (W= H= for the window size)
@@ -127,6 +144,7 @@ node scripts/motiontest.mjs      # cars: no heading snaps, brake for turns, chan
 node scripts/civictest.mjs       # Civic Foundry pack streams in: street trees, furniture, bus shelters; instanced LODs; Low skips it
 node scripts/starttest.mjs       # new county: sensible site (random among good ones, saved), county road follows the land; trees: no detail disc, no gaps
 node scripts/gridtest.mjs        # Roads > Grid: three clicks lay a street grid (junctions, lots, price, red streets left out, one-ways alternate, one undo, touch)
+node scripts/progression.mjs     # (not a pass/fail test) a scripted player grows a Ponzi town: when each population mark is reached, money, what got built
 node scripts/linktest.mjs        # landmarks/services off the road network: tip, toast, red no-road bubble, inspector, alerts, no land value; feed pacing
 node scripts/vaulttest.mjs       # Asset Vault: pack streams in; zoned lots grow vault buildings that fit; merch lots kept; attractions; services' vault looks + toggle; road furniture; no pack = no change
 node scripts/crisisfixtest.mjs   # info views show every building with that view's problem; utility outages merge only for the same buildings; a closed warning returns when worse

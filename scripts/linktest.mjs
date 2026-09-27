@@ -19,6 +19,8 @@ page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
 await page.addInitScript(() => { try { localStorage.setItem('slopmerica.quality', 'low'); localStorage.setItem('slopmerica.onboarded', '1'); } catch { /* */ } });
 await page.goto(`${base}/#skip&map=florida&mode=ponzi`, { waitUntil: 'load', timeout: 120000 });
 await page.waitForFunction(() => window.__game && window.__dbg && window.__services, null, { timeout: 180000 });
+// (not about milestones: every unlock in hand)
+await page.evaluate(() => window.__dbg.unlockAll());
 
 const r = await page.evaluate(() => {
   const g = window.__game, d = window.__dbg, SV = window.__services, T = g.terrain, t = g.tools, V = g.camera.position.constructor;

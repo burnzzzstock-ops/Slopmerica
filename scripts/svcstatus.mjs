@@ -13,6 +13,8 @@ page.on('pageerror', (e) => errs.push(e.message));
 await page.addInitScript(() => { try { localStorage.setItem('slopmerica.quality', 'low'); localStorage.setItem('slopmerica.onboarded', '1'); localStorage.setItem('slopmerica.edgeScroll', '0'); } catch { /* */ } });
 await page.goto(`${base}/#skip&map=norcal&mode=ponzi`, { waitUntil: 'load', timeout: 120000 });
 await page.waitForFunction(() => window.__game && window.__dbg, null, { timeout: 180000 });
+// (not about milestones: every unlock in hand)
+await page.evaluate(() => window.__dbg.unlockAll());
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra)); if (!ok) bad++; };
 await page.evaluate(() => {

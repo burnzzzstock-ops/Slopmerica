@@ -25,7 +25,8 @@ const r = await page.evaluate(() => {
   cancelAnimationFrame(g.raf);
   for (const c of g.communes.list) { c.state = 'gone'; c.group.removeFromParent(); }
   g.syncBlockers();
-  const cx = 60, cz = 60;
+  // the town goes on the town site (flat, dry and roomy by construction), where the county road ends
+  const S = g.startView(), cx = Math.round(S.x), cz = Math.round(S.z);
   for (let k = -1; k <= 1; k++) { d.road(cx - 200, cz + k * 110, cx + 200, cz + k * 110, 'twoLane'); d.road(cx + k * 110, cz - 200, cx + k * 110, cz + 200, 'twoLane'); }
   g.zones.update();
   d.zone(cx - 55, cz - 55, 50, 'comLow'); d.zone(cx + 55, cz + 55, 50, 'resLow'); d.zone(cx + 55, cz - 55, 50, 'comLow'); d.zone(cx - 55, cz + 55, 50, 'resLow');
@@ -39,12 +40,13 @@ const r = await page.evaluate(() => {
   [[cx - 80, cz], [cx + 30, cz], [cx + 80, cz]].forEach(([x, z]) => t.addDraftPoint(x, z + 6));
   t.finishDraft();
   g.hour = 14;
+  g.rts.setView(cx, cz, 420, undefined, undefined, true);
   for (let i = 0; i < 80; i++) g.frame(0.05, i % 10 === 0);
   const c = g.civic;
   const meshes = c.group.children.filter((m) => m.visible && m.count > 0);
   const shelters = [...t.renderer.group.children].filter((n) => n.userData.stopId !== undefined);
   return {
-    status: c.status, counts: c.counts, visibleMeshes: meshes.length, instances: meshes.reduce((a, m) => a + m.count, 0),
+    cx, cz, status: c.status, counts: c.counts, visibleMeshes: meshes.length, instances: meshes.reduce((a, m) => a + m.count, 0),
     boxShelterHidden: shelters.length > 0 && shelters.every((n) => n.getObjectByName('box-shelter')?.visible === false), stops: t.stops.size,
     tris: g.renderer.info.render.triangles,
   };
@@ -58,7 +60,8 @@ check(`shop streets get benches, bike racks, papers, planters, grates (${furnitu
 check(`every bus stop gets the library's shelter (${r.counts['street-bus-shelter'] ?? 0} for ${r.stops} stops), the box one steps aside`, (r.counts['street-bus-shelter'] ?? 0) === r.stops && r.stops > 0 && r.boxShelterHidden, r);
 check(`it draws as instanced LODs (${r.visibleMeshes} meshes, ${r.instances} instances)`, r.visibleMeshes > 5 && r.instances > 40, r);
 if (process.env.SHOTS) {
-  for (const [i, v] of [[60 - 55, 60 - 110 + 12, 38, 0.4, 0.42], [60 + 30, 60 + 4, 30, 2.6, 0.35], [60 + 55, 60 + 110 - 12, 45, 3.6, 0.5]].entries()) {
+  const { cx, cz } = r;
+  for (const [i, v] of [[cx - 55, cz - 110 + 12, 38, 0.4, 0.42], [cx + 30, cz + 4, 30, 2.6, 0.35], [cx + 55, cz + 110 - 12, 45, 3.6, 0.5]].entries()) {
     await page.evaluate((v) => { const g = window.__game; document.querySelector('.hud').style.visibility = 'hidden'; g.rts.setView(v[0], v[1], v[2], v[3], v[4], true); for (let k = 0; k < 12; k++) g.frame(0.05, false); g.frame(0.016, true); }, v);
     await page.screenshot({ path: `${process.env.SHOTS}-${i}.png`, timeout: 240000 });
   }

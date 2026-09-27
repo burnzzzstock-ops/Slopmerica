@@ -19,6 +19,8 @@ page.on('pageerror', (e) => errs.push(e.message));
 await page.addInitScript(() => { try { localStorage.setItem('slopmerica.quality', 'low'); localStorage.setItem('slopmerica.onboarded', '1'); } catch { /* */ } });
 await page.goto(`${base}/#skip&map=norcal&mode=ponzi`, { waitUntil: 'load', timeout: 120000 });
 await page.waitForFunction(() => window.__game && window.__dbg && window.__services, null, { timeout: 180000 });
+// (not about milestones: every unlock in hand)
+await page.evaluate(() => window.__dbg.unlockAll());
 
 const out = await page.evaluate(async () => {
   const g = window.__game, d = window.__dbg, SV = window.__services, s = g.sim;

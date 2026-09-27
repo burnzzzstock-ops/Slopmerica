@@ -27,6 +27,7 @@ const town = await page.evaluate(() => {
   const g = window.__game, d = window.__dbg, SV = window.__services;
   cancelAnimationFrame(g.raf);
   g.sim.earn(400000 - g.sim.money, 'other', 'Test funds'); // through the ledger, so weeks still reconcile
+  g.sim.peakPop = 400; // a town that has had 400 people: landfills, fire and police are unlocked (milestones)
   const S = g.startView();
   // the first cross street that builds (Gator Gulch is wet), joined to the
   // town site where the county road ends
@@ -66,7 +67,7 @@ const unlock = await page.evaluate(() => {
   const reasonAt = () => { for (let r = 60; r < 900; r += 30) for (let k = 0; k < 16; k++) { const c = SV.canPlace(g, 'incinerator', S.x + Math.cos(k * 0.4) * r, S.z + Math.sin(k * 0.4) * r); if (c.ok || /Unlocks/.test(c.reason ?? '')) return c.ok ? 'ok' : c.reason; } return 'no spot'; };
   const before = reasonAt();
   const peak0 = s.peakPop;
-  s.peakPop = 1250; // the city once had 1,250 people; it has far fewer now
+  s.peakPop = 1850; // the city once had 1,850 people; it has far fewer now
   const after = reasonAt();
   g.ui.refreshNow();
   document.querySelector('button.tbtn[data-t="ext:services"]').click();
@@ -85,9 +86,9 @@ const unlock = await page.evaluate(() => {
   document.querySelector('button.tbtn[data-t="ext:services"]').click();
   return res;
 });
-check(`the incinerator is locked below 1,200 people ("${unlock.before}")`, /Unlocks at 1,200 people/.test(unlock.before), unlock);
-check(`once the city has had 1,250 people it stays available at ${unlock.pop} (${unlock.after})`, unlock.after === 'ok' && unlock.disabled === false && /Earned at 1,200 people/.test(unlock.title), unlock);
-check(`the earned peak survives a save (${unlock.restored}) and old saves find it in their history (${unlock.fromHistory})`, unlock.restored === 1250 && unlock.fromHistory === 1400, unlock);
+check(`the incinerator is locked below its milestone, 1,800 people ("${unlock.before}")`, /Unlocks at 1,800 people \(Exurb\)/.test(unlock.before), unlock);
+check(`once the city has had 1,850 people it stays available at ${unlock.pop} (${unlock.after})`, unlock.after === 'ok' && unlock.disabled === false && /Earned at 1,800 people \(Exurb\)/.test(unlock.title), unlock);
+check(`the earned peak survives a save (${unlock.restored}) and old saves find it in their history (${unlock.fromHistory})`, unlock.restored === 1850 && unlock.fromHistory === 1400, unlock);
 
 // ---- a landfill filling up: 75%, 90%, full
 const fill = await page.evaluate(() => {

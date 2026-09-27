@@ -154,7 +154,7 @@ export class RoadNetwork {
   }
 
   /** Directions of the roads leaving a snapped point (a node's arms, or both ways along a road). */
-  private armDirs(s: Snap): V2[] {
+  armDirs(s: Snap): V2[] {
     if (s.kind === 'node') {
       const n = this.nodes.get(s.id);
       if (!n) return [];

@@ -11,6 +11,7 @@ import { ROAD_ORDER, ROAD_TYPES, RoadTypeId } from '../roads/roadTypes';
 import { ZONE_COLORS, ZONE_LABEL, type ZCell } from '../zones/zoning';
 import { MAX_LEVEL } from '../contracts';
 import type { ToolId } from '../tools/tools';
+import { GRID_BLOCKS, type GridBlock } from '../tools/gridRoads';
 import { FeedPanel } from './feedPanel';
 import { MERCH_URL, brandById } from '../art/brands';
 import { BUILD, crumb, onCapturedError, openBugReport } from './bugreport';
@@ -1160,7 +1161,8 @@ export class Hud implements UiSink {
     if (p === 'roads') {
       this.sub.innerHTML = `
         <div class="sp-title">Roads <small>${IS_TOUCH ? 'Drag to plan a road, then tap Build. Drag from its end to keep going. Two fingers move the map. Double-tap or Stop to finish.' : 'Click start, click end, keep going. Right-click, double-click or Esc stops.'}</small></div>
-        <div class="sp-row modes">${(['straight', 'curve', 'freeform'] as const).map((m) => `<button class="chip ${t.roadMode === m ? 'on' : ''}" data-mode="${m}">${m === 'straight' ? '📏 Straight' : m === 'curve' ? '↪️ Curved' : '〰️ Freeform'}</button>`).join('')}</div>
+        <div class="sp-row modes">${(['straight', 'curve', 'freeform', 'grid'] as const).map((m) => `<button class="chip ${t.roadMode === m ? 'on' : ''}" data-mode="${m}" ${m === 'grid' ? 'title="Lay out a whole street grid: corner, first side, width"' : ''}>${m === 'straight' ? '📏 Straight' : m === 'curve' ? '↪️ Curved' : m === 'freeform' ? '〰️ Freeform' : '▦ Grid'}</button>`).join('')}</div>
+        ${t.roadMode === 'grid' ? `<div class="sp-row modes grid-blocks"><small>${IS_TOUCH ? 'Touch a corner, drag the first side, drag out the width, then Build.' : 'Click a corner, the first side, then the width.'} Blocks:</small>${(Object.keys(GRID_BLOCKS) as GridBlock[]).map((b) => `<button class="chip ${t.gridBlock === b ? 'on' : ''}" data-block="${b}" title="${GRID_BLOCKS[b].cells * 2} lot rows between streets">${GRID_BLOCKS[b].label}</button>`).join('')}</div>` : ''}
         <div class="sp-grid roads-grid">${ROAD_ORDER.map((id) => {
           const r = ROAD_TYPES[id];
           const locked = !g.sim.isUnlocked({ road: id });
@@ -1174,6 +1176,7 @@ export class Hud implements UiSink {
       this.sub.querySelectorAll<HTMLButtonElement>('[data-layout]').forEach((b) => b.addEventListener('click', () => { selectLayout(g, b.dataset.layout as LayoutId); this.renderPanel(); }));
       this.sub.querySelector('#layout-rotate')?.addEventListener('click', () => rotateLayout(g));
       this.sub.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) => b.addEventListener('click', () => { t.roadMode = b.dataset.mode as never; t.cancel(); t.set('road'); this.renderPanel(); }));
+      this.sub.querySelectorAll<HTMLButtonElement>('[data-block]').forEach((b) => b.addEventListener('click', () => { t.gridBlock = b.dataset.block as GridBlock; if (t.active !== 'road') t.set('road'); this.renderPanel(); }));
       this.sub.querySelectorAll<HTMLButtonElement>('[data-road]').forEach((b) => b.addEventListener('click', () => { t.roadType = b.dataset.road as RoadTypeId; this.fresh.delete(`road:${t.roadType}`); t.set('road'); this.renderPanel(); }));
     } else if (p === 'zones') {
       this.sub.innerHTML = `

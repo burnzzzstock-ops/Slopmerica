@@ -12,9 +12,10 @@ import { PlacementGhost } from './placementGhost';
 import { LANDMARK_COST, LANDMARKS, type Game } from '../game';
 import { EXT, type ExtTool } from '../ext/registry';
 import { crumb } from '../ui/bugreport';
+import { buildGrid, GRID_BLOCKS, gridShape, gridSpacing, planGrid, type GridBlock, type GridLineState, type GridShape } from './gridRoads';
 
 export type ToolId = 'inspect' | 'road' | 'upgrade' | 'bulldoze' | 'zone' | 'dezone' | 'landmark' | 'ext';
-export type RoadMode = 'straight' | 'curve' | 'freeform';
+export type RoadMode = 'straight' | 'curve' | 'freeform' | 'grid';
 
 export interface ToolTip {
   text: string;
@@ -29,6 +30,8 @@ export class Tools implements PointerHandlers {
   active: ToolId = 'inspect';
   roadType: RoadTypeId = 'twoLane';
   roadMode: RoadMode = 'straight';
+  /** grid mode: block size (lot rows either side of each street) */
+  gridBlock: GridBlock = 'M';
   zoneType: ZoneType = 'resLow';
   brush = 1; // 0 small, 1 medium, 2 large
   landmark: LandmarkId = 'slopCannon';
@@ -224,7 +227,7 @@ export class Tools implements PointerHandlers {
 
   /** Is a road stroke in progress? (for the touch Done button) */
   get drawing() {
-    return this.active === 'road' && !!this.start;
+    return this.active === 'road' && (!!this.start || !!this.grid.a);
   }
 
   // Touch roads are planned first and built on confirm (no accidental roads).
@@ -239,12 +242,18 @@ export class Tools implements PointerHandlers {
   /** A planned (touch) road or landmark is waiting for the Build button. */
   get pending() {
     if (this.active === 'landmark') return !!this.landmarkAt;
+    if (this.active === 'road' && this.roadMode === 'grid') return !!this.grid.c && !!this.gridCache?.plan.ok;
     return this.active === 'road' && !!this.start && !!this.pendingEnd;
   }
   /** Build the planned touch road or landmark (the action-bar Build button). */
   buildPending() {
     if (this.active === 'landmark') {
       if (this.landmarkAt && this.game.placeLandmark(this.landmark, this.landmarkAt)) { crumb(`placed landmark ${this.landmark}`); this.set('inspect'); }
+      return;
+    }
+    if (this.active === 'road' && this.roadMode === 'grid') {
+      if (this.grid.c) this.gridBuild(this.grid.c);
+      this.onChange?.();
       return;
     }
     if (!this.pendingEnd || !this.start) return;
@@ -265,6 +274,7 @@ export class Tools implements PointerHandlers {
     this.landmarkAt = null;
     this.pendingEnd = null;
     this.pendingCost = null;
+    this.grid = { a: null, align: [], b: null, c: null, startedThisTouch: false };
     this.chained = false;
     this.start = null;
     this.control = null;
@@ -283,6 +293,17 @@ export class Tools implements PointerHandlers {
     if (e.button === 2) { if (!this.placingLabel && this.active !== 'ext') this.cancel(); return; }
     this.hover = p;
     if (this.active === 'ext') { this.ext?.down?.(this.game, p, e); return; }
+    if (this.active === 'road' && e.pointerType !== 'mouse' && this.roadMode === 'grid') {
+      this.touchDown = true;
+      this.grid.startedThisTouch = false;
+      if (!this.grid.a) {
+        // the first corner goes right under the finger, like a road's start
+        const under = this.game.rts.groundAt(e.clientX, e.clientY) ?? p;
+        this.gridCorner(under);
+        this.grid.startedThisTouch = true;
+      }
+      return;
+    }
     if (this.active === 'road' && e.pointerType !== 'mouse') {
       this.startedThisTouch = false;
       this.touchDown = true;
@@ -335,6 +356,22 @@ export class Tools implements PointerHandlers {
     if (!p) return;
     switch (this.active) {
       case 'road':
+        if (this.roadMode === 'grid') {
+          if (!wasDrag && this.doubleTap(p, e) && this.grid.a && !this.grid.startedThisTouch) {
+            this.cancel();
+            this.game.audio.play('click', 0.4);
+          } else if (e.pointerType === 'mouse') {
+            if (!wasDrag) this.gridClick(p);
+          } else if (!this.grid.startedThisTouch || wasDrag) {
+            // touch: lift to set the first side, then the width, which waits
+            // for the Build button (touch again to re-aim)
+            if (this.grid.b) { this.grid.c = { x: p.x, z: p.z }; this.game.audio.play('click', 0.5); }
+            else this.gridClick(p);
+          }
+          this.grid.startedThisTouch = false;
+          this.onChange?.();
+          break;
+        }
         if (!wasDrag && this.doubleTap(p, e) && this.start) {
           // double-tap / double-click: stop drawing this road
           this.cancel();
@@ -525,6 +562,155 @@ export class Tools implements PointerHandlers {
     return dbl;
   }
 
+  // ------------------------------------------------------------------ grid tool
+  // Corner, first side, width: the whole grid goes down at once (gridRoads.ts).
+  private grid: { a: Snap | null; align: V2[]; b: V2 | null; c: V2 | null; startedThisTouch: boolean } = { a: null, align: [], b: null, c: null, startedThisTouch: false };
+  private gridCache: { key: string; shape: GridShape; plan: ReturnType<typeof planGrid> } | null = null;
+
+  private gridCorner(p: THREE.Vector3) {
+    const a = this.game.net.snap(p.x, p.z, this.snapR());
+    // starting on a road: the first side can run along it
+    this.grid = { a, align: this.game.net.armDirs(a), b: null, c: null, startedThisTouch: false };
+    this.game.audio.play('click');
+  }
+
+  private gridShapeTo(c: V2 | null, b: V2 | null = this.grid.b) {
+    const a = this.grid.a;
+    if (!a || !b) return null;
+    return gridShape({ x: a.x, z: a.z }, b, c, gridSpacing(this.roadType, this.gridBlock), this.grid.align);
+  }
+
+  private gridClick(p: THREE.Vector3) {
+    if (ROAD_TYPES[this.roadType].id === 'highway') { this.game.toast("Grids are for streets: a highway can't have crossroads. Pick another road.", true); this.game.audio.play('error'); return; }
+    if (!this.grid.a) { this.gridCorner(p); return; }
+    const at = { x: p.x, z: p.z };
+    if (!this.grid.b) {
+      if (!this.gridShapeTo(null, at)) { this.game.toast(`Pull the first side out further: a block here is ${Math.round(gridSpacing(this.roadType, this.gridBlock))} m.`, true); this.game.audio.play('error'); return; }
+      this.grid.b = at;
+      this.game.audio.play('click');
+      return;
+    }
+    this.gridBuild(at);
+  }
+
+  private gridBuild(c: V2) {
+    const shape = this.gridShapeTo(c);
+    if (!shape) return;
+    const type = this.roadType, name = ROAD_TYPES[type].name, sim = this.game.sim;
+    const weekBefore = sim.money === Infinity ? null : sim.forecastWeek().net;
+    const r = buildGrid(this.game, shape, type);
+    const skipped = [...r.skipped].map(([why, n]) => `${n} left out: ${why}`).join(' · ');
+    if (!r.built) {
+      this.game.toast(r.have === r.total ? 'Those streets are all there already.' : `Can't build that grid. ${skipped}`, true);
+      this.game.audio.play('error');
+      this.grid.c = null;
+      return;
+    }
+    const net$ = r.cost - r.grant;
+    this.game.pushUndo({ kind: 'build', segIds: r.segIds, refund: net$, label: `${name} grid`, trees: r.trees });
+    crumb(`built a ${shape.nu}x${shape.nv} ${name} grid: ${r.built}/${r.total} streets, ${Math.round(r.length)} m ($${net$})`);
+    const mid = new THREE.Vector3(shape.a.x + (shape.u.x * shape.nu + shape.v.x * shape.nv) * shape.S * 0.5, 0, shape.a.z + (shape.u.z * shape.nu + shape.v.z * shape.nv) * shape.S * 0.5);
+    mid.y = this.game.terrain.h(mid.x, mid.z);
+    if (r.grant > 0) this.game.floatText(`+$${r.grant.toLocaleString()} Federal Slop Grant`, mid, '#9dff3c');
+    const bits = [
+      `${r.built} street${r.built === 1 ? '' : 's'}, ${Math.round(r.length).toLocaleString()} m, $${net$.toLocaleString()}`,
+      r.have ? `${r.have} already there` : '',
+      r.razed ? `${r.razed} building${r.razed === 1 ? '' : 's'} bulldozed` : '',
+      skipped,
+    ].filter(Boolean);
+    this.game.toast(`Built a ${shape.nu}×${shape.nv}-block grid: ${bits.join(' · ')}`, !!skipped);
+    const weekAfter = weekBefore === null ? null : sim.forecastWeek().net;
+    if (weekBefore !== null && weekAfter !== null && weekBefore >= 0 && weekAfter < 0) {
+      sim.alert('warn', `🛣️ A new street grid put the weekly budget in the red (${Math.round(weekAfter)}/wk)`);
+      this.game.toast(`That grid put the weekly budget in the red: +$${Math.round(weekBefore).toLocaleString()} → −$${Math.abs(Math.round(weekAfter)).toLocaleString()}/wk. Zone it so new buildings' fees cover the upkeep.`, true);
+    }
+    this.grid = { a: null, align: [], b: null, c: null, startedThisTouch: false };
+    this.gridCache = null;
+    this.pendingCost = null;
+  }
+
+  private gridUpdate(hov: THREE.Vector3) {
+    const net = this.game.net, t = ROAD_TYPES[this.roadType], touch = this.game.isTouch;
+    const aim = this.grid.c && !this.touchDown ? new THREE.Vector3(this.grid.c.x, 0, this.grid.c.z) : hov;
+    const s = this.grid.a ? { kind: 'free', x: aim.x, z: aim.z } : net.snap(aim.x, aim.z, this.snapR());
+    this.marker.visible = true;
+    this.marker.position.set(s.x, this.game.terrain.h(s.x, s.z) + 0.6, s.z);
+    (this.marker.material as THREE.MeshBasicMaterial).color.set(s.kind === 'free' ? 0xffffff : 0x9dff3c);
+    this.pendingCost = null;
+    const A = this.grid.a;
+    if (A) {
+      this.startPin.visible = true;
+      this.startPin.position.set(A.x, this.game.terrain.h(A.x, A.z) + 0.7, A.z);
+      this.startPin.scale.setScalar(this.marker.scale.x * 1.35);
+    }
+    if (t.id === 'highway') { this.preview.visible = false; this.tip = { text: "Grids are for streets: a highway can't have crossroads. Pick another road.", bad: true }; return; }
+    const S = gridSpacing(this.roadType, this.gridBlock), blk = `${GRID_BLOCKS[this.gridBlock].label.toLowerCase()} blocks, streets ${Math.round(S)} m apart`;
+    if (!A) { this.preview.visible = false; this.tip = { text: `▦ ${t.name} grid (${blk}): ${touch ? 'touch' : 'click'} the first corner${s.kind !== 'free' ? ' · on a road: the grid can run along it' : ''}` }; return; }
+    const at = { x: aim.x, z: aim.z };
+    const shape = this.grid.b ? this.gridShapeTo(at) : this.gridShapeTo(null, at);
+    if (!shape) { this.preview.visible = false; this.tip = { text: `${touch ? 'Drag' : 'Pull'} out the first side (${blk})` }; return; }
+    const key = [this.roadType, S, A.x.toFixed(1), A.z.toFixed(1), shape.u.x.toFixed(4), shape.u.z.toFixed(4), shape.v.x.toFixed(4), shape.v.z.toFixed(4), shape.nu, shape.nv, net.segs.size, net.nodes.size, Math.round(this.game.sim.spendable() / 5000)].join('|');
+    if (this.gridCache?.key !== key) {
+      const plan = planGrid(this.game, shape, this.roadType);
+      this.drawGrid(plan.lines, t.width, !!t.oneWay);
+      this.gridCache = { key, shape, plan };
+    }
+    const plan = this.gridCache.plan;
+    this.preview.visible = true;
+    this.previewMat.color.set(0xffffff);
+    const net$ = plan.cost - plan.grant;
+    if (!this.grid.b) {
+      this.tip = { text: `${shape.nu} block${shape.nu === 1 ? '' : 's'} along, ${Math.round(shape.nu * S)} m · ${touch ? 'lift' : 'click'} to set the first side, then pull out the width` };
+      return;
+    }
+    this.pendingCost = this.grid.c && plan.ok ? net$ : null;
+    const upkeep = Math.max(1, Math.round(plan.length * t.upkeepPerM * 0.35)), later = Math.max(1, Math.round(plan.length * t.upkeepPerM));
+    const budget = this.budgetAfter(upkeep, later);
+    const why = [...plan.reasons].sort((x, y) => y[1] - x[1])[0]?.[0];
+    const bits = [
+      `▦ ${shape.nu}×${shape.nv} blocks · ${plan.ok} street${plan.ok === 1 ? '' : 's'} · ${Math.round(plan.length).toLocaleString()} m · $${net$.toLocaleString()}${plan.grant ? ` (feds pay $${plan.grant.toLocaleString()})` : ''}`,
+      `+$${upkeep}/wk upkeep (→ $${later}/wk as it ages)`,
+      budget?.text ?? '',
+      plan.have ? `${plan.have} already there` : '',
+      plan.bad ? `⚠️ ${plan.bad} red street${plan.bad === 1 ? '' : 's'} left out: ${why}` : '',
+      // a width planned by touch waits for the Build button
+      plan.ok ? (this.grid.c ? (this.touchDown ? 'lift to plan it' : 'tap Build, or drag to re-aim') : touch ? 'lift to plan it' : 'click to build') : '',
+    ].filter(Boolean);
+    this.tip = { text: plan.ok ? bits.join(' · ') : `Nothing here can be built: ${why ?? 'every street is already there'}`, bad: !plan.ok || !!plan.bad || !!budget?.flips };
+  }
+
+  /** the planned grid: every street as a ribbon, red where it can't be built, faint where it's already there */
+  private drawGrid(lines: GridLineState[], width: number, oneWay: boolean) {
+    const pos: number[] = [], col: number[] = [], idx: number[] = [];
+    const T = this.game.terrain, hw = width / 2;
+    for (const l of lines) {
+      const c = l.state === 'ok' ? [0.5, 0.85, 1] : l.state === 'bad' ? [1, 0.3, 0.3] : [0.75, 0.75, 0.75];
+      const dx = l.b.x - l.a.x, dz = l.b.z - l.a.z, L = Math.hypot(dx, dz);
+      const tx = dx / L, tz = dz / L, rx = -tz, rz = tx;
+      const n = Math.max(1, Math.ceil(L / 6)), k0 = pos.length / 3;
+      for (let i = 0; i <= n; i++) {
+        const x = l.a.x + (dx * i) / n, z = l.a.z + (dz * i) / n, y = Math.max(T.h(x, z), 0) + 0.9;
+        pos.push(x - rx * hw, y, z - rz * hw, x + rx * hw, y, z + rz * hw);
+        col.push(...c, ...c);
+        if (i > 0) { const a = k0 + (i - 1) * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+      }
+      // one-ways show which way each street runs
+      if (oneWay && l.state !== 'have') for (let d = 8; d < L - 4; d += 24) {
+        const x = l.a.x + tx * d, z = l.a.z + tz * d, y = Math.max(T.h(x, z), 0) + 0.95;
+        const k = pos.length / 3, w = Math.min(1.6, hw * 0.6);
+        pos.push(x + tx * 2.2, y, z + tz * 2.2, x - tx * 0.9 + rx * w, y, z - tz * 0.9 + rz * w, x - tx * 0.9 - rx * w, y, z - tz * 0.9 - rz * w);
+        col.push(0.15, 0.15, 0.2, 0.15, 0.15, 0.2, 0.15, 0.15, 0.2);
+        idx.push(k, k + 1, k + 2);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.setIndex(idx);
+    this.preview.geometry.dispose();
+    this.preview.geometry = g;
+  }
+
   // ------------------------------------------------------------------ per frame
   update() {
     const net = this.game.net;
@@ -542,7 +728,8 @@ export class Tools implements PointerHandlers {
       if (this.game.isTouch) this.tip = this.idleTouchTip();
       return;
     }
-    if (this.active === 'road') {
+    if (this.active === 'road' && this.roadMode === 'grid') this.gridUpdate(hov);
+    else if (this.active === 'road') {
       const aim = this.pendingEnd && !this.touchDown ? this.pendingEnd : hov;
       const s = this.start ? this.snapEnd(aim) : net.snap(aim.x, aim.z, this.snapR());
       this.marker.visible = true;

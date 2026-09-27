@@ -487,7 +487,8 @@ export class Game {
     return Math.abs(x - this.rts.target.x) < r && Math.abs(z - this.rts.target.z) < r && this.rts.distance < r * 2;
   }
 
-  onRoadBuilt(segs: RSeg[], plan: Plan) {
+  /** after a road goes down; `quiet`: one street of several (a grid), so no sound, news or toast. Returns buildings razed. */
+  onRoadBuilt(segs: RSeg[], plan: Plan, quiet = false) {
     // a road through homes and shops bulldozes them (the planner already
     // refused roads through services and landmarks)
     let razed = 0;
@@ -495,7 +496,9 @@ export class Game {
       const pts = s.over ? s.samp.pts.filter((_, i) => s.hs[i] - s.ground[i] < 3) : s.samp.pts;
       for (const b of this.buildings.underPavement(pts, ROAD_TYPES[s.type].width / 2)) if (isZoned(b) && this.buildings.list.has(b.id)) { this.buildings.demolish(b, 'road'); razed++; }
     }
-    if (razed) { crumb(`road bulldozed ${razed} building${razed === 1 ? '' : 's'}`); this.toast(`${razed} building${razed === 1 ? '' : 's'} bulldozed for the road`); }
+    if (razed) crumb(`road bulldozed ${razed} building${razed === 1 ? '' : 's'}`);
+    if (quiet) return razed;
+    if (razed) this.toast(`${razed} building${razed === 1 ? '' : 's'} bulldozed for the road`);
     const t = ROAD_TYPES[segs[0].type];
     this.audio.play('build', 0.6);
     const kind: FeedEventKind = t.id === 'highway' ? 'highwayBuilt' : t.centerTurn ? 'stroadBuilt' : plan.bridgeLen > 10 ? 'bridgeBuilt' : 'roadBuilt';
@@ -506,6 +509,7 @@ export class Game {
       const s = segs[0].samp.pts[0];
       if (Math.hypot(c.x - s.x, c.z - s.z) < 260 && Math.random() < 0.5) this.feed.push('communeProtest', { commune: c.name, road: segs[0].name });
     }
+    return razed;
   }
 
   pushUndo(a: UndoAction) {

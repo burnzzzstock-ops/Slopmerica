@@ -801,11 +801,15 @@ export class Tools implements PointerHandlers {
       this.ghost.showBlocker(!spot.ok && spot.blocker ? spot.blocker : null);
       const cost = LANDMARK_COST[this.landmark];
       this.pendingCost = this.landmarkAt && spot.ok && cost <= this.game.sim.spendable() ? cost : null;
-      const where = spot.front ? `fronts ${spot.front.seg.name}` : 'no road here yet: it faces the one you build';
+      // it can go down before its road, but it does nothing until one links it to the network
+      const linked = !!spot.front && (this.game.linkedRoad?.(spot.front.seg) ?? true);
+      const where = !spot.front ? '🚧 no road here: it does nothing until a road connects it to your streets'
+        : !linked ? `🚧 ${spot.front.seg.name} doesn't join the rest of your roads: it does nothing until it does`
+        : `fronts ${spot.front.seg.name}`;
       if (!spot.ok) this.tip = { text: spot.reason ?? 'Nope', bad: true };
-      else if (!this.game.isTouch) this.tip = { text: `Click to place · ${where}` };
+      else if (!this.game.isTouch) this.tip = { text: `Click to place · ${where}`, bad: !linked };
       else this.tip = this.landmarkAt
-        ? cost > this.game.sim.spendable() ? { text: 'Not enough money', bad: true } : { text: `${where} · tap Build, or drag to move it` }
+        ? cost > this.game.sim.spendable() ? { text: 'Not enough money', bad: true } : { text: `${where} · tap Build, or drag to move it`, bad: !linked }
         : { text: 'Tap or drag to where it goes' };
     } else if (this.active === 'zone' || this.active === 'dezone') {
       this.drapeBrush(hov.x, hov.z, this.brushRadius());

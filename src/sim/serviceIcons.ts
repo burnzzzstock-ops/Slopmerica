@@ -5,9 +5,10 @@
 // its most common problem and a count badge.
 import * as THREE from 'three';
 
-export type Problem = 'power' | 'water' | 'sewage' | 'garbage' | 'fire' | 'crime' | 'sick' | 'abandoned' | 'education' | 'pollution';
-export const PROBLEMS: Problem[] = ['power', 'water', 'sewage', 'garbage', 'fire', 'crime', 'sick', 'abandoned', 'education', 'pollution'];
-const COLS = 10;
+/** `road`: a landmark, service or depot that no road links to the county's road network */
+export type Problem = 'power' | 'water' | 'sewage' | 'garbage' | 'fire' | 'crime' | 'sick' | 'abandoned' | 'education' | 'pollution' | 'road';
+export const PROBLEMS: Problem[] = ['power', 'water', 'sewage', 'garbage', 'fire', 'crime', 'sick', 'abandoned', 'education', 'pollution', 'road'];
+const COLS = 11;
 const S = 96;
 
 /** One bubble: a building's problem, or (n > 1) a neighbourhood's, with how many of each. */
@@ -79,6 +80,12 @@ function drawAtlas(): THREE.CanvasTexture {
         x.fillRect(-14, 0, 28, 12); x.lineWidth = 3; x.beginPath(); x.moveTo(22, -4); x.lineTo(22, 16); x.stroke(); break;
       case 'pollution': // factory smoke cloud
         x.beginPath(); x.arc(-10, 2, 12, 0, Math.PI * 2); x.arc(6, -6, 14, 0, Math.PI * 2); x.arc(14, 8, 10, 0, Math.PI * 2); x.arc(-2, 12, 10, 0, Math.PI * 2); x.fill(); break;
+      case 'road': // a road that stops short, and a barrier
+        x.beginPath(); x.moveTo(-26, 28); x.lineTo(-12, -2); x.lineTo(12, -2); x.lineTo(26, 28); x.closePath(); x.fill();
+        x.fillStyle = '#e0262e'; x.fillRect(-2, 6, 4, 7); x.fillRect(-2, 18, 4, 8);
+        x.fillStyle = '#fff'; x.fillRect(-24, -24, 48, 14);
+        x.fillStyle = '#e0262e'; for (const dx of [-20, -8, 4, 16]) { x.beginPath(); x.moveTo(dx, -24); x.lineTo(dx + 6, -24); x.lineTo(dx + 2, -10); x.lineTo(dx - 4, -10); x.closePath(); x.fill(); }
+        x.fillStyle = '#fff'; x.fillRect(-20, -10, 4, 8); x.fillRect(16, -10, 4, 8); break;
     }
     x.restore();
   });
@@ -90,9 +97,12 @@ function drawAtlas(): THREE.CanvasTexture {
   return t;
 }
 
+/** a building with no road link gets a bigger bubble: it's the one thing wrong with a whole landmark */
+const ROAD_ICON = PROBLEMS.indexOf('road'), ROAD_SCALE = 1.8;
+
 /** How big a bubble is in the world at `dist` from the camera (the shader and pick() share it). */
-function bubbleSize(dist: number, n: number) {
-  if (n <= 1) return Math.min(22, Math.max(1.0, dist * 0.03));
+function bubbleSize(dist: number, n: number, p?: Problem) {
+  if (n <= 1) return Math.min(22, Math.max(1.0, dist * 0.03)) * (p === 'road' ? ROAD_SCALE : 1);
   // a neighbourhood's bubble keeps a readable size far out, and grows a little with its count
   return Math.min(140, Math.max(3.2, dist * 0.035)) * Math.min(2, 1.25 + 0.12 * Math.log2(n));
 }
@@ -135,7 +145,7 @@ export class ProblemIcons {
           // constant-ish screen size: grows with distance, clamped (bubbleSize() in JS)
           bool many = iCount > 1.5;
           // (a single icon's floor of 3.2 m made the ones next to the camera balloon to twice the others)
-          float s = many ? clamp(dist * 0.035, 3.2, 140.0) * min(2.0, 1.25 + 0.12 * log2(iCount)) : clamp(dist * 0.03, 1.0, 22.0);
+          float s = many ? clamp(dist * 0.035, 3.2, 140.0) * min(2.0, 1.25 + 0.12 * log2(iCount)) : clamp(dist * 0.03, 1.0, 22.0) * (abs(iIcon - ${ROAD_ICON.toFixed(1)}) < 0.5 ? ${ROAD_SCALE.toFixed(2)} : 1.0);
           mv.xy += position.xy * s;
           vFade = 1.0 - (many ? smoothstep(3600.0, 4400.0, dist) : smoothstep(1400.0, 1900.0, dist));
           vUv = vec2((iIcon + uv.x) / ${COLS.toFixed(1)}, uv.y);
@@ -221,7 +231,7 @@ export class ProblemIcons {
       this.v.project(camera);
       if (this.v.z > 1) continue;
       const sx = rect.left + ((this.v.x + 1) / 2) * rect.width, sy = rect.top + ((1 - this.v.y) / 2) * rect.height;
-      const half = (bubbleSize(dist, n) * k) / dist / 2 + 3;
+      const half = (bubbleSize(dist, n, it.p) * k) / dist / 2 + 3;
       if (Math.abs(cx - sx) <= half && Math.abs(cy - sy) <= half * 1.4 && dist < bd) { bd = dist; best = it; }
     }
     return best;

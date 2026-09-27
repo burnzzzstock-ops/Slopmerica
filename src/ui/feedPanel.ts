@@ -1,9 +1,18 @@
 // "X, formerly Chirper": the in-game social feed. Rate-limited so it reads
-// like a timeline, not a firehose.
+// like a timeline, not a firehose (playtest: "too many posts, it's wild"): at
+// most one post every 14 s, the same kind of news once a minute or two, big
+// news first, and small talk only after a quiet spell.
 import type { FeedContext, FeedEventKind, FeedPost } from '../contracts';
 import { ambientPost, postFor } from '../content/feed';
 import type { FeedSink, Game } from '../game';
 import { MERCH_URL } from '../art/brands';
+
+/** real seconds between posts, and between small-talk posts (after at least QUIET s without one) */
+const POST_GAP = 14, CHATTER = [50, 90], QUIET = 40;
+/** news that jumps the line (and may repeat sooner) */
+const BIG = new Set<FeedEventKind>(['gameStart', 'populationMilestone', 'bankrupt', 'blackout', 'waterOutage', 'sewageBackup', 'landfillFull', 'buildingBurned', 'communeForever', 'communeLawsuitLost', 'communeBribed', 'maxLevelReached']);
+/** everyday news: once every two minutes at most */
+const ROUTINE = new Set<FeedEventKind>(['roadBuilt', 'stroadBuilt', 'zoned', 'buildingOpened', 'buildingLeveled', 'buildingDemolished', 'crash', 'drunkCrash', 'trafficJam', 'treesCut', 'communeProtest', 'nightfall', 'weatherChange', 'serviceBuilt', 'laneAdded', 'roadBulldozed']);
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
@@ -25,7 +34,9 @@ export class FeedPanel implements FeedSink {
   private list: HTMLElement;
   private queue: FeedPost[] = [];
   private cooldown = 0;
-  private ambientT = 8;
+  private ambientT = 20;
+  /** seconds since the last post */
+  private since = 0;
   unread = 0;
   collapsed: boolean;
   onUnread?: (n: number) => void;
@@ -69,26 +80,31 @@ export class FeedPanel implements FeedSink {
   }
 
   push(kind: FeedEventKind, extra: Partial<FeedContext> = {}) {
-    // don't spam the same event type
+    // don't repeat the same kind of news
     const now = performance.now();
     const last = this.lastKind.get(kind) ?? -1e9;
-    const gap = kind === 'crash' || kind === 'drunkCrash' ? 6000 : kind === 'buildingOpened' ? 4000 : 1500;
+    const big = BIG.has(kind);
+    const gap = big ? 20000 : ROUTINE.has(kind) ? 120000 : 60000;
     if (now - last < gap) return;
-    this.lastKind.set(kind, now);
     const post = postFor(kind, this.game.ctx(extra), Math.random);
-    if (post) this.queue.push(post);
-    if (this.queue.length > 6) this.queue.splice(0, this.queue.length - 6);
+    if (!post) return;
+    this.lastKind.set(kind, now);
+    // two waiting at most: big news first, and later everyday news waits its turn or is dropped
+    if (big) this.queue.unshift(post); else this.queue.push(post);
+    if (this.queue.length > 2) this.queue.length = 2;
   }
 
   update(dt: number) {
     this.cooldown -= dt;
     this.ambientT -= dt;
+    this.since += dt;
     if (this.ambientT <= 0) {
-      this.ambientT = 9 + Math.random() * 14;
-      if (!this.queue.length) this.queue.push(ambientPost(this.game.ctx(), Math.random));
+      this.ambientT = CHATTER[0] + Math.random() * (CHATTER[1] - CHATTER[0]);
+      if (!this.queue.length && this.since > QUIET) this.queue.push(ambientPost(this.game.ctx(), Math.random));
     }
     if (this.cooldown <= 0 && this.queue.length) {
-      this.cooldown = 2.4;
+      this.cooldown = POST_GAP;
+      this.since = 0;
       this.render(this.queue.shift()!);
     }
   }

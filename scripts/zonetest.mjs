@@ -14,11 +14,26 @@ await page.waitForFunction(() => window.__game && window.__dbg, null, { timeout:
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra)); if (!ok) bad++; };
 
-// a street along the edge of the land a Ponzi city owns (owned north of it, not south)
+// a street along the edge of the land a Ponzi city owns (owned on one side of it, not the other)
 const r = await page.evaluate(() => {
-  const g = window.__game, d = window.__dbg, t = g.tools, S = g.startView();
+  const g = window.__game, d = window.__dbg, t = g.tools, S = g.startView(), T = g.terrain;
   cancelAnimationFrame(g.raf);
-  d.road(S.x - 160, S.z + 40, S.x + 160, S.z + 40, 'twoLane');
+  const own = (x, z) => g.net.allowed(x, z);
+  // the nearest east-west border of the starting land, and a dry stretch of it
+  let street = null;
+  for (let dz = 0; dz <= 1600 && !street; dz++) for (const zb of [S.z + dz, S.z - dz]) {
+    if (street || own(S.x, zb) === own(S.x, zb + 1)) continue;
+    // 10 m inside, on the owned side
+    const z = own(S.x, zb) ? zb - 9.5 : zb + 10.5;
+    for (const dx of [0, 150, -150, 300, -300, 450, -450]) {
+      const cx = S.x + dx;
+      let ok = true;
+      for (let x = cx - 180; x <= cx + 180 && ok; x += 20) if (!own(x, z) || T.h(x, z) < 1.5 || T.h(x, z + 30) < 1.5 || T.h(x, z - 30) < 1.5) ok = false;
+      if (ok && typeof d.road(cx - 160, z, cx + 160, z, 'twoLane') === 'number') { street = { x: cx, z }; break; }
+    }
+  }
+  if (!street) return { err: 'no street on the land border' };
+  const X = street.x, Z = street.z;
   g.zones.update();
   const ev = (type) => ({ button: 0, pointerType: 'mouse', timeStamp: performance.now(), type });
   const V = g.camera.position.constructor;
@@ -32,9 +47,9 @@ const r = await page.evaluate(() => {
     return toasts[toasts.length - 1]?.textContent ?? '';
   };
   // shops on the west end first
-  const shops = stroke('comLow', [[S.x - 120, S.z + 40], [S.x - 90, S.z + 40]]);
+  const shops = stroke('comLow', [[X - 120, Z], [X - 90, Z]]);
   // then homes along the whole street, both sides: the south side isn't ours, the west end is shops
-  const homes = stroke('resLow', [[S.x - 140, S.z + 40], [S.x - 60, S.z + 40], [S.x + 20, S.z + 40], [S.x + 100, S.z + 40], [S.x + 140, S.z + 40]]);
+  const homes = stroke('resLow', [[X - 140, Z], [X - 60, Z], [X + 20, Z], [X + 100, Z], [X + 140, Z]]);
   // the overlay: zoned lots dim while their zone waits for demand
   g.sim.demand.res = -20;
   g.zones.markOverlayDirty(); g.zones.update();
@@ -46,6 +61,8 @@ const r = await page.evaluate(() => {
   const brightRes = shade();
   return { shops, homes, dimRes, brightRes };
 });
+check('found a street on the border of the starting land', !r.err, r);
+if (r.err) { await browser.close(); process.exit(1); }
 check(`a stroke says what it zoned ("${r.shops}")`, /^Zoned \d+ lots? Strip Mall \(Low Com\)/.test(r.shops) && /(builders want it|waiting for demand) \(C /.test(r.shops), r.shops);
 check(`and what it refused, by reason ("${r.homes}")`, /^Zoned \d+ lots? /.test(r.homes) && /\d+ outside your land \(buy it in 🏞️ Land\)/.test(r.homes) && /\d+ already zoned something else \(Dezone first\)/.test(r.homes), r.homes);
 check(`zoned lots dim while waiting for demand (${r.dimRes.dim}/${r.dimRes.n} dim at R −20, ${r.brightRes.dim}/${r.brightRes.n} at R +40)`, r.dimRes.dim > r.brightRes.dim, r);

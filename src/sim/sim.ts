@@ -575,7 +575,8 @@ export class Sim {
       let ind = 0, com = 0, slop = 0, dense = 0, lm = 0;
       for (const o of near) {
         if (o === bld) continue;
-        if (o.zone === 'landmark') { lm++; continue; }
+        // a landmark no road reaches draws nobody (Bld.offNet)
+        if (o.zone === 'landmark') { if (!o.offNet) lm++; continue; }
         if (o.zone === 'service') continue;
         dense++;
         if (o.zone === 'industry') ind++;
@@ -584,7 +585,7 @@ export class Sim {
       }
       lv += Math.min(40, dense * 1.1);
       lv += Math.min(30, lm * 15);
-      for (const o of this.b.near(bld.x, bld.z, 300)) if (o.zone === 'landmark') { lv += 6; break; }
+      for (const o of this.b.near(bld.x, bld.z, 300)) if (o.zone === 'landmark' && !o.offNet) { lv += 6; break; }
       if (bld.zone !== 'industry') lv -= Math.min(30, ind * (bld.zone.startsWith('res') ? 4 : 1.5));
       if (bld.zone.startsWith('res')) lv += Math.min(10, com * 1.2);
       lv += Math.min(10, slop * 5);

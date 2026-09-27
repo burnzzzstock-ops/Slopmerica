@@ -142,6 +142,12 @@ export class Game {
   readonly ambientLife: AmbientLife;
   /** the building problem icon under a screen point, and what it means (set by services) */
   problemAt?: (clientX: number, clientY: number) => { id: number; text: string | null } | null;
+  /** a landmark, service or depot with no road link to the road network, and why (set by services) */
+  linkProblem?: (b: Bld) => 'noRoad' | 'noLink' | null;
+  /** what that costs it and what to do (set by services) */
+  roadLinkText?: (b: Bld) => string;
+  /** does this road join the road network that reaches the highway (set by services) */
+  linkedRoad?: (s: RSeg) => boolean;
   /** what failing services are doing to the city today (set by services) */
   emergency?: () => EmergencyView | null;
   readonly communes: Communes;
@@ -675,8 +681,11 @@ export class Game {
     this.trees.recordCuts();
     const b = this.buildings.placeLandmark(id, spot.x, spot.z, spot.yaw);
     this.pushUndo({ kind: 'place', bldId: b.id, refund: cost, label: name, trees: this.trees.takeCuts() });
-    this.feed.push('buildingOpened', { building: b.label, brand: id });
+    this.feed.push('buildingOpened', { building: b.label, brand: name });
     this.audio.play(id === 'slopCannon' ? 'cannon' : 'build');
+    // it can go down before its road, but it does nothing until one links it to the network
+    const off = this.linkProblem?.(b);
+    if (off) this.toast(`🚧 ${name} is built, but ${off === 'noRoad' ? 'no road reaches it' : "its road doesn't join the rest of your roads"}. It does nothing until it's connected to the road network: draw a road to it (🛣️ Roads).`, true);
     return true;
   }
 

@@ -1418,12 +1418,16 @@ export class Hud implements UiSink {
     if (sel.kind === 'building' && !isZoned(sel.b)) {
       const b = sel.b;
       const svc = b.zone === 'service';
+      // it does nothing until a road links it to the network: say so, and offer the road tool
+      const off = g.linkProblem?.(b) ?? null;
       html = `<div class="in-kicker" style="--zc:${svc ? 'var(--off)' : '#ff3ea5'}">${svc ? 'CITY SERVICE' : 'LANDMARK'}</div>
         <h3>${esc(b.label)}</h3>
         <div class="in-stats">
-          <div><span>Status</span><b>${b.state === 'building' ? `🚧 ${Math.round(b.progress * 100)}%` : 'Open'}</b></div>
+          <div><span>Status</span><b class="${off ? 'in-warn' : ''}">${b.state === 'building' ? `🚧 ${Math.round(b.progress * 100)}%` : off ? '🚧 Not connected' : 'Open'}</b></div>
+          <div><span>Road</span><b class="${off ? 'in-warn' : ''}">${off === 'noRoad' ? 'None' : off === 'noLink' ? 'No route to the highway' : 'Connected'}</b></div>
         </div>
-        <div class="in-actions"><button class="danger" id="in-bulldoze">💣 Bulldoze</button></div>`;
+        ${off ? `<p class="in-note in-warn" id="in-link">🚧 ${esc(g.roadLinkText?.(b) ?? '')}</p>` : ''}
+        <div class="in-actions">${off ? '<button id="in-road">🛣️ Draw a road</button>' : ''}<button class="danger" id="in-bulldoze">💣 Bulldoze</button></div>`;
     } else if (sel.kind === 'building' && isZoned(sel.b)) {
       const b = sel.b;
       const brand = brandById(b.brand);
@@ -1511,6 +1515,7 @@ export class Hud implements UiSink {
     }
     this.inspector.innerHTML = `<button class="in-close" id="in-close" aria-label="Close">×</button>${html}`;
     this.inspector.querySelector('#in-close')?.addEventListener('click', () => g.select(null));
+    this.inspector.querySelector('#in-road')?.addEventListener('click', () => { crumb('draw a road (inspector: not connected)'); g.tools.roadMode = 'straight'; if (this.panel !== 'roads') this.onTool('roads'); g.tools.set('road'); });
     this.inspector.querySelector('#in-bulldoze')?.addEventListener('click', () => {
       if (sel.kind === 'building') { crumb(`bulldozed ${sel.b.label} (inspector)`); g.buildings.demolish(sel.b, 'bulldozed'); g.audio.play('bulldoze'); }
       if (sel.kind === 'road') { crumb(`bulldozed road ${sel.s.name} (inspector)`); g.bulldozeRoad(sel.s); }

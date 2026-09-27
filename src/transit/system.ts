@@ -184,7 +184,8 @@ export class TransitSystem {
     this.g.sim.spend(DEPOT_COST, 'Bus depot', 'construction');
     this.g.pushUndo({ kind: 'place', bldId: b.id, refund: DEPOT_COST, label: 'Bus depot', trees });
     this.g.audio.play('build');
-    this.g.toast("Bus depot ordered. The sign's confidence exceeds the timetable's.");
+    if (this.g.linkProblem?.(b)) this.g.toast("🚧 Bus depot ordered, but its road doesn't join the rest of your roads (no route to the highway): its buses can only run on that road. Connect it to your streets (🛣️ Roads).", true);
+    else this.g.toast("Bus depot ordered. The sign's confidence exceeds the timetable's.");
     this.g.floatText('✅ Bus depot', new THREE.Vector3(b.x, b.y + 12, b.z), '#9dff3c');
     this.lastDepot = b.id;
     return true;

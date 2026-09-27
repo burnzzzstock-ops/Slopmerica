@@ -28,6 +28,8 @@ export interface Bld {
   onMain?: boolean;
   /** days spent abandoned (unset = occupied normally) */
   abandoned?: number;
+  /** a landmark, service or depot with no road link to the county's road network (it does nothing): no road at it, or its roads don't reach the highway */
+  offNet?: 'noRoad' | 'noLink';
   level: number;
   w: number;
   d: number;

@@ -220,6 +220,11 @@ Found, not changed (for the balance pass the report asks for next):
 - **The preview is the whole grid:** every street is drawn, red where it can't go (steep, outside the county line, a commune, over budget), and the tip gives blocks, streets, metres, price, upkeep and what it does to the weekly budget. Red streets are left out when it's built, and the toast says why. A street that's already there is kept.
 - **It's real road:** streets cross as junctions (a 3×2 grid is 17 pieces, 2 crossroads, 6 T's), lots line every block, one-way grids alternate direction, and one Undo takes the whole grid back (and not a road it joined). On phones: touch a corner, drag the first side, drag out the width, then Build. scripts/gridtest.mjs.
 
+## Special buildings and the road network; a quieter feed
+
+- **"The stadium or the data center doesn't need a road to be placed, which is fine, but it needs a clear alert that it has to be connected":** landmarks still go down anywhere (roads can come after), but now: the placing tip says 🚧 no road here, it does nothing until a road connects it; the toast after placing says so; a big red "no road" bubble (a road that stops at a barrier) stands over it until a road links it to the county's network, and hovering it says what it's missing; its inspector shows Road: None / No route to the highway with a 🛣️ Draw a road button; the alert log records it, and connecting it. Cut off later by a bulldozer, a toast says so at once. The same goes for services and bus depots on a road island (they only serve that road). While cut off, a landmark lifts no land values. scripts/linktest.mjs.
+- **"There are too many posts on the fake social":** the feed could post every 2.4 s, with small talk every 9–23 s. Now at most one post every 14 s; the same kind of news once every one to two minutes; two waiting at most, big news first; small talk every 50–90 s and only after 40 s of quiet.
+
 ## Remaining (ranked)
 
 1. Cities saved before this build keep any dead end that was built over (a disc on a through road, unconnected): bulldoze and redraw that stub. A load-time repair would move road endpoints that zoning and buildings refer to, so it wasn't done blind.

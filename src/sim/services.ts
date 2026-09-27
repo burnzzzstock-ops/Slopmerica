@@ -302,6 +302,12 @@ const S = {
   f: new Map<number, FS>(),
   fields: new Fields(),
   graphDirty: true,
+  /** road components need recomputing (roads changed) */
+  compDirty: true,
+  /** special buildings' road links have been checked once (the first check after a load raises no alerts) */
+  linksSeen: false,
+  /** special buildings last seen linked (losing the link later, to a bulldozer, gets a toast) */
+  linked: new Set<number>(),
   facSig: '',
   /** node -> component root */
   comp: new Map<number, number>(),
@@ -454,6 +460,58 @@ function buildComponents(g: Game) {
     S.comp.set(n.id, r);
     if (isEdgeNode(n.x, n.z)) S.compEdge.add(r);
   }
+  S.compDirty = false;
+}
+
+// ============================================================== special buildings' road link
+// Landmarks can go down before any road reaches them (roads can come after),
+// and a service's road can be an island. Either way it does nothing until a
+// road links it to the county's road network (the one that reaches the
+// highway): the building gets a red "no road" bubble, like Skylines.
+
+/** Does this road join the county's road network (a route to the highway)? */
+export function segLinked(g: Game, s: RSeg | null | undefined): boolean {
+  if (!s) return false;
+  if (S.compDirty) buildComponents(g);
+  const c = S.comp.get(s.a);
+  return c !== undefined && S.compEdge.has(c);
+}
+
+/** why a landmark, service or depot does nothing for lack of roads, or null when it's linked (or not a special building) */
+export function linkProblem(g: Game, b: Bld): 'noRoad' | 'noLink' | null {
+  if (b.zone !== 'landmark' && b.zone !== 'service') return null;
+  // landmarks face the road they were squared to (or none); services keep the road they were placed on
+  const s = b.zone === 'service' ? segOf(g, b) : g.net.pickSeg(b.x, b.z, Math.max(b.hw, b.hd) + 12)?.seg ?? null;
+  if (!s) return 'noRoad';
+  return segLinked(g, s) ? null : 'noLink';
+}
+
+/** what an unlinked special building is missing, and what to do about it */
+export function roadLinkText(g: Game, b: Bld): string {
+  const off = b.offNet ?? linkProblem(g, b);
+  if (!off) return `${b.label} is connected to the road network.`;
+  const lm = b.zone === 'landmark';
+  const loses = lm ? 'it does nothing: no visitors, and no lift to land values around it' : b.kind === 'busDepot' ? 'no bus can leave it' : 'it serves nobody';
+  return off === 'noRoad'
+    ? `Not connected to the road network: no road reaches ${b.label}, so ${loses}. Draw a road to it from your streets (🛣️ Roads).`
+    : `Not connected to the road network: the road at ${b.label} doesn't join the rest of your roads (no route to the highway), so ${lm ? loses : 'it only serves the buildings on that road'}. Connect it to your streets (🛣️ Roads).`;
+}
+
+/** flag every special building's link, and say so when one loses it (placed off the network, or its road bulldozed) */
+function updateLinks(g: Game) {
+  for (const b of g.buildings.list.values()) {
+    if (b.zone !== 'landmark' && b.zone !== 'service') continue;
+    const off = linkProblem(g, b) ?? undefined;
+    if (off && !b.offNet && S.linksSeen) {
+      const text = `🚧 ${b.label} isn't connected to the road network: ${b.zone === 'landmark' ? 'it does nothing' : off === 'noRoad' ? (b.kind === 'busDepot' ? 'no bus can leave it' : 'it serves nobody') : b.kind === 'busDepot' ? 'its buses can only run on its own road' : 'it only serves its own road'} until a road links it to your streets`;
+      g.sim.alert('warn', text);
+      // cut off by a bulldozer (placing one off the network already said so)
+      if (S.linked.has(b.id)) g.toast(text, true);
+    } else if (!off && b.offNet && S.linksSeen) g.sim.alert('info', `🛣️ ${b.label} is connected to the road network`);
+    b.offNet = off;
+    if (off) S.linked.delete(b.id); else S.linked.add(b.id);
+  }
+  S.linksSeen = true;
 }
 
 /** Binary-heap multi-source Dijkstra over nodes (edge cost = drive time). */
@@ -578,6 +636,7 @@ function daily(g: Game, day: number) {
 
   allocateUtilities(g, fac, zoned);
   coverage(g, fac, zoned);
+  updateLinks(g);
   garbage(g, fac, zoned);
   wellbeing(g, zoned);
   fires(g, zoned);
@@ -1371,6 +1430,8 @@ const PROBLEM_ORDER: Problem[] = ['fire', 'abandoned', 'power', 'water', 'sewage
  * the Garbage view.
  */
 function problemOf(b: Bld, only?: Problem[]): Problem | null {
+  // landmarks, services and depots: the one problem they show is a missing road link
+  if (b.zone === 'landmark' || b.zone === 'service') return b.offNet && (!only || only.includes('road')) ? 'road' : null;
   if (!isZoned(b) || b.state !== 'active') return null;
   const bs = S.b.get(b.id);
   if (!bs) return null;
@@ -1397,6 +1458,7 @@ export function problemText(g: Game, id: number): string | null {
   if (!b) return null;
   const bs = S.b.get(b.id);
   const p = problemOf(b, S.view ? VIEW_PROBLEMS[S.view] : undefined);
+  if (p === 'road') return `🚧 ${roadLinkText(g, b)}`;
   if (!p || !bs) return null;
   const days = Math.round(trashDaysOf(b, bs)), via = bs.via >= 0 ? g.buildings.list.get(bs.via) : undefined;
   const trash: Record<TrashWhy, string> = {
@@ -1417,6 +1479,7 @@ export function problemText(g: Game, id: number): string | null {
     crime: 'High crime: no sheriff within reach. Crime drives people and shops away (Services → Police).',
     education: 'Needs a school within reach to grow (Services → Education).',
     pollution: 'Polluted: too close to industry or a dirty plant.',
+    road: 'Not connected to the road network.',
   };
   return `${b.label}: ${why[p]}`;
 }
@@ -1426,13 +1489,15 @@ const VIEW_PROBLEMS: Partial<Record<ViewId, Problem[]>> = { power: ['power'], wa
 /** zoomed out past this, a neighbourhood's bubbles merge into one with a count */
 const CLUSTER_FROM = 600;
 /** which problem a merged bubble shows when two are equally common */
-const SEVERITY: Problem[] = ['fire', 'power', 'water', 'sewage', 'garbage', 'sick', 'abandoned', 'crime', 'education', 'pollution'];
+const SEVERITY: Problem[] = ['fire', 'road', 'power', 'water', 'sewage', 'garbage', 'sick', 'abandoned', 'crime', 'education', 'pollution'];
 const PROBLEM_WORDS: Record<Problem, string> = {
   power: 'without power', water: 'without water', sewage: 'without sewage', garbage: 'piling up trash', fire: 'on fire',
   crime: 'with high crime', sick: 'with sick residents', abandoned: 'abandoned', education: 'needing a school', pollution: 'polluted',
+  road: 'not connected to the road network',
 };
 
 function refreshIcons(g: Game) {
+  updateLinks(g);
   const cam = g.rts.target, dist = g.rts.distance, merge = dist > CLUSTER_FROM;
   const only = S.view ? VIEW_PROBLEMS[S.view] : undefined;
   const raw: ProblemItem[] = [];
@@ -1672,7 +1737,7 @@ const VIEW_FOR_CAT: Partial<Record<SvcCat, ViewId>> = { power: 'power', water: '
 // ============================================================== placement tool
 let placing: SvcId = 'gasPeaker';
 let ghost: PlacementGhost | null = null;
-let lastCheck: { ok: boolean; reason?: string; snapped?: boolean; road?: string } | null = null;
+let lastCheck: { ok: boolean; reason?: string; snapped?: boolean; road?: string; linked?: boolean } | null = null;
 let panelCat: SvcCat = 'power';
 
 
@@ -1788,7 +1853,7 @@ function updateGhost(g: Game, p: THREE.Vector3 | null) {
   const d = SERVICE_DEFS.get(placing)!;
   const spot = spotFor(g, placing, p.x, p.z);
   const ok = !spot.reason;
-  lastCheck = { ok, reason: spot.reason, snapped: spot.snapped, road: spot.front?.seg.name };
+  lastCheck = { ok, reason: spot.reason, snapped: spot.snapped, road: spot.front?.seg.name, linked: !spot.front || segLinked(g, spot.front.seg) };
   const hw = (d.w * CELL) / 2, hd = (d.d * CELL) / 2;
   const y = g.buildings.padHeight(spot.x, spot.z, hw, hd, spot.yaw);
   gh.show(`svc|${placing}|${vaultLook(placing) ? 'vault' : 'classic'}`, () => CUSTOM_BUILDINGS.get(placing)!.model().geometry, spot.x, y, spot.z, spot.yaw, hw, hd, ok, spot.front?.door ?? null);
@@ -1814,6 +1879,7 @@ export function placeService(g: Game, id: SvcId, x: number, z: number, yaw?: num
   g.particles.emit('dust', b.x, b.y + 2, b.z, { count: 40, spread: b.hw });
   g.floatText(`✅ ${d.name}`, new THREE.Vector3(b.x, b.y + d.height, b.z), '#9dff3c');
   post(g, 'serviceBuilt', { building: d.name }, 0.6);
+  if (linkProblem(g, b)) g.toast(`🚧 ${d.name} is built, but its road doesn't join the rest of your roads (no route to the highway): it only serves the buildings on that road. Connect it to your streets (🛣️ Roads).`, true);
   return b;
 }
 
@@ -1880,7 +1946,7 @@ registerTool({
     if (g.isTouch && !planned) return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} · tap where it goes` };
     // what this purchase does to the budget, from the same forecast the HUD shows
     const after = g.sim.afterSpend(d.cost, d.upkeep);
-    return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} now + $${d.upkeep}/wk${d.run ? ` + ${runText(d)}` : ''} · ${after.text}${lastCheck?.road ? ` · fronts ${esc(lastCheck.road)}${lastCheck.snapped ? ' (slid to the nearest spot that fits)' : ''}` : lastCheck?.snapped ? ' · 📍 moved to the nearest good spot' : ''}${planned ? ' · tap Build, or tap elsewhere to move it' : ''}`, bad: after.credit };
+    return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} now + $${d.upkeep}/wk${d.run ? ` + ${runText(d)}` : ''} · ${after.text}${lastCheck?.road ? ` · fronts ${esc(lastCheck.road)}${lastCheck.snapped ? ' (slid to the nearest spot that fits)' : ''}` : lastCheck?.snapped ? ' · 📍 moved to the nearest good spot' : ''}${lastCheck?.road && !lastCheck.linked ? ` · 🚧 ${esc(lastCheck.road)} doesn't join the rest of your roads: it would only serve that road` : ''}${planned ? ' · tap Build, or tap elsewhere to move it' : ''}`, bad: after.credit || (!!lastCheck?.road && !lastCheck.linked) };
   },
 });
 
@@ -2072,7 +2138,10 @@ registerSystem({
       return hit ? { id: hit.id, text: (hit.n ?? 1) > 1 ? clusterText(hit) : problemText(g, hit.id) } : null;
     };
     g.emergency = () => S.emergency;
-    g.net.events.on('changed', () => { S.graphDirty = true; });
+    g.net.events.on('changed', () => { S.graphDirty = true; S.compDirty = true; });
+    g.linkProblem = (b) => linkProblem(g, b);
+    g.roadLinkText = (b) => roadLinkText(g, b);
+    g.linkedRoad = (seg) => segLinked(g, seg);
   },
   daily: (g, day) => { const t0 = performance.now(); daily(g, day); S.perf.ms += performance.now() - t0; S.perf.n++; },
   frame: (g, dt) => frame(g, dt),
@@ -2090,6 +2159,7 @@ registerSystem({
     const d = data as { bld?: [number, number, number, number, number, number, number?][]; fac?: [number, number, number][]; pol?: [number, number][]; counts?: typeof S.counts; grace?: number; week?: typeof S.week; crisis?: typeof S.crisis } | undefined;
     if (!d) return;
     S.loaded = true;
+    S.linksSeen = false;
     S.graceUntil = d.grace ?? 0;
     // utility imports and trash hauled so far this week, billed at week's end
     if (d.week) S.week = { ...S.week, ...d.week };

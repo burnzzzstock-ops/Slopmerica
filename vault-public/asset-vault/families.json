@@ -1,0 +1,1667 @@
+[
+  {
+    "id": "abatement-warehouse",
+    "label": "Abatement Warehouse",
+    "category": "infrastructure",
+    "description": "Tax-assisted logistics shed with docks, office pod, and rooftop vents.",
+    "satire": "Public investment now accepting private loading appointments.",
+    "signLines": [
+      "SHOVEL READY",
+      "Taxes temporarily optional"
+    ],
+    "tags": [
+      "warehouse",
+      "abatement",
+      "industrial"
+    ],
+    "count": 40
+  },
+  {
+    "id": "aggregate-loader",
+    "label": "Shovel-Ready Aggregate",
+    "category": "infrastructure",
+    "description": "Hopper line, feeder conveyor, and graded material piles.",
+    "satire": "The landscape has entered the value chain.",
+    "signLines": [
+      "SHOVEL READY",
+      "Mountains, now sortable"
+    ],
+    "tags": [
+      "aggregate",
+      "quarry",
+      "industrial"
+    ],
+    "count": 40
+  },
+  {
+    "id": "appetite-dispatch",
+    "label": "Appetite Dispatch",
+    "category": "commerce",
+    "description": "A command tower directing burritos through hostile traffic.",
+    "satire": "Your driver is approaching, circling, and approaching again.",
+    "signLines": [
+      "APPETITE DISPATCH",
+      "TACTICAL TAKEOUT"
+    ],
+    "tags": [
+      "delivery",
+      "apps"
+    ],
+    "count": 40
+  },
+  {
+    "id": "blackrack-rentals",
+    "label": "Blackrack Build-to-Rent",
+    "category": "neighborhood",
+    "description": "Rows of identical rental cottages and a leasing wall.",
+    "satire": "The American dream, billed monthly with a convenience fee.",
+    "signLines": [
+      "BLACKRACK LIVING",
+      "OWN THE MOMENT. RENT THE HOUSE."
+    ],
+    "tags": [
+      "community",
+      "rentals",
+      "corporate"
+    ],
+    "count": 40
+  },
+  {
+    "id": "boxzilla-bargains",
+    "label": "Boxzilla Bargains",
+    "category": "commerce",
+    "description": "A retail monster that feeds on little downtowns.",
+    "satire": "It came from beyond the bypass with everyday low consequences.",
+    "signLines": [
+      "BOXZILLA",
+      "DEVOUR THE SAVINGS"
+    ],
+    "tags": [
+      "big-box",
+      "retail"
+    ],
+    "count": 40
+  },
+  {
+    "id": "brisket-bunker",
+    "label": "Brisket Bunker",
+    "category": "commerce",
+    "description": "A fortified smokehouse with a defensible sauce perimeter.",
+    "satire": "Prepared for twelve winters or one lunch rush.",
+    "signLines": [
+      "BRISKET BUNKER",
+      "SMOKE IS OUR MOAT"
+    ],
+    "tags": [
+      "restaurant",
+      "bbq"
+    ],
+    "count": 40
+  },
+  {
+    "id": "bulkhead-club",
+    "label": "Bulkhead Club",
+    "category": "commerce",
+    "description": "A barrel-roof warehouse selling mayonnaise by the drum.",
+    "satire": "Membership proves you can save money by spending four hundred dollars.",
+    "signLines": [
+      "BULKHEAD CLUB",
+      "PALLETS OF VALUE"
+    ],
+    "tags": [
+      "warehouse-retail",
+      "bulk"
+    ],
+    "count": 40
+  },
+  {
+    "id": "bus-stop-nowhere",
+    "label": "Bus Stop to Nowhere",
+    "category": "infrastructure",
+    "description": "A glass shelter and route pole marooned beside infrastructure.",
+    "satire": "Ridership begins with optimism and sturdy shoes.",
+    "signLines": [
+      "ROUTE SOMEDAY",
+      "Hourly, sometimes"
+    ],
+    "tags": [
+      "transit",
+      "bus-stop",
+      "roadside"
+    ],
+    "count": 40
+  },
+  {
+    "id": "buy-now-cry-later",
+    "label": "Buy Now Cry Later",
+    "category": "commerce",
+    "description": "A furniture showroom crowned by the couch that owns you.",
+    "satire": "Take the sectional home today; process the sectional emotionally tomorrow.",
+    "signLines": [
+      "BUY NOW CRY LATER",
+      "SOFA SO GOOD"
+    ],
+    "tags": [
+      "furniture",
+      "finance"
+    ],
+    "count": 40
+  },
+  {
+    "id": "chrome-confessional",
+    "label": "Chrome Confessional",
+    "category": "commerce",
+    "description": "A steepled wash where road salt tells all.",
+    "satire": "Pull forward slowly and disclose your premium package.",
+    "signLines": [
+      "CHROME CONFESSIONAL",
+      "ABSOLUTION + TIRE SHINE"
+    ],
+    "tags": [
+      "car-wash",
+      "satire"
+    ],
+    "count": 40
+  },
+  {
+    "id": "clean-coal-plant",
+    "label": "Very Clean Coal Plant",
+    "category": "infrastructure",
+    "description": "Brick turbine hall, banded stacks, conveyor, and coal pile.",
+    "satire": "The adjective has completed environmental review.",
+    "signLines": [
+      "VERY CLEAN COAL",
+      "Clean in the title"
+    ],
+    "tags": [
+      "power",
+      "coal",
+      "industrial"
+    ],
+    "count": 40
+  },
+  {
+    "id": "coffee-covenant",
+    "label": "Coffee Covenant",
+    "category": "commerce",
+    "description": "A giant cup where every beverage renews automatically.",
+    "satire": "By sipping you accept binding foam arbitration.",
+    "signLines": [
+      "COFFEE COVENANT",
+      "TERMS APPLY TO REFILLS"
+    ],
+    "tags": [
+      "coffee",
+      "subscription"
+    ],
+    "count": 40
+  },
+  {
+    "id": "concrete-batch-plant",
+    "label": "Progress Batch Plant",
+    "category": "infrastructure",
+    "description": "Cement silos, batch tower, and aggregate conveyor.",
+    "satire": "Every new lane begins as dust near somebody else.",
+    "signLines": [
+      "PROGRESS CONCRETE",
+      "Another lane starts here"
+    ],
+    "tags": [
+      "concrete",
+      "construction",
+      "industrial"
+    ],
+    "count": 40
+  },
+  {
+    "id": "convenience-congress",
+    "label": "Convenience Congress",
+    "category": "commerce",
+    "description": "A snack rotunda where every aisle passes its own spending bill.",
+    "satire": "Open all night and filibustering the hot roller since Tuesday.",
+    "signLines": [
+      "CONVENIENCE CONGRESS",
+      "THE AYES HAVE IT"
+    ],
+    "tags": [
+      "convenience",
+      "retail"
+    ],
+    "count": 40
+  },
+  {
+    "id": "copay-castle",
+    "label": "Copay Castle",
+    "category": "commerce",
+    "description": "Urgent care with battlements against ordinary deductibles.",
+    "satire": "Walk in worried, ride out with a payment plan.",
+    "signLines": [
+      "COPAY CASTLE",
+      "FEEL BETTER FINANCIALLY"
+    ],
+    "tags": [
+      "medical-retail",
+      "urgent-care"
+    ],
+    "count": 40
+  },
+  {
+    "id": "county-fair-midway",
+    "label": "Possum County Midway",
+    "category": "neighborhood",
+    "description": "A Ferris wheel and bright portable midway booths.",
+    "satire": "A week of public culture and eleven months of compacted mud.",
+    "signLines": [
+      "POSSUM COUNTY FAIR",
+      "RIDES · PIE · PARKING"
+    ],
+    "tags": [
+      "amusement",
+      "fair",
+      "ferris-wheel"
+    ],
+    "count": 40
+  },
+  {
+    "id": "culvert-gateway",
+    "label": "Culvert Gateway",
+    "category": "infrastructure",
+    "description": "Multi-barrel creek crossing held together by headwalls and confidence.",
+    "satire": "The creek has been streamlined for permitting convenience.",
+    "signLines": [
+      "STREAMLINED CREEK",
+      "Nature, efficiently"
+    ],
+    "tags": [
+      "water",
+      "culvert",
+      "roads"
+    ],
+    "count": 40
+  },
+  {
+    "id": "curb-crave",
+    "label": "Curb Crave",
+    "category": "commerce",
+    "description": "The window is faster than cooking and only three lanes from freedom.",
+    "satire": "Meals arrive in thirty seconds; the traffic study arrives never.",
+    "signLines": [
+      "CURB CRAVE",
+      "IDLE. ORDER. REPEAT."
+    ],
+    "tags": [
+      "drive-thru",
+      "food"
+    ],
+    "count": 40
+  },
+  {
+    "id": "daiquiri-dash",
+    "label": "Daiquiri Dash",
+    "category": "commerce",
+    "description": "Frozen drinks through a window wide enough for poor judgment.",
+    "satire": "No need to leave the vehicle or reconsider anything.",
+    "signLines": [
+      "DAIQUIRI DASH",
+      "KEEP BOTH HANDS SOMEWHERE"
+    ],
+    "tags": [
+      "drive-thru",
+      "drinks"
+    ],
+    "count": 40
+  },
+  {
+    "id": "dmv-queue-annex",
+    "label": "DMV Queue Annex",
+    "category": "infrastructure",
+    "description": "Driver licensing annex with its own test lanes and numbered despair.",
+    "satire": "Mobility begins with taking a number.",
+    "signLines": [
+      "DMV QUEUE",
+      "Now serving yesterday"
+    ],
+    "tags": [
+      "civic",
+      "dmv",
+      "office"
+    ],
+    "count": 40
+  },
+  {
+    "id": "donut-deposition",
+    "label": "Donut Deposition",
+    "category": "commerce",
+    "description": "Sworn testimony, glazed hourly.",
+    "satire": "The sprinkles are admissible and the coffee knows counsel.",
+    "signLines": [
+      "DONUT DEPOSITION",
+      "OBJECTION: DELICIOUS"
+    ],
+    "tags": [
+      "donuts",
+      "drive-thru"
+    ],
+    "count": 40
+  },
+  {
+    "id": "double-wide",
+    "label": "Double-Wide Executive",
+    "category": "neighborhood",
+    "description": "A joined manufactured home with a proud screen porch.",
+    "satire": "Twice the width, one shared marriage seam.",
+    "signLines": [
+      "HOMESTEAD DELUXE",
+      "LIVE EXTRA WIDE"
+    ],
+    "tags": [
+      "home",
+      "trailer",
+      "porch"
+    ],
+    "count": 40
+  },
+  {
+    "id": "express-lane-gantry",
+    "label": "Express Lane Gantry",
+    "category": "infrastructure",
+    "description": "Dynamic-price signs and enforcement cameras over premium pavement.",
+    "satire": "Congestion is a subscription opportunity.",
+    "signLines": [
+      "EXPRESS VALUE",
+      "Rates may feel dynamic"
+    ],
+    "tags": [
+      "roads",
+      "gantry",
+      "pricing"
+    ],
+    "count": 40
+  },
+  {
+    "id": "fiber-hut",
+    "label": "Broadband Promise Hut",
+    "category": "infrastructure",
+    "description": "Concrete network hut ringed by cabinets, vents, and coiled fiber.",
+    "satire": "Gigabit ribbon-cutting; dial-up construction schedule.",
+    "signLines": [
+      "BROADBAND SOON",
+      "Loading prosperity…"
+    ],
+    "tags": [
+      "telecom",
+      "fiber",
+      "utility"
+    ],
+    "count": 40
+  },
+  {
+    "id": "five-acre-ranchette",
+    "label": "Five-Acre Ranchette",
+    "category": "neighborhood",
+    "description": "One ranch house, one horse, one mower, and a great deal of fence.",
+    "satire": "Agricultural heritage expressed as lawn maintenance.",
+    "signLines": [
+      "LONE HORSE RANCH",
+      "5 ACRES · 1 HORSE"
+    ],
+    "tags": [
+      "home",
+      "ranchette",
+      "horse"
+    ],
+    "count": 40
+  },
+  {
+    "id": "forever-box-storage",
+    "label": "Forever Box Storage",
+    "category": "commerce",
+    "description": "Climate-controlled rooms for things you forgot you financed.",
+    "satire": "First month free; remaining decades build character.",
+    "signLines": [
+      "FOREVER BOX",
+      "YOUR STUFF LIVES HERE"
+    ],
+    "tags": [
+      "self-storage",
+      "subscription"
+    ],
+    "count": 40
+  },
+  {
+    "id": "frankenpine-cell-tower",
+    "label": "Frankenpine Cell Tower",
+    "category": "infrastructure",
+    "description": "A cellular mast wearing increasingly unconvincing fake branches.",
+    "satire": "Preserving the viewshed one plastic needle at a time.",
+    "signLines": [
+      "NATURAL SIGNAL",
+      "Five bars, one trunk"
+    ],
+    "tags": [
+      "telecom",
+      "cell-tower",
+      "utility"
+    ],
+    "count": 40
+  },
+  {
+    "id": "frankenpine-memorial",
+    "label": "The Last Tree Frankenpine",
+    "category": "neighborhood",
+    "description": "A cellular tower disguised as a pine with a memorial plaque.",
+    "satire": "The final tree returns as premium wireless coverage.",
+    "signLines": [
+      "THE LAST TREE",
+      "CONNECTING PARADISE"
+    ],
+    "tags": [
+      "monument",
+      "cell-tower",
+      "greenwash"
+    ],
+    "count": 40
+  },
+  {
+    "id": "freedom-splash-pad",
+    "label": "Freedom Splash Pad",
+    "category": "neighborhood",
+    "description": "A patriotic round splash pad with a towering flag.",
+    "satire": "The pool was too expensive, so children receive timed pavement mist.",
+    "signLines": [
+      "FREEDOM SPLASH",
+      "WATER HOURS MAY VARY"
+    ],
+    "tags": [
+      "park",
+      "splash-pad",
+      "flag"
+    ],
+    "count": 40
+  },
+  {
+    "id": "fulfillment-center",
+    "label": "Fulfillmore Center",
+    "category": "infrastructure",
+    "description": "Enormous blue distribution box with docks, conveyors, and rooftop HVAC.",
+    "satire": "Two-day delivery, twenty-year road subsidy.",
+    "signLines": [
+      "FULFILLMORE",
+      "Your package, our interchange"
+    ],
+    "tags": [
+      "warehouse",
+      "logistics",
+      "industrial"
+    ],
+    "count": 40
+  },
+  {
+    "id": "gas-guzzler-gulch",
+    "label": "Gas Guzzler Gulch",
+    "category": "commerce",
+    "description": "A pump fort for motorists bravely fleeing the next pump.",
+    "satire": "Every gallon earns one point toward another gallon.",
+    "signLines": [
+      "GUZZLER GULCH",
+      "PREMIUM FREEDOM"
+    ],
+    "tags": [
+      "gas",
+      "fuel"
+    ],
+    "count": 40
+  },
+  {
+    "id": "gas-peaker-plant",
+    "label": "Last-Minute Gas Peaker",
+    "category": "infrastructure",
+    "description": "Compact turbine hall with exhaust stacks for urgent megawatts.",
+    "satire": "Planning reserve delivered at emergency prices.",
+    "signLines": [
+      "PEAK NOW",
+      "Fast power, faster bill"
+    ],
+    "tags": [
+      "power",
+      "gas",
+      "industrial"
+    ],
+    "count": 40
+  },
+  {
+    "id": "gated-golf-estate",
+    "label": "Gated Golf Estates",
+    "category": "neighborhood",
+    "description": "Monumental stone gates, topiary, and a tiny guard hut.",
+    "satire": "The gates keep out everyone who maintains the golf course.",
+    "signLines": [
+      "FAIRWAY PRESERVE",
+      "PRIVATE BY NATURE"
+    ],
+    "tags": [
+      "community",
+      "gate",
+      "golf"
+    ],
+    "count": 40
+  },
+  {
+    "id": "gather-farmhouse",
+    "label": "GATHER Modern Farmhouse",
+    "category": "neighborhood",
+    "description": "White board-and-batten, black roof, wrap porch, command sign.",
+    "satire": "A farmhouse engineered never to encounter agriculture.",
+    "signLines": [
+      "GATHER",
+      "FARMHOUSE COLLECTION"
+    ],
+    "tags": [
+      "home",
+      "farmhouse",
+      "trend"
+    ],
+    "count": 40
+  },
+  {
+    "id": "ghost-kitchen-carousel",
+    "label": "Ghost Kitchen Carousel",
+    "category": "commerce",
+    "description": "One kitchen rotating through forty-seven restaurant identities.",
+    "satire": "Tonight the same fryer is Tuscan, Korean, and wings.",
+    "signLines": [
+      "GHOST KITCHEN",
+      "47 BRANDS · 1 FRYER"
+    ],
+    "tags": [
+      "delivery",
+      "food"
+    ],
+    "count": 40
+  },
+  {
+    "id": "golf-cart-village",
+    "label": "Forever Young Golf-Cart Village",
+    "category": "neighborhood",
+    "description": "Pastel retirement villas arranged around golf-cart parking.",
+    "satire": "Active-adult freedom at a governed 12 miles per hour.",
+    "signLines": [
+      "FOREVER YOUNG",
+      "55+ · NO GRANDKIDS AFTER 8"
+    ],
+    "tags": [
+      "community",
+      "retirement",
+      "golf-cart"
+    ],
+    "count": 40
+  },
+  {
+    "id": "grid-substation",
+    "label": "Independent Grid Substation",
+    "category": "infrastructure",
+    "description": "Transformer rows, copper busbars, and tall switching frames.",
+    "satire": "Independence arrives through several imported transformers.",
+    "signLines": [
+      "FREEDOM GRID",
+      "Weather permitting"
+    ],
+    "tags": [
+      "power",
+      "substation",
+      "utility"
+    ],
+    "count": 40
+  },
+  {
+    "id": "holler-cabin",
+    "label": "Holler Cabin Compound",
+    "category": "neighborhood",
+    "description": "A porch cabin with junk cars, trampoline, and burn barrel.",
+    "satire": "The amenities are paid off and most of them once ran.",
+    "signLines": [
+      "HOLLOW CREEK",
+      "NO TRESPASSING"
+    ],
+    "tags": [
+      "home",
+      "rural",
+      "clutter"
+    ],
+    "count": 40
+  },
+  {
+    "id": "hostile-bench-plaza",
+    "label": "Civic Comfort Plaza",
+    "category": "neighborhood",
+    "description": "A hard plaza ringed by aggressively divided benches.",
+    "satire": "Public space optimized to prevent the public from resting.",
+    "signLines": [
+      "CIVIC COMFORT PLAZA",
+      "NO LYING · NO SITTING LONG"
+    ],
+    "tags": [
+      "park",
+      "hostile-design",
+      "plaza"
+    ],
+    "count": 40
+  },
+  {
+    "id": "lake-serenity-pond",
+    "label": "Lake Serenity Retention Pond",
+    "category": "neighborhood",
+    "description": "A stormwater basin advertised as waterfront living.",
+    "satire": "Municipal drainage acquires a luxury amenity fee.",
+    "signLines": [
+      "LAKE SERENITY",
+      "LUXURY WATERFRONT LOTS"
+    ],
+    "tags": [
+      "landscape",
+      "retention-pond",
+      "greenwash"
+    ],
+    "count": 40
+  },
+  {
+    "id": "lane-lord-burgers",
+    "label": "Lane Lord Burgers",
+    "category": "commerce",
+    "description": "A crown-shaped burger keep ruling its private turn lane.",
+    "satire": "Have it the landlord’s way, with mandatory parking.",
+    "signLines": [
+      "LANE LORD",
+      "RULE THE DRIVE-THRU"
+    ],
+    "tags": [
+      "drive-thru",
+      "burgers"
+    ],
+    "count": 40
+  },
+  {
+    "id": "last-hellbender-memorial",
+    "label": "Last Hellbender Memorial Lot",
+    "category": "neighborhood",
+    "description": "A salamander monument centered on commemorative parking.",
+    "satire": "The species lost its creek but gained eight convenient spaces.",
+    "signLines": [
+      "HELLBENDER MEMORIAL",
+      "PARKING FOR POSTERITY"
+    ],
+    "tags": [
+      "monument",
+      "extinction",
+      "parking"
+    ],
+    "count": 40
+  },
+  {
+    "id": "lease-eagle-motors",
+    "label": "Lease Eagle Motors",
+    "category": "commerce",
+    "description": "Glass wings and flags make every 84-month promise soar.",
+    "satire": "The bird of prey approves nearly everyone.",
+    "signLines": [
+      "LEASE EAGLE",
+      "84 MONTHS OF LIBERTY"
+    ],
+    "tags": [
+      "cars",
+      "dealership"
+    ],
+    "count": 40
+  },
+  {
+    "id": "liberty-barndominium",
+    "label": "Liberty Barndominium",
+    "category": "neighborhood",
+    "description": "A metal barn containing a house, hangar door, and decorative grain bin.",
+    "satire": "Rural authenticity sized for an RV and three air fryers.",
+    "signLines": [
+      "LIBERTY BARNDOMINIUMS",
+      "COUNTRY. BUT WI-FI."
+    ],
+    "tags": [
+      "home",
+      "barn",
+      "rural"
+    ],
+    "count": 40
+  },
+  {
+    "id": "liberty-muffler-man",
+    "label": "Liberty Muffler Man",
+    "category": "neighborhood",
+    "description": "A giant fiberglass worker holding a muffler overhead.",
+    "satire": "Heritage, petroleum, and body-shop fiberglass at highway scale.",
+    "signLines": [
+      "LIBERTY MUFFLER MAN",
+      "GIANT SAVINGS AHEAD"
+    ],
+    "tags": [
+      "roadside",
+      "statue",
+      "fiberglass"
+    ],
+    "count": 40
+  },
+  {
+    "id": "loyalty-lab",
+    "label": "Loyalty Lab",
+    "category": "commerce",
+    "description": "A retail laboratory isolating the rewards center of the brain.",
+    "satire": "Earn ten thousand points toward one emotionally significant coupon.",
+    "signLines": [
+      "LOYALTY LAB",
+      "WE STUDY YOUR WALLET"
+    ],
+    "tags": [
+      "loyalty",
+      "retail"
+    ],
+    "count": 40
+  },
+  {
+    "id": "mandatory-hoa-gate",
+    "label": "Mandatory HOA Gate",
+    "category": "neighborhood",
+    "description": "Faux-stone piers and ornamental gates guard approved lawns.",
+    "satire": "Community begins with an access code and ends at the violation notice.",
+    "signLines": [
+      "PATRIOT OAKS HOA",
+      "WELCOME, RESIDENTS & DELIVERIES"
+    ],
+    "tags": [
+      "community",
+      "hoa",
+      "gate"
+    ],
+    "count": 40
+  },
+  {
+    "id": "mattress-mitosis",
+    "label": "Mattress Mitosis",
+    "category": "commerce",
+    "description": "One bedding store divides into two when nobody is looking.",
+    "satire": "Scientists still cannot locate a customer.",
+    "signLines": [
+      "MATTRESS MITOSIS",
+      "NOW OPEN ACROSS THE STREET"
+    ],
+    "tags": [
+      "mattress",
+      "retail"
+    ],
+    "count": 40
+  },
+  {
+    "id": "miracle-twine-ball",
+    "label": "Miracle Twine Ball",
+    "category": "neighborhood",
+    "description": "A giant wrapped twine ball sheltered like a sacred relic.",
+    "satire": "A regional identity assembled one hardware-store receipt at a time.",
+    "signLines": [
+      "MIRACLE TWINE",
+      "BIGGEST THIS SIDE OF EXIT 47"
+    ],
+    "tags": [
+      "roadside",
+      "attraction",
+      "twine"
+    ],
+    "count": 40
+  },
+  {
+    "id": "mount-trashmore",
+    "label": "Mount Trashmore Regional Park",
+    "category": "neighborhood",
+    "description": "A capped landfill landscaped into a switchback hill.",
+    "satire": "Yesterday’s trash becomes today’s scenic methane overlook.",
+    "signLines": [
+      "MOUNT TRASHMORE",
+      "NATURE, RECLAIMED BY SPONSORS"
+    ],
+    "tags": [
+      "park",
+      "landfill",
+      "greenwash"
+    ],
+    "count": 40
+  },
+  {
+    "id": "octane-oasis",
+    "label": "Octane Oasis",
+    "category": "commerce",
+    "description": "A palm-shaded mirage with six grades of the same commute.",
+    "satire": "Hydration costs extra; windshield squeegees are aspirational.",
+    "signLines": [
+      "OCTANE OASIS",
+      "PARADISE PER GALLON"
+    ],
+    "tags": [
+      "gas",
+      "oasis"
+    ],
+    "count": 40
+  },
+  {
+    "id": "one-bus-depot",
+    "label": "One-Bus Depot",
+    "category": "infrastructure",
+    "description": "Oversized depot sheltering the county’s heroic hourly bus.",
+    "satire": "Transit capacity: one vehicle and a press release.",
+    "signLines": [
+      "ONE BUS DEPOT",
+      "Hourly-ish service"
+    ],
+    "tags": [
+      "transit",
+      "bus",
+      "depot"
+    ],
+    "count": 40
+  },
+  {
+    "id": "parcel-panic",
+    "label": "Parcel Panic",
+    "category": "commerce",
+    "description": "A delivery depot where boxes sprint and humans apologize.",
+    "satire": "Same-day expectations, eventually-day staffing.",
+    "signLines": [
+      "PARCEL PANIC",
+      "ARRIVING BY 10 PMISH"
+    ],
+    "tags": [
+      "delivery",
+      "logistics"
+    ],
+    "count": 40
+  },
+  {
+    "id": "parking-minimums-garage",
+    "label": "Parking Minimums Garage",
+    "category": "infrastructure",
+    "description": "Concrete decks built to satisfy the spreadsheet before the tenants arrive.",
+    "satire": "Every destination deserves a larger destination for empty cars.",
+    "signLines": [
+      "MINIMUMS GARAGE",
+      "Spaces before places"
+    ],
+    "tags": [
+      "parking",
+      "garage",
+      "policy"
+    ],
+    "count": 40
+  },
+  {
+    "id": "payday-patriot",
+    "label": "Payday Patriot",
+    "category": "commerce",
+    "description": "A financial bunker defending tomorrow’s check from tomorrow.",
+    "satire": "APR is just freedom expressed as three digits.",
+    "signLines": [
+      "PAYDAY PATRIOT",
+      "389% FREE ENTERPRISE"
+    ],
+    "tags": [
+      "loans",
+      "finance"
+    ],
+    "count": 40
+  },
+  {
+    "id": "pedestrian-overpass",
+    "label": "Pedestrian Overpass",
+    "category": "infrastructure",
+    "description": "Caged concrete crossing with long stair towers over a wide road.",
+    "satire": "Walking is permitted after a modest vertical detour.",
+    "signLines": [
+      "SAFE CROSSING",
+      "Only 84 extra steps"
+    ],
+    "tags": [
+      "roads",
+      "pedestrian",
+      "bridge"
+    ],
+    "count": 40
+  },
+  {
+    "id": "permit-palace",
+    "label": "Permit Palace",
+    "category": "infrastructure",
+    "description": "Approvals have three windows, four forms, and one lunch break.",
+    "satire": "A marble tribute to making small projects wait.",
+    "signLines": [
+      "PERMIT PALACE",
+      "Approval pending"
+    ],
+    "tags": [
+      "civic",
+      "permits",
+      "bureaucracy"
+    ],
+    "count": 40
+  },
+  {
+    "id": "pocket-park",
+    "label": "Six-Lane Pocket Park",
+    "category": "neighborhood",
+    "description": "One bench faces a six-lane asphalt view.",
+    "satire": "A recreation amenity measured without crossing the road.",
+    "signLines": [
+      "CHAD BROKOWSKI PARK",
+      "OPEN DAWN TO TRAFFIC"
+    ],
+    "tags": [
+      "park",
+      "hostile",
+      "stroad"
+    ],
+    "count": 40
+  },
+  {
+    "id": "popup-afterlife",
+    "label": "Popup Afterlife",
+    "category": "commerce",
+    "description": "A seasonal retail spirit possessing whatever died here last.",
+    "satire": "The lease is temporary; the polyester cobwebs are eternal.",
+    "signLines": [
+      "POPUP AFTERLIFE",
+      "BACK FROM THE VACANCY"
+    ],
+    "tags": [
+      "popup",
+      "seasonal"
+    ],
+    "count": 40
+  },
+  {
+    "id": "porch-pirate-proof",
+    "label": "Porch Pirate Proof",
+    "category": "commerce",
+    "description": "A locker hive promising secure custody of impulse purchases.",
+    "satire": "Your package is safe in locker QZ-47 behind the old tire store.",
+    "signLines": [
+      "PORCH PIRATE PROOF",
+      "CODE EXPIRED"
+    ],
+    "tags": [
+      "delivery",
+      "lockers"
+    ],
+    "count": 40
+  },
+  {
+    "id": "premium-denied",
+    "label": "Premium Denied",
+    "category": "commerce",
+    "description": "An insurance office sheltered by a very selective umbrella.",
+    "satire": "Coverage begins immediately after the event you needed covered.",
+    "signLines": [
+      "PREMIUM DENIED",
+      "WE EXCLUDE YOUR CONCERN"
+    ],
+    "tags": [
+      "insurance",
+      "finance"
+    ],
+    "count": 40
+  },
+  {
+    "id": "prepper-compound",
+    "label": "Prepared Acres Compound",
+    "category": "neighborhood",
+    "description": "A fortified cabin, circular palisade, bunker hatch, and water totes.",
+    "satire": "Off-grid independence with a very online antenna.",
+    "signLines": [
+      "PREPARED ACRES",
+      "WE SAW THIS COMING"
+    ],
+    "tags": [
+      "home",
+      "compound",
+      "bunker"
+    ],
+    "count": 40
+  },
+  {
+    "id": "public-works-yard",
+    "label": "Public Works Yard",
+    "category": "infrastructure",
+    "description": "Salt, gravel, cones, trucks, and the county’s most useful shed.",
+    "satire": "Deferred maintenance has excellent storage.",
+    "signLines": [
+      "PUBLIC WORKS",
+      "Cone inventory: robust"
+    ],
+    "tags": [
+      "civic",
+      "maintenance",
+      "yard"
+    ],
+    "count": 40
+  },
+  {
+    "id": "pump-station",
+    "label": "Artesian-ish Pump Station",
+    "category": "infrastructure",
+    "description": "Brick pump house with external pump banks and intake screen.",
+    "satire": "The aquifer is renewable on the election calendar.",
+    "signLines": [
+      "COUNTY WATER",
+      "Naturally replenished-ish"
+    ],
+    "tags": [
+      "water",
+      "pump",
+      "utility"
+    ],
+    "count": 40
+  },
+  {
+    "id": "recycling-transfer-station",
+    "label": "Wishcycling Transfer Station",
+    "category": "infrastructure",
+    "description": "Sorting shed with bright bunkers, conveyor, and cyclone separators.",
+    "satire": "Place hopeful objects in the correct colorful bunker.",
+    "signLines": [
+      "WISHCYCLING",
+      "Hope sorted daily"
+    ],
+    "tags": [
+      "waste",
+      "recycling",
+      "industrial"
+    ],
+    "count": 40
+  },
+  {
+    "id": "rent-a-life",
+    "label": "Rent A Life",
+    "category": "commerce",
+    "description": "A tower of appliances available one week at a time forever.",
+    "satire": "Why own a washer once when you can buy it every year?",
+    "signLines": [
+      "RENT A LIFE",
+      "WEEKLY FOREVER"
+    ],
+    "tags": [
+      "rent-to-own",
+      "appliances"
+    ],
+    "count": 40
+  },
+  {
+    "id": "repo-ranch",
+    "label": "Repo Ranch",
+    "category": "commerce",
+    "description": "A scenic pasture where yesterday’s dreams wait behind chain link.",
+    "satire": "Come see your old car thriving upstate.",
+    "signLines": [
+      "REPO RANCH",
+      "WE FOUND YOUR FREEDOM"
+    ],
+    "tags": [
+      "cars",
+      "finance"
+    ],
+    "count": 40
+  },
+  {
+    "id": "retention-pond-office",
+    "label": "Retention Pond Office",
+    "category": "infrastructure",
+    "description": "Berm, inlet pipes, blue water, and a control box beside Lake Serenity.",
+    "satire": "Stormwater detention gains waterfront branding.",
+    "signLines": [
+      "LAKE SERENITY",
+      "No swimming or serenity"
+    ],
+    "tags": [
+      "water",
+      "stormwater",
+      "pond"
+    ],
+    "count": 40
+  },
+  {
+    "id": "return-to-sender-outlet",
+    "label": "Return to Sender Outlet",
+    "category": "commerce",
+    "description": "A giant funnel converting buyer’s remorse into store credit.",
+    "satire": "Every open box gets a second chance and a third barcode.",
+    "signLines": [
+      "RETURN TO SENDER",
+      "REGRET, REPRICED"
+    ],
+    "tags": [
+      "returns",
+      "outlet"
+    ],
+    "count": 40
+  },
+  {
+    "id": "road-construction-yard",
+    "label": "One More Lane Yard",
+    "category": "infrastructure",
+    "description": "Portable office, barriers, pipe stacks, and a compact crane.",
+    "satire": "The permanent solution begins in a temporary trailer.",
+    "signLines": [
+      "ONE MORE LANE",
+      "Congestion cure loading"
+    ],
+    "tags": [
+      "roads",
+      "construction",
+      "industrial"
+    ],
+    "count": 40
+  },
+  {
+    "id": "roadside-cross",
+    "label": "Two-Hundred-Foot Roadside Cross",
+    "category": "neighborhood",
+    "description": "An illuminated cross monument on a highway-scale base.",
+    "satire": "A spiritual landmark engineered for interstate sightlines.",
+    "signLines": [
+      "THE CROSS AT EXIT 47",
+      "VISIBLE FOR 12 MILES"
+    ],
+    "tags": [
+      "roadside",
+      "monument",
+      "cross"
+    ],
+    "count": 40
+  },
+  {
+    "id": "self-storage-complex",
+    "label": "Future Downtown Storage",
+    "category": "infrastructure",
+    "description": "Repeating roll-up rows with a lonely manager office.",
+    "satire": "Land banking with individual locks.",
+    "signLines": [
+      "FUTURE DOWNTOWN",
+      "Store today, plan later"
+    ],
+    "tags": [
+      "storage",
+      "warehouse",
+      "industrial"
+    ],
+    "count": 40
+  },
+  {
+    "id": "seven-gables-mcmansion",
+    "label": "Seven Gables McMansion",
+    "category": "neighborhood",
+    "description": "A garage-forward mansion with seven rooflines and one turret.",
+    "satire": "Stone veneer ends exactly where the camera does.",
+    "signLines": [
+      "CHATEAU RIDGE",
+      "ESTATE LIVING"
+    ],
+    "tags": [
+      "home",
+      "mcmansion",
+      "turret"
+    ],
+    "count": 40
+  },
+  {
+    "id": "sewage-outfall",
+    "label": "Outfall Opportunity",
+    "category": "infrastructure",
+    "description": "Concrete headwall and large discharge pipes feeding a channel.",
+    "satire": "What leaves the county becomes regional cooperation.",
+    "signLines": [
+      "OUTFALL 7",
+      "Dilution is partnership"
+    ],
+    "tags": [
+      "sewage",
+      "outfall",
+      "utility"
+    ],
+    "count": 40
+  },
+  {
+    "id": "sheriff-substation",
+    "label": "Sheriff Substation",
+    "category": "infrastructure",
+    "description": "A patrol office with fortified sally port and ambitious radio mast.",
+    "satire": "Local control arrives through a locked gate.",
+    "signLines": [
+      "SHERIFF",
+      "Revenue patrol district"
+    ],
+    "tags": [
+      "civic",
+      "police",
+      "service"
+    ],
+    "count": 40
+  },
+  {
+    "id": "sidewalk-to-nowhere",
+    "label": "Sidewalk to Nowhere",
+    "category": "neighborhood",
+    "description": "A pristine sidewalk ends at a curb and development fence.",
+    "satire": "Pedestrian infrastructure successfully completes half a thought.",
+    "signLines": [
+      "FUTURE CONNECTION",
+      "PHASE 9 SUBJECT TO FUNDING"
+    ],
+    "tags": [
+      "landscape",
+      "sidewalk",
+      "disconnected"
+    ],
+    "count": 40
+  },
+  {
+    "id": "single-wide",
+    "label": "Single-Wide Freedom Home",
+    "category": "neighborhood",
+    "description": "A narrow manufactured home with a porch, dish, and optional tarp.",
+    "satire": "Affordable housing, accessorized one emergency repair at a time.",
+    "signLines": [
+      "EAGLE CREST HOMES",
+      "LAND INCLUDED*"
+    ],
+    "tags": [
+      "home",
+      "trailer",
+      "manufactured"
+    ],
+    "count": 40
+  },
+  {
+    "id": "smile-finance",
+    "label": "Smile Finance",
+    "category": "commerce",
+    "description": "A tooth-shaped clinic extracting anxiety in easy installments.",
+    "satire": "Zero pain today, zero percent for six months, several surprises later.",
+    "signLines": [
+      "SMILE FINANCE",
+      "BITE-SIZED PAYMENTS"
+    ],
+    "tags": [
+      "medical-retail",
+      "dentist"
+    ],
+    "count": 40
+  },
+  {
+    "id": "solar-farm",
+    "label": "Freedom Solar Farm",
+    "category": "infrastructure",
+    "description": "Rows of tilted panels with posts and a site inverter.",
+    "satire": "Energy independence, subject to the sun’s operating hours.",
+    "signLines": [
+      "FREEDOM SOLAR",
+      "Day shift only"
+    ],
+    "tags": [
+      "power",
+      "solar",
+      "utility"
+    ],
+    "count": 40
+  },
+  {
+    "id": "strip-mall-of-duty",
+    "label": "Strip Mall of Duty",
+    "category": "commerce",
+    "description": "Six storefronts answer the call of quarterly leasing.",
+    "satire": "Deploy nail salons until the tax base is secure.",
+    "signLines": [
+      "STRIP MALL OF DUTY",
+      "LEASE. SERVE. REPEAT."
+    ],
+    "tags": [
+      "strip-mall",
+      "retail"
+    ],
+    "count": 40
+  },
+  {
+    "id": "subscription-station",
+    "label": "Subscription Station",
+    "category": "commerce",
+    "description": "A ring of kiosks enrolling daily life one recurring fee at a time.",
+    "satire": "Cancel anytime after locating the unmarked basement fax machine.",
+    "signLines": [
+      "SUBSCRIPTION STATION",
+      "OWN NOTHING MONTHLY"
+    ],
+    "tags": [
+      "subscription",
+      "retail"
+    ],
+    "count": 40
+  },
+  {
+    "id": "suburban-history-museum",
+    "label": "Suburban History Museum",
+    "category": "neighborhood",
+    "description": "A new brick box wearing an old-town facade and cupola.",
+    "satire": "Local history preserved beside the parking lot that replaced it.",
+    "signLines": [
+      "MUSEUM OF SUBURBAN HISTORY",
+      "REMEMBERING WHAT WAS HERE"
+    ],
+    "tags": [
+      "museum",
+      "culture",
+      "parking"
+    ],
+    "count": 40
+  },
+  {
+    "id": "surface-parking-empire",
+    "label": "Surface Parking Empire",
+    "category": "infrastructure",
+    "description": "Striped asphalt, tall lights, and a distant building-shaped sign.",
+    "satire": "The highest and best use has been clearly striped.",
+    "signLines": [
+      "PARKING EMPIRE",
+      "Black Friday compliant"
+    ],
+    "tags": [
+      "parking",
+      "asphalt",
+      "policy"
+    ],
+    "count": 40
+  },
+  {
+    "id": "tax-assessor-bunker",
+    "label": "Tax Assessor Bunker",
+    "category": "infrastructure",
+    "description": "Window-light civic bunker guarding the county parcel records.",
+    "satire": "The valuation is final; the architecture is defensive.",
+    "signLines": [
+      "ASSESSOR",
+      "Value discovered here"
+    ],
+    "tags": [
+      "civic",
+      "tax",
+      "records"
+    ],
+    "count": 40
+  },
+  {
+    "id": "tollbooth-plaza",
+    "label": "Tollbooth Plaza",
+    "category": "infrastructure",
+    "description": "Lane-spanning collection canopy with booths, islands, and barriers.",
+    "satire": "A free road becomes self-supporting one quarter at a time.",
+    "signLines": [
+      "VALUE TOLL",
+      "Freedom: exact change"
+    ],
+    "tags": [
+      "roads",
+      "toll",
+      "plaza"
+    ],
+    "count": 40
+  },
+  {
+    "id": "tract-ashford",
+    "label": "The Ashford",
+    "category": "neighborhood",
+    "description": "A low ranch tract house dominated by its garage.",
+    "satire": "An artisanal floor plan repeated 640 times.",
+    "signLines": [
+      "THE ASHFORD",
+      "FROM THE LOW $400s"
+    ],
+    "tags": [
+      "home",
+      "tract",
+      "garage-forward"
+    ],
+    "count": 40
+  },
+  {
+    "id": "tract-beaumont",
+    "label": "The Beaumont",
+    "category": "neighborhood",
+    "description": "A stucco tract home with ceremonial columns.",
+    "satire": "Classical dignity with a 35-year adjustable mortgage.",
+    "signLines": [
+      "THE BEAUMONT",
+      "ELEVATION B PREMIUM"
+    ],
+    "tags": [
+      "home",
+      "tract",
+      "columns"
+    ],
+    "count": 40
+  },
+  {
+    "id": "tract-carrington",
+    "label": "The Carrington",
+    "category": "neighborhood",
+    "description": "A two-story tract home with a bay window and HOA lawn.",
+    "satire": "Every window is unique among three approved options.",
+    "signLines": [
+      "THE CARRINGTON",
+      "LUXURY IS STANDARD*"
+    ],
+    "tags": [
+      "home",
+      "tract",
+      "two-story"
+    ],
+    "count": 40
+  },
+  {
+    "id": "tractor-therapy",
+    "label": "Tractor Therapy",
+    "category": "commerce",
+    "description": "Retail counseling measured in horsepower and cup holders.",
+    "satire": "Ask your dealer if a compact utility tractor is right for your feelings.",
+    "signLines": [
+      "TRACTOR THERAPY",
+      "MOW THROUGH IT"
+    ],
+    "tags": [
+      "farm-retail",
+      "tractors"
+    ],
+    "count": 40
+  },
+  {
+    "id": "transit-token-kiosk",
+    "label": "Transit Token Kiosk",
+    "category": "infrastructure",
+    "description": "Tiny fare office for the route the county almost remembers to run.",
+    "satire": "The kiosk is open more often than the bus.",
+    "signLines": [
+      "COUNTY TRANSIT",
+      "Exact change, maybe"
+    ],
+    "tags": [
+      "transit",
+      "ticket",
+      "kiosk"
+    ],
+    "count": 40
+  },
+  {
+    "id": "volunteer-firehouse",
+    "label": "Volunteer Firehouse",
+    "category": "infrastructure",
+    "description": "Engine bays and hose tower funded by pancake breakfast economics.",
+    "satire": "Essential service, optional budget.",
+    "signLines": [
+      "VOLUNTEER FIRE",
+      "Fish fry funds hoses"
+    ],
+    "tags": [
+      "civic",
+      "fire",
+      "service"
+    ],
+    "count": 40
+  },
+  {
+    "id": "waffle-index",
+    "label": "Waffle Index",
+    "category": "commerce",
+    "description": "The diner economists watch when every other indicator has failed.",
+    "satire": "If the lights go dark, seek higher ground.",
+    "signLines": [
+      "WAFFLE INDEX",
+      "OPEN THROUGH MOST EVENTS"
+    ],
+    "tags": [
+      "diner",
+      "disaster"
+    ],
+    "count": 40
+  },
+  {
+    "id": "wallet-er",
+    "label": "Wallet ER",
+    "category": "commerce",
+    "description": "A freestanding emergency room specializing in acute liquidity.",
+    "satire": "The helicopter pad is for your deductible.",
+    "signLines": [
+      "WALLET ER",
+      "BILLING IS TRIAGE"
+    ],
+    "tags": [
+      "medical-retail",
+      "emergency"
+    ],
+    "count": 40
+  },
+  {
+    "id": "wash-n-worship",
+    "label": "Wash N Worship",
+    "category": "commerce",
+    "description": "An express tunnel cleansing paint and conscience alike.",
+    "satire": "Unlimited grace, billed monthly, underbody rinse excluded.",
+    "signLines": [
+      "WASH N WORSHIP",
+      "REDEEM YOUR CLEARCOAT"
+    ],
+    "tags": [
+      "car-wash",
+      "subscription"
+    ],
+    "count": 40
+  },
+  {
+    "id": "wastewater-plant",
+    "label": "Poop Palace Treatment",
+    "category": "infrastructure",
+    "description": "Circular clarifiers, sweep arms, and a compact control building.",
+    "satire": "Advanced treatment for yesterday’s growth projections.",
+    "signLines": [
+      "POOP PALACE",
+      "Making downstream possible"
+    ],
+    "tags": [
+      "sewage",
+      "treatment",
+      "utility"
+    ],
+    "count": 40
+  },
+  {
+    "id": "water-tower",
+    "label": "County Water Tower",
+    "category": "infrastructure",
+    "description": "Legged municipal tank with a proud county-name panel.",
+    "satire": "Civic identity is best stored under pressure.",
+    "signLines": [
+      "PROSPERITY COUNTY",
+      "Pressure builds character"
+    ],
+    "tags": [
+      "water",
+      "tower",
+      "utility"
+    ],
+    "count": 40
+  },
+  {
+    "id": "whispering-pines",
+    "label": "Whispering Pines Estates",
+    "category": "neighborhood",
+    "description": "A dense mobile-home park behind a grand entry beam.",
+    "satire": "Pines sold separately; one demonstration tree may remain.",
+    "signLines": [
+      "WHISPERING PINES",
+      "PINES NOT INCLUDED"
+    ],
+    "tags": [
+      "community",
+      "trailer-park",
+      "gate"
+    ],
+    "count": 40
+  },
+  {
+    "id": "wind-service-yard",
+    "label": "Breeze Compliance Yard",
+    "category": "infrastructure",
+    "description": "Service shed, stored blades, and a small demonstration turbine.",
+    "satire": "Renewable energy with a generous setback from donors.",
+    "signLines": [
+      "BREEZE YARD",
+      "Viewshed paperwork inside"
+    ],
+    "tags": [
+      "power",
+      "wind",
+      "industrial"
+    ],
+    "count": 40
+  },
+  {
+    "id": "worlds-largest-fork",
+    "label": "World's Largest Fork",
+    "category": "neighborhood",
+    "description": "A monumental stainless fork with selfie bollards.",
+    "satire": "Economic development you can see from the bypass.",
+    "signLines": [
+      "WORLD'S LARGEST FORK",
+      "FORK AROUND & FIND OUT"
+    ],
+    "tags": [
+      "roadside",
+      "monument",
+      "fork"
+    ],
+    "count": 40
+  },
+  {
+    "id": "zoning-hearing-hall",
+    "label": "Zoning Hearing Hall",
+    "category": "infrastructure",
+    "description": "Public hearing chamber engineered for long comments and short agendas.",
+    "satire": "Every housing shortage deserves another hearing.",
+    "signLines": [
+      "ZONING HALL",
+      "Public comment: 90 sec"
+    ],
+    "tags": [
+      "civic",
+      "zoning",
+      "hearing"
+    ],
+    "count": 40
+  }
+]

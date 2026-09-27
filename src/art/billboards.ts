@@ -208,7 +208,7 @@ export const BILLBOARDS: BillboardDef[] = [
     linesFit(c, ['15-MINUTE CITIES', 'ARE COMMUNISM'], 18, 10, w - 36, h * 0.66, { family: F.block, color: '#fff' });
     textFit(c, 'PAID FOR BY YOUR 74-MINUTE COMMUTE', 18, h * 0.76, w - 36, h * 0.16, { family: F.sans, weight: 900, color: '#ffd400' });
   } },
-  { id: 'buyLocal', label: 'BUY LOCAL (AT SPRAWLMART)', paint: std({ bg: '#0071ce', fg: '#fff', head: ['BUY LOCAL'], sub: '(AT SPRAWLMART · 1,200 FREE PARKING SPACES)', subColor: '#ffc220', icon: 'sun', headFont: F.sans }) },
+  { id: 'buyLocal', label: 'BUY LOCAL (AT SPRAWLMART)', paint: std({ bg: '#0b6bc6', fg: '#fff', head: ['BUY LOCAL'], sub: '(AT SPRAWLMART · 1,200 FREE PARKING SPACES)', subColor: '#f8bd2c', icon: 'sun', headFont: F.sans }) },
   { id: 'soyLatte', label: 'SOY LATTE CO. · NOW WITH MORE OATS', paint: std({ bg: '#f1e3c8', fg: '#4a6b2a', head: ['NOW WITH', 'MORE OATS'], sub: 'SOY LATTE CO. · OAT · ALMOND · VIBES', icon: 'soy', headFont: F.script }) },
   { id: 'dontTread', label: "DON'T TREAD ON ME (OR MY PARKING SPACE)", paint: (c, w, h) => {
     c.fillStyle = '#f2c230';
@@ -287,7 +287,7 @@ export const BILLBOARDS: BillboardDef[] = [
   { id: 'specter', label: 'SPECTER HALLOWEEN: COMING SOON TO YOUR DEAD MALL', paint: std({ bg: '#111', fg: '#ff7518', head: ['COMING SOON', 'TO YOUR DEAD MALL'], sub: 'SPECTER HALLOWEEN · NOW HIRING SEASONAL GHOULS', subColor: '#fff', icon: 'ghost', headFont: F.marker }) },
   { id: 'prosperityDome', label: 'PROSPERITY DOME · EASTER PARKING NOW OPEN', paint: std({ bg: '#fff8e1', fg: '#6a1b9a', head: ['PROSPERITY DOME'], sub: 'EASTER PARKING NOW OPEN · 4,000 SPACES · COFFEE BAR', subBg: '#6a1b9a', subColor: '#fff8e1', icon: 'cross', headFont: F.serif }) },
   { id: 'cloudChasers', label: 'CLOUD CHASERS VAPE: MANGO POD HQ', paint: std({ bg: '#0d1b2a', fg: '#4cc9f0', head: ['MANGO POD', 'HEADQUARTERS'], sub: 'CLOUD CHASERS VAPE · NEXT EXIT', subColor: '#f72585', icon: 'cloud', headFont: F.sign }) },
-  { id: 'contentHouse', label: 'GET RICH POSTING · SLOPTOK CONTENT HOUSE', paint: std({ bg: '#111', fg: '#25f4ee', head: ['GET RICH', 'POSTING'], sub: 'SLOPTOK CONTENT HOUSE · NOW RECRUITING · LIKE & SUBSCRIBE', subColor: '#fe2c55', headFont: F.marker }) },
+  { id: 'contentHouse', label: 'GET RICH POSTING · SLOPTOK CONTENT HOUSE', paint: std({ bg: '#111', fg: '#33e9e4', head: ['GET RICH', 'POSTING'], sub: 'SLOPTOK CONTENT HOUSE · NOW RECRUITING · LIKE & SUBSCRIBE', subColor: '#f4345c', headFont: F.marker }) },
   { id: 'muskratMars', label: 'ELONGATED MUSKRAT: MARS OR BUST', paint: std({ bg: '#1a0f0a', fg: '#ff7043', head: ['MARS OR BUST'], sub: '(PROBABLY BUST) · A MESSAGE FROM ELONGATED MUSKRAT', subColor: '#fff', icon: 'sun', headFont: F.sans }) },
   { id: 'zuckerborgLegs', label: 'ZUCKERBORG: LEGS COMING Q3', paint: std({ bg: '#0866ff', fg: '#fff', head: ['LEGS', 'COMING Q3'], sub: 'ZUCKERBORG METAVERSE · WE KNOW WHERE YOU PARKED', headFont: F.sans }) },
   { id: 'luxuryApts', label: 'LUXURY APARTMENTS FROM $2,995', paint: std({ bg: '#e9e2d0', fg: '#3a3a3c', head: ['LUXURY LIVING', 'FROM $2,995'], sub: '400 SQ FT · NO PARKING · GRANITE (VINYL) · THE VUE @ CREEKSIDE', subBg: '#e07a3f', subColor: '#fff', icon: 'house', headFont: F.sans }) },

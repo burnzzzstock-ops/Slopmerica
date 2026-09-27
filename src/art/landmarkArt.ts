@@ -286,7 +286,7 @@ function screen(c: Ctx, w: number, h: number, id: string) {
       textFit(c, 'NEURAL FLY', 20, h * 0.8, w - 40, h * 0.14, { family: F.sign, color: '#34f5ff' });
       break;
     case 'sloptok':
-      gradV(c, 0, 0, w, h, '#fe2c55', '#25f4ee');
+      gradV(c, 0, 0, w, h, '#f4345c', '#33e9e4');
       textFit(c, 'SLOPTOK', 16, h * 0.2, w - 32, h * 0.4, { family: F.sign, color: '#111' });
       textFit(c, '3.2B VIEWS · 0 THOUGHTS', 16, h * 0.64, w - 32, h * 0.16, { family: F.sans, weight: 900, color: '#fff' });
       break;

@@ -46,7 +46,13 @@ export const REAL_COLORS = [
  * Findings the owner has reviewed and kept, keyed `slogan:<file>:<real slogan>`
  * or `color:<brand id>:<real owner>`, each with the reason. Empty until they decide.
  */
-export const ACCEPTED = {};
+export const ACCEPTED = {
+  'slogan:src/art/brands.ts:Have it your way': 'owner, 2026-09-27: parody riff, the twist is the joke (Burger Baron "HAVE IT HIS WAY")',
+  "slogan:src/art/brands.ts:When you're here, you're family": 'owner, 2026-09-27: parody riff, the twist is the joke (Olive Yard "you\'re parked")',
+  'slogan:src/art/brands.ts:Run for the border': 'owner, 2026-09-27: approved replacement "Make a run for the parking lot."',
+  'slogan:src/art/brands.ts:Billions and billions served': 'owner, 2026-09-27: approved replacement "BILLIONS IDLED (IN CARS)"',
+  'slogan:src/art/brands.ts:Save money. Live better.': 'owner, 2026-09-27: parody riff, the twist is the joke (SprawlMart "SAVE MONEY. LIVE IN YOUR CAR.")',
+};
 
 const words = (s) => s.toLowerCase().replace(/[’']/g, '').replace(/\+/g, ' and ').replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
 
@@ -107,6 +113,17 @@ export async function ipFindings() {
         found.push({ kind: 'slogan', level: m === 'exact' ? 'FAIL' : 'REVIEW', key: `slogan:${rel}:${r.text}`, where, what: s.text, variants: [s.text], real: r.text, owner: r.owner, match: m });
       }
     }
+  }
+  // both of a real brand's colors on one line anywhere (a billboard, a landmark gradient)
+  for (const file of tsFiles(join(ROOT, 'src'))) {
+    const rel = relative(ROOT, file).replace(/\\/g, '/');
+    if (rel === 'src/art/brands.ts') continue; // checked per brand below
+    readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
+      const hexes = new Set((line.match(/#[0-9a-f]{6}\b/gi) ?? []).map((h) => h.toLowerCase()));
+      for (const r of REAL_COLORS) if (r.colors.length > 1 && r.colors.every((c) => hexes.has(c))) {
+        found.push({ kind: 'color', level: 'FAIL', key: `color:${rel}:${i + 1}:${r.owner}`, where: `${rel}:${i + 1}`, what: line.trim().slice(0, 60), real: r.colors.join(' + '), owner: r.owner, match: 'pair' });
+      }
+    });
   }
   const { BRANDS } = await import(pathToFileURL(join(ROOT, 'src/art/brands.ts')).href);
   for (const b of BRANDS) {

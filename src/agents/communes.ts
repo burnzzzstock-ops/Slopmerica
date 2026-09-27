@@ -14,6 +14,7 @@ import { T } from '../buildings/atlas';
 import { buildCommune } from './communeBuilder';
 import type { Trees } from '../world/trees';
 import { COMMUNE_NAMES as NAMES } from '../art/communeNames';
+import { namesFor } from '../roads/names';
 
 export interface Commune {
   id: number;
@@ -60,7 +61,7 @@ export class Communes {
 
   constructor(private terrain: Terrain, private trees: Trees, mapId: MapId, count: number, seed: number, foreverChance: number, avoid: { x: number; z: number; r: number }[]) {
     const rng = new Rng(seed);
-    const names = rng.float() < 2 ? [...NAMES[mapId], ...NAMES.any] : NAMES.any;
+    const names = rng.float() < 2 ? [...NAMES[mapId], ...namesFor(NAMES.any, 'commune', mapId)] : NAMES.any;
     let tries = 0;
     while (this.list.length < count && tries < 4000) {
       tries++;

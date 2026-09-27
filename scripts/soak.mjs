@@ -64,7 +64,7 @@ const build = await page.evaluate(() => {
   const d = window.__dbg, g = window.__game, SV = window.__services, LD = window.__land;
   const S0 = g.startView();
   const cx = Math.round(S0.x), cz = Math.round(S0.z);
-  g.sim.money += 2000000; // enough to buy the land and build the whole test town in ponzi mode
+  g.sim.earn(2000000, 'other', 'Test funds'); // enough to buy the land and build the whole test town in ponzi mode
   // buy every tile the test town touches (neighbors first, so each purchase is allowed)
   const N = 8;
   for (let pass = 0; pass < 4; pass++)

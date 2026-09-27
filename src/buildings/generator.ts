@@ -2,7 +2,7 @@
 // Contract: every returned geometry is NON-INDEXED with attributes
 // position(3), normal(3), uv(2), color(3), in lot-local space (road on +Z),
 // and renders with the one shared buildingMaterial().
-import type { BuildingModel, LandmarkId, LotSpec, ZoneType } from '../contracts';
+import type { BuildingModel, Emitter, LandmarkId, LotSpec, ZoneType } from '../contracts';
 import { CELL } from '../config';
 import { Rng } from '../core/rng';
 import type { MapId } from '../world/maps';
@@ -15,16 +15,18 @@ import { genComLow } from './comLow';
 import { genComHigh } from './comHigh';
 import { genIndustry } from './industry';
 import { genOffice } from './office';
-import { satirePass } from './satire';
+import { decorate, satirePass } from './satire';
+import { BRANDS } from '../art/brands';
+import { buildVault, loadVault, vaultFamilyAssets, vaultFit, vaultPick, vaultReady } from '../vault/vault';
 import { buildLandmark, LANDMARK_FOOTPRINT, setLandmarkMap } from './landmarks';
 import { buildBillboard } from './billboard';
 import { brandFits } from './archetypes';
 
 export { buildingMaterial, setBuildingNight } from './material';
 
-/** Paint the atlas (waits for the sign fonts). Call once before rendering buildings. */
+/** Paint the atlas (waits for the sign fonts) and load the Asset Vault. Call once before rendering buildings. */
 export async function loadArt(): Promise<void> {
-  await paintArt();
+  await Promise.all([paintArt(), loadVault()]);
 }
 
 /** Optional: tell the art which map is loaded (water tower county name, palms vs. pines). */
@@ -47,9 +49,25 @@ const GEN: Record<ZoneType, (g: GenCtx) => void> = {
 
 /** Distinct looks per zone/level/size before seeds start repeating. */
 export const VARIANTS = 16;
+/**
+ * On top of those, slots that grow an Asset Vault building that fits the lot
+ * (see src/vault): a Mattress Mitosis, a double-wide, a Permit Palace.
+ */
+const VAULT_SLOTS: Record<ZoneType, number> = { resLow: 20, comLow: 24, comHigh: 10, industry: 16, office: 10, resHigh: 6 };
+const procedural = (zone: ZoneType) => (zone === 'resLow' ? 40 : VARIANTS);
 /** Homes have fifty-odd styles: more variants so a street doesn't repeat. */
 export function variantsFor(zone: ZoneType) {
-  return zone === 'resLow' ? 40 : VARIANTS;
+  return procedural(zone) + VAULT_SLOTS[zone];
+}
+/** the SLOP merch brands keep their own buildings */
+const MERCH = new Set(BRANDS.filter((b) => b.merch).map((b) => b.id));
+
+/** a vault building's lot: homes get yard stuff, everything else the zone's satire */
+function vaultDress(g: GenCtx) {
+  const { W, D, rng } = g;
+  if (g.spec.zone !== 'resLow') return satirePass(g);
+  decorate(g, 'frontYard', { x0: -W / 2 + 0.4, x1: W / 2 - 0.4, z0: 0, z1: D / 2 - 0.6 }, rng.int(1, 2));
+  decorate(g, 'backYard', { x0: -W / 2 + 0.4, x1: W / 2 - 0.4, z0: -D / 2 + 0.4, z1: 0 }, rng.int(0, 1));
 }
 const CACHE_MAX = 900;
 const cache = new Map<string, BuildingModel>();
@@ -101,16 +119,65 @@ export function generateBuilding(spec: LotSpec): BuildingModel {
   const level = Math.max(1, Math.min(5, Math.round(spec.level || 1)));
   const w = Math.max(1, Math.min(4, Math.round(spec.widthCells || 1)));
   const d = Math.max(1, Math.min(4, Math.round(spec.depthCells || 1)));
-  const variant = mix(spec.seed | 0) % variantsFor(zone);
+  let variant = mix(spec.seed | 0) % variantsFor(zone);
+  const style = (spec as { style?: string }).style;
+  if (variant >= procedural(zone)) {
+    // a vault slot: a vault building that fits, unless a merch brand wants this lot
+    const slot = variant - procedural(zone);
+    const pick = !style && !(spec.brand && MERCH.has(spec.brand)) && vaultReady() ? vaultPick(zone, level, w * CELL, d * CELL, slot) : -1;
+    if (pick >= 0) {
+      const key = `vault|${pick}|${zone}|${level}|${w}x${d}`;
+      const hit = cacheGet(key);
+      if (hit) return copy(hit);
+      const norm: LotSpec = { ...spec, zone, level, widthCells: w, depthCells: d, brand: undefined };
+      return copy(run(key, mix('vault', pick, zone, level, w, d), norm, w * CELL, d * CELL, (g) => { buildVault(g, pick); vaultDress(g); }));
+    }
+    variant = slot % procedural(zone);
+  }
   // The level picks the building; a requested brand is kept only if it has a
   // building that fits here (otherwise the generator picks one and reports it in model.brand).
   const brand = spec.brand && brandFits(zone, level, w, d, spec.brand) ? spec.brand : undefined;
-  const style = (spec as { style?: string }).style;
   const key = `${zone}|${level}|${w}x${d}|${variant}|${brand ?? ''}${style ? '|' + style : ''}`;
   const hit = cacheGet(key);
   if (hit) return copy(hit);
   const norm: LotSpec = { ...spec, zone, level, widthCells: w, depthCells: d, brand };
   return copy(run(key, mix(zone, level, w, d, variant, brand ?? ''), norm, w * CELL, d * CELL, GEN[zone]));
+}
+
+/**
+ * One Asset Vault building on a w x d lot, dressed for `zone` if given (dev
+ * views, roadside attractions). Null if the vault isn't loaded.
+ */
+export function generateVaultModel(index: number, widthCells: number, depthCells: number, zone: ZoneType | null = null): BuildingModel | null {
+  if (!vaultReady()) return null;
+  const key = `vaultm|${index}|${widthCells}x${depthCells}|${zone ?? ''}`;
+  const hit = cacheGet(key);
+  if (hit) return copy(hit);
+  const spec: LotSpec = { zone: zone ?? 'comLow', level: 1, widthCells, depthCells, seed: index };
+  return copy(run(key, mix('vaultm', index), spec, widthCells * CELL, depthCells * CELL, (g) => { buildVault(g, index); if (zone) vaultDress(g); }));
+}
+
+/** a vault look for a city service may be enlarged this much to fill its lot */
+const SERVICE_GROW = 1.8;
+/**
+ * A city service in an Asset Vault family's clothes (the Very Clean Coal Plant
+ * for the Clean Coal™ Plant): the family's plan that fills the w x d lot best.
+ * `stacks` puts smoke on its chimneys. Null if the vault isn't loaded.
+ */
+export function generateVaultService(family: string, widthCells: number, depthCells: number, stacks?: Emitter['kind']): BuildingModel | null {
+  if (!vaultReady()) return null;
+  const W = widthCells * CELL, D = depthCells * CELL;
+  let best = -1, fill = 0;
+  for (const i of vaultFamilyAssets(family)) {
+    const f = vaultFit(i, W, D, SERVICE_GROW);
+    if (f.s >= 0.8 && f.fill > fill) { fill = f.fill; best = i; }
+  }
+  if (best < 0) return null;
+  const key = `vaults|${family}|${widthCells}x${depthCells}|${stacks ?? ''}`;
+  const hit = cacheGet(key);
+  if (hit) return copy(hit);
+  const spec: LotSpec = { zone: 'industry', level: 1, widthCells, depthCells, seed: best };
+  return copy(run(key, mix('vaults', best), spec, W, D, (g) => { buildVault(g, best, W, D, SERVICE_GROW, stacks); }));
 }
 
 export function landmarkFootprint(id: LandmarkId): { widthCells: number; depthCells: number } {

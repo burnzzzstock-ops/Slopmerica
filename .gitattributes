@@ -8,3 +8,5 @@ public/asset-library/manifest.json text eol=lf
 public/civic/*.bin binary
 public/civic/**/*.png binary
 public/civic/*.json text eol=lf
+public/vault/*.bin binary
+public/vault/*.json text eol=lf

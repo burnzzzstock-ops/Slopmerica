@@ -16,6 +16,9 @@ import { registerInspector, registerPanel, registerSystem, registerTool, registe
 import type { Game } from '../game';
 import { CUSTOM_BUILDINGS, isZoned, type Bld } from './buildings';
 import { serviceModel, type ServiceModelId } from '../buildings/serviceModels';
+import { generateVaultModel, generateVaultService } from '../buildings/generator';
+import { VAULT_FAMILIES } from '../vault/families';
+import { vaultFamilyAssets, vaultReady } from '../vault/vault';
 import { ROAD_TYPES } from '../roads/roadTypes';
 import type { RSeg } from '../roads/network';
 import { CELL, HALF, WATER, WORLD } from '../config';
@@ -41,7 +44,7 @@ type Util = 'power' | 'water' | 'sewage';
 const UTILS: Util[] = ['power', 'water', 'sewage'];
 
 interface SvcDef {
-  id: ServiceModelId;
+  id: SvcId;
   cat: SvcCat;
   name: string;
   blurb: string;
@@ -74,6 +77,9 @@ interface SvcDef {
   height: number; // for the placement ghost
 }
 
+/** a city service (serviceModels), or a vault roadside attraction ('va:' + family) */
+type SvcId = ServiceModelId | `va:${string}`;
+
 const SVC: SvcDef[] = [
   { id: 'gasPeaker', cat: 'power', name: 'Frack Gas Peaker', blurb: 'Cheap, fast, smells like a birthday candle in a gas station.', icon: '🔥', w: 4, d: 3, cost: 16000, upkeep: 120, run: 8, buildDays: 8, unlock: 0, power: 14, pollution: 0.3, noise: 0.7, height: 16 },
   { id: 'coalPlant', cat: 'power', name: 'Clean Coal™ Plant', blurb: 'The ™ does a lot of work. Huge output, huge smoke.', icon: '🏭', w: 6, d: 6, cost: 38000, upkeep: 320, run: 5, buildDays: 14, unlock: 0, power: 45, pollution: 1.2, noise: 0.9, height: 62 },
@@ -93,8 +99,57 @@ const SVC: SvcDef[] = [
   { id: 'college', cat: 'education', name: 'Prosperity Gospel University', blurb: 'College grads unlock the top levels. Tuition is a spiritual journey.', icon: '🎓', w: 6, d: 5, cost: 70000, upkeep: 750, run: 0.09, buildDays: 16, unlock: 2000, cov: 'college', reach: 320, capacity: 7000, height: 28 },
   { id: 'park', cat: 'parks', name: 'Pocket Park', blurb: 'Raises land value nearby. No skateboarding.', icon: '🌳', w: 2, d: 2, cost: 3000, upkeep: 20, buildDays: 3, unlock: 0, cov: 'parks', reach: 45, height: 9 },
 ];
+/**
+ * Roadside attractions from the Asset Vault (PR #7): bigger, stranger parks.
+ * The World's Largest Fork raises land value like a pocket park, only more so.
+ * Built from one plan of each family; they need the vault pack (without it
+ * the menu hides them and a saved one stands as a plain park).
+ */
+for (const f of VAULT_FAMILIES) {
+  const p = f.park;
+  if (!p) continue;
+  const cells = p.w * p.d, tier = cells <= 2 ? 0 : cells <= 4 ? 1 : 2;
+  SVC.push({
+    id: `va:${f.id}`, cat: 'parks', name: f.label, blurb: `${p.desc} ${f.satire}`, icon: p.icon, w: p.w, d: p.d,
+    cost: [4500, 8000, 14000][tier], upkeep: [30, 55, 90][tier], buildDays: 4 + tier * 2, unlock: [0, 300, 800][tier],
+    cov: 'parks', reach: [55, 75, 100][tier], height: Math.max(3, p.h),
+  });
+}
+const isAttraction = (id: string) => id.startsWith('va:');
+/**
+ * City services the vault drew its own versions of (the Very Clean Coal Plant,
+ * the County Water Tower, Copay Castle for urgent care): with Looks set to the
+ * vault (the default) they wear those; Classic keeps the originals. Smokestacks
+ * keep their smoke.
+ */
+const VAULT_LOOK: Partial<Record<ServiceModelId, { family: string; stacks?: 'smoke' | 'steam' }>> = {
+  gasPeaker: { family: 'gas-peaker-plant', stacks: 'smoke' }, coalPlant: { family: 'clean-coal-plant', stacks: 'smoke' }, solarFarm: { family: 'solar-farm' },
+  waterPump: { family: 'pump-station' }, wellTower: { family: 'water-tower' }, sewageOutfall: { family: 'sewage-outfall' }, treatmentPlant: { family: 'wastewater-plant' },
+  fireStation: { family: 'volunteer-firehouse' }, sheriff: { family: 'sheriff-substation' }, clinic: { family: 'copay-castle' }, hospital: { family: 'wallet-er' },
+};
+const LOOK_KEY = 'slopmerica.svcLook';
+/** 'vault' (default) or 'classic' */
+function svcLook(): 'vault' | 'classic' {
+  try { return localStorage.getItem(LOOK_KEY) === 'classic' ? 'classic' : 'vault'; } catch { return 'vault'; }
+}
+const vaultLook = (id: string) => (vaultReady() && svcLook() === 'vault' ? VAULT_LOOK[id as ServiceModelId] : undefined);
 export const SERVICE_DEFS = new Map<string, SvcDef>(SVC.map((d) => [d.id, d]));
-for (const d of SVC) CUSTOM_BUILDINGS.set(d.id, { label: d.name, w: d.w, d: d.d, buildDays: d.buildDays, model: () => serviceModel(d.id, d.w, d.d), paint: d.id === 'park' ? Paint.Lawn : Paint.Paved });
+for (const d of SVC) {
+  if (isAttraction(d.id)) {
+    const fam = d.id.slice(3), variant = VAULT_FAMILIES.find((f) => f.id === fam)?.park?.variant ?? 0;
+    CUSTOM_BUILDINGS.set(d.id, {
+      label: d.name, w: d.w, d: d.d, buildDays: d.buildDays, paint: Paint.Lawn, main: vaultReady,
+      model: () => (vaultReady() ? generateVaultModel(vaultFamilyAssets(fam)[variant], d.w, d.d) : null) ?? serviceModel('park', d.w, d.d),
+    });
+  } else {
+    const classic = () => serviceModel(d.id as ServiceModelId, d.w, d.d);
+    CUSTOM_BUILDINGS.set(d.id, {
+      label: d.name, w: d.w, d: d.d, buildDays: d.buildDays, paint: d.id === 'park' ? Paint.Lawn : Paint.Paved,
+      main: () => !!vaultLook(d.id),
+      model: () => { const v = vaultLook(d.id); return (v ? generateVaultService(v.family, d.w, d.d, v.stacks) : null) ?? classic(); },
+    });
+  }
+}
 /**
  * A building unlocks when the city first reaches its population and stays
  * unlocked (playtest 4: a garbage crisis emptied the city below 1,200 and
@@ -1615,13 +1670,13 @@ for (const v of VIEWS) {
 const VIEW_FOR_CAT: Partial<Record<SvcCat, ViewId>> = { power: 'power', water: 'water', sewage: 'sewage', garbage: 'garbage', fire: 'fire', police: 'police', health: 'health', education: 'education' };
 
 // ============================================================== placement tool
-let placing: ServiceModelId = 'gasPeaker';
+let placing: SvcId = 'gasPeaker';
 let ghost: PlacementGhost | null = null;
 let lastCheck: { ok: boolean; reason?: string; snapped?: boolean; road?: string } | null = null;
 let panelCat: SvcCat = 'power';
 
 
-export function canPlaceService(g: Game, id: ServiceModelId, x: number, z: number, yawIn?: number): { ok: boolean; reason?: string; yaw: number; blocker?: Bld } {
+export function canPlaceService(g: Game, id: SvcId, x: number, z: number, yawIn?: number): { ok: boolean; reason?: string; yaw: number; blocker?: Bld } {
   const d = SERVICE_DEFS.get(id)!;
   const hw = (d.w * CELL) / 2, hd = (d.d * CELL) / 2;
   const pick = g.net.pickSeg(x, z, Math.max(hw, hd) + 40);
@@ -1678,7 +1733,7 @@ export interface ServiceSpot { x: number; z: number; yaw: number; snapped: boole
  * reach the water from the street may sit back on the bank, facing the road.
  * The ghost, the click and the final building all use this transform.
  */
-export function findServiceSpot(g: Game, id: ServiceModelId, x: number, z: number): ServiceSpot {
+export function findServiceSpot(g: Game, id: SvcId, x: number, z: number): ServiceSpot {
   const d = SERVICE_DEFS.get(id)!;
   const hd = (d.d * CELL) / 2;
   const here = canPlaceService(g, id, x, z);
@@ -1716,7 +1771,7 @@ export function findServiceSpot(g: Game, id: ServiceModelId, x: number, z: numbe
 }
 
 let spotCache: { id: string; x: number; z: number; r: ServiceSpot } | null = null;
-function spotFor(g: Game, id: ServiceModelId, x: number, z: number) {
+function spotFor(g: Game, id: SvcId, x: number, z: number) {
   if (spotCache && spotCache.id === id && Math.hypot(spotCache.x - x, spotCache.z - z) < 3) return spotCache.r;
   const r = findServiceSpot(g, id, x, z);
   spotCache = { id, x, z, r };
@@ -1736,13 +1791,13 @@ function updateGhost(g: Game, p: THREE.Vector3 | null) {
   lastCheck = { ok, reason: spot.reason, snapped: spot.snapped, road: spot.front?.seg.name };
   const hw = (d.w * CELL) / 2, hd = (d.d * CELL) / 2;
   const y = g.buildings.padHeight(spot.x, spot.z, hw, hd, spot.yaw);
-  gh.show(`svc|${placing}`, () => CUSTOM_BUILDINGS.get(placing)!.model().geometry, spot.x, y, spot.z, spot.yaw, hw, hd, ok, spot.front?.door ?? null);
+  gh.show(`svc|${placing}|${vaultLook(placing) ? 'vault' : 'classic'}`, () => CUSTOM_BUILDINGS.get(placing)!.model().geometry, spot.x, y, spot.z, spot.yaw, hw, hd, ok, spot.front?.door ?? null);
   // what's in the way, outlined where it stands (hard to pick out at a distance or at night)
   gh.showBlocker(!ok && spot.blocker ? spot.blocker : null);
 }
 
 /** Place a service building (the tool, tests and future AI all use this). */
-export function placeService(g: Game, id: ServiceModelId, x: number, z: number, yaw?: number): Bld | null {
+export function placeService(g: Game, id: SvcId, x: number, z: number, yaw?: number): Bld | null {
   spotCache = null;
   const d = SERVICE_DEFS.get(id)!;
   const chk = canPlaceService(g, id, x, z, yaw);
@@ -1904,7 +1959,7 @@ registerPanel({
   order: 35,
   render(el, g, rerender) {
     const pop = g.sim.population;
-    const list = SVC.filter((d) => d.cat === panelCat);
+    const list = SVC.filter((d) => d.cat === panelCat && (!isAttraction(d.id) || vaultReady()));
     const sel = SERVICE_DEFS.get(placing);
     el.innerHTML = `
       <div class="sp-title">City Services <small>Power, water and sewage flow along roads. Services reach buildings by drive time.</small></div>
@@ -1919,7 +1974,8 @@ registerPanel({
         const rule = !d.unlock || g.sim.mode === 'sandbox' ? '' : locked ? ` Unlocks at ${d.unlock.toLocaleString()} people, and stays unlocked even if the city shrinks.` : pop < d.unlock ? ` Earned at ${d.unlock.toLocaleString()} people: yours to keep while the city is smaller.` : '';
         return `<button class="card ${on ? 'on' : ''}" data-svc="${d.id}" ${locked ? 'disabled' : ''} title="${esc(d.blurb + rule)}${d.run ? ` Costs $${d.upkeep}/wk plus ${esc(runText(d))}.` : ''}"><span class="ci">${d.icon}</span><b>${esc(d.name)}</b><small>${locked ? `🔒 Pop ${d.unlock.toLocaleString()}` : `$${d.cost.toLocaleString()} · $${d.upkeep}/wk${d.run ? '+' : ''}${does ? ` · ${does}` : ''}`}</small></button>`;
       }).join('')}</div>
-      <div class="svc-blurb">${esc(sel && sel.cat === panelCat ? sel.blurb : list[0]?.blurb ?? '')}</div>`;
+      <div class="svc-blurb">${esc(sel && sel.cat === panelCat ? sel.blurb : list[0]?.blurb ?? '')}</div>
+      ${vaultReady() ? `<div class="sp-row svc-look">Looks: <button class="chip ${svcLook() === 'vault' ? 'on' : ''}" data-look="vault" title="The Asset Vault's versions: the Very Clean Coal Plant, the County Water Tower, Copay Castle...">🏛️ Asset Vault</button><button class="chip ${svcLook() === 'classic' ? 'on' : ''}" data-look="classic">Classic</button></div>` : ''}`;
     el.querySelectorAll<HTMLButtonElement>('[data-cat]').forEach((b) => b.addEventListener('click', () => {
       // one active tool: switching category puts the other category's
       // building away (ghost, warning and click handler together)
@@ -1929,8 +1985,16 @@ registerPanel({
       g.overlays.setExt(v ? viewObjs.get(v)! : null);
       rerender();
     }));
+    el.querySelectorAll<HTMLButtonElement>('[data-look]').forEach((b) => b.addEventListener('click', () => {
+      const look = b.dataset.look === 'classic' ? 'classic' : 'vault';
+      if (look === svcLook()) return;
+      try { localStorage.setItem(LOOK_KEY, look); } catch { /* private mode: this session only */ }
+      // every service with a vault version changes clothes now
+      for (const x of g.buildings.list.values()) if (x.zone === 'service' && x.kind && VAULT_LOOK[x.kind as ServiceModelId]) g.buildings.restyleCustom(x);
+      rerender();
+    }));
     el.querySelectorAll<HTMLButtonElement>('[data-svc]').forEach((b) => b.addEventListener('click', () => {
-      placing = b.dataset.svc as ServiceModelId; built = null;
+      placing = b.dataset.svc as SvcId; built = null;
       g.tools.setExt('svcPlace');
       const v = VIEW_FOR_CAT[panelCat];
       if (v) g.overlays.setExt(viewObjs.get(v)!);

@@ -6,24 +6,27 @@ import { resolve } from 'node:path';
 import type { Plugin } from 'vite';
 
 /**
- * public/ isn't copied (the asset catalog is big): ship only the game's Civic
- * Foundry pack beside the page. The single-file build is published where .bin
- * isn't served, so its geometry goes as base64 text (pack.json names it).
+ * public/ isn't copied (the asset catalogs are big): ship only the packs the
+ * game streams in beside the page (Civic Foundry street furniture, the Asset
+ * Vault's buildings). The single-file build is published where .bin isn't
+ * served, so its geometry goes as base64 text (pack.json names it).
  */
-function civicPack(outDir: string, text: boolean): Plugin {
+function gamePacks(outDir: string, text: boolean): Plugin {
   return {
-    name: 'slop-civic-pack',
+    name: 'slop-game-packs',
     apply: 'build',
     closeBundle() {
-      const src = resolve('public/civic');
-      if (!existsSync(src)) return;
-      const out = resolve(outDir, 'civic');
-      cpSync(src, out, { recursive: true });
-      if (!text) return;
-      writeFileSync(resolve(out, 'pack.b64.txt'), readFileSync(resolve(out, 'pack.bin')).toString('base64'));
-      rmSync(resolve(out, 'pack.bin'));
-      const json = JSON.parse(readFileSync(resolve(out, 'pack.json'), 'utf8'));
-      writeFileSync(resolve(out, 'pack.json'), JSON.stringify({ ...json, bin64: 'pack.b64.txt' }));
+      for (const name of ['civic', 'vault']) {
+        const src = resolve('public', name);
+        if (!existsSync(src)) continue;
+        const out = resolve(outDir, name);
+        cpSync(src, out, { recursive: true });
+        if (!text) continue;
+        writeFileSync(resolve(out, 'pack.b64.txt'), readFileSync(resolve(out, 'pack.bin')).toString('base64'));
+        rmSync(resolve(out, 'pack.bin'));
+        const json = JSON.parse(readFileSync(resolve(out, 'pack.json'), 'utf8'));
+        writeFileSync(resolve(out, 'pack.json'), JSON.stringify({ ...json, bin64: 'pack.b64.txt' }));
+      }
     },
   };
 }
@@ -41,7 +44,7 @@ function buildId() {
 export default defineConfig(({ mode }) => ({
   base: './',
   define: { __BUILD__: JSON.stringify(buildId()) },
-  plugins: [...(mode === 'single' ? [viteSingleFile()] : []), civicPack(mode === 'single' ? 'dist-single' : 'dist', mode === 'single')],
+  plugins: [...(mode === 'single' ? [viteSingleFile()] : []), gamePacks(mode === 'single' ? 'dist-single' : 'dist', mode === 'single')],
   build: {
     // The optional art library has its own catalog build; keep game downloads lean.
     copyPublicDir: false,
@@ -49,5 +52,5 @@ export default defineConfig(({ mode }) => ({
     target: 'es2020',
     chunkSizeWarningLimit: 4000,
   },
-  server: { host: '127.0.0.1', port: 5173, watch: { ignored: ['**/shots/**', '**/dist/**', '**/dist-single/**', '**/scripts/**'] } },
+  server: { host: '127.0.0.1', port: 5173, watch: { ignored: ['**/shots/**', '**/dist/**', '**/dist-single/**', '**/scripts/**', '**/vault-public/**', '**/public/asset-library/**'] } },
 }));

@@ -6,6 +6,7 @@ import { registerSigns } from './signs';
 import { registerBillboards } from './billboards';
 import { registerLandmarkArt } from './landmarkArt';
 import { registerSatireArt } from './satireArt';
+import { registerVaultArt } from '../vault/art';
 import { F } from './draw';
 
 addRegistrar(registerFacades);
@@ -13,6 +14,7 @@ addRegistrar(registerSigns);
 addRegistrar(registerBillboards);
 addRegistrar(registerLandmarkArt);
 addRegistrar(registerSatireArt);
+addRegistrar(registerVaultArt);
 
 export { T, hasTile, tileNames, atlasStats, atlasTextures, atlasPainted } from './atlas';
 export type { Tile } from './atlas';

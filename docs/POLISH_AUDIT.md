@@ -200,6 +200,14 @@ Found, not changed (for the balance pass the report asks for next):
 - **PR #5 review (Codex, three P2s, all real):** an info view filtered each building's single worst problem, so a home with no power and trash piling up vanished from the Garbage view (it now shows every building with that view's problem, and the hover explains that one); utility outages merged into one "Utilities" line whenever the counts matched, even for different buildings (they merge only when the same buildings are cut off, and two of three can merge); a closed warning stayed closed however bad it got (it comes back when a landfill is a stage closer to full, or twice as many buildings are at risk). scripts/crisisfixtest.mjs.
 - **Known, not changed:** scripts/nightglow.mjs's "night reads as night" check fails (the night street is ~83% as bright as noon against a 70% bar). It already failed on the build before tonight's work; night was deliberately brightened for readability, so it's left for a decision rather than retuned.
 
+## The Asset Vault (PR #7: 4,000 satirical assets)
+
+- **Reviewed and merged:** its validator passes (4,000 models, 12,000 scenes, 4,000 unique signatures); the art is low-poly and readable, with fictional brands only; the catalog and atlas stay isolated (`vite.vault.config.ts`, `vault-public/`).
+- **In the game:** all 4,000 are packed (a 748-shape library, 78,182 parts, 2 MiB) and grow on zoned lots as real buildings in the game's own atlas with their family signs: in a test town about a fifth of the buildings, 22 families, none overhanging its lot, merch-brand lots untouched.
+- **Roadside attractions:** 16 in Services > Parks (World's Largest Fork, Miracle Twine Ball, Liberty Muffler Man, the Possum County Midway, Mount Trashmore...), covering their neighbours like parks.
+- **Services in vault clothes:** 11 city services wear their vault versions by default (the Very Clean Coal Plant with smoking stacks, the County Water Tower, the Volunteer Firehouse, Copay Castle for urgent care, Wallet ER for the hospital); Services > Looks switches them back to Classic on the spot.
+- **Not yet:** the road and transit families (toll plaza, express-lane gantry, pedestrian overpass, the bus stop to nowhere) are packed but not placed; they'd want a roadside-dressing pass like the Civic Foundry's.
+
 ## Remaining (ranked)
 
 1. Cities saved before this build keep any dead end that was built over (a disc on a through road, unconnected): bulldoze and redraw that stub. A load-time repair would move road endpoints that zoning and buildings refer to, so it wasn't done blind.

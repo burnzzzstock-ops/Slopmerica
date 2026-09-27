@@ -6,7 +6,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { ZONE_TYPES, type BuildingModel, type LandmarkId, type ZoneType } from '../contracts';
-import { buildingMaterial, generateBillboard, generateBuilding, generateLandmark, landmarkFootprint, loadArt, setBuildingNight } from '../buildings/generator';
+import { buildingMaterial, generateBillboard, generateBuilding, generateLandmark, generateVaultModel, landmarkFootprint, loadArt, setBuildingNight } from '../buildings/generator';
+import { loadVault, vaultAsset, vaultFamilyAssets } from '../vault/vault';
+import { VAULT_FAMILIES } from '../vault/families';
 import { BILLBOARDS } from '../art/billboards';
 import { atlasStats, atlasTextures } from '../art';
 import { resLowStyles } from '../buildings/resLow';
@@ -218,6 +220,28 @@ function buildHouses() {
   return { w: perRow * 26, d: Math.ceil(i / perRow) * 36 };
 }
 
+/** One Asset Vault model per family (?v=0..39 picks the plan, ?cat= a category). */
+function buildVaultView() {
+  const v = +(P.get('v') ?? '12');
+  const perRow = +(P.get('cols') ?? '10');
+  const cat = P.get('cat');
+  let i = 0;
+  for (const f of VAULT_FAMILIES) {
+    if (cat && f.category !== cat) continue;
+    const ids = vaultFamilyAssets(f.id);
+    if (!ids.length) continue;
+    const a = vaultAsset(ids[Math.min(v, ids.length - 1)]);
+    const w = Math.ceil((a.maxX - a.minX + 1.2) / 8), d = Math.ceil((a.maxZ - a.minZ + 1.2) / 8);
+    const [m, ms] = timed(() => generateVaultModel(a.index, w, d)!);
+    stat(`vault ${f.id}`, ms, m.geometry.getAttribute('position').count / 3);
+    const x = (i % perRow) * 42, z = -Math.floor(i / perRow) * 44;
+    place(m, x + w * 4, z, d * 8, `${f.label} ${a.plan}`, ms);
+    if (i % perRow === 0) addRoad(-10, perRow * 42, z);
+    i++;
+  }
+  return { w: perRow * 42, d: Math.ceil(i / perRow) * 44 };
+}
+
 function buildLandmarks() {
   let x = 0;
   for (const id of LANDMARKS) {
@@ -285,6 +309,7 @@ function refreshHud() {
   btn('Billboards', view === 'billboards', () => go('view', 'billboards'));
   btn('Atlas', view === 'atlas', () => go('view', 'atlas'));
   btn('Houses', view === 'houses', () => go('view', 'houses'));
+  btn('Vault', view === 'vault', () => go('view', 'vault'));
 }
 
 // ------------------------------------------------------------------ main
@@ -296,13 +321,15 @@ function frame(target: THREE.Vector3, dist: number) {
 async function main() {
   refreshHud();
   const t0 = performance.now();
+  // this page lives in dev/: the vault pack is one level up (loadArt reuses this load)
+  void loadVault(new URL('../vault/', document.baseURI));
   await loadArt();
   const artMs = performance.now() - t0;
   const view = P.get('view') ?? 'zones';
   if (view === 'atlas') return showAtlas();
   applyNight();
   const t1 = performance.now();
-  const ext = view === 'landmarks' ? buildLandmarks() : view === 'billboards' ? buildBillboards() : view === 'houses' ? buildHouses() : buildZones();
+  const ext = view === 'landmarks' ? buildLandmarks() : view === 'billboards' ? buildBillboards() : view === 'houses' ? buildHouses() : view === 'vault' ? buildVaultView() : buildZones();
   const genMs = performance.now() - t1;
   flush();
   // camera

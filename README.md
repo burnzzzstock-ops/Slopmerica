@@ -35,6 +35,35 @@ up (Low quality skips them). `node scripts/civic-pack.mjs` rebuilds the pack
 (`public/civic/pack.json` + `pack.bin` + the material maps it needs); builds copy
 `public/civic` next to the page. The rest of the library stays catalog-only.
 
+## Asset Vault
+
+The Department of Unnecessary Development's 4,000 satirical buildings (PR #7):
+100 families, 40 structural plans each, a searchable 3D catalog and a family atlas.
+
+```sh
+npx vite --config vite.vault.config.ts   # http://127.0.0.1:5176/asset-vault.html
+node scripts/asset-vault/validate.mjs    # all 4,000 models / 12,000 scenes
+```
+
+See [the vault guide](docs/ASSET_VAULT.md). In the game (`src/vault/`), all
+4,000 are packed by `node scripts/vault-pack.mjs` into `public/vault` (a
+748-shape library plus one compact record per part, 2 MiB, 0.4 MiB gzipped)
+and built as ordinary buildings: each part goes through the MeshBuilder with the
+game's own atlas tiles standing in for the vault's materials, and the family's
+sign on the satire sheet, so they batch, light up at night, grow under
+scaffolding and get picked like everything else. Zoned lots grow them in extra
+variant slots when one fits (shops on commercial lots, homes on residential,
+yards on industry, permit offices on office lots; SLOP merch brands keep their
+lots), and 16 roadside attractions (World's Largest Fork, Miracle Twine Ball,
+Liberty Muffler Man...) are parks in Services. Eleven city services wear the
+vault's version of themselves (the Very Clean Coal Plant, the County Water
+Tower, the Volunteer Firehouse, Copay Castle for urgent care; stacks still
+smoke); Services > Looks switches them back to Classic. Without the pack the
+game falls back to its own buildings. The nine road and transit families (the
+toll plaza, the express-lane gantry, the bus stop to nowhere) are packed but
+not placed yet. The buildings dev page has a Vault view
+(`dev/buildings.html#view=vault`).
+
 ## Playtesting
 
 - The title screen and Settings show the build (`commit · date`); every bug report carries it.
@@ -92,6 +121,7 @@ node scripts/playtest5.mjs       # transit lines survive a street joining their 
 node scripts/housetown.mjs       # a dense town of every house style: variety, model cost, building batch budget (SHOTS=prefix)
 node scripts/motiontest.mjs      # cars: no heading snaps, brake for turns, change lanes, blink, never wrong-way on a one-way; walkers' stride, no teleports
 node scripts/civictest.mjs       # Civic Foundry pack streams in: street trees, furniture, bus shelters; instanced LODs; Low skips it
+node scripts/vaulttest.mjs       # Asset Vault: pack streams in; zoned lots grow vault buildings that fit; merch lots kept; attractions; services' vault looks + toggle; no pack = no change
 node scripts/crisisfixtest.mjs   # info views show every building with that view's problem; utility outages merge only for the same buildings; a closed warning returns when worse
 node scripts/roadgrade.mjs       # a road across a dip stands on an embankment, not a floating slab
 node scripts/audiotest.mjs       # ambience loops have no seam thump and no steady beat (no "train chugging")

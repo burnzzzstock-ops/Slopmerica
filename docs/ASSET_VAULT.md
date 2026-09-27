@@ -210,9 +210,22 @@ The variant plan code is `<layout><size>-<state>`: layouts `A`â€“`D`, sizes `1`â
 - Bounds include signs and props and are not precise collision hulls.
 - Geometry uniqueness does not prove composition quality, accessibility, gameplay usefulness, or performance in a populated simulation.
 
+## In the game
+
+Since the merge into the game branch, the vault is wired in (`src/vault/`, packed by `scripts/vault-pack.mjs`):
+
+- All 4,000 assets' LOD 1 scenes are packed into `public/vault` as a shared shape library plus one quantized record per part (ground pads dropped), about 2 MiB.
+- Each asset is built as an ordinary game building through the MeshBuilder, with the game's atlas tiles standing in for the vault's PBR materials and a per-family sign on the satire sheet that glows at night. Glass lights up at night; flat glass is drawn as water.
+- Zoned lots grow vault buildings in extra variant slots when an asset fits the lot (shrunk to no less than 80%, never enlarged): commerce on commercial lots, homes on residential lots, yards on industry, civic offices on office lots. SLOP merch brands keep their lots.
+- 16 neighborhood families are roadside attractions in Services > Parks (park coverage, cost, upkeep, unlocks).
+- 11 infrastructure and commerce families are the looks of the matching city services (gas peaker, coal plant, solar farm, pump, water tower, outfall, treatment plant, firehouse, sheriff, urgent care, hospital), using the plan that fills the service's lot best (enlarged up to 1.8x); their stacks carry the game's smoke emitters. Services > Looks switches between these and the classic models, live.
+- `scripts/vaulttest.mjs` checks all of it, including the fallback without the pack.
+
+What's still open from the list below: the road and transit families (toll plaza, express-lane gantry, pedestrian overpass, culvert gateway, bus stop to nowhere, transit token kiosk, one-bus depot, grid substation, fiber hut, cell tower, retention pond office) aren't placed, the game uses one LOD, and there's no per-building choice of plan beyond the lot fit.
+
 ## Integration work still required
 
-The vault is an art library and catalog, not a completed game-content integration. A future integration must still provide:
+The vault started as an art library and catalog. The list below was the full integration scope; see "In the game" above for what has been done:
 
 - building/service definitions, zoning rules, costs, unlocks, demand, and simulation registration;
 - parcel fit, road frontage, door/driveway lanes, terrain grading, utilities, and placement validation;
@@ -222,7 +235,7 @@ The vault is an art library and catalog, not a completed game-content integratio
 - optional transparent glass, interiors, emissive signs, damage/season/state art, and animation;
 - representative in-game performance measurement and memory budgets on target hardware.
 
-Do not describe these assets as already wired into gameplay or performance-certified.
+The in-game integration above is measured by `scripts/vaulttest.mjs`; it has not been performance-certified on target hardware.
 
 ## Complete family inventory
 

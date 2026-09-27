@@ -24,6 +24,8 @@ export interface Bld {
   landmark?: LandmarkId;
   /** service building kind (zone === 'service'), a key of CUSTOM_BUILDINGS */
   kind?: string;
+  /** a service building drawn in the main (facade atlas) batch, not the kit batch */
+  onMain?: boolean;
   /** days spent abandoned (unset = occupied normally) */
   abandoned?: number;
   level: number;
@@ -117,6 +119,8 @@ export interface CustomBuildingDef {
   buildDays: number;
   model(): BuildingModel;
   paint?: Paint;
+  /** true: the model is built with the facade atlas and renders in the main batch (Asset Vault attractions) */
+  main?: () => boolean;
 }
 export const CUSTOM_BUILDINGS = new Map<string, CustomBuildingDef>();
 
@@ -319,7 +323,7 @@ export class Buildings {
 
   /** The batch a building's own instance lives in. */
   private batchOf(b: Bld): Batch {
-    return b.zone === 'service' ? this.kit : this.main;
+    return b.zone === 'service' && !b.onMain ? this.kit : this.main;
   }
 
   /** Per-instance tint (info views); null restores the normal look. */
@@ -461,13 +465,14 @@ export class Buildings {
   placeCustom(kind: string, x: number, z: number, yaw: number, yIn?: number): Bld | null {
     const def = CUSTOM_BUILDINGS.get(kind);
     if (!def) return null;
-    const key = `custom|${kind}`;
+    const onMain = !!def.main?.();
+    const key = `custom|${kind}|${onMain ? 'main' : 'kit'}`;
     let e = this.geoIds.get(key);
-    if (!e) { const model = def.model(); this.geoIds.set(key, (e = { id: this.kit.addGeometry(model.geometry), model })); }
+    if (!e) { const model = def.model(); this.geoIds.set(key, (e = { id: (onMain ? this.main : this.kit).addGeometry(model.geometry), model })); }
     const y = yIn ?? this.padHeight(x, z, (def.w * CELL) / 2, (def.d * CELL) / 2, yaw);
     const pick = this.net.pickSeg(x, z, (Math.max(def.w, def.d) * CELL) / 2 + 40);
     const b: Bld = {
-      id: this.nextId++, zone: 'service', kind, level: 1, w: def.w, d: def.d, x, z, y, yaw,
+      id: this.nextId++, zone: 'service', kind, onMain, level: 1, w: def.w, d: def.d, x, z, y, yaw,
       hw: (def.w * CELL) / 2, hd: (def.d * CELL) / 2, cells: [], seg: pick?.seg.id ?? 0, label: def.label, model: e.model,
       state: 'building', progress: 0, buildDays: def.buildDays, cap: 0, occ: 0, lv: 30, levelProgress: 0, born: this.day, inst: -1, buildInst: -1, buildH: 1, emitT: 0,
     };
@@ -479,6 +484,23 @@ export class Buildings {
     this.placeInstance(b, e.id);
     this.zones.markOverlayDirty();
     return b;
+  }
+
+  /** Rebuild a service building after its look changed (the Asset Vault looks toggle). */
+  restyleCustom(b: Bld) {
+    const def = b.zone === 'service' && b.kind ? CUSTOM_BUILDINGS.get(b.kind) : undefined;
+    if (!def) return;
+    const onMain = !!def.main?.();
+    const key = `custom|${b.kind}|${onMain ? 'main' : 'kit'}`;
+    let e = this.geoIds.get(key);
+    if (!e) { const model = def.model(); this.geoIds.set(key, (e = { id: (onMain ? this.main : this.kit).addGeometry(model.geometry), model })); }
+    if (b.inst >= 0) this.batchOf(b).deleteInstance(b.inst);
+    this.dropScaffold(b);
+    b.onMain = onMain;
+    b.model = e.model;
+    this.placeInstance(b, e.id);
+    this.writeMatrix(b, b.state === 'active' ? 1 : easeGrow(b.progress));
+    this.setTint(b, null);
   }
 
   /** Normal (untinted) instance color: abandoned buildings look dead. */

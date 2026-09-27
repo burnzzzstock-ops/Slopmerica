@@ -11,6 +11,7 @@ import type { RSeg } from '../roads/network';
 import { carriageHalf, ROAD_TYPES } from '../roads/roadTypes';
 import { segDriveways, segLamps } from '../roads/roadMesh';
 import { applyAtmosphere } from '../world/seasons';
+import { fetchPack } from '../core/pack';
 import { clamp, lerp, locate, norm, sub } from '../core/math';
 
 
@@ -23,13 +24,6 @@ interface Pack {
   bin64?: string;
 }
 
-/** base64 text to bytes */
-function unbase64(text: string): ArrayBuffer {
-  const s = atob(text.trim());
-  const out = new Uint8Array(s.length);
-  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
-  return out.buffer;
-}
 
 /** One placed copy of an asset. */
 export interface CivicItem { asset: string; x: number; y: number; z: number; yaw: number; s?: number }
@@ -90,10 +84,7 @@ export class CivicLayer {
     if (this.status !== 'off') return;
     this.status = 'loading';
     (async () => {
-      const get = async (name: string) => { const r = await fetch(new URL(name, base)); if (!r.ok) throw new Error(`${name} ${r.status}`); return r; };
-      const json = await (await get('pack.json')).json() as Pack;
-      const bin = json.bin64 ? unbase64(await (await get(json.bin64)).text()) : await (await get('pack.bin')).arrayBuffer();
-      if (bin.byteLength !== json.bytes) throw new Error(`pack geometry is ${bin.byteLength} bytes, expected ${json.bytes}`);
+      const { json, bin } = await fetchPack<Pack>(base);
       this.build(json, bin, base);
       this.status = 'ready';
       this.dirty = true;

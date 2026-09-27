@@ -36,6 +36,7 @@ import { loadKitArt, setKitNight } from './buildings/kitGenerator';
 import { applySave, type SaveData } from './sim/save';
 import { crumb } from './ui/bugreport';
 import { FrameProfiler } from './core/prof';
+import type { EmergencyView } from './sim/services';
 
 export type GameMode = Mode;
 
@@ -67,6 +68,8 @@ export interface UiSink {
   banner(title: string, sub: string): void;
   /** a new tool unlocked at `pop`: say where it is, without covering the map */
   unlocked?(label: string, pop: number): void;
+  /** a city-wide service emergency just began: get the player's attention (and time) */
+  emergency?(e: EmergencyView): void;
   ending(kind: 'sprawl' | 'bankrupt'): void;
 }
 
@@ -122,6 +125,8 @@ export class Game {
   readonly ambientLife: AmbientLife;
   /** the building problem icon under a screen point, and what it means (set by services) */
   problemAt?: (clientX: number, clientY: number) => { id: number; text: string | null } | null;
+  /** what failing services are doing to the city today (set by services) */
+  emergency?: () => EmergencyView | null;
   readonly communes: Communes;
   readonly tools: Tools;
   readonly overlays: Overlays;
@@ -408,6 +413,9 @@ export class Game {
     this.buildings.onDemolish = (b, reason) => {
       if (reason === 'road' && Math.random() < 0.6) this.feed.push('buildingDemolished', { building: b.label });
       if (this.selection?.kind === 'building' && this.selection.b === b) this.select(null);
+      // the people who lived there are gone too (abandoned homes were already counted)
+      if ((b.zone === 'resLow' || b.zone === 'resHigh') && b.abandoned === undefined && b.occ > 0)
+        this.sim.lose(b.occ, reason === 'fire' ? 'fire' : reason === 'storm surge' || reason === 'wildfire' ? 'disaster' : 'bulldozed');
     };
     this.sim.events.on('milestone', (m) => {
       if (m.kind === 'population') this.feed.push('populationMilestone', { count: m.value });
@@ -578,7 +586,7 @@ export class Game {
     return true;
   }
 
-  canPlaceLandmark(id: LandmarkId, x: number, z: number, yawIn?: number): { ok: boolean; yaw: number; reason?: string } {
+  canPlaceLandmark(id: LandmarkId, x: number, z: number, yawIn?: number): { ok: boolean; yaw: number; reason?: string; blocker?: Bld } {
     const fp = landmarkFootprint(id);
     const hw = (fp.widthCells * 8) / 2, hd = (fp.depthCells * 8) / 2;
     const r = Math.max(hw, hd) + 2;
@@ -596,7 +604,7 @@ export class Game {
     if (hi - lo > Math.max(8, Math.max(hw, hd) * 0.4)) return { ok: false, yaw, reason: 'Too steep here: find flatter ground' };
     if (footprintHitsRoad(this.net, x, z, hw, hd, yaw)) return { ok: false, yaw, reason: 'Overlaps a road' };
     const hit = footprintHitsBuilding(this.buildings, x, z, hw, hd, yaw);
-    if (hit) return { ok: false, yaw, reason: `Overlaps ${hit.label}` };
+    if (hit) return { ok: false, yaw, reason: `Overlaps ${hit.label}`, blocker: hit };
     if (this.communes.at(x, z)) return { ok: false, yaw, reason: 'Hippies live here' };
     const broke = this.sim.cantAfford(LANDMARK_COST[id]);
     if (broke) return { ok: false, yaw, reason: broke };
@@ -608,19 +616,20 @@ export class Game {
    * and facing it (sliding along to the nearest spot that fits), or, with no
    * road near, right there: landmarks can come first and roads after.
    */
-  landmarkSpot(id: LandmarkId, x: number, z: number): { x: number; z: number; yaw: number; ok: boolean; reason?: string; front?: Frontage } {
+  landmarkSpot(id: LandmarkId, x: number, z: number): { x: number; z: number; yaw: number; ok: boolean; reason?: string; front?: Frontage; blocker?: Bld } {
     const hd = (landmarkFootprint(id).depthCells * 8) / 2;
     let first: string | undefined;
+    let blocker: Bld | undefined;
     for (const f of frontageCandidates(this.net, x, z, hd, hd + 30)) {
       const c = this.canPlaceLandmark(id, f.x, f.z, f.yaw);
       if (c.ok) return { x: f.x, z: f.z, yaw: f.yaw, ok: true, front: f };
       // money, land and unlocks don't change by sliding along the road
       if (c.reason && /Needs \$|money|own this land|county/i.test(c.reason)) return { x: f.x, z: f.z, yaw: f.yaw, ok: false, reason: c.reason, front: f };
-      first ??= c.reason;
+      if (first === undefined) { first = c.reason; blocker = c.blocker; }
     }
     const here = this.canPlaceLandmark(id, x, z);
-    if (first && !here.ok) return { x, z, yaw: here.yaw, ok: false, reason: first };
-    return { x, z, yaw: here.yaw, ok: here.ok, reason: here.reason };
+    if (first && !here.ok) return { x, z, yaw: here.yaw, ok: false, reason: first, blocker };
+    return { x, z, yaw: here.yaw, ok: here.ok, reason: here.reason, blocker: here.blocker };
   }
 
   placeLandmark(id: LandmarkId, p: THREE.Vector3) {

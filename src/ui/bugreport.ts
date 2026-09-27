@@ -121,6 +121,12 @@ export function buildReport(g: Game | null, f: ReportFields, extra?: string): st
     L.push(`Demand: ${dm.join(' · ')}`);
     const hist = s.history.slice(-8);
     if (hist.length) L.push(`Timeline: ${hist.map((h) => `d${h.day} ${h.pop} pop ${s.money === Infinity ? '' : `$${Math.round(h.money / 1000)}k`}`.trim()).join(' → ')}`);
+    // who left and why, what's failing, and what the city warned about (playtest 4 couldn't tell)
+    const flow = s.popFlow(14);
+    if (flow.in || flow.out) L.push(`People (14 d): +${flow.in} in, −${Math.round(flow.out)} out${flow.causes.length ? ` (${flow.causes.slice(0, 5).map((c) => `${c.cause} ${Math.round(c.n)}`).join(', ')})` : ''} · most ever ${s.peakPop}`);
+    const em = g.emergency?.();
+    if (em && em.level !== 'none') L.push(`Services: ${em.level} · ${em.atRisk} buildings / ${em.residents} residents at risk${em.needs.length ? ` (${em.needs.map((n) => `${n.need} ${n.buildings}, ${n.eta[0]}-${n.eta[1]} d`).join('; ')})` : ''}${em.forecast ? ` · ${em.forecast}` : ''}`);
+    if (s.alerts.length) L.push(`Alerts: ${s.alerts.slice(-6).map((a) => `d${a.day} ${a.text}`).join(' | ')}`);
   }
   L.push(`Session: ${clock(performance.now())} played`);
   if (f.withLog) {

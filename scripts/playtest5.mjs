@@ -27,7 +27,7 @@ const tr = await page.evaluate(() => {
     d.road(cx - 300, cz + k * 90, cx + 300, cz + k * 90, 'twoLane');
     d.road(cx + k * 120, cz - 200, cx + k * 120, cz + 200, 'twoLane');
   }
-  g.sim.population = 400;
+  g.sim.population = 400; g.sim.peakPop = Math.max(g.sim.peakPop ?? 0, 400); // transit unlocks at the most people ever
   t.placeDepot(cx + 330, cz + 25);
   for (const b of g.buildings.list.values()) if (b.kind === 'busDepot') { b.state = 'active'; b.progress = 1; }
   const pts = [[cx - 180, cz], [cx - 40, cz], [cx + 100, cz]]; // between the cross streets (cx + 120k), 140 m apart
@@ -67,7 +67,7 @@ check(`bulldozing a routed road names the line first ("${tr.tip}")`, new RegExp(
 // ---- the Transit panel lists a line finished on the map without reopening; rides cost money to run
 const tp = await page.evaluate(async () => {
   const g = window.__game, t = g.transit;
-  g.sim.population = 400; // transit opens at 300 (the empty sandbox recounts to 0 when time runs)
+  g.sim.population = 400; g.sim.peakPop = Math.max(g.sim.peakPop ?? 0, 400); // transit opens at 300 (the empty sandbox recounts to 0 when time runs)
   g.ui.onTool('ext:transit');
   const listed = () => [...document.querySelectorAll('.subpanel input[data-name]')].map((i) => i.value).join('|'); // names are editable fields
   const before = listed();
@@ -106,10 +106,12 @@ const pl = await page.evaluate(async () => {
   const before = g.buildings.list.size;
   tool.up(g, P, ev('pointerup'), false);
   const placed = g.buildings.list.size - before;
-  tool.move(g, P.clone().setX(P.x + 1), ev('pointermove'), false);
+  // the pointer moves the tools' hover point and then the tool (as the HUD's pointer handler does)
+  const at = (q) => { g.tools.hover = q; tool.move(g, q, ev('pointermove'), false); };
+  at(P.clone().setX(P.x + 1));
   const tipOn = tool.tip(g);
   const ghostOn = !!g.scene.getObjectByName('svc-ghost')?.visible;
-  tool.move(g, P.clone().setX(P.x + 60), ev('pointermove'), false);
+  at(P.clone().setX(P.x + 60));
   const tipAway = tool.tip(g);
   g.tools.cancel?.(); g.tools.set('inspect');
   for (let i = 0; i < 2; i++) g.frame(0.05, false);

@@ -126,7 +126,8 @@ export class TransitSystem {
     g.net.events.on('changed', () => { this.settleSplits(); this.accessDirty = true; this.visualDirty = true; });
   }
 
-  get unlocked() { return this.g.sim.population >= 300; }
+  /** earned at 300 people and kept (a city that shrinks keeps its buses) */
+  get unlocked() { return this.g.sim.peakPop >= 300; }
   get drawing() { return this.draft.length > 0; }
   get draftStops() { return this.draft.length; }
 
@@ -148,26 +149,30 @@ export class TransitSystem {
     if (!pick) return { ok: false, yaw, reason: 'Needs road access within 40 m' };
     if (footprintHitsRoad(this.g.net, x, z, hw, hd, yaw)) return { ok: false, yaw, reason: 'Overlaps a road' };
     const hit = footprintHitsBuilding(this.g.buildings, x, z, hw, hd, yaw);
-    if (hit) return { ok: false, yaw, reason: `Overlaps ${hit.label}` };
+    if (hit) return { ok: false, yaw, reason: `Overlaps ${hit.label}`, blocker: hit };
     if (this.g.communes.at(x, z)) return { ok: false, yaw, reason: 'The drum circle rejected the bus easement' };
     if (DEPOT_COST > this.g.sim.spendable()) return { ok: false, yaw, reason: `Needs ${money(DEPOT_COST)}` };
     return { ok: true, yaw };
   }
 
   /** Where the depot goes for a cursor at (x, z): square to the nearest road, facing it. */
-  depotSpotAt(x: number, z: number): { x: number; z: number; yaw: number; ok: boolean; reason?: string; front?: Frontage } {
+  depotSpotAt(x: number, z: number): { x: number; z: number; yaw: number; ok: boolean; reason?: string; front?: Frontage; blocker?: Bld } {
     let first: string | undefined;
+    let blocker: Bld | undefined;
     let k = 0;
     for (const f of frontageCandidates(this.g.net, x, z, 16, 16 + 40)) {
-      if (k++ === 0) { const on = specialAt(this.g.buildings, f, 20, 16); if (on) return { x: f.x, z: f.z, yaw: f.yaw, ok: false, reason: `${on.label} is already here`, front: f }; }
+      if (k++ === 0) { const on = specialAt(this.g.buildings, f, 20, 16); if (on) return { x: f.x, z: f.z, yaw: f.yaw, ok: false, reason: `${on.label} is already here`, front: f, blocker: on }; }
       const c = this.canPlaceDepot(f.x, f.z, f.yaw);
       if (c.ok) return { x: f.x, z: f.z, yaw: f.yaw, ok: true, front: f };
       if (c.reason && /Unlocks|Needs \$|own this land|county/.test(c.reason)) return { x: f.x, z: f.z, yaw: f.yaw, ok: false, reason: c.reason, front: f };
-      first ??= c.reason;
+      if (first === undefined) { first = c.reason; blocker = 'blocker' in c ? c.blocker : undefined; }
     }
     const c = this.canPlaceDepot(x, z);
-    return { x, z, yaw: c.yaw, ok: false, reason: first ?? c.reason ?? 'Needs road access within 40 m' };
+    return { x, z, yaw: c.yaw, ok: false, reason: first ?? c.reason ?? 'Needs road access within 40 m', blocker: first !== undefined ? blocker : 'blocker' in c ? c.blocker : undefined };
   }
+
+  /** the depot the last placeDepot built (the tool confirms it) */
+  lastDepot = 0;
 
   placeDepot(x: number, z: number) {
     const spot = this.depotSpotAt(x, z);
@@ -180,6 +185,8 @@ export class TransitSystem {
     this.g.pushUndo({ kind: 'place', bldId: b.id, refund: DEPOT_COST, label: 'Bus depot', trees });
     this.g.audio.play('build');
     this.g.toast("Bus depot ordered. The sign's confidence exceeds the timetable's.");
+    this.g.floatText('✅ Bus depot', new THREE.Vector3(b.x, b.y + 12, b.z), '#9dff3c');
+    this.lastDepot = b.id;
     return true;
   }
 
@@ -714,7 +721,6 @@ export class TransitSystem {
 
 // touch: a tap marks the depot spot; the action-bar Build places it
 let depotSpot: { x: number; z: number } | null = null;
-let depotBuilt: { x: number; z: number } | null = null;
 let depotGhost: PlacementGhost | null = null;
 function showDepotGhost(g: Game, p: { x: number; z: number } | null) {
   const t = transitFor(g);
@@ -723,22 +729,31 @@ function showDepotGhost(g: Game, p: { x: number; z: number } | null) {
   const s = t.depotSpotAt(p.x, p.z);
   const y = g.buildings.padHeight(s.x, s.z, 20, 16, s.yaw);
   depotGhost.show('busDepot', () => busDepotModel().geometry, s.x, y, s.z, s.yaw, 20, 16, s.ok, s.front?.door ?? null);
+  depotGhost.showBlocker(!s.ok && s.blocker ? s.blocker : null);
 }
+
+/** the depot the last click built: confirmed until the pointer leaves it (see svcPlace) */
+let depotBuilt: { id: number; t: number; x: number; z: number } | null = null;
+const onDepot = (g: Game, p: { x: number; z: number } | null) => {
+  const b = depotBuilt && g.buildings.list.get(depotBuilt.id);
+  if (!b || !p || !depotBuilt) return false;
+  return g.buildings.contains(b, p.x, p.z, 6) || Math.hypot(p.x - depotBuilt.x, p.z - depotBuilt.z) < Math.max(10, g.rts.distance * 0.03);
+};
 
 registerTool({
   id: 'transit-depot', touchLift: 64,
   placing: () => '🚏 Bus depot',
   move(g, p) {
-    // just built and still over it: the green "Built" tip, not the new depot tested against itself
-    if (depotBuilt && p && Math.hypot(p.x - depotBuilt.x, p.z - depotBuilt.z) < 6) return;
-    depotBuilt = null;
+    if (!depotSpot && depotBuilt && onDepot(g, p)) { depotGhost?.hide(); return; }
+    if (!depotSpot) depotBuilt = null;
     showDepotGhost(g, depotSpot ?? p);
   },
   up(g, p, e, wasDrag) {
     if (wasDrag || !p) return;
-    depotBuilt = null;
-    if (e.pointerType !== 'mouse') { depotSpot = { x: p.x, z: p.z }; showDepotGhost(g, depotSpot); return; }
-    if (transitFor(g)?.placeDepot(p.x, p.z)) { depotBuilt = { x: p.x, z: p.z }; depotGhost?.hide(); return; }
+    if (e.pointerType !== 'mouse') { depotBuilt = null; depotSpot = { x: p.x, z: p.z }; showDepotGhost(g, depotSpot); return; }
+    if (depotBuilt && onDepot(g, p)) return; // a double-click, not a second depot
+    const t = transitFor(g);
+    if (t?.placeDepot(p.x, p.z)) { depotBuilt = { id: t.lastDepot, t: g.time, x: p.x, z: p.z }; depotGhost?.hide(); return; }
     showDepotGhost(g, p);
   },
   pending(g) {
@@ -747,12 +762,13 @@ registerTool({
     return { cost: ok ? DEPOT_COST : null };
   },
   confirm(g) {
-    if (depotSpot && transitFor(g)?.placeDepot(depotSpot.x, depotSpot.z)) { depotBuilt = { ...depotSpot }; depotSpot = null; depotGhost?.hide(); }
+    const t = transitFor(g);
+    if (depotSpot && t?.placeDepot(depotSpot.x, depotSpot.z)) { depotBuilt = { id: t.lastDepot, t: g.time, x: depotSpot.x, z: depotSpot.z }; depotSpot = null; depotGhost?.hide(); }
   },
   cancel() { depotSpot = null; depotBuilt = null; depotGhost?.hide(); },
   tip(g) {
-    if (depotBuilt) return { text: `✅ Built 🚏 bus depot · now draw a line (Transit → Lines)`, good: true };
     const t = transitFor(g), p = depotSpot ?? g.tools.hoverPoint;
+    if (depotBuilt && g.buildings.list.has(depotBuilt.id) && (g.isTouch ? g.time - depotBuilt.t < 3 : onDepot(g, p))) return { text: `✅ Built 🚏 Bus depot: ${money(DEPOT_COST)} paid. ${g.isTouch ? 'Tap where the next one goes.' : 'Move off it to place another.'}`, good: true };
     if (!t || !p || (g.isTouch && !depotSpot)) return { text: `Place bus depot · ${money(DEPOT_COST)}${g.isTouch ? ' · tap where it goes' : ''}` };
     const c = t.depotSpotAt(p.x, p.z);
     return c.ok ? { text: `Place bus depot · ${money(DEPOT_COST)}${c.front ? ` · fronts ${esc(c.front.seg.name)}` : ''}${depotSpot ? ' · tap Build, or tap elsewhere to move it' : ''}` } : { text: c.reason ?? 'Nope', bad: true };

@@ -87,6 +87,20 @@ export const UNLOCKS: { pop: number; what: string; zone?: ZoneType; road?: strin
   { pop: 2500, what: 'Katy Stroad (8 lanes)', road: 'stroad8' },
 ];
 
+/**
+ * Why residents left, as far as the simulation knows: the root cause (trash
+ * that made people sick counts as garbage), not just the last straw.
+ */
+export type LossCause = 'garbage' | 'power' | 'water' | 'sewage' | 'utilities' | 'pollution' | 'health' | 'crime' | 'jobs' | 'taxes' | 'demand' | 'fire' | 'disaster' | 'bulldozed';
+export const LOSS_LABEL: Record<LossCause, string> = {
+  garbage: 'Garbage', power: 'No power', water: 'No water', sewage: 'No sewage', utilities: 'Utility shortages', pollution: 'Pollution',
+  health: 'Sickness', crime: 'Crime', jobs: 'No jobs', taxes: 'Taxes', demand: 'Moved away', fire: 'Fires', disaster: 'Disasters', bulldozed: 'Bulldozed',
+};
+/** one day of residents moving in and out (departures by cause) */
+export interface PopDay { day: number; in: number; out: Partial<Record<LossCause, number>> }
+/** one entry in the city's alert history */
+export interface CityAlert { day: number; level: 'crit' | 'warn' | 'info'; text: string }
+
 export type DemandKey = 'res' | 'com' | 'ind' | 'off';
 export type DemandWhy = Record<DemandKey, string[]>;
 /** one reason a demand bar is where it is; v is its signed share (null = not measured) */
@@ -141,6 +155,14 @@ export class Sim {
   taxRate = 0.09;
   loans: { amount: number; weekly: number; weeksLeft: number }[] = [];
   population = 0;
+  private peakSeen = 0;
+  /** the most people the city has ever had (today's count included): population unlocks, once earned, stay earned */
+  get peakPop() { return Math.max(this.peakSeen, this.population); }
+  set peakPop(v: number) { this.peakSeen = v; }
+  /** residents moving in and out, a day per entry (the last 60 days) */
+  popLog: PopDay[] = [];
+  /** what the city warned about and when, oldest first (emergencies, landfills, unlocks) */
+  alerts: CityAlert[] = [];
   workers = 0;
   jobsCap = { comLow: 0, comHigh: 0, industry: 0, office: 0 };
   jobsFilled = 0;
@@ -322,16 +344,65 @@ export class Sim {
     return !u || this.unlocked.has(u.what);
   }
 
+  // ------------------------------------------------------------------ who left, and why
+  private popDay(): PopDay {
+    const day = this.lastWhole;
+    let d = this.popLog[this.popLog.length - 1];
+    if (!d || d.day !== day) {
+      this.popLog.push((d = { day, in: 0, out: {} }));
+      if (this.popLog.length > 60) this.popLog.shift();
+    }
+    return d;
+  }
+  /** Residents who left today (moved out, or their home was lost), and why. */
+  lose(n: number, cause: LossCause) {
+    if (!(n > 0)) return;
+    const d = this.popDay();
+    d.out[cause] = (d.out[cause] ?? 0) + n;
+  }
+  /** Who moved in and out over the last `days` days, departures by cause, largest first. */
+  popFlow(days: number) {
+    const since = this.lastWhole - days;
+    let moved = 0;
+    const by = new Map<LossCause, number>();
+    for (const d of this.popLog) {
+      if (d.day <= since) continue;
+      moved += d.in;
+      for (const k in d.out) by.set(k as LossCause, (by.get(k as LossCause) ?? 0) + (d.out[k as LossCause] ?? 0));
+    }
+    const causes = [...by].map(([cause, n]) => ({ cause, n })).filter((c) => c.n >= 0.5).sort((a, b) => b.n - a.n);
+    return { in: moved, out: causes.reduce((a, c) => a + c.n, 0), causes };
+  }
+  /** Note something in the city's alert history (the emergency card and bug reports show it). */
+  alert(level: CityAlert['level'], text: string) {
+    this.alerts.push({ day: this.lastWhole, level, text });
+    if (this.alerts.length > 40) this.alerts.shift();
+  }
+
+  /**
+   * The strongest reason residential demand is dragging, as a loss cause:
+   * residents who move out because nobody wants to live here left for it.
+   */
+  private demandLossCause(): LossCause {
+    const worst = this.demandParts.res.filter((p) => !p.base && p.v !== null && p.v < 0).sort((a, b) => a.v! - b.v!)[0];
+    const t = worst?.text ?? '';
+    return /utilit/.test(t) ? 'utilities' : /crime/.test(t) ? 'crime' : /sick/.test(t) ? 'health' : /workers than jobs/.test(t) ? 'jobs' : /^taxes/.test(t) ? 'taxes' : 'demand';
+  }
+
   time(hour: number): GameTime {
     const d = Math.floor(this.day);
     return { day: d, dayOfYear: d % 365, year: Math.floor(d / 365), hour };
   }
 
   dateLabel() {
-    const d = Math.floor(this.day);
+    return this.dateOf(Math.floor(this.day));
+  }
+
+  /** the calendar date of game day `d` ("Oct 18, 2028"; without the year: "Oct 18") */
+  dateOf(d: number, year = true) {
     const start = new Date(2026, 2, 20);
     const dt = new Date(start.getTime() + d * 86400000);
-    return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return dt.toLocaleDateString('en-US', year ? { month: 'short', day: 'numeric', year: 'numeric' } : { month: 'short', day: 'numeric' });
   }
 
   // ------------------------------------------------------------------ tick
@@ -355,10 +426,11 @@ export class Sim {
     // Households arrive at a steady, city-wide rate (a trickle that grows with
     // the town), not by instantly filling every new building.
     const open: Bld[] = [];
+    const leaving = this.demand.res < -60 ? this.demandLossCause() : null;
     for (const bld of this.b.list.values()) {
       if (bld.state !== 'active' || bld.abandoned !== undefined) continue;
       if (bld.zone === 'resLow' || bld.zone === 'resHigh') {
-        if (this.demand.res < -60 && bld.occ > 0 && this.rng.chance(0.2)) bld.occ--;
+        if (leaving && bld.occ > 0 && this.rng.chance(0.2)) { bld.occ--; this.lose(1, leaving); }
         else if (bld.occ < bld.cap && !this.vacancyBlock(bld)) open.push(bld);
       } else if (isZoned(bld) && !this.vacancyBlock(bld)) {
         cap[bld.zone as keyof typeof cap] += bld.cap;
@@ -366,13 +438,16 @@ export class Sim {
     }
     if (this.demand.res > -30 && open.length) {
       let arrivals = Math.round((2.5 + this.population * 0.012) * clamp(this.demand.res / 50, 0.25, 1.3) * this.growthMul);
+      let moved = 0;
       for (let guard = 0; arrivals > 0 && open.length && guard < 400; guard++) {
         const k = this.rng.int(0, open.length - 1), bld = open[k];
         const hh = Math.min(bld.cap - bld.occ, this.rng.int(1, 3), arrivals); // a household
         bld.occ += hh;
         arrivals -= hh;
+        moved += hh;
         if (bld.occ >= bld.cap) { open[k] = open[open.length - 1]; open.pop(); }
       }
+      if (moved) this.popDay().in += moved;
     }
     this.population = 0;
     let resHighPop = 0;
@@ -381,6 +456,7 @@ export class Sim {
       this.population += bld.occ;
       if (bld.zone === 'resHigh') resHighPop += bld.occ;
     }
+    if (this.population > this.peakSeen) this.peakSeen = this.population;
     this.jobsCap = cap;
     const jobs = cap.comLow + cap.comHigh + cap.industry + cap.office;
     this.workers = Math.round(this.population * 0.55);
@@ -673,6 +749,7 @@ export class Sim {
     this.taxRate = tax;
     this.loans = loans;
     this.population = pop;
+    this.peakSeen = Math.max(this.peakSeen, pop);
     this.naturePct = nature;
     this.sprawlPct = sprawl;
     this.popMarks = this.popMarks.filter((m) => m > pop);
@@ -689,6 +766,7 @@ export class Sim {
       unlocked: [...this.unlocked],
       weekStartCash: this.money === Infinity ? 0 : Math.round(this.weekStartCash), lastWeekCash: { ...this.lastWeekCash },
       transactions: this.transactions.slice(-60),
+      peakPop: this.peakPop, popLog: this.popLog.slice(-60), alerts: this.alerts.slice(-40),
     };
   }
 
@@ -705,6 +783,13 @@ export class Sim {
     if (Array.isArray(x.transactions)) this.transactions = x.transactions;
     if (Array.isArray(x.history)) this.history = x.history;
     if (Array.isArray(x.unlocked)) for (const u of x.unlocked) this.unlocked.add(u);
+    if (Array.isArray(x.popLog)) this.popLog = x.popLog.filter((d) => d && Number.isFinite(d.day) && d.out);
+    if (Array.isArray(x.alerts)) this.alerts = x.alerts.filter((a) => a && typeof a.text === 'string');
+    // saves from before peakPop: the best the history and the unlocks remember
+    let peak = Number.isFinite(x.peakPop) ? x.peakPop : 0;
+    for (const h of this.history) if (h.pop > peak) peak = h.pop;
+    if (this.mode !== 'sandbox') for (const u of UNLOCKS) if (this.unlocked.has(u.what) && u.pop > peak) peak = u.pop;
+    this.peakSeen = Math.max(this.peakSeen, peak);
   }
 
   /** The weekly rate at today's rates (recurring lines only; see forecastWeek). */

@@ -51,7 +51,8 @@ const result = await page.evaluate(() => {
   g.zones.paint(cx + 170, cz - 170, 180, null);
   const outside = g.traffic.outsideConnections;
   g.traffic.outsideConnections = () => 0;
-  run(50);
+  // shops sell slowly (goods move at truck speed) and ride out a few bare days: give them time to run dry
+  run(200);
   g.traffic.outsideConnections = outside;
   const afterRoadCut = g.freight.stats();
   const blocked = [...g.buildings.list.values()].filter((b) => (b.zone === 'comLow' || b.zone === 'comHigh') && g.sim.vacancyBlock(b) === 'No goods to sell').length;

@@ -443,7 +443,7 @@ export class Traffic {
         else { oB = tgt; o = this.anchor(tgt); d = edgeO; purpose = 'heading home out of town'; dest = 'a cheaper county'; }
       } else {
         // empty county: only through traffic on the old road
-        o = edgeO; d = pick(edges); purpose = 'passing through'; dest = 'somewhere with a Waffle Bunker';
+        o = edgeO; d = pick(edges); purpose = 'passing through'; dest = 'somewhere with a Waffle Hut';
       }
     // codex:freight begin - local deliveries come from conserved factory stock
     } else if (!this.freightTrip && ind.length && shops.length && Math.random() < 0.14) {

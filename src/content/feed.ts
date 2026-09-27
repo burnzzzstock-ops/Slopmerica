@@ -14,7 +14,7 @@ interface Persona {
 }
 
 const roads = ['Freedom Boulevard', 'Old Creek Road', 'Whispering Pines Parkway', 'Route 9', 'Liberty Stroad', 'Heron Marsh Drive'];
-const brands = ["Possum Pete's", 'SprawlMart', 'Dollar Colonel', 'Burger Duke', 'Waffle Bunker', 'Chick-Fil-Eh', 'Neural Fly'];
+const brands = ["Possum Pete's", 'SprawlMart', 'Dollar Colonel', 'Burger Baron', 'Waffle Hut', 'Chick-Fil-Eh', 'Neural Fly'];
 const buildings = ['the new drive-thru', 'the five-over-one', 'the mega gas station', 'the luxury storage units', 'the vape-and-mattress plaza'];
 const communes = ['Sunflower Commons', 'Mossy Rock Collective', 'Free Range Acres', 'The Yurt District', 'Moonwater Cooperative'];
 
@@ -246,7 +246,7 @@ const templates: Record<FeedEventKind, readonly string[]> = {
     'Weather: {weather} over {city}. Drive like your deductible can see you.',
     '{weather} on {road}. Headlights on, reply-guy expertise off.',
     'Forecast: {weather}, with someone blaming zoning.',
-    '{city} has {weather}. The Waffle Bunker index is being monitored.',
+    '{city} has {weather}. The Waffle Hut index is being monitored.',
     'Weather app: {weather}. Local dads: “roads are fine.”',
   ],
   nightfall: [
@@ -284,7 +284,7 @@ const templates: Record<FeedEventKind, readonly string[]> = {
     'Trash piling up in {count} buildings. The raccoons have unionized.',
     'Garbage day was three weeks ago. The bags are forming a government.',
     'My trash can is now load-bearing.',
-    'The dumpster behind the Slop Mart has achieved sentience and is running for city council.',
+    'The dumpster behind the SprawlMart has achieved sentience and is running for city council.',
   ],
   landfillFull: [
     '{building} is FULL. Mt. Trashmore is now visible from the interstate and has a ski lift proposal.',
@@ -378,7 +378,7 @@ const templates: Record<FeedEventKind, readonly string[]> = {
     'OK boomer but Earl was right about the creek flooding.',
     'OK boomer, the bypass did kill downtown exactly like you said.',
     'Earl replied “OK developer” and logged off forever.',
-    'Seed oils discourse has reached the Waffle Bunker syrup caddy.',
+    'Seed oils discourse has reached the Waffle Hut syrup caddy.',
     'The seed oils are not why your commute is 74 minutes, Brandon.',
     'Local man avoids seed oils, inhales six lanes of particulate matter daily.',
     'Raw milk meetup relocated because the original pasture became luxury storage.',

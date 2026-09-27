@@ -1,6 +1,6 @@
 // Brand-name consistency: copy that mentions a chain the brand registry
-// (src/art/brands.ts) doesn't have, like the feed's "Burger Duke", "Waffle
-// Bunker" and "Slop Mart". Code finds the mentions: title-case phrases in
+// (src/art/brands.ts) doesn't have, like the feed's old "Burger Duke", "Waffle
+// Bunker" and "Slop Mart" (now Burger Baron, Waffle Hut and SprawlMart). Code finds the mentions: title-case phrases in
 // player-facing strings that look like a chain (they share an uncommon word
 // with a registered brand, or end like one: Mart, Hut, Barn, King, Depot, 's)
 // and aren't a registered name, skipping the files that list other kinds of

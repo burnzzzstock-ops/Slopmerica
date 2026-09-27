@@ -9,7 +9,7 @@
 // Exits nonzero on failure.
 import { chromium } from 'playwright-core';
 import { execSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
@@ -20,17 +20,15 @@ const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, o
 {
   const now = await import('../src/content/feed.ts');
   const dir = mkdtempSync(join(tmpdir(), 'feed-'));
-  // the feed as it was before tags (the commit that added them is the first to touch FEED_TEMPLATES)
+  // the feed's picking code as it was before tags, run on today's lines (the owner edits lines;
+  // this checks the picking, not the text)
   const rev = execSync('git log --format=%H -S FEED_TEMPLATES -- src/content/feed.ts', { encoding: 'utf8' }).trim().split('\n').pop();
-  let old = null;
-  if (rev) {
-    writeFileSync(join(dir, 'feed.ts'), execSync(`git show ${rev}~1:src/content/feed.ts`, { encoding: 'utf8' }));
-    old = await import(join(dir, 'feed.ts'));
-  } else {
-    // not committed yet: compare against the last commit
-    writeFileSync(join(dir, 'feed.ts'), execSync('git show HEAD:src/content/feed.ts', { encoding: 'utf8' }));
-    old = await import(join(dir, 'feed.ts'));
-  }
+  const before = execSync(`git show ${rev ? `${rev}~1` : 'HEAD'}:src/content/feed.ts`, { encoding: 'utf8' });
+  const today = readFileSync(new URL('../src/content/feed.ts', import.meta.url), 'utf8');
+  const lines = (src) => [src.indexOf('const roads = ['), src.indexOf('const firstNames')];
+  const [a0, a1] = lines(before), [b0, b1] = lines(today);
+  writeFileSync(join(dir, 'feed.ts'), before.slice(0, a0) + today.slice(b0, b1) + before.slice(a1));
+  const old = await import(join(dir, 'feed.ts'));
   const seeded = (s) => () => ((s = (s * 16807) % 2147483647) / 2147483647);
   const kinds = Object.keys(now.FEED_TEMPLATES);
   let same = 0, n = 0;

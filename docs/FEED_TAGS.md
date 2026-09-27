@@ -107,7 +107,7 @@ Stages: 0 an empty valley, 1 a handful of homes and a gas station, 2 a small tow
 | weatherChange | Weather: {weather} over {city}. Drive like your deductible can see you. | wet 0.86, any 0.14 | rain, snow, haze |
 | weatherChange | {weather} on {road}. Headlights on, reply-guy expertise off. | wet 0.94, any 0.06 | rain, snow, haze |
 | weatherChange | Forecast: {weather}, with someone blaming zoning. | any 0.96, wet 0.04 | any weather |
-| weatherChange | {city} has {weather}. The Waffle Bunker index is being monitored. | any 0.70, snow 0.18 | any weather |
+| weatherChange | {city} has {weather}. The Waffle Hut index is being monitored. | any 0.86, wet 0.10 | any weather |
 | weatherChange | Weather app: {weather}. Local dads: “roads are fine.” | wet 0.63, any 0.24 | rain, snow, haze |
 | nightfall | Night falls on {city}. Every gas-station canopy becomes a minor sun. | any 0.82, clear 0.14 | any weather |
 | nightfall | 3 a.m. on {road}: six empty lanes and a red light for nobody. | any 0.76, clear 0.24 | any weather |
@@ -280,7 +280,7 @@ Stages: 0 an empty valley, 1 a handful of homes and a gas station, 2 a small tow
 | weatherChange | Weather: {weather} over {city}. Drive like your deductible can see you. | County Weather Desk 0.25 |
 | weatherChange | {weather} on {road}. Headlights on, reply-guy expertise off. | Reply Guy 0.36 |
 | weatherChange | Forecast: {weather}, with someone blaming zoning. | Urbanist Skyler 0.35, County Weather Desk 0.20 |
-| weatherChange | {city} has {weather}. The Waffle Bunker index is being monitored. | County Weather Desk 0.44 |
+| weatherChange | {city} has {weather}. The Waffle Hut index is being monitored. | County Weather Desk 0.40, Fill Er Up Newswire 0.21 |
 | weatherChange | Weather app: {weather}. Local dads: “roads are fine.” | County Weather Desk 0.22 |
 | nightfall | Night falls on {city}. Every gas-station canopy becomes a minor sun. | Roadside Philosopher 0.72 |
 | nightfall | 3 a.m. on {road}: six empty lanes and a red light for nobody. | Urbanist Skyler 0.23, Department of Maximum Mobility 0.22, DoorDash Driver 0.18 |
@@ -300,7 +300,7 @@ Stages: 0 an empty valley, 1 a handful of homes and a gas station, 2 a small tow
 | sewageBackup | Sewage backing up in {count} buildings. The smell has a Wikipedia page now. | Fill Er Up Newswire 0.30, Local Journalist 0.19 |
 | sewageBackup | Toilets aren't flushing and the HOA sent a letter about my lawn. | PorchWatch Karen 0.28, Suburban Prepper 0.18 |
 | sewageBackup | The sewer is full. Nobody will say where it all goes. We all know where it goes. | Doomer 0.53 |
-| garbagePile | The dumpster behind the Slop Mart has achieved sentience and is running for city council. | Italian-Brainrot Kid 0.43 |
+| garbagePile | The dumpster behind the SprawlMart has achieved sentience and is running for city council. | Italian-Brainrot Kid 0.43 |
 | landfillFull | {building} is FULL. Mt. Trashmore is now visible from the interstate and has a ski lift proposal. | Fill Er Up Newswire 0.27 |
 | landfillFull | The landfill hit capacity. Plan B: a second, larger landfill named after the mayor. | Fill Er Up Newswire 0.32, Tailgate Mayor 0.31 |
 | buildingFire | {building} is ON FIRE. Everyone is filming. Nobody called 911. | Reply Guy 0.17 |
@@ -366,7 +366,7 @@ Stages: 0 an empty valley, 1 a handful of homes and a gas station, 2 a small tow
 | ambient | Touch grass? In this parking minimum economy? | Urbanist Skyler 0.87 |
 | ambient | OK boomer but Earl was right about the creek flooding. | Retired Engineer 0.39 |
 | ambient | OK boomer, the bypass did kill downtown exactly like you said. | Urbanist Skyler 0.44 |
-| ambient | Seed oils discourse has reached the Waffle Bunker syrup caddy. | Wellness Influencer 0.51 |
+| ambient | Seed oils discourse has reached the Waffle Hut syrup caddy. | Wellness Influencer 0.45 |
 | ambient | The seed oils are not why your commute is 74 minutes, Brandon. | Urbanist Skyler 0.57 |
 | ambient | Local man avoids seed oils, inhales six lanes of particulate matter daily. | Wellness Influencer 0.36 |
 | ambient | Raw milk meetup relocated because the original pasture became luxury storage. | Commune Hippie 0.34 |

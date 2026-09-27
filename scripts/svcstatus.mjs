@@ -18,9 +18,10 @@ const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, o
 await page.evaluate(() => {
   const g = window.__game, d = window.__dbg;
   cancelAnimationFrame(g.raf);
-  // a cross street off Old County Road (which runs to the highway), inside
-  // the land a Ponzi city starts with (north of the town centre)
+  // a cross street joined to the town site, where Old County Road (which
+  // runs to the highway) ends, inside the land a Ponzi city starts with
   const S = g.startView();
+  if (!g.net.pickSeg(S.x, S.z - 50, 2)) d.road(S.x, S.z, S.x, S.z - 100, 'twoLane');
   d.road(S.x, S.z - 100, S.x - 200, S.z - 100, 'twoLane');
   d.road(S.x, S.z - 100, S.x + 200, S.z - 100, 'twoLane');
   d.zone(S.x - 100, S.z - 70, 50, 'resLow');
@@ -52,17 +53,10 @@ check(`cards say what a building does (${card})`, /\$12,000 · \$\d+\/wk\+? · [
 await page.click('[data-cat="water"]');
 const cut = await page.evaluate(() => {
   const g = window.__game, d = window.__dbg, S = g.startView();
-  // the Old County Road segment that meets the cross street, on the highway side
-  // (the highway is at the south edge: lower z)
+  // the last piece of Old County Road, where it reaches the town site
   const segs = [...g.net.segs.values()];
-  const cross = segs.filter((sg) => sg.type === 'twoLane');
-  let seg = null;
-  for (const o of segs.filter((sg) => sg.name === 'Old County Road')) for (const c of cross) {
-    const shared = [o.a, o.b].find((n) => n === c.a || n === c.b);
-    if (shared === undefined) continue;
-    const pts = o.samp.pts, here = o.a === shared ? pts[0] : pts[pts.length - 1], other = o.a === shared ? pts[pts.length - 1] : pts[0];
-    if (other.z < here.z) seg = o;
-  }
+  const atSite = (n) => { const N = g.net.nodes.get(n); return Math.hypot(N.x - S.x, N.z - S.z) < 3; };
+  const seg = segs.find((o) => o.name === 'Old County Road' && (atSite(o.a) || atSite(o.b))) ?? null;
   if (!seg) return 'no segment';
   g.bulldozeRoad(seg);
   d.run(3);

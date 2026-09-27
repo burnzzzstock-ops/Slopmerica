@@ -25,6 +25,8 @@ export interface SaveData {
   zones: ReturnType<Game['zones']['serialize']>;
   buildings: ReturnType<Game['buildings']['serialize']>;
   communes: [number, string, number, number, number][];
+  /** the town site and the county road's way in (communes are placed around it; saves before this rebuild it the old way) */
+  start?: { x: number; z: number; yaw: number; edge: { x: number; z: number }; route?: { x: number; z: number }[] };
   /** extension system state keyed by system id */
   ext?: Record<string, unknown>;
   /** sim state beyond the core fields (streaks, accumulators, RNG, ledgers, history) */
@@ -37,6 +39,7 @@ export function snapshot(g: Game): SaveData {
     money: g.sim.money === Infinity ? null : g.sim.money, tax: g.sim.taxRate, loans: g.sim.loans, pop: g.sim.population,
     nature: g.sim.naturePct, sprawl: g.sim.sprawlPct, roads: g.net.serialize(), zones: g.zones.serialize(), buildings: g.buildings.serialize(),
     communes: g.communes.list.map((c) => [c.id, c.state === 'leaving' ? 'gone' : c.state, c.stubborn, c.suitDays, c.suitOdds]),
+    start: (({ x, z, yaw, edge, route }) => ({ x, z, yaw, edge, route: route?.map((p) => ({ x: Math.round(p.x * 10) / 10, z: Math.round(p.z * 10) / 10 })) }))(g.startView()),
     ext: Object.fromEntries(EXT.systems.filter((s) => s.save).map((s) => [s.id, s.save!(g)])),
     simx: g.sim.serializeExtra(),
   };

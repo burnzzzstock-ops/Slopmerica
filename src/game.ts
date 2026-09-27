@@ -34,6 +34,7 @@ import { Overlays } from './render/overlays';
 import { buildingMaterial } from './buildings/generator';
 import { CivicLayer } from './civic/layer';
 import { VaultScenery } from './vault/scenery';
+import { legacyStart, pickStart, type StartSite } from './world/startSite';
 import { loadKitArt, setKitNight } from './buildings/kitGenerator';
 import { applySave, type SaveData } from './sim/save';
 import { crumb } from './ui/bugreport';
@@ -41,6 +42,17 @@ import { FrameProfiler } from './core/prof';
 import type { EmergencyView } from './sim/services';
 
 export type GameMode = Mode;
+
+/**
+ * Which good site a new county starts on: #start=<n> or #start=random in the
+ * URL; otherwise random for players and the best one for automated runs, so
+ * the regression tests stay repeatable.
+ */
+function startPick(): 'best' | 'random' | number {
+  const m = /(?:^|[#&])start=([a-z0-9]+)/.exec(location.hash);
+  if (m) return m[1] === 'random' ? 'random' : m[1] === 'best' ? 'best' : +m[1] || 0;
+  return navigator.webdriver ? 'best' : 'random';
+}
 
 export interface GameOptions {
   map: MapId;
@@ -238,7 +250,13 @@ export class Game {
     lap('start');
     const communeCount = Math.round(this.map.def.communes * (opts.mode === 'hippie' ? 2.2 : 1));
     const avoid = [{ x: start.x, z: start.z, r: 320 }];
-    for (let t = 0; t <= 1; t += 0.05) avoid.push({ x: start.edge.x + (start.x - start.edge.x) * t, z: start.edge.z + (start.z - start.edge.z) * t, r: 140 });
+    // keep communes off the county road's way in (a straight one: exactly as
+    // before sites were saved, so old saves get their communes back where they were)
+    if (start.route) {
+      const way = start.route;
+      for (let k = 1; k < way.length; k++)
+        for (let t = 0; t < 1; t += 0.2) avoid.push({ x: way[k - 1].x + (way[k].x - way[k - 1].x) * t, z: way[k - 1].z + (way[k].z - way[k - 1].z) * t, r: 140 });
+    } else for (let t = 0; t <= 1; t += 0.05) avoid.push({ x: start.edge.x + (start.x - start.edge.x) * t, z: start.edge.z + (start.z - start.edge.z) * t, r: 140 });
     this.communes = new Communes(this.terrain, this.trees, opts.map, communeCount, this.map.def.seed + 5, opts.mode === 'hippie' ? 0.3 : 0.12, avoid);
     this.scene.add(this.communes.group);
     this.net.blockerReason = (id) => this.communeRoadRule(id);
@@ -317,8 +335,7 @@ export class Game {
     return new Game(container, opts);
   }
 
-  private startCache: { x: number; z: number; yaw: number; edge: { x: number; z: number } } | null = null;
-  /** Find flat, dry, roomy land near the middle of the map for the first town. */
+  private startCache: StartSite | null = null;
   /** Back over the town: the middle of what's been built, or where the county road arrives. */
   goHome() {
     let x = 0, z = 0, n = 0;
@@ -328,54 +345,58 @@ export class Game {
     this.rts.setView(x, z, Math.max(420, Math.min(900, this.rts.distance)), this.rts.yaw, 0.85);
   }
 
-  startView() {
+  /**
+   * The town site and the county road's way in (src/world/startSite.ts): a
+   * saved city keeps its own; saves from before sites were saved rebuild the
+   * old pick; a new county gets one of the map's good sites at random.
+   */
+  startView(): StartSite {
     if (this.startCache) return this.startCache;
-    const T = this.terrain;
-    let best = { x: 0, z: 0 }, bestScore = -Infinity;
-    for (let z = -HALF * 0.55; z <= HALF * 0.55; z += 150)
-      for (let x = -HALF * 0.55; x <= HALF * 0.55; x += 150) {
-        if (T.h(x, z) < 2) continue;
-        let flat = 0;
-        for (let k = 0; k < 36; k++) {
-          const a = k * 2.399, r = 50 + (k / 36) * 330;
-          const px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
-          const hh = T.h(px, pz);
-          if (hh > 1.4 && T.slope(px, pz) < 0.12) flat++;
-        }
-        const score = flat - (Math.hypot(x, z) / HALF) * 8;
-        if (score > bestScore) { bestScore = score; best = { x, z }; }
-      }
-    const e = this.map.def.entry;
-    const edge = e === 'west' ? { x: -HALF + 14, z: best.z } : e === 'east' ? { x: HALF - 14, z: best.z } : e === 'north' ? { x: best.x, z: -HALF + 14 } : { x: best.x, z: HALF - 14 };
-    const yaw = Math.atan2(edge.x - best.x, edge.z - best.z) + 0.5;
-    this.startCache = { x: best.x, z: best.z, yaw, edge };
+    const entry = this.map.def.entry, saved = this.opts.restore?.start;
+    this.startCache = saved ? { ...saved } : this.opts.restore ? legacyStart(this.terrain, entry) : pickStart(this.terrain, entry, startPick());
     return this.startCache;
   }
 
   /** The county starts with one road in from the outside world. */
-  private seedRoad(start: { x: number; z: number; edge: { x: number; z: number } }) {
+  private seedRoad(start: StartSite) {
     // the county highway predates you: it runs through land you don't own yet
     const allowed = this.net.allowed;
     this.net.allowed = null;
     try { this.buildSeedRoad(start); } finally { this.net.allowed = allowed; }
   }
 
-  private buildSeedRoad(start: { x: number; z: number; edge: { x: number; z: number } }) {
-    const pts: V2[] = [];
-    const a = start.edge, b = { x: start.x, z: start.z };
-    const n = Math.max(6, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 400));
-    for (let k = 0; k <= n; k++) pts.push({ x: a.x + ((b.x - a.x) * k) / n, z: a.z + ((b.z - a.z) * k) / n });
-    // nudge points onto dry land
-    for (const p of pts) {
-      let tries = 0;
-      while (this.terrain.h(p.x, p.z) < WATER + 1 && tries++ < 20) p.z += 12;
+  private buildSeedRoad(start: StartSite) {
+    let pts: V2[] = [];
+    if (start.route) pts = start.route.map((p) => ({ ...p }));
+    else {
+      const a = start.edge, b = { x: start.x, z: start.z };
+      const n = Math.max(6, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 400));
+      for (let k = 0; k <= n; k++) pts.push({ x: a.x + ((b.x - a.x) * k) / n, z: a.z + ((b.z - a.z) * k) / n });
+      // nudge points onto dry land
+      for (const p of pts) {
+        let tries = 0;
+        while (this.terrain.h(p.x, p.z) < WATER + 1 && tries++ < 20) p.z += 12;
+      }
     }
     let prev = this.net.snap(pts[0].x, pts[0].z);
+    let split = 0;
     for (let k = 1; k < pts.length; k++) {
       const end = { kind: 'free' as const, x: pts[k].x, z: pts[k].z };
-      const c = lineCubic({ x: prev.x, z: prev.z }, pts[k]);
-      const plan = this.net.plan(prev, c, 'stroad4');
-      if (!plan.ok) break;
+      // a smooth curve through the route's corners (Catmull-Rom), or straight if that won't build
+      const p0 = pts[Math.max(0, k - 2)], p3 = pts[Math.min(pts.length - 1, k + 1)];
+      const a = { x: prev.x, z: prev.z }, b = pts[k];
+      const curved = { p0: a, p1: { x: a.x + (b.x - p0.x) / 6, z: a.z + (b.z - p0.z) / 6 }, p2: { x: b.x - (p3.x - a.x) / 6, z: b.z - (p3.z - a.z) / 6 }, p3: b };
+      let c = start.route ? curved : lineCubic(a, b);
+      let plan = this.net.plan(prev, c, 'stroad4');
+      if (!plan.ok && start.route) { c = lineCubic(a, b); plan = this.net.plan(prev, c, 'stroad4'); }
+      // a leg that won't build: try it as two shorter ones before giving up
+      if (!plan.ok && start.route && split < 12 && Math.hypot(b.x - a.x, b.z - a.z) > 60) {
+        pts.splice(k, 0, { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 });
+        split++;
+        k--;
+        continue;
+      }
+      if (!plan.ok) { console.warn(`[start] the county road stops ${Math.round(Math.hypot(b.x - start.x, b.z - start.z))} m short: ${plan.reason}`); break; }
       const segs = this.net.build(prev, end, c, 'stroad4', COUNTY_ROAD);
       if (!segs.length) break;
       const last = segs[segs.length - 1];

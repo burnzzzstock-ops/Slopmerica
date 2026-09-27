@@ -28,12 +28,18 @@ const town = await page.evaluate(() => {
   cancelAnimationFrame(g.raf);
   g.sim.earn(400000 - g.sim.money, 'other', 'Test funds'); // through the ledger, so weeks still reconcile
   const S = g.startView();
-  // the first cross street that builds (Gator Gulch is wet)
+  // the first cross street that builds (Gator Gulch is wet), joined to the
+  // town site where the county road ends
   let street = null;
-  for (const dz of [-100, 100, -160, 160, -60, 60]) for (const len of [220, 180, 140]) {
+  for (const dz of [-100, 100, -160, 160, -60, 60]) {
     if (street) break;
-    const a = d.road(S.x, S.z + dz, S.x - len, S.z + dz, 'twoLane'), b = d.road(S.x, S.z + dz, S.x + len, S.z + dz, 'twoLane');
-    if (typeof a === 'number' && a > 0 && typeof b === 'number' && b > 0) street = { dz, len };
+    const lane = g.net.pickSeg(S.x, S.z + dz / 2, 2) ? 1 : d.road(S.x, S.z, S.x, S.z + dz, 'twoLane');
+    if (!(typeof lane === 'number' && lane > 0)) continue;
+    for (const len of [220, 180, 140]) {
+      if (street) break;
+      const a = d.road(S.x, S.z + dz, S.x - len, S.z + dz, 'twoLane'), b = d.road(S.x, S.z + dz, S.x + len, S.z + dz, 'twoLane');
+      if (typeof a === 'number' && a > 0 && typeof b === 'number' && b > 0) street = { dz, len };
+    }
   }
   if (!street) return { err: 'no street' };
   const z = S.z + street.dz, side = street.dz < 0 ? -1 : 1;

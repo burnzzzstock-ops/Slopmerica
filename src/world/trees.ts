@@ -544,7 +544,14 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
   update(time: number, focus: THREE.Vector3, camDist: number) {
     this.uniforms.uTime.value = time;
     this.wind.value = time;
-    const nearR = Math.min(this.q.treeNear, Math.max(160, camDist * 0.85));
+    // Detailed trees cover the view when zoomed in. Zoomed out past what their
+    // budget can cover, they fade out tree by tree everywhere instead of
+    // shrinking to a disc of different-looking trees that follows the camera
+    // (the playtest's "circle of trees"), and the edge between them and the
+    // impostors is ragged (each tree has its own cut-over distance).
+    const R = this.q.treeNear;
+    const nearR = Math.min(R, Math.max(160, camDist * 1.1));
+    const detail = Math.max(0, Math.min(1, (R * 1.5 - camDist) / (R * 0.4)));
     const moved = Math.hypot(focus.x - this.lastFocus.x, focus.z - this.lastFocus.z);
     if (!this.dirty && moved < nearR * 0.2 && Math.abs(camDist - this.lastDist) < this.lastDist * 0.2) {
       if (this.recolor) this.recolorStep(8000);
@@ -561,12 +568,23 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
     const nearCounts = new Array(this.near.length).fill(0);
     const farCounts = new Array(this.far.length).fill(0);
     const col = new THREE.Color();
-    const c0 = Math.max(0, Math.floor((focus.x - farR + HALF) / CELL)), c1 = Math.min(GRID_N - 1, Math.floor((focus.x + farR + HALF) / CELL));
-    const r0 = Math.max(0, Math.floor((focus.z - farR + HALF) / CELL)), r1 = Math.min(GRID_N - 1, Math.floor((focus.z + farR + HALF) / CELL));
     const nearR2 = nearR * nearR, farR2 = farR * farR;
     const thinStart = Math.max(1500, farR * 0.35);
-    for (let r = r0; r <= r1; r++)
-      for (let c = c0; c <= c1; c++) {
+    // cells in rings outward from the focus: when a batch fills up, it's the
+    // farthest trees that go without (row by row, whole strips next to the
+    // camera went bare when zoomed out)
+    const fc = Math.floor((focus.x + HALF) / CELL), fr = Math.floor((focus.z + HALF) / CELL);
+    const rings = Math.ceil(farR / CELL) + 1;
+    const ringCells = function* () {
+      for (let k = 0; k <= rings; k++) {
+        if (k === 0) { yield [fc, fr]; continue; }
+        for (let c = fc - k; c <= fc + k; c++) { yield [c, fr - k]; yield [c, fr + k]; }
+        for (let r = fr - k + 1; r <= fr + k - 1; r++) { yield [fc - k, r]; yield [fc + k, r]; }
+      }
+    };
+    for (const [c, r] of ringCells()) {
+      if (c < 0 || r < 0 || c >= GRID_N || r >= GRID_N) continue;
+      {
         const cell = r * GRID_N + c;
         const cx = (c + 0.5) * CELL - HALF, cz = (r + 0.5) * CELL - HALF;
         if ((cx - focus.x) ** 2 + (cz - focus.z) ** 2 > (farR + CELL) ** 2) continue;
@@ -577,11 +595,13 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
           const d2 = dx * dx + dz * dz;
           if (d2 > farR2) continue;
           const k = this.K[i];
-          if (d2 < nearR2) {
-            const mi = k * VARIANTS + this.Vr[i];
+          const mi = k * VARIANTS + this.Vr[i];
+          // this tree's own cut-over (0.8..1 of the radius) and its place in the fade
+          const cut = 0.8 + 0.2 * hash2(i, 3, 5);
+          // a full detailed batch hands the rest to the impostors: never a gap
+          if (d2 < nearR2 * cut * cut && hash2(i, 11, 2) < detail && nearCounts[mi] < this.near[mi].instanceMatrix.count) {
             const im = this.near[mi];
             const slot = nearCounts[mi];
-            if (slot >= im.instanceMatrix.count) continue;
             nearCounts[mi]++;
             this.slots[mi][slot] = i;
             this.slotOf[i] = (mi << 20) | slot;
@@ -617,6 +637,7 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
           }
         }
       }
+    }
     const commit = (im: THREE.InstancedMesh, count: number) => {
       im.count = count;
       im.instanceMatrix.clearUpdateRanges();

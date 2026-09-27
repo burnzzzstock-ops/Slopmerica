@@ -1,0 +1,13 @@
+*.bin binary
+*.png binary
+*.gltf text eol=lf
+*.json text eol=lf
+*.csv text eol=lf
+models/** linguist-generated=true
+shared/** linguist-generated=true
+signs/** linguist-generated=true
+textures/** linguist-generated=true
+thumbnails/** linguist-generated=true
+manifest.json linguist-generated=true
+families.json linguist-generated=true
+catalog.csv linguist-generated=true

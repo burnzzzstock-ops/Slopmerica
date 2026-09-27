@@ -7,6 +7,7 @@ import type { Game, Selection } from '../game';
 export interface ToolTipLike {
   text: string;
   bad?: boolean;
+  good?: boolean;
 }
 
 /** A pointer tool. Activate with `game.tools.setExt(id)`. */

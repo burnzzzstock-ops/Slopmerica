@@ -144,6 +144,16 @@ inside the browser frame), which changed several conclusions.
 - **Harness (scripts/econtest.mjs):** a Growth Ponzi town on Florida grown like a player grows one: a street of homes, more streets as lots fill, jobs, then density; services when the game asks (a fire, crime, sickness, trash, a station outgrown, supply running short); a loan when cash runs low; no hurricanes. **After (three runs):** ~380 people −$350 to −$620/wk, breaks even ~1,000-1,100, ~2,000 people +$600 to +$1,150/wk ($0.3-0.55 per resident, was ~$1.80), services ~63% of taxes, lowest cash $6-11k, $20-70k in the bank through years two and three.
 - **Landfills:** a full landfill left trash on the curb and a month later 200 buildings were abandoned at once (2,081 → 80 people in the harness). There's now a warning at 80% full with the days left.
 
+## Fresh-city playtest (Holler County, 0 to 5,284, builds 9b1b8d4 → 4e7cfed)
+
+- **A bus line vanished after an $864 street:** a new street joining a road with bus stops splits that road's segment, and the transit system treated the old segment's removal as demolition and deleted every line with a stop on it. Stops now move to the new halves (the road network flags a split); only a real removal ends a line, and the bulldoze tool names the line it would end before the click ("⚠️ ends The 69 Express bus line"). scripts/playtest5.mjs fails on the old code (0 lines) and passes now.
+- **A good build looked like a failure:** after placing a service or bus depot the tool stayed armed over the new building and tested it against itself ("already here" in red). The tip now says "✅ Built …" in green until the pointer moves off it; one click still builds one.
+- **Finding room for big buildings took many tries:** while placing a service, green rings mark the curb in front of every roadside spot around the view where it fits (checked a few a frame, nearest first), and a red tip points to them.
+- **The Transit panel said "No routes" after a line was made on the map** until reopened: it now redraws when lines, stops, buses or ridership change (not while a name is being typed).
+- **Transit was a money printer:** one bus carried ~2,000 riders a week at $2 against $135 of upkeep (the tester's 69 Express: $4,074/wk fares, nearly half the city's profit). Each ride now costs $1.50 to run (drivers, fuel, the fare app): a busy line at $2 nets a little, free fares are a real subsidy, surge pricing trades riders for money.
+- **The game returned to the title and resumed ~10 game days earlier:** that was a new build of the artifact being published while the city was open (the artifact reloads open views). The game already saved every 30 s and when the tab hides; it now also saves when the page is replaced.
+- **Road demolition preview:** already there (the road preview says "bulldozes N buildings" before the click; civic buildings block the road).
+
 ## Remaining (ranked)
 
 1. Cities saved before this build keep any dead end that was built over (a disc on a through road, unconnected): bulldoze and redraw that stub. A load-time repair would move road endpoints that zoning and buildings refer to, so it wasn't done blind.

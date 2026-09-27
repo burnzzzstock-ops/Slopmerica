@@ -1414,6 +1414,7 @@ export class Hud implements UiSink {
       const badge = !IS_TOUCH && placingLabel ? `Placing ${placingLabel} · Esc or right-click to cancel` : '';
       tipEl.textContent = IS_TOUCH ? tip?.text ?? '' : badge;
       tipEl.classList.toggle('bad', IS_TOUCH && !!tip?.bad);
+      tipEl.classList.toggle('good', IS_TOUCH && !!tip?.good);
       tipEl.hidden = IS_TOUCH ? !tip : !badge;
       const done = this.actions.querySelector('#ta-done') as HTMLElement;
       done.hidden = IS_TOUCH ? false : !t.drawing && !placingLabel;
@@ -1443,6 +1444,7 @@ export class Hud implements UiSink {
       this.tip.hidden = false;
       if (text !== tip.text) this.tip.textContent = tip.text;
       this.tip.classList.toggle('bad', !!tip.bad);
+      this.tip.classList.toggle('good', !tip.bad && !!tip.good);
       if (was || text !== tip.text) this.placeTip();
     } else this.tip.hidden = true;
     // floating texts

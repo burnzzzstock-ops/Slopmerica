@@ -18,6 +18,13 @@ const WALK_LIMIT = 350;
 const BUS_CAPACITY = 52;
 const COLORS = [0x16a4d8, 0xf04e3e, 0xf0b429, 0x7ac943, 0xa76ee6, 0xff5ca8, 0x44c8aa];
 const NAMES = ['The 69 Express', 'Route 420 Crosstown', 'Grievance Line', 'The Stroad Dodger', 'Freedom Loop', 'Late Stage Limited', 'Bus McBusface'];
+/**
+ * What a ride costs to run (drivers, fuel, the fare app), on top of each bus
+ * and depot. Without it one bus carried ~2,000 riders a week at $2 against
+ * $135 of upkeep and a single line was half a 3,000-person city's profit;
+ * now a busy line at $2 nets a little, free fares are a real subsidy.
+ */
+const RIDE_COST = 1.5;
 const FARE: Record<FarePolicy, { label: string; price: number; demand: number }> = {
   free: { label: 'Free', price: 0, demand: 1.28 },
   standard: { label: '$2', price: 2, demand: 1 },
@@ -106,13 +113,17 @@ export class TransitSystem {
     g.sim.hooks.weekly.push((add) => {
       const activeBuses = [...this.lines.values()].reduce((n, l) => n + (this.lineCanRun(l) ? l.buses : 0), 0);
       const depotCount = this.depots().length;
-      const upkeep = activeBuses * 135 + depotCount * 420;
-      const fares = [...this.lines.values()].reduce((n, l) => n + l.lastWeekRiders, 0) * FARE[this.fare].price;
+      const riders = [...this.lines.values()].reduce((n, l) => n + l.lastWeekRiders, 0);
+      const upkeep = activeBuses * 135 + depotCount * 420 + riders * RIDE_COST;
+      const fares = riders * FARE[this.fare].price;
       if (upkeep) add('SLOP Transit operations', upkeep, 'transit');
       if (fares) add('Bus fares', -fares, 'transit');
     });
-    g.net.events.on('segRemoved', (seg) => this.roadGone(seg.id));
-    g.net.events.on('changed', () => { this.accessDirty = true; this.visualDirty = true; });
+    // a new street joining a routed road splits its segment in two: the stops
+    // move to the halves and the line keeps running (it used to vanish)
+    g.net.events.on('segRemoved', (seg) => { if (g.net.splitting === seg.id) this.holdForSplit(seg.id); else this.roadGone(seg.id); });
+    g.net.events.on('segAdded', (seg) => this.catchSplit(seg));
+    g.net.events.on('changed', () => { this.settleSplits(); this.accessDirty = true; this.visualDirty = true; });
   }
 
   get unlocked() { return this.g.sim.population >= 300; }
@@ -361,6 +372,12 @@ export class TransitSystem {
     this.g.zones.markOverlayDirty(); this.visualDirty = true; this.accessDirty = true;
   }
 
+  /** lines with a stop on this road: bulldozing it ends them (the tool says so first) */
+  linesOnSeg(segId: number): TransitLine[] {
+    const ids = new Set([...this.stops.values()].filter((s) => s.seg === segId).map((s) => s.id));
+    return [...this.lines.values()].filter((l) => l.stopIds.some((id) => ids.has(id)));
+  }
+
   private linesUsing(stopId: number) { return [...this.lines.values()].filter((l) => l.stopIds.includes(stopId)); }
 
   private cleanupUnusedStops() {
@@ -371,6 +388,41 @@ export class TransitSystem {
       else this.retiredLineStops.delete(lineId);
     }
     for (const id of [...this.stops.keys()]) if (!this.linesUsing(id).length && !this.draft.includes(id) && !current.has(id) && !retiring.has(id)) this.removeStop(id);
+  }
+
+  /** stops on a segment being split, keyed by its old id, until its halves appear */
+  private splitStops = new Map<number, { stop: TransitStop; d: number; seg: number; s: number }[]>();
+
+  private holdForSplit(segId: number) {
+    const held = [...this.stops.values()].filter((s) => s.seg === segId).map((stop) => ({ stop, d: Infinity, seg: -1, s: 0 }));
+    if (held.length) this.splitStops.set(segId, held);
+  }
+
+  private catchSplit(seg: RSeg) {
+    if (!this.splitStops.size) return;
+    const reach = ROAD_TYPES[seg.type].width / 2 + 6; // a stop stands at the curb
+    for (const held of this.splitStops.values()) for (const h of held) {
+      const c = closestOnSampled({ x: h.stop.x, z: h.stop.z }, seg.samp);
+      if (c.d < reach && c.d < h.d) { h.d = c.d; h.seg = seg.id; h.s = clamp(c.s, 0, seg.length); }
+    }
+  }
+
+  /** after the edit: re-seat held stops on the nearest half; a stop with no road left takes its line with it */
+  private settleSplits() {
+    if (!this.splitStops.size) return;
+    for (const [old, held] of this.splitStops) {
+      let lost = false;
+      for (const h of held) {
+        if (h.seg >= 0 && this.g.net.segs.has(h.seg)) {
+          h.stop.seg = h.seg; h.stop.s = h.s;
+          this.blockedCells.delete(h.stop.id);
+          this.blockStopCell(h.stop);
+        } else lost = true;
+      }
+      this.splitStops.delete(old);
+      if (lost) this.roadGone(old);
+    }
+    this.accessDirty = true; this.visualDirty = true;
   }
 
   private roadGone(segId: number) {
@@ -599,7 +651,24 @@ export class TransitSystem {
     this.g.overlays.tintBuildings((b) => b.kind === 'busDepot' ? depot : isZoned(b) ? (this.access.has(b.id) ? good : bad) : null);
   }
 
+  /** what the Transit panel shows: when it changes (a line finished on the map, riders counted), the panel redraws */
+  private panelSignature() {
+    return `${this.unlocked}|${this.depots().length}|${this.drawing}|${this.fare}|${[...this.lines.values()].map((l) => `${l.id}:${l.name}:${l.stopIds.length}:${l.buses}:${l.lastWeekRiders}`).join(',')}`;
+  }
+  private panelKey = '';
+  private panelRerender: (() => void) | null = null;
+
+  /** called a few times a second while the panel is open; never while a name is being typed */
+  refreshPanel(el: HTMLElement) {
+    if (this.panelSignature() === this.panelKey) return;
+    const focus = document.activeElement;
+    if (focus && el.contains(focus) && focus.tagName === 'INPUT') return;
+    this.panelRerender?.();
+  }
+
   renderPanel(el: HTMLElement, rerender: () => void) {
+    this.panelRerender = rerender;
+    this.panelKey = this.panelSignature();
     if (!this.unlocked) {
       el.innerHTML = `<div class="sp-title">Public Transit <small>Population unlock</small></div><p>Reach 300 residents to unlock buses. Current population: <b>${this.g.sim.population}/300</b>.</p>`;
       return;
@@ -615,7 +684,7 @@ export class TransitSystem {
         return `<div class="li" style="border-left:6px solid #${line.color.toString(16).padStart(6, '0')};gap:6px">
           <div class="sp-row" style="width:100%"><input data-name="${line.id}" value="${esc(line.name)}" maxlength="32" aria-label="Line name" style="min-width:150px;flex:1;background:#111;color:white;border:1px solid #555;border-radius:6px;padding:7px"><input type="color" data-color="${line.id}" value="#${line.color.toString(16).padStart(6, '0')}" aria-label="Line color"></div>
           <small>${line.stopIds.length} stops · ${Number.isFinite(h) ? h.toFixed(1) : '∞'} min headway · ${line.lastWeekRiders.toLocaleString()} riders/wk</small>
-          <small>Fare ${money(income)}/wk · upkeep ${money(line.buses * 135)}/wk · busiest stop ${busiest ? busiest.id : '—'}</small>
+          <small>Fares ${money(income)}/wk · running ${money(line.buses * 135 + line.lastWeekRiders * RIDE_COST)}/wk (${money(line.buses * 135)} buses + $${RIDE_COST.toFixed(2)} a ride) · busiest stop ${busiest ? busiest.id : '—'}</small>
           <div class="sp-row"><label>Buses <b>${line.buses}</b> <input type="range" min="1" max="10" value="${line.buses}" data-buses="${line.id}"></label><button class="chip" data-delete="${line.id}">Delete line</button></div>
         </div>`;
       }).join('') || '<p>No routes. Build a depot, then draw a loop by clicking roads.</p>'}</div>`;
@@ -645,6 +714,7 @@ export class TransitSystem {
 
 // touch: a tap marks the depot spot; the action-bar Build places it
 let depotSpot: { x: number; z: number } | null = null;
+let depotBuilt: { x: number; z: number } | null = null;
 let depotGhost: PlacementGhost | null = null;
 function showDepotGhost(g: Game, p: { x: number; z: number } | null) {
   const t = transitFor(g);
@@ -658,11 +728,17 @@ function showDepotGhost(g: Game, p: { x: number; z: number } | null) {
 registerTool({
   id: 'transit-depot', touchLift: 64,
   placing: () => '🚏 Bus depot',
-  move(g, p) { showDepotGhost(g, depotSpot ?? p); },
+  move(g, p) {
+    // just built and still over it: the green "Built" tip, not the new depot tested against itself
+    if (depotBuilt && p && Math.hypot(p.x - depotBuilt.x, p.z - depotBuilt.z) < 6) return;
+    depotBuilt = null;
+    showDepotGhost(g, depotSpot ?? p);
+  },
   up(g, p, e, wasDrag) {
     if (wasDrag || !p) return;
+    depotBuilt = null;
     if (e.pointerType !== 'mouse') { depotSpot = { x: p.x, z: p.z }; showDepotGhost(g, depotSpot); return; }
-    transitFor(g)?.placeDepot(p.x, p.z);
+    if (transitFor(g)?.placeDepot(p.x, p.z)) { depotBuilt = { x: p.x, z: p.z }; depotGhost?.hide(); return; }
     showDepotGhost(g, p);
   },
   pending(g) {
@@ -671,10 +747,11 @@ registerTool({
     return { cost: ok ? DEPOT_COST : null };
   },
   confirm(g) {
-    if (depotSpot && transitFor(g)?.placeDepot(depotSpot.x, depotSpot.z)) { depotSpot = null; depotGhost?.hide(); }
+    if (depotSpot && transitFor(g)?.placeDepot(depotSpot.x, depotSpot.z)) { depotBuilt = { ...depotSpot }; depotSpot = null; depotGhost?.hide(); }
   },
-  cancel() { depotSpot = null; depotGhost?.hide(); },
+  cancel() { depotSpot = null; depotBuilt = null; depotGhost?.hide(); },
   tip(g) {
+    if (depotBuilt) return { text: `✅ Built 🚏 bus depot · now draw a line (Transit → Lines)`, good: true };
     const t = transitFor(g), p = depotSpot ?? g.tools.hoverPoint;
     if (!t || !p || (g.isTouch && !depotSpot)) return { text: `Place bus depot · ${money(DEPOT_COST)}${g.isTouch ? ' · tap where it goes' : ''}` };
     const c = t.depotSpotAt(p.x, p.z);
@@ -699,6 +776,7 @@ registerTool({
 registerPanel({
   id: 'transit', icon: '🚌', label: 'Transit', order: 45,
   render(el, g, rerender) { transitFor(g)?.renderPanel(el, rerender); },
+  refresh(el, g) { transitFor(g)?.refreshPanel(el); },
   close(g) { if (g.tools.extTool === 'transit-line') transitFor(g)?.cancelDraft(); },
 });
 

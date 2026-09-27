@@ -1535,6 +1535,9 @@ a {
 .cursor-tip.bad {
   color: #ff8a80;
 }
+.cursor-tip.good, #ta-tip.good {
+  color: #8dffa0;
+}
 .float {
   position: fixed;
   left: 0;

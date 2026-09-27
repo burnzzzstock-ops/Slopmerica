@@ -26,7 +26,8 @@ import type { FeedContext, FeedEventKind, VehicleKind, ZoneType } from '../contr
 import type { DemandKey } from './sim';
 import { POLICY } from './policyEffects';
 import { crumb } from '../ui/bugreport';
-import { frontageCandidates, inRect, rectCorners, specialAt, type Frontage } from './frontage';
+import { frontageCandidates, frontageOn, inRect, rectCorners, specialAt, type Frontage } from './frontage';
+import { pointAt, tangentAt } from '../core/math';
 import { PlacementGhost } from '../tools/placementGhost';
 
 type ZB = Bld & { zone: ZoneType };
@@ -874,8 +875,68 @@ function initHooks(g: Game) {
   });
 }
 
+// ============================================================== valid sites
+/**
+ * While placing a service: green rings on the curb in front of every spot
+ * around the view where it fits, checked a few a frame, nearest first.
+ * Playtesters took many tries to find room for a hospital, a university or
+ * an incinerator against a red ghost; the rules stay, now you can see them.
+ */
+const SITE_STEP = 16, SITE_R = 420, SITE_BUDGET = 24, SITE_MAX = 160;
+const sites = { key: '', queue: [] as Frontage[], found: [] as { x: number; y: number; z: number }[], mesh: null as THREE.InstancedMesh | null };
+const siteM = new THREE.Matrix4(), siteQ = new THREE.Quaternion(), siteP = new THREE.Vector3(), siteS = new THREE.Vector3();
+
+function sitesFrame(g: Game) {
+  const d = SERVICE_DEFS.get(placing);
+  const on = !!d && g.tools.active === 'ext' && g.tools.extTool === 'svcPlace' && !justBuilt;
+  if (!sites.mesh) {
+    if (!on) return;
+    const geo = new THREE.RingGeometry(2.2, 3.2, 24);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x5dff7a, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false });
+    sites.mesh = new THREE.InstancedMesh(geo, mat, SITE_MAX);
+    sites.mesh.name = 'svc-sites'; sites.mesh.frustumCulled = false; sites.mesh.renderOrder = 6; sites.mesh.count = 0;
+    g.scene.add(sites.mesh);
+  }
+  sites.mesh.visible = on;
+  if (!on || !d) { sites.key = ''; return; }
+  const T = g.rts.target, X = Math.round(T.x / 150) * 150, Z = Math.round(T.z / 150) * 150;
+  const hw = (d.w * CELL) / 2, hd = (d.d * CELL) / 2;
+  // new view block, roads, buildings or a money bracket: look again
+  const key = `${placing}|${X},${Z}|${g.net.segs.size}|${g.buildings.list.size}|${Math.floor(g.sim.money / 5000)}`;
+  if (key !== sites.key) {
+    sites.key = key; sites.found = []; sites.queue = [];
+    for (const seg of g.net.segsNear(X - SITE_R, Z - SITE_R, X + SITE_R, Z + SITE_R)) {
+      if (seg.over || seg.type === 'highway') continue;
+      for (let at = SITE_STEP / 2; at < seg.length; at += SITE_STEP) {
+        const p = pointAt(seg.samp, at), t = tangentAt(seg.samp, at);
+        for (const side of [1, -1]) {
+          const f = frontageOn(g.net, seg, at, p.x - t.z * side * 20, p.z + t.x * side * 20, hd);
+          if (f) sites.queue.push(f);
+        }
+      }
+    }
+    sites.queue.sort((a, b) => Math.hypot(b.x - T.x, b.z - T.z) - Math.hypot(a.x - T.x, a.z - T.z)); // nearest at the end
+  }
+  let changed = false;
+  for (let n = 0; n < SITE_BUDGET && sites.queue.length && sites.found.length < SITE_MAX; n++) {
+    const f = sites.queue.pop()!;
+    if (sites.found.some((q) => Math.hypot(q.x - f.door.x, q.z - f.door.z) < hw * 1.5)) continue;
+    if (canPlaceService(g, placing, f.x, f.z, f.yaw).ok) { sites.found.push({ x: f.door.x, y: f.roadY + 0.4, z: f.door.z }); changed = true; }
+  }
+  const m = sites.mesh;
+  if (changed || m.count !== sites.found.length) {
+    const k = Math.max(1, Math.min(hw, hd) * 0.3 / 3.2);
+    siteS.set(k, 1, k);
+    sites.found.forEach((q, i) => { siteP.set(q.x, q.y, q.z); siteM.compose(siteP, siteQ, siteS); m.setMatrixAt(i, siteM); });
+    m.count = sites.found.length;
+    m.instanceMatrix.needsUpdate = true;
+  }
+}
+
 // ============================================================== frame: fires, icons, overlays
 function frame(g: Game, dt: number) {
+  sitesFrame(g);
   if (!S.icons) return;
   S.icons.tick(dt);
   // burning buildings: flames + smoke near the camera
@@ -1276,34 +1337,57 @@ export function placeService(g: Game, id: ServiceModelId, x: number, z: number, 
 
 // touch: a tap previews the building there; the action-bar Build places it
 let planned: THREE.Vector3 | null = null;
+/**
+ * Just built, and the pointer hasn't left it: say so in green instead of
+ * testing the new building against itself ("already here" in red read as
+ * a failed purchase). Cleared once the pointer moves off or the next tap.
+ */
+let justBuilt: { text: string; x: number; z: number } | null = null;
+const JUST_BUILT_M = 6;
 
 registerTool({
   id: 'svcPlace',
   touchLift: 64,
   placing: () => { const d = SERVICE_DEFS.get(placing); return d ? `${d.icon} ${d.name}` : null; },
-  move: (g, p) => { if (!planned) updateGhost(g, p); },
+  move: (g, p) => {
+    if (justBuilt && p && Math.hypot(p.x - justBuilt.x, p.z - justBuilt.z) < JUST_BUILT_M) return;
+    justBuilt = null;
+    if (!planned) updateGhost(g, p);
+  },
   up: (g, p, e, wasDrag) => {
     if (!p || wasDrag) return;
+    justBuilt = null;
     if (e.pointerType !== 'mouse') {
       planned = p.clone();
       updateGhost(g, planned);
       return;
     }
     const spot = spotFor(g, placing, p.x, p.z);
-    if (placeService(g, placing, spot.x, spot.z, spot.yaw)) spotCache = null;
+    const b = placeService(g, placing, spot.x, spot.z, spot.yaw);
+    if (b) {
+      spotCache = null;
+      const d = SERVICE_DEFS.get(placing)!;
+      justBuilt = { text: `✅ Built ${d.icon} ${d.name} · move off it to place another, Esc when done`, x: p.x, z: p.z };
+      ghost?.hide(); lastCheck = null;
+      return;
+    }
     updateGhost(g, p);
   },
   pending: () => (planned ? { cost: lastCheck?.ok ? SERVICE_DEFS.get(placing)!.cost : null } : null),
   confirm: (g) => {
     if (!planned) return;
     const spot = spotFor(g, placing, planned.x, planned.z);
-    if (placeService(g, placing, spot.x, spot.z, spot.yaw)) { spotCache = null; planned = null; ghost?.hide(); lastCheck = null; }
-    else updateGhost(g, planned);
+    if (placeService(g, placing, spot.x, spot.z, spot.yaw)) {
+      const d = SERVICE_DEFS.get(placing)!;
+      justBuilt = { text: `✅ Built ${d.icon} ${d.name} · tap where the next one goes, or Done`, x: planned.x, z: planned.z };
+      spotCache = null; planned = null; ghost?.hide(); lastCheck = null;
+    } else updateGhost(g, planned);
   },
-  cancel: () => { planned = null; ghost?.hide(); lastCheck = null; },
+  cancel: () => { planned = null; justBuilt = null; ghost?.hide(); lastCheck = null; },
   tip: (g) => {
+    if (justBuilt) return { text: justBuilt.text, good: true };
     const d = SERVICE_DEFS.get(placing)!;
-    if (lastCheck && !lastCheck.ok) return { text: `${d.name}: ${lastCheck.reason}`, bad: true };
+    if (lastCheck && !lastCheck.ok) return { text: `${d.name}: ${lastCheck.reason}${snappable(lastCheck.reason) ? ' · green rings: spots where it fits' : ''}`, bad: true };
     if (g.isTouch && !planned) return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} · tap where it goes` };
     // what this purchase does to the budget, from the same forecast the HUD shows
     const after = g.sim.afterSpend(d.cost, d.upkeep);
@@ -1402,7 +1486,7 @@ registerPanel({
       rerender();
     }));
     el.querySelectorAll<HTMLButtonElement>('[data-svc]').forEach((b) => b.addEventListener('click', () => {
-      placing = b.dataset.svc as ServiceModelId;
+      placing = b.dataset.svc as ServiceModelId; justBuilt = null;
       g.tools.setExt('svcPlace');
       const v = VIEW_FOR_CAT[panelCat];
       if (v) g.overlays.setExt(viewObjs.get(v)!);

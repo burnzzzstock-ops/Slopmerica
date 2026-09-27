@@ -8,7 +8,13 @@
     "build": "tsc --noEmit && vite build",
     "build:single": "tsc --noEmit && vite build --mode single",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "assets:textures": "python scripts/asset-library/textures.py",
+    "assets:models": "node scripts/asset-library/build.mjs",
+    "assets:check": "node scripts/asset-library/validate.mjs",
+    "assets:browser-check": "node scripts/asset-library/browser-check.mjs",
+    "assets:dev": "vite --config vite.assets.config.ts",
+    "assets:build": "tsc --noEmit && vite build --config vite.assets.config.ts"
   },
   "dependencies": {
     "@fontsource/anton": "^5.3.0",

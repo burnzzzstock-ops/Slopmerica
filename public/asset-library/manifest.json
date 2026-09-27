@@ -1,0 +1,5623 @@
+{
+  "schemaVersion": 1,
+  "name": "Civic Foundry",
+  "version": "1.0.0",
+  "description": "Original modular architecture, streetscape, service structures and vegetation for SLOPMERICA.",
+  "units": "metres",
+  "upAxis": "+Y",
+  "frontAxis": "+Z",
+  "anchor": "bottom-centre; wall modules mount at their documented depth",
+  "textureConvention": "albedo sRGB; normal OpenGL +Y; ORM linear R=occlusion G=roughness B=metalness",
+  "provenance": "Original procedural models and textures authored for this repository. No third-party art or downloaded models.",
+  "materials": [
+    {
+      "id": "brick-red",
+      "label": "Red Brick",
+      "albedo": "textures/brick-red-albedo.png",
+      "normal": "textures/brick-red-normal.png",
+      "orm": "textures/brick-red-orm.png",
+      "tileMeters": [
+        1.1,
+        0.6
+      ],
+      "roughness": 0.82,
+      "metalness": 0,
+      "normalScale": 1.15,
+      "description": "Warm staggered clay brick with recessed mortar."
+    },
+    {
+      "id": "brick-cream",
+      "label": "Cream Brick",
+      "albedo": "textures/brick-cream-albedo.png",
+      "normal": "textures/brick-cream-normal.png",
+      "orm": "textures/brick-cream-orm.png",
+      "tileMeters": [
+        1.1,
+        0.6
+      ],
+      "roughness": 0.78,
+      "metalness": 0,
+      "normalScale": 1.05,
+      "description": "Pale fired brick with subtle face variation."
+    },
+    {
+      "id": "stucco-ivory",
+      "label": "Ivory Stucco",
+      "albedo": "textures/stucco-ivory-albedo.png",
+      "normal": "textures/stucco-ivory-normal.png",
+      "orm": "textures/stucco-ivory-orm.png",
+      "tileMeters": 1.25,
+      "roughness": 0.88,
+      "metalness": 0,
+      "normalScale": 0.5,
+      "description": "Fine hand-troweled ivory stucco."
+    },
+    {
+      "id": "concrete",
+      "label": "Architectural Concrete",
+      "albedo": "textures/concrete-albedo.png",
+      "normal": "textures/concrete-normal.png",
+      "orm": "textures/concrete-orm.png",
+      "tileMeters": 1.8,
+      "roughness": 0.84,
+      "metalness": 0,
+      "normalScale": 0.82,
+      "description": "Cool concrete with embedded mineral aggregate."
+    },
+    {
+      "id": "limestone",
+      "label": "Coursed Limestone",
+      "albedo": "textures/limestone-albedo.png",
+      "normal": "textures/limestone-normal.png",
+      "orm": "textures/limestone-orm.png",
+      "tileMeters": 1.4,
+      "roughness": 0.76,
+      "metalness": 0,
+      "normalScale": 0.9,
+      "description": "Warm coursed limestone blocks with fine joints."
+    },
+    {
+      "id": "asphalt",
+      "label": "Road Asphalt",
+      "albedo": "textures/asphalt-albedo.png",
+      "normal": "textures/asphalt-normal.png",
+      "orm": "textures/asphalt-orm.png",
+      "tileMeters": 3.5,
+      "roughness": 0.94,
+      "metalness": 0,
+      "normalScale": 0.62,
+      "description": "Dense charcoal asphalt with stone aggregate."
+    },
+    {
+      "id": "roof-shingle",
+      "label": "Asphalt Roof Shingle",
+      "albedo": "textures/roof-shingle-albedo.png",
+      "normal": "textures/roof-shingle-normal.png",
+      "orm": "textures/roof-shingle-orm.png",
+      "tileMeters": 2.2,
+      "roughness": 0.9,
+      "metalness": 0,
+      "normalScale": 0.78,
+      "description": "Staggered dark architectural roof shingles."
+    },
+    {
+      "id": "roof-metal",
+      "label": "Standing Seam Roof",
+      "albedo": "textures/roof-metal-albedo.png",
+      "normal": "textures/roof-metal-normal.png",
+      "orm": "textures/roof-metal-orm.png",
+      "tileMeters": 3,
+      "roughness": 0.48,
+      "metalness": 0.92,
+      "normalScale": 0.68,
+      "description": "Painted standing-seam metal roofing."
+    },
+    {
+      "id": "wood-oak",
+      "label": "Weathered Oak",
+      "albedo": "textures/wood-oak-albedo.png",
+      "normal": "textures/wood-oak-normal.png",
+      "orm": "textures/wood-oak-orm.png",
+      "tileMeters": 1.6,
+      "roughness": 0.68,
+      "metalness": 0,
+      "normalScale": 1,
+      "description": "Weathered oak boards with flowing grain and knots."
+    },
+    {
+      "id": "wood-painted",
+      "label": "Painted Wood",
+      "albedo": "textures/wood-painted-albedo.png",
+      "normal": "textures/wood-painted-normal.png",
+      "orm": "textures/wood-painted-orm.png",
+      "tileMeters": 1.6,
+      "roughness": 0.63,
+      "metalness": 0,
+      "normalScale": 0.55,
+      "description": "Painted timber boards with restrained worn grain."
+    },
+    {
+      "id": "metal-dark",
+      "label": "Dark Brushed Metal",
+      "albedo": "textures/metal-dark-albedo.png",
+      "normal": "textures/metal-dark-normal.png",
+      "orm": "textures/metal-dark-orm.png",
+      "tileMeters": 1.2,
+      "roughness": 0.36,
+      "metalness": 0.86,
+      "normalScale": 0.35,
+      "description": "Charcoal brushed architectural metal."
+    },
+    {
+      "id": "metal-galvanized",
+      "label": "Galvanized Steel",
+      "albedo": "textures/metal-galvanized-albedo.png",
+      "normal": "textures/metal-galvanized-normal.png",
+      "orm": "textures/metal-galvanized-orm.png",
+      "tileMeters": 0.15,
+      "roughness": 0.44,
+      "metalness": 0.95,
+      "normalScale": 0.15,
+      "description": "Silvery galvanized steel with fine zinc spangle."
+    },
+    {
+      "id": "metal-copper",
+      "label": "Oxidized Copper",
+      "albedo": "textures/metal-copper-albedo.png",
+      "normal": "textures/metal-copper-normal.png",
+      "orm": "textures/metal-copper-orm.png",
+      "tileMeters": 1.25,
+      "roughness": 0.46,
+      "metalness": 0.9,
+      "normalScale": 0.7,
+      "description": "Copper sheet with controlled turquoise oxidation."
+    },
+    {
+      "id": "glass-blue",
+      "label": "Blue-gray Glass",
+      "albedo": "textures/glass-blue-albedo.png",
+      "normal": "textures/glass-blue-normal.png",
+      "orm": "textures/glass-blue-orm.png",
+      "tileMeters": 2.5,
+      "roughness": 0.14,
+      "metalness": 0,
+      "normalScale": 0.12,
+      "description": "Desaturated blue-gray architectural glass with faint waviness."
+    },
+    {
+      "id": "foliage",
+      "label": "Broadleaf Foliage",
+      "albedo": "textures/foliage-albedo.png",
+      "normal": "textures/foliage-normal.png",
+      "orm": "textures/foliage-orm.png",
+      "tileMeters": 1.3,
+      "roughness": 0.82,
+      "metalness": 0,
+      "normalScale": 0.88,
+      "description": "Layered repeating broadleaf canopy pattern."
+    },
+    {
+      "id": "bark",
+      "label": "Coarse Tree Bark",
+      "albedo": "textures/bark-albedo.png",
+      "normal": "textures/bark-normal.png",
+      "orm": "textures/bark-orm.png",
+      "tileMeters": 1.1,
+      "roughness": 0.93,
+      "metalness": 0,
+      "normalScale": 1.35,
+      "description": "Deep vertically ridged brown bark."
+    },
+    {
+      "id": "soil",
+      "label": "Dark Garden Soil",
+      "albedo": "textures/soil-albedo.png",
+      "normal": "textures/soil-normal.png",
+      "orm": "textures/soil-orm.png",
+      "tileMeters": 1.5,
+      "roughness": 0.96,
+      "metalness": 0,
+      "normalScale": 0.8,
+      "description": "Moist dark soil with small mineral fragments."
+    },
+    {
+      "id": "rubber",
+      "label": "Molded Black Rubber",
+      "albedo": "textures/rubber-albedo.png",
+      "normal": "textures/rubber-normal.png",
+      "orm": "textures/rubber-orm.png",
+      "tileMeters": 0.75,
+      "roughness": 0.72,
+      "metalness": 0,
+      "normalScale": 0.65,
+      "description": "Molded charcoal rubber with shallow diagonal tread."
+    }
+  ],
+  "assets": [
+    {
+      "id": "door-commercial-glass",
+      "label": "Commercial glass door",
+      "category": "doors",
+      "description": "Dark aluminum full-glass shop entrance.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -0.6200000047683716,
+          -0.06999995559453964,
+          -0.08999999612569809
+        ],
+        "max": [
+          0.6200000047683716,
+          2.2750000953674316,
+          0.28999999165534973
+        ]
+      },
+      "dimensions": [
+        1.24,
+        2.345,
+        0.38
+      ],
+      "materials": [
+        "metal-dark",
+        "glass-blue",
+        "concrete"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/door-commercial-glass.lod0.gltf",
+          "triangles": 904,
+          "drawCalls": 3,
+          "bufferBytes": 86784,
+          "sha256": "9fa7a9ab62e0e2e1fd1513758f16866b9f7a52e703bf872dce033490fee3b3cc"
+        },
+        {
+          "level": 1,
+          "url": "models/door-commercial-glass.lod1.gltf",
+          "triangles": 96,
+          "drawCalls": 3,
+          "bufferBytes": 9216,
+          "sha256": "8d94d5febcefcdf230d93d2e1a3ca31bb9acc534eff1cd63cc03c9035831d160"
+        },
+        {
+          "level": 2,
+          "url": "models/door-commercial-glass.lod2.gltf",
+          "triangles": 36,
+          "drawCalls": 2,
+          "bufferBytes": 3456,
+          "sha256": "925e5040bc7b5c1f91239c8bcdd4e684c30a76d18476e789901cf76a9cb78d02"
+        }
+      ]
+    },
+    {
+      "id": "door-craftsman-glazed",
+      "label": "Craftsman glazed door",
+      "category": "doors",
+      "description": "Oak entry with a broad glazed upper panel and canopy.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -0.8600000143051147,
+          -0.06999996304512024,
+          -0.08999999612569809
+        ],
+        "max": [
+          0.8600000143051147,
+          2.6078379154205322,
+          0.6814824342727661
+        ]
+      },
+      "dimensions": [
+        1.72,
+        2.6778,
+        0.7715
+      ],
+      "materials": [
+        "limestone",
+        "metal-dark",
+        "glass-blue",
+        "wood-oak",
+        "concrete",
+        "metal-copper"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/door-craftsman-glazed.lod0.gltf",
+          "triangles": 1588,
+          "drawCalls": 6,
+          "bufferBytes": 152448,
+          "sha256": "4819f25edb9217ca84ad5ade997bd6e845d54de23ed601d603ea1a7d91f5f3ea"
+        },
+        {
+          "level": 1,
+          "url": "models/door-craftsman-glazed.lod1.gltf",
+          "triangles": 108,
+          "drawCalls": 6,
+          "bufferBytes": 10368,
+          "sha256": "fe6ae808cef08c05f2d35830dc56f9715c6a46dfe0fa2a62aa9252ce81550e64"
+        },
+        {
+          "level": 2,
+          "url": "models/door-craftsman-glazed.lod2.gltf",
+          "triangles": 48,
+          "drawCalls": 4,
+          "bufferBytes": 4608,
+          "sha256": "7e6abaaa8c9ed74684ef095b5bd1b2d54d0b0661c2a04b0e8e4eb39056e5f97e"
+        }
+      ]
+    },
+    {
+      "id": "door-double-civic",
+      "label": "Civic double doors",
+      "category": "doors",
+      "description": "Symmetrical paneled double entry with formal transom.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.1725000143051147,
+          -0.07000000774860382,
+          -0.08999999612569809
+        ],
+        "max": [
+          1.1725000143051147,
+          3.065000057220459,
+          0.28999999165534973
+        ]
+      },
+      "dimensions": [
+        2.345,
+        3.135,
+        0.38
+      ],
+      "materials": [
+        "limestone",
+        "wood-oak",
+        "wood-painted",
+        "concrete",
+        "metal-copper",
+        "glass-blue"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/door-double-civic.lod0.gltf",
+          "triangles": 2780,
+          "drawCalls": 6,
+          "bufferBytes": 266880,
+          "sha256": "7e2ff23370d092b0d43dabe873e066fe0884aea7b754c28d4add590416e8e2d6"
+        },
+        {
+          "level": 1,
+          "url": "models/door-double-civic.lod1.gltf",
+          "triangles": 228,
+          "drawCalls": 5,
+          "bufferBytes": 21888,
+          "sha256": "5529432058db3a2a6b7c34c714b1e811054c2b5ea428ee1b20e294b2d02823b7"
+        },
+        {
+          "level": 2,
+          "url": "models/door-double-civic.lod2.gltf",
+          "triangles": 60,
+          "drawCalls": 3,
+          "bufferBytes": 5760,
+          "sha256": "012952848dcd4bf86b99c769581ac8309073b63bd0b3ee5769eae25b435e81dc"
+        }
+      ]
+    },
+    {
+      "id": "door-double-storefront",
+      "label": "Double storefront doors",
+      "category": "doors",
+      "description": "Paired aluminum glass doors under a glazed transom.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.0924999713897705,
+          -0.06999995559453964,
+          -0.08999999612569809
+        ],
+        "max": [
+          1.0924999713897705,
+          2.8450000286102295,
+          0.28999999165534973
+        ]
+      },
+      "dimensions": [
+        2.185,
+        2.915,
+        0.38
+      ],
+      "materials": [
+        "metal-dark",
+        "glass-blue",
+        "concrete"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/door-double-storefront.lod0.gltf",
+          "triangles": 2348,
+          "drawCalls": 3,
+          "bufferBytes": 225408,
+          "sha256": "4acf94d668d8dc03a5c9b2030470e6acce12e5297397826a7414cfb1794f2d47"
+        },
+        {
+          "level": 1,
+          "url": "models/door-double-storefront.lod1.gltf",
+          "triangles": 252,
+          "drawCalls": 3,
+          "bufferBytes": 24192,
+          "sha256": "00e3ccbb052e6946151da3961d3225abb9e1eeac3e7744ab400ef070ee5090b8"
+        },
+        {
+          "level": 2,
+          "url": "models/door-double-storefront.lod2.gltf",
+          "triangles": 84,
+          "drawCalls": 2,
+          "bufferBytes": 8064,
+          "sha256": "46baf17d3b4ffed639d991f951ab5bc21a47676ebd5887c5d0dd2d39493c3019"
+        }
+      ]
+    },
+    {
+      "id": "door-loading-rollup",
+      "label": "Loading roll-up door",
+      "category": "doors",
+      "description": "Galvanized overhead door with slats and rubber dock bumpers.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.7649999856948853,
+          -0.0700000524520874,
+          -0.08999999612569809
+        ],
+        "max": [
+          1.7649999856948853,
+          3.325000047683716,
+          0.4300000071525574
+        ]
+      },
+      "dimensions": [
+        3.53,
+        3.395,
+        0.52
+      ],
+      "materials": [
+        "concrete",
+        "metal-galvanized",
+        "wood-painted",
+        "metal-dark",
+        "wood-oak",
+        "rubber"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/door-loading-rollup.lod0.gltf",
+          "triangles": 2416,
+          "drawCalls": 6,
+          "bufferBytes": 231936,
+          "sha256": "09720484891388457b0ca8dfa1ad8df226005a24ea3612b362f7aae6186b5d08"
+        },
+        {
+          "level": 1,
+          "url": "models/door-loading-rollup.lod1.gltf",
+          "triangles": 216,
+          "drawCalls": 5,
+          "bufferBytes": 20736,
+          "sha256": "6b42cbb7be32e4a9cdeb71bce77298e5953582aaf8d164ef576fc74a28638e78"
+        },
+        {
+          "level": 2,
+          "url": "models/door-loading-rollup.lod2.gltf",
+          "triangles": 48,
+          "drawCalls": 3,
+          "bufferBytes": 4608,
+          "sha256": "7ab79466753835698843adbbc856afa316fea719f70480f7515639d186380b4a"
+        }
+      ]
+    },
+    {
+      "id": "door-residential-panel",
+      "label": "Residential panel door",
+      "category": "doors",
+      "description": "Four-panel painted entry door with masonry reveal.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -0.6100000143051147,
+          -0.06999999284744263,
+          -0.08999999612569809
+        ],
+        "max": [
+          0.6100000143051147,
+          2.194999933242798,
+          0.28999999165534973
+        ]
+      },
+      "dimensions": [
+        1.22,
+        2.265,
+        0.38
+      ],
+      "materials": [
+        "brick-cream",
+        "wood-painted",
+        "concrete",
+        "metal-dark",
+        "wood-oak"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/door-residential-panel.lod0.gltf",
+          "triangles": 1228,
+          "drawCalls": 5,
+          "bufferBytes": 117888,
+          "sha256": "7c6838f485bfb0376e0df5593855c31d36c9f37602406b076b5d1851660a7bd6"
+        },
+        {
+          "level": 1,
+          "url": "models/door-residential-panel.lod1.gltf",
+          "triangles": 84,
+          "drawCalls": 3,
+          "bufferBytes": 8064,
+          "sha256": "c5f2b24fe6d1ede5515b6706ee30107af4c3094501a0e92c39a503a715c89bf3"
+        },
+        {
+          "level": 2,
+          "url": "models/door-residential-panel.lod2.gltf",
+          "triangles": 24,
+          "drawCalls": 2,
+          "bufferBytes": 2304,
+          "sha256": "e2fde72981948c1a2ffef6389ccd403ee603b7e647d88b660870854b37bb6bbf"
+        }
+      ]
+    },
+    {
+      "id": "door-rowhouse-entry",
+      "label": "Rowhouse entry ensemble",
+      "category": "doors",
+      "description": "Narrow paneled door with two sidelights and a small canopy.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -0.8799999952316284,
+          -0.07000003755092621,
+          -0.08999999612569809
+        ],
+        "max": [
+          0.8799999952316284,
+          2.7078380584716797,
+          0.6814824342727661
+        ]
+      },
+      "dimensions": [
+        1.76,
+        2.7778,
+        0.7715
+      ],
+      "materials": [
+        "limestone",
+        "wood-painted",
+        "concrete",
+        "metal-dark",
+        "wood-oak",
+        "roof-metal",
+        "glass-blue"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/door-rowhouse-entry.lod0.gltf",
+          "triangles": 3100,
+          "drawCalls": 7,
+          "bufferBytes": 297600,
+          "sha256": "105d683a48cfc9f363c5f7ffe4572f063112d7f6ff95741c6ae3a6c284054135"
+        },
+        {
+          "level": 1,
+          "url": "models/door-rowhouse-entry.lod1.gltf",
+          "triangles": 216,
+          "drawCalls": 5,
+          "bufferBytes": 20736,
+          "sha256": "0f27a3ff1aaf71b91560f58f871571198ca82aea9b55cbd4a28de2acd271fb42"
+        },
+        {
+          "level": 2,
+          "url": "models/door-rowhouse-entry.lod2.gltf",
+          "triangles": 60,
+          "drawCalls": 4,
+          "bufferBytes": 5760,
+          "sha256": "2f2eea8570902ad4588181c090c8e1e4d19c71e512fdd6a6a9fe2b69ee13eaa9"
+        }
+      ]
+    },
+    {
+      "id": "door-theater-marquee",
+      "label": "Theater entrance doors",
+      "category": "doors",
+      "description": "Wide glazed double entrance beneath a deep marquee.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.600000023841858,
+          -0.06999995559453964,
+          -0.08999999612569809
+        ],
+        "max": [
+          1.600000023841858,
+          3.497838020324707,
+          0.6814824342727661
+        ]
+      },
+      "dimensions": [
+        3.2,
+        3.5678,
+        0.7715
+      ],
+      "materials": [
+        "limestone",
+        "metal-dark",
+        "glass-blue",
+        "concrete",
+        "metal-copper"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/door-theater-marquee.lod0.gltf",
+          "triangles": 3032,
+          "drawCalls": 5,
+          "bufferBytes": 291072,
+          "sha256": "b1ddc58c351e1860807089129829e76e3cd0bc83fc2a878a617f5d9223b78b13"
+        },
+        {
+          "level": 1,
+          "url": "models/door-theater-marquee.lod1.gltf",
+          "triangles": 264,
+          "drawCalls": 5,
+          "bufferBytes": 25344,
+          "sha256": "e900be5e5a2e3dbb8c4c25475c1040c660b1421b87ba9092cd9197b41e44bfde"
+        },
+        {
+          "level": 2,
+          "url": "models/door-theater-marquee.lod2.gltf",
+          "triangles": 96,
+          "drawCalls": 4,
+          "bufferBytes": 9216,
+          "sha256": "1b72fd63f9b41c1cf989743c8d2a0f65d8f9294ab2361bcccb3566ebbd9ff247"
+        }
+      ]
+    },
+    {
+      "id": "facade-bay-window",
+      "label": "Full-height bay facade",
+      "category": "facades",
+      "description": "Projecting multi-light bay with copper crown.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.5999999046325684,
+          -9.536743306171047e-8,
+          -0.3199999928474426
+        ],
+        "max": [
+          2.5999999046325684,
+          4.300000190734863,
+          1.0149999856948853
+        ]
+      },
+      "dimensions": [
+        5.2,
+        4.3,
+        1.335
+      ],
+      "materials": [
+        "brick-red",
+        "brick-cream",
+        "glass-blue",
+        "wood-painted",
+        "limestone",
+        "metal-copper"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/facade-bay-window.lod0.gltf",
+          "triangles": 2916,
+          "drawCalls": 6,
+          "bufferBytes": 279936,
+          "sha256": "61e0ade73ef60cbf6ccd5b2d949a7caadee78540a527c418c450d8932f39ddbe"
+        },
+        {
+          "level": 1,
+          "url": "models/facade-bay-window.lod1.gltf",
+          "triangles": 288,
+          "drawCalls": 6,
+          "bufferBytes": 27648,
+          "sha256": "3cfadbde7cd664c4dc3d85a9a7c8bf814aa30bb8ca9b42cdf9e8e4c76b656fa2"
+        },
+        {
+          "level": 2,
+          "url": "models/facade-bay-window.lod2.gltf",
+          "triangles": 108,
+          "drawCalls": 4,
+          "bufferBytes": 10368,
+          "sha256": "170080fc174b74a2a733db7a0fd6c6679ebad7531555c265e1f6f540ccb7f5b7"
+        }
+      ]
+    },
+    {
+      "id": "facade-brick-pilasters",
+      "label": "Brick pilaster facade",
+      "category": "facades",
+      "description": "Three-bay masonry wall articulated by limestone pilasters.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -3.8399999141693115,
+          -4.7683716530855236e-8,
+          -0.3199999928474426
+        ],
+        "max": [
+          3.8399999141693115,
+          4.440000057220459,
+          0.35999998450279236
+        ]
+      },
+      "dimensions": [
+        7.68,
+        4.44,
+        0.68
+      ],
+      "materials": [
+        "brick-red",
+        "limestone"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/facade-brick-pilasters.lod0.gltf",
+          "triangles": 1620,
+          "drawCalls": 2,
+          "bufferBytes": 155520,
+          "sha256": "727ee8dcfb5c28e645f96fe6c2abd2358fd12438ebe7a745f21adfe8c4cc9abd"
+        },
+        {
+          "level": 1,
+          "url": "models/facade-brick-pilasters.lod1.gltf",
+          "triangles": 180,
+          "drawCalls": 2,
+          "bufferBytes": 17280,
+          "sha256": "9c745eb2aae6a88e532493172e4d292a4c85d3b3b1fd98d858adc8ad1535ae5a"
+        },
+        {
+          "level": 2,
+          "url": "models/facade-brick-pilasters.lod2.gltf",
+          "triangles": 84,
+          "drawCalls": 2,
+          "bufferBytes": 8064,
+          "sha256": "ae48d3eb36163577ec63b6b09b497e72cf619f6661003e91974454c31c78acdf"
+        }
+      ]
+    },
+    {
+      "id": "facade-civic-arcade",
+      "label": "Civic stone arcade",
+      "category": "facades",
+      "description": "Three-arch ground-floor arcade with substantial piers.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -4.369999885559082,
+          -2.8610228852699038e-8,
+          -0.8720000386238098
+        ],
+        "max": [
+          4.369999885559082,
+          4.199999809265137,
+          0.3100000023841858
+        ]
+      },
+      "dimensions": [
+        8.74,
+        4.2,
+        1.182
+      ],
+      "materials": [
+        "brick-cream",
+        "metal-dark",
+        "limestone"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/facade-civic-arcade.lod0.gltf",
+          "triangles": 3000,
+          "drawCalls": 3,
+          "bufferBytes": 288000,
+          "sha256": "7cb453d703297664e24370c5786a8bedfa467ac09efe2007b46239153da22690"
+        },
+        {
+          "level": 1,
+          "url": "models/facade-civic-arcade.lod1.gltf",
+          "triangles": 984,
+          "drawCalls": 3,
+          "bufferBytes": 94464,
+          "sha256": "c6638c0c75253fdc3b6af322db55ca24b717ce1ec6fcbf739e7c3f2acd7e33db"
+        },
+        {
+          "level": 2,
+          "url": "models/facade-civic-arcade.lod2.gltf",
+          "triangles": 120,
+          "drawCalls": 3,
+          "bufferBytes": 11520,
+          "sha256": "8157e1a72f936030eb4abf20d6537dd963ebb4b5a9fa16d75d8b6394c30ac2d5"
+        }
+      ]
+    },
+    {
+      "id": "facade-classical-cornice",
+      "label": "Classical commercial cornice",
+      "category": "facades",
+      "description": "Cream brick facade cap with layered cornice and dentils.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -4.150000095367432,
+          4.7683716530855236e-8,
+          -0.3199999928474426
+        ],
+        "max": [
+          4.150000095367432,
+          2.240000009536743,
+          0.4300000071525574
+        ]
+      },
+      "dimensions": [
+        8.3,
+        2.24,
+        0.75
+      ],
+      "materials": [
+        "brick-cream",
+        "limestone",
+        "metal-dark"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/facade-classical-cornice.lod0.gltf",
+          "triangles": 2160,
+          "drawCalls": 3,
+          "bufferBytes": 207360,
+          "sha256": "95802260b19ac3171836d1c9da12a454e0fe94c8ca9c2ae32f2a0bc06cff9c66"
+        },
+        {
+          "level": 1,
+          "url": "models/facade-classical-cornice.lod1.gltf",
+          "triangles": 48,
+          "drawCalls": 3,
+          "bufferBytes": 4608,
+          "sha256": "f0c09a89ad43cd75f4e38aca4045ad90a495fe7047921fc05d5236e85d607aab"
+        },
+        {
+          "level": 2,
+          "url": "models/facade-classical-cornice.lod2.gltf",
+          "triangles": 48,
+          "drawCalls": 3,
+          "bufferBytes": 4608,
+          "sha256": "f0c09a89ad43cd75f4e38aca4045ad90a495fe7047921fc05d5236e85d607aab"
+        }
+      ]
+    },
+    {
+      "id": "facade-fire-escape",
+      "label": "Fire escape facade",
+      "category": "facades",
+      "description": "Two-level galvanized fire escape on a red brick wall.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.700000047683716,
+          9.536743306171047e-8,
+          -0.3199999928474426
+        ],
+        "max": [
+          2.700000047683716,
+          7.199999809265137,
+          0.8100000023841858
+        ]
+      },
+      "dimensions": [
+        5.4,
+        7.2,
+        1.13
+      ],
+      "materials": [
+        "brick-red",
+        "metal-galvanized",
+        "metal-dark"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/facade-fire-escape.lod0.gltf",
+          "triangles": 3456,
+          "drawCalls": 3,
+          "bufferBytes": 331776,
+          "sha256": "eb171573683b9b57e7855c8576ca01f63941f8646c378cb42d96b64a5d78265a"
+        },
+        {
+          "level": 1,
+          "url": "models/facade-fire-escape.lod1.gltf",
+          "triangles": 384,
+          "drawCalls": 3,
+          "bufferBytes": 36864,
+          "sha256": "b578db3653012f8d9c37202e4296fd7f10a1d9b738b3900980703c4300a813a3"
+        },
+        {
+          "level": 2,
+          "url": "models/facade-fire-escape.lod2.gltf",
+          "triangles": 36,
+          "drawCalls": 2,
+          "bufferBytes": 3456,
+          "sha256": "468210ab1aff43f12c2966466c4d07ef2be8eba676ecf37efc3087ee73da7829"
+        }
+      ]
+    },
+    {
+      "id": "facade-iron-balcony",
+      "label": "Iron balcony facade",
+      "category": "facades",
+      "description": "Second-story masonry bay with deep slab and fine iron railing.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.799999952316284,
+          -4.7683716530855236e-8,
+          -0.3199999928474426
+        ],
+        "max": [
+          2.799999952316284,
+          5.400000095367432,
+          1.0499999523162842
+        ]
+      },
+      "dimensions": [
+        5.6,
+        5.4,
+        1.37
+      ],
+      "materials": [
+        "brick-red",
+        "concrete",
+        "metal-dark",
+        "limestone",
+        "glass-blue",
+        "wood-painted"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/facade-iron-balcony.lod0.gltf",
+          "triangles": 3060,
+          "drawCalls": 6,
+          "bufferBytes": 293760,
+          "sha256": "3f65e197dab0737ce113a09c35c3605e92deabefd57884e9752129a74beaff20"
+        },
+        {
+          "level": 1,
+          "url": "models/facade-iron-balcony.lod1.gltf",
+          "triangles": 432,
+          "drawCalls": 6,
+          "bufferBytes": 41472,
+          "sha256": "9778df65121b888ddc69513eccd602ba59364b55a5e63dd96daa0cef8d1e2668"
+        },
+        {
+          "level": 2,
+          "url": "models/facade-iron-balcony.lod2.gltf",
+          "triangles": 48,
+          "drawCalls": 4,
+          "bufferBytes": 4608,
+          "sha256": "7339da62dab6a4908c149a90ea84f9164a201b668f9c75633a382640f8867790"
+        }
+      ]
+    },
+    {
+      "id": "facade-loading-bay",
+      "label": "Warehouse loading bay",
+      "category": "facades",
+      "description": "Concrete-framed roll-up dock with platform and steel canopy.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -3.200000047683716,
+          -0.06999994814395905,
+          -0.3199999928474426
+        ],
+        "max": [
+          3.200000047683716,
+          4.599999904632568,
+          1.3199999332427979
+        ]
+      },
+      "dimensions": [
+        6.4,
+        4.67,
+        1.64
+      ],
+      "materials": [
+        "brick-red",
+        "concrete",
+        "metal-galvanized",
+        "wood-painted",
+        "metal-dark",
+        "wood-oak",
+        "rubber",
+        "roof-metal"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/facade-loading-bay.lod0.gltf",
+          "triangles": 2740,
+          "drawCalls": 8,
+          "bufferBytes": 263040,
+          "sha256": "f679b5561730fc8175469f16439f2d30f312b443192fd3d64493cffb259a8fd2"
+        },
+        {
+          "level": 1,
+          "url": "models/facade-loading-bay.lod1.gltf",
+          "triangles": 252,
+          "drawCalls": 7,
+          "bufferBytes": 24192,
+          "sha256": "b88247d5c8dab3ad4ece5859683f711e14358ea4efa2fe20be59da1f4bbb2ccc"
+        },
+        {
+          "level": 2,
+          "url": "models/facade-loading-bay.lod2.gltf",
+          "triangles": 72,
+          "drawCalls": 4,
+          "bufferBytes": 6912,
+          "sha256": "1c24b1df795058ac36ca9633dc3024b7c3f34f7935ed9455b6c7f30a91dcbc8b"
+        }
+      ]
+    },
+    {
+      "id": "facade-stucco-pilasters",
+      "label": "Stucco civic pilasters",
+      "category": "facades",
+      "description": "Formal stucco wall with five shallow stone pilasters and cornice.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -4.739999771118164,
+          0,
+          -0.3199999928474426
+        ],
+        "max": [
+          4.739999771118164,
+          5.039999961853027,
+          0.35999998450279236
+        ]
+      },
+      "dimensions": [
+        9.48,
+        5.04,
+        0.68
+      ],
+      "materials": [
+        "stucco-ivory",
+        "limestone"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/facade-stucco-pilasters.lod0.gltf",
+          "triangles": 1944,
+          "drawCalls": 2,
+          "bufferBytes": 186624,
+          "sha256": "c8d73d963ef1949822aa3a1981ccac23e54d61c5eb548b3fea01f8b2dfc6680a"
+        },
+        {
+          "level": 1,
+          "url": "models/facade-stucco-pilasters.lod1.gltf",
+          "triangles": 216,
+          "drawCalls": 2,
+          "bufferBytes": 20736,
+          "sha256": "7f2f0b5a75038fbb6db5039ecc849cd560e1a892c70e840d01ecd5865cf4f4d4"
+        },
+        {
+          "level": 2,
+          "url": "models/facade-stucco-pilasters.lod2.gltf",
+          "triangles": 96,
+          "drawCalls": 2,
+          "bufferBytes": 9216,
+          "sha256": "3043ca854e5c407ffb0bb636ffdd37709e14626c51e886e353385e5175bce5b3"
+        }
+      ]
+    },
+    {
+      "id": "median-ornamental-grass",
+      "label": "Median Ornamental Grass",
+      "category": "vegetation",
+      "description": "Rhythmic clumps of arching ornamental grass for roadway medians.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.9299999475479126,
+          -4.76837147544984e-9,
+          -0.41999998688697815
+        ],
+        "max": [
+          1.9299999475479126,
+          1.2400000095367432,
+          0.41999998688697815
+        ]
+      },
+      "dimensions": [
+        3.86,
+        1.24,
+        0.84
+      ],
+      "materials": [
+        "foliage"
+      ],
+      "sockets": [],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/median-ornamental-grass.lod0.gltf",
+          "triangles": 10080,
+          "drawCalls": 1,
+          "bufferBytes": 967680,
+          "sha256": "b1ec1c35d079ae40badfa30dcf15dac768b363228fa997cef518bc91a3e9d9a6"
+        },
+        {
+          "level": 1,
+          "url": "models/median-ornamental-grass.lod1.gltf",
+          "triangles": 1440,
+          "drawCalls": 1,
+          "bufferBytes": 138240,
+          "sha256": "2bdf4bc73432aea58612408a57d917831ad2dc4cdd28f258d950ba28ec3bbbd4"
+        },
+        {
+          "level": 2,
+          "url": "models/median-ornamental-grass.lod2.gltf",
+          "triangles": 240,
+          "drawCalls": 1,
+          "bufferBytes": 23040,
+          "sha256": "9812f4ad7a48e680a71273aa40aa5e598999fa2475ae9ed7b4fb3dbf23b72f41"
+        }
+      ]
+    },
+    {
+      "id": "planter-raised-urban",
+      "label": "Raised Urban Planter",
+      "category": "vegetation",
+      "description": "Rectangular masonry planter with layered ornamental grasses and shrubs.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.600000023841858,
+          -2.38418573772492e-9,
+          -0.574999988079071
+        ],
+        "max": [
+          1.600000023841858,
+          1.6200000047683716,
+          0.574999988079071
+        ]
+      },
+      "dimensions": [
+        3.2,
+        1.62,
+        1.15
+      ],
+      "materials": [
+        "brick-cream",
+        "soil",
+        "foliage"
+      ],
+      "sockets": [],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/planter-raised-urban.lod0.gltf",
+          "triangles": 4536,
+          "drawCalls": 3,
+          "bufferBytes": 435456,
+          "sha256": "07fb5bf16d157e6fb31dc2fa84abaca56faed57b757fce58e9920708f098bf2d"
+        },
+        {
+          "level": 1,
+          "url": "models/planter-raised-urban.lod1.gltf",
+          "triangles": 1176,
+          "drawCalls": 3,
+          "bufferBytes": 112896,
+          "sha256": "9e0356c838bf711d691746998de68f8c63a02a5fcc1102d8bfee226b86a38e55"
+        },
+        {
+          "level": 2,
+          "url": "models/planter-raised-urban.lod2.gltf",
+          "triangles": 264,
+          "drawCalls": 3,
+          "bufferBytes": 25344,
+          "sha256": "1d761e468830f23ef2a9ebf37fa763a0cb3c2823afb95ecf02e65f275a0b4b96"
+        }
+      ]
+    },
+    {
+      "id": "planter-street-tree",
+      "label": "Street Tree Planter",
+      "category": "vegetation",
+      "description": "Large tapered concrete planter with soil, a young tree, and protective rim.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.22372305393219,
+          -1.4305114426349519e-8,
+          -0.9097999930381775
+        ],
+        "max": [
+          1.2544831037521362,
+          4.260407447814941,
+          0.9359083771705627
+        ]
+      },
+      "dimensions": [
+        2.4782,
+        4.2604,
+        1.8457
+      ],
+      "materials": [
+        "concrete",
+        "soil",
+        "limestone",
+        "bark",
+        "foliage"
+      ],
+      "sockets": [],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/planter-street-tree.lod0.gltf",
+          "triangles": 6532,
+          "drawCalls": 5,
+          "bufferBytes": 627072,
+          "sha256": "38251a6f7cef2ddc52f56bc77db6d54408716983efe9ef5983f37e8a6a266974"
+        },
+        {
+          "level": 1,
+          "url": "models/planter-street-tree.lod1.gltf",
+          "triangles": 1512,
+          "drawCalls": 5,
+          "bufferBytes": 145152,
+          "sha256": "eaca9d20a6de0e00909aa7f892c7ac057ee40632ef69e8e311927430d4e53b97"
+        },
+        {
+          "level": 2,
+          "url": "models/planter-street-tree.lod2.gltf",
+          "triangles": 392,
+          "drawCalls": 4,
+          "bufferBytes": 37632,
+          "sha256": "3ebd22ebdf2d4dedcb49aa888e76082d6d450e78ccb9e9ba6fe9ed600fc0e186"
+        }
+      ]
+    },
+    {
+      "id": "roof-dormer-gable",
+      "label": "Dormered gable roof",
+      "category": "roofs",
+      "description": "Deep shingle roof with a raised side-facing glazed dormer.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -4.367716312408447,
+          -0.03615274280309677,
+          -5.161250114440918
+        ],
+        "max": [
+          4.367716312408447,
+          2.9483397006988525,
+          5.161250114440918
+        ]
+      },
+      "dimensions": [
+        8.7354,
+        2.9845,
+        10.3225
+      ],
+      "materials": [
+        "roof-shingle",
+        "brick-cream",
+        "glass-blue",
+        "wood-painted",
+        "limestone",
+        "metal-dark"
+      ],
+      "sockets": [
+        {
+          "name": "building-seat",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/roof-dormer-gable.lod0.gltf",
+          "triangles": 1770,
+          "drawCalls": 6,
+          "bufferBytes": 169920,
+          "sha256": "759e50b18bfa9564a8a1086cd2326df09348a0cd413e7883c74cb7c46473a0d1"
+        },
+        {
+          "level": 1,
+          "url": "models/roof-dormer-gable.lod1.gltf",
+          "triangles": 158,
+          "drawCalls": 5,
+          "bufferBytes": 15168,
+          "sha256": "2fcd8158077c3f73fbae6b503c1ae73d3600f1016f960cef5dc3ca2200b69379"
+        },
+        {
+          "level": 2,
+          "url": "models/roof-dormer-gable.lod2.gltf",
+          "triangles": 26,
+          "drawCalls": 2,
+          "bufferBytes": 2496,
+          "sha256": "8c1fbbf87510a1304d129594a1711db0d041dd1f030110321737d327d2fc25aa"
+        }
+      ]
+    },
+    {
+      "id": "roof-flat-parapet",
+      "label": "Flat parapet roof",
+      "category": "roofs",
+      "description": "Commercial roof deck enclosed by brick parapets and stone coping.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -4.699999809265137,
+          -3.5762786065873797e-9,
+          -5.170000076293945
+        ],
+        "max": [
+          4.699999809265137,
+          0.8399999737739563,
+          5.170000076293945
+        ]
+      },
+      "dimensions": [
+        9.4,
+        0.84,
+        10.34
+      ],
+      "materials": [
+        "asphalt",
+        "brick-red",
+        "limestone"
+      ],
+      "sockets": [
+        {
+          "name": "building-seat",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/roof-flat-parapet.lod0.gltf",
+          "triangles": 756,
+          "drawCalls": 3,
+          "bufferBytes": 72576,
+          "sha256": "397d19d0edd160eed236aa8577299ac0c90eb19bda8463bd34abba56dfe3ae4d"
+        },
+        {
+          "level": 1,
+          "url": "models/roof-flat-parapet.lod1.gltf",
+          "triangles": 84,
+          "drawCalls": 3,
+          "bufferBytes": 8064,
+          "sha256": "d8c3559b7ad3190faa01ad3ca18c508e3997744f45f15b67143d3fd4c16e31bd"
+        },
+        {
+          "level": 2,
+          "url": "models/roof-flat-parapet.lod2.gltf",
+          "triangles": 60,
+          "drawCalls": 2,
+          "bufferBytes": 5760,
+          "sha256": "797799df246beab5f5f894b0bd31bc697c4222eccf1da26d588dac904f3e8ae9"
+        }
+      ]
+    },
+    {
+      "id": "roof-gable-chimney",
+      "label": "Gable roof with chimney",
+      "category": "roofs",
+      "description": "Traditional steep roof with offset brick chimney.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -3.6023738384246826,
+          -0.03281368315219879,
+          -4.439499855041504
+        ],
+        "max": [
+          3.6023738384246826,
+          3.490000009536743,
+          4.439499855041504
+        ]
+      },
+      "dimensions": [
+        7.2047,
+        3.5228,
+        8.879
+      ],
+      "materials": [
+        "roof-shingle",
+        "brick-red",
+        "limestone"
+      ],
+      "sockets": [
+        {
+          "name": "building-seat",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/roof-gable-chimney.lod0.gltf",
+          "triangles": 474,
+          "drawCalls": 3,
+          "bufferBytes": 45504,
+          "sha256": "70fee1f719b33ace338591827a3c155ff2f4924bdf469386a5623e0202e89783"
+        },
+        {
+          "level": 1,
+          "url": "models/roof-gable-chimney.lod1.gltf",
+          "triangles": 74,
+          "drawCalls": 3,
+          "bufferBytes": 7104,
+          "sha256": "de30b17521cac0b550972dcd2f39e9407e760fc2bd1e8b76f1d8de0792a6fb96"
+        },
+        {
+          "level": 2,
+          "url": "models/roof-gable-chimney.lod2.gltf",
+          "triangles": 38,
+          "drawCalls": 2,
+          "bufferBytes": 3648,
+          "sha256": "ded7c2fa901b270d1e96966fbee96eca9c942b0154955c47231e66d56ab2b8e3"
+        }
+      ]
+    },
+    {
+      "id": "roof-gable-shingle",
+      "label": "Shingle gable roof",
+      "category": "roofs",
+      "description": "Medium-pitch shingle roof with ridge cap and finished gable ends.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -4.036445140838623,
+          -0.036955006420612335,
+          -4.930500030517578
+        ],
+        "max": [
+          4.036445140838623,
+          2.25,
+          4.930500030517578
+        ]
+      },
+      "dimensions": [
+        8.0729,
+        2.287,
+        9.861
+      ],
+      "materials": [
+        "roof-shingle",
+        "brick-cream"
+      ],
+      "sockets": [
+        {
+          "name": "building-seat",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/roof-gable-shingle.lod0.gltf",
+          "triangles": 258,
+          "drawCalls": 2,
+          "bufferBytes": 24768,
+          "sha256": "9f1d490004208a2647095cf247f1b320cca2f09cb449de91def136472abe35c8"
+        },
+        {
+          "level": 1,
+          "url": "models/roof-gable-shingle.lod1.gltf",
+          "triangles": 50,
+          "drawCalls": 2,
+          "bufferBytes": 4800,
+          "sha256": "78078b9a7227ddba1b08354ed0267a2bfb2354b261b3dc34b39ac390c7ffdb8b"
+        },
+        {
+          "level": 2,
+          "url": "models/roof-gable-shingle.lod2.gltf",
+          "triangles": 26,
+          "drawCalls": 2,
+          "bufferBytes": 2496,
+          "sha256": "5bb757338c257b2e4957a03ea1d1edb4642fe8a42940a49f5b8cae89c9748003"
+        }
+      ]
+    },
+    {
+      "id": "roof-hip-craftsman",
+      "label": "Craftsman hip roof",
+      "category": "roofs",
+      "description": "Broad low-pitch hipped roof for bungalow and civic forms.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -4.5,
+          0,
+          -4
+        ],
+        "max": [
+          4.5,
+          2.1500000953674316,
+          4
+        ]
+      },
+      "dimensions": [
+        9,
+        2.15,
+        8
+      ],
+      "materials": [
+        "roof-shingle"
+      ],
+      "sockets": [
+        {
+          "name": "building-seat",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/roof-hip-craftsman.lod0.gltf",
+          "triangles": 6,
+          "drawCalls": 1,
+          "bufferBytes": 576,
+          "sha256": "0dd78a81cb539472cde2442b7395b59d7f2abdc5b6164295292c7b4de006abce"
+        },
+        {
+          "level": 1,
+          "url": "models/roof-hip-craftsman.lod1.gltf",
+          "triangles": 6,
+          "drawCalls": 1,
+          "bufferBytes": 576,
+          "sha256": "0dd78a81cb539472cde2442b7395b59d7f2abdc5b6164295292c7b4de006abce"
+        },
+        {
+          "level": 2,
+          "url": "models/roof-hip-craftsman.lod2.gltf",
+          "triangles": 6,
+          "drawCalls": 1,
+          "bufferBytes": 576,
+          "sha256": "0dd78a81cb539472cde2442b7395b59d7f2abdc5b6164295292c7b4de006abce"
+        }
+      ]
+    },
+    {
+      "id": "roof-mansard-copper",
+      "label": "Copper mansard roof",
+      "category": "roofs",
+      "description": "Compact four-sided mansard with flat upper deck.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -3.8334317207336426,
+          -0.023447582498192787,
+          -4.23194694519043
+        ],
+        "max": [
+          3.8334317207336426,
+          2.299999952316284,
+          4.23194694519043
+        ]
+      },
+      "dimensions": [
+        7.6669,
+        2.3234,
+        8.4639
+      ],
+      "materials": [
+        "metal-copper"
+      ],
+      "sockets": [
+        {
+          "name": "building-seat",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/roof-mansard-copper.lod0.gltf",
+          "triangles": 540,
+          "drawCalls": 1,
+          "bufferBytes": 51840,
+          "sha256": "25df40fdbbbe77bd5389dda9cd16bfa294a9365b96fd5587c531ce3db0907dd7"
+        },
+        {
+          "level": 1,
+          "url": "models/roof-mansard-copper.lod1.gltf",
+          "triangles": 60,
+          "drawCalls": 1,
+          "bufferBytes": 5760,
+          "sha256": "d2fad431a514cdf1ca27c510424134d166d6fddc630a7726220e165060a7b430"
+        },
+        {
+          "level": 2,
+          "url": "models/roof-mansard-copper.lod2.gltf",
+          "triangles": 60,
+          "drawCalls": 1,
+          "bufferBytes": 5760,
+          "sha256": "d2fad431a514cdf1ca27c510424134d166d6fddc630a7726220e165060a7b430"
+        }
+      ]
+    },
+    {
+      "id": "roof-shed-industrial",
+      "label": "Industrial shed roof",
+      "category": "roofs",
+      "description": "Single-slope standing-seam roof with high rear fascia.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -5.130000114440918,
+          -0.04563775658607483,
+          -3.9861161708831787
+        ],
+        "max": [
+          5.130000114440918,
+          1.6299405097961426,
+          3.9861161708831787
+        ]
+      },
+      "dimensions": [
+        10.26,
+        1.6756,
+        7.9722
+      ],
+      "materials": [
+        "metal-galvanized",
+        "concrete",
+        "metal-dark"
+      ],
+      "sockets": [
+        {
+          "name": "building-seat",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/roof-shed-industrial.lod0.gltf",
+          "triangles": 2052,
+          "drawCalls": 3,
+          "bufferBytes": 196992,
+          "sha256": "48a361f834684fa2be1d22568d2cbbb12e9b417d1cce2670123bd057cce8d0b8"
+        },
+        {
+          "level": 1,
+          "url": "models/roof-shed-industrial.lod1.gltf",
+          "triangles": 24,
+          "drawCalls": 2,
+          "bufferBytes": 2304,
+          "sha256": "33cdf6c61d4836250c1db19c4e88b97a47c350c438c7dbf681b04964ba0e6962"
+        },
+        {
+          "level": 2,
+          "url": "models/roof-shed-industrial.lod2.gltf",
+          "triangles": 24,
+          "drawCalls": 2,
+          "bufferBytes": 2304,
+          "sha256": "33cdf6c61d4836250c1db19c4e88b97a47c350c438c7dbf681b04964ba0e6962"
+        }
+      ]
+    },
+    {
+      "id": "roof-standing-seam",
+      "label": "Standing-seam gable roof",
+      "category": "roofs",
+      "description": "Low gable in metal with pronounced vertical seams.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -4.710997104644775,
+          -0.040768567472696304,
+          -5.512499809265137
+        ],
+        "max": [
+          4.710997104644775,
+          1.8200000524520874,
+          5.512499809265137
+        ]
+      },
+      "dimensions": [
+        9.422,
+        1.8608,
+        11.025
+      ],
+      "materials": [
+        "roof-metal",
+        "brick-cream",
+        "metal-dark"
+      ],
+      "sockets": [
+        {
+          "name": "building-seat",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/roof-standing-seam.lod0.gltf",
+          "triangles": 4146,
+          "drawCalls": 3,
+          "bufferBytes": 398016,
+          "sha256": "0397a9b96a421c74f8bda44778447ad2906c26a69ba980cb3e8a3ae897a92afe"
+        },
+        {
+          "level": 1,
+          "url": "models/roof-standing-seam.lod1.gltf",
+          "triangles": 50,
+          "drawCalls": 3,
+          "bufferBytes": 4800,
+          "sha256": "07d10d6e3068e4262867acb68c3c5287f18c93ebdee627e88d3c827c6ec04b6f"
+        },
+        {
+          "level": 2,
+          "url": "models/roof-standing-seam.lod2.gltf",
+          "triangles": 26,
+          "drawCalls": 2,
+          "bufferBytes": 2496,
+          "sha256": "95c1dda0ab27f9ae3225ad1b44e5835a1da8cd46d0f92bc6394d477f0c2ec9f1"
+        }
+      ]
+    },
+    {
+      "id": "service-backup-generator",
+      "label": "Backup Generator",
+      "category": "services",
+      "description": "Weatherproof standby generator with radiator grille, exhaust, and fuel base.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.850000023841858,
+          6.556510889765832e-9,
+          -0.8600000143051147
+        ],
+        "max": [
+          1.850000023841858,
+          2.72160005569458,
+          0.8600000143051147
+        ]
+      },
+      "dimensions": [
+        3.7,
+        2.7216,
+        1.72
+      ],
+      "materials": [
+        "metal-dark",
+        "metal-galvanized"
+      ],
+      "sockets": [
+        {
+          "name": "electrical",
+          "position": [
+            -1.75,
+            0.35,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/service-backup-generator.lod0.gltf",
+          "triangles": 1728,
+          "drawCalls": 2,
+          "bufferBytes": 165888,
+          "sha256": "2694d21af7bdc033547569c7a85c345a64c07e3020d444caa8a4dafcbae82b59"
+        },
+        {
+          "level": 1,
+          "url": "models/service-backup-generator.lod1.gltf",
+          "triangles": 240,
+          "drawCalls": 2,
+          "bufferBytes": 23040,
+          "sha256": "4d9c0a08ffd6d6ee4da01180e25522b73a20c52016d2f7cccf0101db85c2fe19"
+        },
+        {
+          "level": 2,
+          "url": "models/service-backup-generator.lod2.gltf",
+          "triangles": 84,
+          "drawCalls": 2,
+          "bufferBytes": 8064,
+          "sha256": "a606c5321d4ddfb04ea467a84e1fc9a6eed343a837daad3fc7717a841d4c519d"
+        }
+      ]
+    },
+    {
+      "id": "service-battery-cabinet",
+      "label": "Battery Cabinet Bank",
+      "category": "services",
+      "description": "Three outdoor energy-storage cabinets on a shared equipment pad.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.200000047683716,
+          -1.4901161415892261e-9,
+          -0.824999988079071
+        ],
+        "max": [
+          2.200000047683716,
+          2.3550000190734863,
+          0.824999988079071
+        ]
+      },
+      "dimensions": [
+        4.4,
+        2.355,
+        1.65
+      ],
+      "materials": [
+        "concrete",
+        "metal-galvanized",
+        "metal-dark"
+      ],
+      "sockets": [
+        {
+          "name": "electrical",
+          "position": [
+            0,
+            0.15,
+            -0.82
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/service-battery-cabinet.lod0.gltf",
+          "triangles": 2700,
+          "drawCalls": 3,
+          "bufferBytes": 259200,
+          "sha256": "135353df7c84405ad0d5b4dc1c92e40cfc07aafcaa80fd67b6aaa93e276ea0df"
+        },
+        {
+          "level": 1,
+          "url": "models/service-battery-cabinet.lod1.gltf",
+          "triangles": 228,
+          "drawCalls": 3,
+          "bufferBytes": 21888,
+          "sha256": "d5496a04f97a8e7e237676c3e471f138a9ad9210b8bfd1bd1e6e62e778f97e97"
+        },
+        {
+          "level": 2,
+          "url": "models/service-battery-cabinet.lod2.gltf",
+          "triangles": 36,
+          "drawCalls": 3,
+          "bufferBytes": 3456,
+          "sha256": "d7e8c7bd46b1282d9f32ef2e7a3890d03ee88abcee116572cabeb0204cf114a2"
+        }
+      ]
+    },
+    {
+      "id": "service-cooling-tower",
+      "label": "Cooling Tower",
+      "category": "services",
+      "description": "Compact hyperbolic cooling tower with intake base, rim, and vapor outlet.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.490000009536743,
+          0,
+          -2.4000000953674316
+        ],
+        "max": [
+          2.490000009536743,
+          6.659999847412109,
+          2.4000000953674316
+        ]
+      },
+      "dimensions": [
+        4.98,
+        6.66,
+        4.8
+      ],
+      "materials": [
+        "concrete",
+        "metal-dark"
+      ],
+      "sockets": [
+        {
+          "name": "water-in",
+          "position": [
+            -2.4,
+            0.5,
+            0
+          ]
+        },
+        {
+          "name": "water-out",
+          "position": [
+            2.4,
+            0.5,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/service-cooling-tower.lod0.gltf",
+          "triangles": 2600,
+          "drawCalls": 2,
+          "bufferBytes": 249600,
+          "sha256": "3e1e996b8bbf3e36d857f7978f77a6f2d0b12de8d19eca3005ac66abd1a32ecd"
+        },
+        {
+          "level": 1,
+          "url": "models/service-cooling-tower.lod1.gltf",
+          "triangles": 728,
+          "drawCalls": 2,
+          "bufferBytes": 69888,
+          "sha256": "63eaae716460133d4484092bdb8ddc74410bc698f92150e3de25709792312647"
+        },
+        {
+          "level": 2,
+          "url": "models/service-cooling-tower.lod2.gltf",
+          "triangles": 360,
+          "drawCalls": 2,
+          "bufferBytes": 34560,
+          "sha256": "8247b22c3a14d5e0a6141b64761870f86c1704757925885db064e35bd0913a3c"
+        }
+      ]
+    },
+    {
+      "id": "service-fire-hydrant",
+      "label": "Fire Hydrant",
+      "category": "services",
+      "description": "Municipal dry-barrel hydrant with side outlets, bonnet, and breakaway flange.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -0.5099999904632568,
+          0.05499999597668648,
+          -0.39500001072883606
+        ],
+        "max": [
+          0.5099999904632568,
+          1.3250000476837158,
+          0.39500001072883606
+        ]
+      },
+      "dimensions": [
+        1.02,
+        1.27,
+        0.79
+      ],
+      "materials": [
+        "brick-red",
+        "metal-dark"
+      ],
+      "sockets": [
+        {
+          "name": "water",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/service-fire-hydrant.lod0.gltf",
+          "triangles": 1608,
+          "drawCalls": 2,
+          "bufferBytes": 154368,
+          "sha256": "5f7c8d6a8be110773c53a46a107363bc70aeb2637f800820153c609b0574db62"
+        },
+        {
+          "level": 1,
+          "url": "models/service-fire-hydrant.lod1.gltf",
+          "triangles": 720,
+          "drawCalls": 2,
+          "bufferBytes": 69120,
+          "sha256": "ffa84a295206cca8d86eff2c9e836e970fe6cfb9ceb876eed946908db3268aed"
+        },
+        {
+          "level": 2,
+          "url": "models/service-fire-hydrant.lod2.gltf",
+          "triangles": 272,
+          "drawCalls": 2,
+          "bufferBytes": 26112,
+          "sha256": "8c8ac9fb5e73ecb5821226fcee66d80b150ef43ee3f2e13ad37e9e96b6349bd9"
+        }
+      ]
+    },
+    {
+      "id": "service-gas-regulator",
+      "label": "Gas Regulator Station",
+      "category": "services",
+      "description": "Fenced-scale pressure regulator train with twin runs, gauges, and bypass piping.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.2500078678131104,
+          1.7881393032936899e-9,
+          -1.100000023841858
+        ],
+        "max": [
+          2.2500078678131104,
+          1.75,
+          1.100000023841858
+        ]
+      },
+      "dimensions": [
+        4.5,
+        1.75,
+        2.2
+      ],
+      "materials": [
+        "concrete",
+        "metal-copper",
+        "metal-dark",
+        "brick-cream"
+      ],
+      "sockets": [
+        {
+          "name": "inlet",
+          "position": [
+            -2.25,
+            0.72,
+            0
+          ]
+        },
+        {
+          "name": "outlet",
+          "position": [
+            2.25,
+            0.72,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/service-gas-regulator.lod0.gltf",
+          "triangles": 3132,
+          "drawCalls": 4,
+          "bufferBytes": 300672,
+          "sha256": "4b5cdcadb4bab24356eab25681add236fc9f6a237e41be73f2a09937cc291025"
+        },
+        {
+          "level": 1,
+          "url": "models/service-gas-regulator.lod1.gltf",
+          "triangles": 1164,
+          "drawCalls": 4,
+          "bufferBytes": 111744,
+          "sha256": "d4cf5c6d9b11fdc564fb301abf59b245e0a97de89278b3752ceceee0cc186ecc"
+        },
+        {
+          "level": 2,
+          "url": "models/service-gas-regulator.lod2.gltf",
+          "triangles": 152,
+          "drawCalls": 3,
+          "bufferBytes": 14592,
+          "sha256": "dd655842f8c5bda02053c0ab8bec15a1e5ba9cf3a331568245ae839b590755b9"
+        }
+      ]
+    },
+    {
+      "id": "service-industrial-catwalk",
+      "label": "Industrial Catwalk",
+      "category": "services",
+      "description": "Modular elevated steel walkway with guardrails, braced legs, and stair access.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -5.275000095367432,
+          0,
+          -0.574999988079071
+        ],
+        "max": [
+          2.5999999046325684,
+          3.2832870483398438,
+          0.574999988079071
+        ]
+      },
+      "dimensions": [
+        7.875,
+        3.2833,
+        1.15
+      ],
+      "materials": [
+        "metal-galvanized",
+        "metal-dark"
+      ],
+      "sockets": [
+        {
+          "name": "deck-left",
+          "position": [
+            -2.6,
+            2.35,
+            0
+          ]
+        },
+        {
+          "name": "deck-right",
+          "position": [
+            2.6,
+            2.35,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/service-industrial-catwalk.lod0.gltf",
+          "triangles": 1848,
+          "drawCalls": 2,
+          "bufferBytes": 177408,
+          "sha256": "b86a9feb6505256fdaf53499add16461cda98f759552a7604b7bc580b13b5a04"
+        },
+        {
+          "level": 1,
+          "url": "models/service-industrial-catwalk.lod1.gltf",
+          "triangles": 276,
+          "drawCalls": 2,
+          "bufferBytes": 26496,
+          "sha256": "9d461017c2cc369c6664d74422218dbde1d5da9efbea902b33575e07e9c9283b"
+        },
+        {
+          "level": 2,
+          "url": "models/service-industrial-catwalk.lod2.gltf",
+          "triangles": 132,
+          "drawCalls": 2,
+          "bufferBytes": 12672,
+          "sha256": "f966e14509a099da3e746b8c38713481bd0074c917743abf9264d5c9055b7ccb"
+        }
+      ]
+    },
+    {
+      "id": "service-industrial-stack",
+      "label": "Industrial Stack",
+      "category": "services",
+      "description": "Tapered steel exhaust stack with base plinth, safety bands, and service ladder.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.0499999523162842,
+          2.38418573772492e-9,
+          -1.0499999523162842
+        ],
+        "max": [
+          1.0499999523162842,
+          9.920000076293945,
+          1.0499999523162842
+        ]
+      },
+      "dimensions": [
+        2.1,
+        9.92,
+        2.1
+      ],
+      "materials": [
+        "concrete",
+        "brick-red",
+        "metal-dark",
+        "metal-galvanized"
+      ],
+      "sockets": [
+        {
+          "name": "flue",
+          "position": [
+            0,
+            0.65,
+            -0.92
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/service-industrial-stack.lod0.gltf",
+          "triangles": 3196,
+          "drawCalls": 4,
+          "bufferBytes": 306816,
+          "sha256": "ad3be9ce97586beb9d800e20b1fdbf456cdddec2af418e8a0dc7ccfe0f0d12d7"
+        },
+        {
+          "level": 1,
+          "url": "models/service-industrial-stack.lod1.gltf",
+          "triangles": 624,
+          "drawCalls": 3,
+          "bufferBytes": 59904,
+          "sha256": "89e94fc180e89e3fcb568a9b5153677a7dc02eae995d07e4532d79426ee1aa2a"
+        },
+        {
+          "level": 2,
+          "url": "models/service-industrial-stack.lod2.gltf",
+          "triangles": 228,
+          "drawCalls": 3,
+          "bufferBytes": 21888,
+          "sha256": "58a089c8c16ae2ef18ea664550c01832799b7d685aae05407614defca2b69fd2"
+        }
+      ]
+    },
+    {
+      "id": "service-pad-transformer",
+      "label": "Pad Transformer",
+      "category": "services",
+      "description": "Neighborhood electrical transformer with vented cabinet and concrete pad.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.024999976158142,
+          -3.5762786065873797e-9,
+          -0.824999988079071
+        ],
+        "max": [
+          1.024999976158142,
+          1.7000000476837158,
+          0.824999988079071
+        ]
+      },
+      "dimensions": [
+        2.05,
+        1.7,
+        1.65
+      ],
+      "materials": [
+        "concrete",
+        "metal-dark",
+        "metal-galvanized"
+      ],
+      "sockets": [
+        {
+          "name": "conduit-left",
+          "position": [
+            -0.55,
+            0.1,
+            0
+          ]
+        },
+        {
+          "name": "conduit-right",
+          "position": [
+            0.55,
+            0.1,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/service-pad-transformer.lod0.gltf",
+          "triangles": 1080,
+          "drawCalls": 3,
+          "bufferBytes": 103680,
+          "sha256": "2128ec1de353b8ca54e6a5ce2273c5940d4a3b72f84f2f3da770a5e3cf15ef1b"
+        },
+        {
+          "level": 1,
+          "url": "models/service-pad-transformer.lod1.gltf",
+          "triangles": 84,
+          "drawCalls": 3,
+          "bufferBytes": 8064,
+          "sha256": "f4135eb340fcbd4110b5c536bfbe7475725ce2f97eaef7dfd2628409b33800dc"
+        },
+        {
+          "level": 2,
+          "url": "models/service-pad-transformer.lod2.gltf",
+          "triangles": 36,
+          "drawCalls": 3,
+          "bufferBytes": 3456,
+          "sha256": "23d7805d34d7b69db533bfe7fc0f623e93a4b82add9c29de8e2af227c74f282a"
+        }
+      ]
+    },
+    {
+      "id": "service-pipe-elbow",
+      "label": "Large Pipe Elbow",
+      "category": "services",
+      "description": "Freestanding ninety-degree process pipe with concrete shoes and coupling bands.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.150003671646118,
+          5.9604643443123e-10,
+          -0.46000000834465027
+        ],
+        "max": [
+          2.009999990463257,
+          2.9100000858306885,
+          0.46000000834465027
+        ]
+      },
+      "dimensions": [
+        4.16,
+        2.91,
+        0.92
+      ],
+      "materials": [
+        "concrete",
+        "metal-galvanized",
+        "metal-dark"
+      ],
+      "sockets": [
+        {
+          "name": "inlet",
+          "position": [
+            -2.15,
+            0.62,
+            0
+          ]
+        },
+        {
+          "name": "outlet",
+          "position": [
+            1.55,
+            2.82,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/service-pipe-elbow.lod0.gltf",
+          "triangles": 3496,
+          "drawCalls": 3,
+          "bufferBytes": 335616,
+          "sha256": "bcef35973a74d05addfcfbd317701447877bea36f019f65b55cc2a28422417a2"
+        },
+        {
+          "level": 1,
+          "url": "models/service-pipe-elbow.lod1.gltf",
+          "triangles": 1128,
+          "drawCalls": 3,
+          "bufferBytes": 108288,
+          "sha256": "65851fe8f5113c016ec5ec87d0f2c425ab5c937b4679ea4ba5149bebd8ad13d5"
+        },
+        {
+          "level": 2,
+          "url": "models/service-pipe-elbow.lod2.gltf",
+          "triangles": 372,
+          "drawCalls": 3,
+          "bufferBytes": 35712,
+          "sha256": "1c5ed0f765f255ec31066d51aa2402f386363140f5b86870acd07a69fb8b9019"
+        }
+      ]
+    },
+    {
+      "id": "service-pump-skid",
+      "label": "Pump Skid",
+      "category": "services",
+      "description": "Twin centrifugal pump assembly on a steel skid with headers and drive housings.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.3499999046325684,
+          2.6822091214739885e-9,
+          -1
+        ],
+        "max": [
+          2.3499999046325684,
+          1.6023868322372437,
+          1.0500131845474243
+        ]
+      },
+      "dimensions": [
+        4.7,
+        1.6024,
+        2.05
+      ],
+      "materials": [
+        "metal-dark",
+        "metal-galvanized",
+        "metal-copper"
+      ],
+      "sockets": [
+        {
+          "name": "inlet",
+          "position": [
+            -2.35,
+            0.58,
+            0.58
+          ]
+        },
+        {
+          "name": "outlet",
+          "position": [
+            2.35,
+            0.58,
+            0.58
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/service-pump-skid.lod0.gltf",
+          "triangles": 2828,
+          "drawCalls": 3,
+          "bufferBytes": 271488,
+          "sha256": "b49eade7375f095109d26d5b2ac17fb66f7cfdbf932426f099c451f898313dc7"
+        },
+        {
+          "level": 1,
+          "url": "models/service-pump-skid.lod1.gltf",
+          "triangles": 1020,
+          "drawCalls": 3,
+          "bufferBytes": 97920,
+          "sha256": "88d7d54ea5cb04e7ef60088bf90b8e9bd1c1cce62a295b57ac8c9aeda002fbea"
+        },
+        {
+          "level": 2,
+          "url": "models/service-pump-skid.lod2.gltf",
+          "triangles": 212,
+          "drawCalls": 3,
+          "bufferBytes": 20352,
+          "sha256": "605b2b22708ec86a3c36ddaa4a8de07af7020720f84f5c5b000389416007d582"
+        }
+      ]
+    },
+    {
+      "id": "service-rolloff-container",
+      "label": "Rolloff Container",
+      "category": "services",
+      "description": "Open-top industrial waste container with sloped ends and reinforced side ribs.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.4200000762939453,
+          0.04000000283122063,
+          -1.1299999952316284
+        ],
+        "max": [
+          2.4200000762939453,
+          1.75,
+          1.1299999952316284
+        ]
+      },
+      "dimensions": [
+        4.84,
+        1.71,
+        2.26
+      ],
+      "materials": [
+        "metal-dark",
+        "brick-red"
+      ],
+      "sockets": [],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/service-rolloff-container.lod0.gltf",
+          "triangles": 1700,
+          "drawCalls": 2,
+          "bufferBytes": 163200,
+          "sha256": "18e121bfee8491ecad8c81c3087a279a2622ec9d49afb79b43a2170ee874b065"
+        },
+        {
+          "level": 1,
+          "url": "models/service-rolloff-container.lod1.gltf",
+          "triangles": 180,
+          "drawCalls": 2,
+          "bufferBytes": 17280,
+          "sha256": "25e40e6bc42cd9d9a9ab687075e26728f1580edea94c6e103c5ebe2d6db40cde"
+        },
+        {
+          "level": 2,
+          "url": "models/service-rolloff-container.lod2.gltf",
+          "triangles": 108,
+          "drawCalls": 2,
+          "bufferBytes": 10368,
+          "sha256": "e4988d40f28a103a81b7eeb5403bd55b2a55c7791b657de5233c2235b4cfe359"
+        }
+      ]
+    },
+    {
+      "id": "service-rooftop-hvac",
+      "label": "Rooftop HVAC Unit",
+      "category": "services",
+      "description": "Packaged commercial air handler with fan shrouds, access panels, and curb base.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.7999999523162842,
+          -5.9604643443123e-10,
+          -1.274999976158142
+        ],
+        "max": [
+          1.7999999523162842,
+          2.0450000762939453,
+          1.600000023841858
+        ]
+      },
+      "dimensions": [
+        3.6,
+        2.045,
+        2.875
+      ],
+      "materials": [
+        "metal-dark",
+        "metal-galvanized"
+      ],
+      "sockets": [
+        {
+          "name": "supply",
+          "position": [
+            -1.2,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "return",
+          "position": [
+            1.2,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/service-rooftop-hvac.lod0.gltf",
+          "triangles": 1628,
+          "drawCalls": 2,
+          "bufferBytes": 156288,
+          "sha256": "00ccc1184ad9c535611b6edb9355037dc41d9086743898aa33f86e4df638b3ae"
+        },
+        {
+          "level": 1,
+          "url": "models/service-rooftop-hvac.lod1.gltf",
+          "triangles": 108,
+          "drawCalls": 2,
+          "bufferBytes": 10368,
+          "sha256": "672b0d00603535205b7e97c08935f303632d142c70c88972f4df179e21a189af"
+        },
+        {
+          "level": 2,
+          "url": "models/service-rooftop-hvac.lod2.gltf",
+          "triangles": 48,
+          "drawCalls": 2,
+          "bufferBytes": 4608,
+          "sha256": "25ba97063b45356f880ea872f326ae9b4cc54f6f2a23f7f4b7c49c968d334aca"
+        }
+      ]
+    },
+    {
+      "id": "service-solar-array",
+      "label": "Solar Array",
+      "category": "services",
+      "description": "Four-panel fixed-tilt photovoltaic rack with galvanized support frame.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.3399999141693115,
+          0.004999976139515638,
+          -0.977980375289917
+        ],
+        "max": [
+          2.3399999141693115,
+          2.0138845443725586,
+          0.977980375289917
+        ]
+      },
+      "dimensions": [
+        4.68,
+        2.0089,
+        1.956
+      ],
+      "materials": [
+        "glass-blue",
+        "metal-dark",
+        "metal-galvanized",
+        "concrete"
+      ],
+      "sockets": [
+        {
+          "name": "electrical",
+          "position": [
+            0,
+            0.1,
+            -1.05
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/service-solar-array.lod0.gltf",
+          "triangles": 2288,
+          "drawCalls": 4,
+          "bufferBytes": 219648,
+          "sha256": "2a111ad922e1faafcb93ab6bbd6d6cbf59c0f6c7b473fc0fd3fea76d79263c93"
+        },
+        {
+          "level": 1,
+          "url": "models/service-solar-array.lod1.gltf",
+          "triangles": 120,
+          "drawCalls": 3,
+          "bufferBytes": 11520,
+          "sha256": "bf9142dac868c510523943a1955a12df1921b0ec7a4aa71dbfc84bc72f033854"
+        },
+        {
+          "level": 2,
+          "url": "models/service-solar-array.lod2.gltf",
+          "triangles": 72,
+          "drawCalls": 2,
+          "bufferBytes": 6912,
+          "sha256": "2dc1eb21d6cda2cc1ed7f6f561a37962bc59420d5c0f8671bc9ceb82cf0f20af"
+        }
+      ]
+    },
+    {
+      "id": "service-substation-bay",
+      "label": "Substation Bay",
+      "category": "services",
+      "description": "Compact distribution bay with insulators, bus bars, disconnects, and perimeter frame.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.5,
+          -3.5762786065873797e-9,
+          -1.75
+        ],
+        "max": [
+          2.5,
+          3.309999942779541,
+          1.75
+        ]
+      },
+      "dimensions": [
+        5,
+        3.31,
+        3.5
+      ],
+      "materials": [
+        "concrete",
+        "metal-dark",
+        "brick-cream",
+        "metal-copper"
+      ],
+      "sockets": [
+        {
+          "name": "line-left",
+          "position": [
+            -2.5,
+            2.82,
+            0
+          ]
+        },
+        {
+          "name": "line-right",
+          "position": [
+            2.5,
+            2.82,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/service-substation-bay.lod0.gltf",
+          "triangles": 8936,
+          "drawCalls": 4,
+          "bufferBytes": 857856,
+          "sha256": "16ac0992276672ffe313c28fdc6e0a72fdb10746d19e7f3a708d16e3629522f7"
+        },
+        {
+          "level": 1,
+          "url": "models/service-substation-bay.lod1.gltf",
+          "triangles": 216,
+          "drawCalls": 4,
+          "bufferBytes": 20736,
+          "sha256": "408ecd36de49672f72c1f4a311ed3d1e001c6f3c5f16f064abb43e839c216ecd"
+        },
+        {
+          "level": 2,
+          "url": "models/service-substation-bay.lod2.gltf",
+          "triangles": 144,
+          "drawCalls": 4,
+          "bufferBytes": 13824,
+          "sha256": "85dfaf8e52e56c503dfcf570fb246b67c7cf651e6c141c269dbb61080ae4de90"
+        }
+      ]
+    },
+    {
+      "id": "service-telecom-cabinet",
+      "label": "Telecom Cabinet",
+      "category": "services",
+      "description": "Curbside communications cabinet with sun hood, vents, and cable pedestal.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.090211272239685,
+          -2.38418573772492e-9,
+          -0.6000000238418579
+        ],
+        "max": [
+          0.824999988079071,
+          1.9950000047683716,
+          0.6000000238418579
+        ]
+      },
+      "dimensions": [
+        1.9152,
+        1.995,
+        1.2
+      ],
+      "materials": [
+        "concrete",
+        "metal-galvanized",
+        "roof-metal",
+        "metal-dark"
+      ],
+      "sockets": [
+        {
+          "name": "conduit",
+          "position": [
+            0,
+            0.08,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/service-telecom-cabinet.lod0.gltf",
+          "triangles": 1228,
+          "drawCalls": 4,
+          "bufferBytes": 117888,
+          "sha256": "179fbc4b8f75d6db73492d1d4016e3fc6c27dc4a56b252a98261b2ab85a76df6"
+        },
+        {
+          "level": 1,
+          "url": "models/service-telecom-cabinet.lod1.gltf",
+          "triangles": 120,
+          "drawCalls": 4,
+          "bufferBytes": 11520,
+          "sha256": "d03bc3464c9e4a97b1bda47fe7574212c6995eda79789112742c3200d3acc3a9"
+        },
+        {
+          "level": 2,
+          "url": "models/service-telecom-cabinet.lod2.gltf",
+          "triangles": 60,
+          "drawCalls": 4,
+          "bufferBytes": 5760,
+          "sha256": "a0144600c184dc892a31586bb83dffc15740ce9232cdbf9ce5cef9be3df68fdf"
+        }
+      ]
+    },
+    {
+      "id": "service-valve-manifold",
+      "label": "Valve Manifold",
+      "category": "services",
+      "description": "Three-branch utility manifold with flanges, handwheels, and isolation valves.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.5,
+          -3.5762786065873797e-9,
+          -0.4000000059604645
+        ],
+        "max": [
+          2.5,
+          2.05606746673584,
+          0.8500149250030518
+        ]
+      },
+      "dimensions": [
+        5,
+        2.0561,
+        1.25
+      ],
+      "materials": [
+        "metal-galvanized",
+        "metal-copper",
+        "metal-dark",
+        "brick-red",
+        "concrete"
+      ],
+      "sockets": [
+        {
+          "name": "inlet",
+          "position": [
+            -2.5,
+            0.75,
+            0
+          ]
+        },
+        {
+          "name": "outlet",
+          "position": [
+            2.5,
+            0.75,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/service-valve-manifold.lod0.gltf",
+          "triangles": 5856,
+          "drawCalls": 5,
+          "bufferBytes": 562176,
+          "sha256": "b0332b1c2994225da45b91b352760226858766584a96a656ef506c26c6349bb6"
+        },
+        {
+          "level": 1,
+          "url": "models/service-valve-manifold.lod1.gltf",
+          "triangles": 2340,
+          "drawCalls": 5,
+          "bufferBytes": 224640,
+          "sha256": "1d433db28d96d2bbf2bbea8f56bf7a658712a2c2b5d564eca1e9d752f46d63d1"
+        },
+        {
+          "level": 2,
+          "url": "models/service-valve-manifold.lod2.gltf",
+          "triangles": 188,
+          "drawCalls": 4,
+          "bufferBytes": 18048,
+          "sha256": "35a042fc5017812c8fcec6c738ec437cbf20dcc5d728ecaceba2d21c6b745092"
+        }
+      ]
+    },
+    {
+      "id": "service-water-tank-ground",
+      "label": "Ground Water Tank",
+      "category": "services",
+      "description": "Bolted municipal water tank with domed roof, access hatch, and ladder.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.4800000190734863,
+          4.7683716530855236e-8,
+          -2.4800000190734863
+        ],
+        "max": [
+          2.4800000190734863,
+          5.425000190734863,
+          2.549999952316284
+        ]
+      },
+      "dimensions": [
+        4.96,
+        5.425,
+        5.03
+      ],
+      "materials": [
+        "metal-galvanized",
+        "roof-metal",
+        "metal-dark"
+      ],
+      "sockets": [
+        {
+          "name": "inlet",
+          "position": [
+            -2.55,
+            0.55,
+            0
+          ]
+        },
+        {
+          "name": "outlet",
+          "position": [
+            2.55,
+            0.55,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/service-water-tank-ground.lod0.gltf",
+          "triangles": 2276,
+          "drawCalls": 3,
+          "bufferBytes": 218496,
+          "sha256": "f59a4b5fc9928c4f64aaa876e6dfd0f205e1d57f8ae96fd091824f2c8e573c90"
+        },
+        {
+          "level": 1,
+          "url": "models/service-water-tank-ground.lod1.gltf",
+          "triangles": 436,
+          "drawCalls": 3,
+          "bufferBytes": 41856,
+          "sha256": "15c380899c56dc29dae6dba711e51550e53be5352b4ea94b019be9e0722840d1"
+        },
+        {
+          "level": 2,
+          "url": "models/service-water-tank-ground.lod2.gltf",
+          "triangles": 128,
+          "drawCalls": 3,
+          "bufferBytes": 12288,
+          "sha256": "f8fc49c80b74bb60f5e2d21fbb99e05bf810357983ad91cd964e5d4278d55ed0"
+        }
+      ]
+    },
+    {
+      "id": "service-water-tower-elevated",
+      "label": "Elevated Water Tower",
+      "category": "services",
+      "description": "Classic municipal pedestal water tower with bowl tank and maintenance railing.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.2799999713897705,
+          0,
+          -2.2799999713897705
+        ],
+        "max": [
+          2.2799999713897705,
+          10.5600004196167,
+          2.2799999713897705
+        ]
+      },
+      "dimensions": [
+        4.56,
+        10.56,
+        4.56
+      ],
+      "materials": [
+        "concrete",
+        "metal-galvanized",
+        "metal-dark"
+      ],
+      "sockets": [
+        {
+          "name": "supply",
+          "position": [
+            0,
+            0.1,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/service-water-tower-elevated.lod0.gltf",
+          "triangles": 2184,
+          "drawCalls": 3,
+          "bufferBytes": 209664,
+          "sha256": "68efa7b3731e93832b4908b99a746e2b14760be42124914e9ab787acfdd927ca"
+        },
+        {
+          "level": 1,
+          "url": "models/service-water-tower-elevated.lod1.gltf",
+          "triangles": 624,
+          "drawCalls": 3,
+          "bufferBytes": 59904,
+          "sha256": "94690c3c9726e8961db9c37eca10078a0ab48fc607a1e2496641b2796c0a82da"
+        },
+        {
+          "level": 2,
+          "url": "models/service-water-tower-elevated.lod2.gltf",
+          "triangles": 336,
+          "drawCalls": 3,
+          "bufferBytes": 32256,
+          "sha256": "12aef74c74af9e06c82781c53e80a6223330fd7fe478550029be7954d96e7a86"
+        }
+      ]
+    },
+    {
+      "id": "shrub-boxwood-hedge",
+      "label": "Boxwood Hedge",
+      "category": "vegetation",
+      "description": "Clipped modular hedge with softly rounded, overlapping plant masses.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.2699999809265137,
+          2.3841858265427618e-8,
+          -0.5799999833106995
+        ],
+        "max": [
+          2.2699999809265137,
+          1.2999999523162842,
+          0.5799999833106995
+        ]
+      },
+      "dimensions": [
+        4.54,
+        1.3,
+        1.16
+      ],
+      "materials": [
+        "foliage"
+      ],
+      "sockets": [],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/shrub-boxwood-hedge.lod0.gltf",
+          "triangles": 5040,
+          "drawCalls": 1,
+          "bufferBytes": 483840,
+          "sha256": "6f650e10c6e35965a3ca4847c492aed19fb8c31b1cb2115d254c39ea16c24037"
+        },
+        {
+          "level": 1,
+          "url": "models/shrub-boxwood-hedge.lod1.gltf",
+          "triangles": 1152,
+          "drawCalls": 1,
+          "bufferBytes": 110592,
+          "sha256": "059d9254a95ff7d6abdc1db415480534797ee7becb94ead2623886feb62cd454"
+        },
+        {
+          "level": 2,
+          "url": "models/shrub-boxwood-hedge.lod2.gltf",
+          "triangles": 240,
+          "drawCalls": 1,
+          "bufferBytes": 23040,
+          "sha256": "670d56115c731e5b21fb7c753cb89c38075b0bc6c2c7efc9404762ca0a09e191"
+        }
+      ]
+    },
+    {
+      "id": "shrub-native-cluster",
+      "label": "Native Shrub Cluster",
+      "category": "vegetation",
+      "description": "Loose drought-tolerant shrub grouping with varied heights and natural spacing.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.6839900016784668,
+          -0.018991315737366676,
+          -1.3971126079559326
+        ],
+        "max": [
+          1.644507884979248,
+          1.7163292169570923,
+          1.3709439039230347
+        ]
+      },
+      "dimensions": [
+        3.3285,
+        1.7353,
+        2.7681
+      ],
+      "materials": [
+        "foliage",
+        "bark"
+      ],
+      "sockets": [],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/shrub-native-cluster.lod0.gltf",
+          "triangles": 8664,
+          "drawCalls": 2,
+          "bufferBytes": 831744,
+          "sha256": "9077d84fc1fbbae9ff9120045b132e37011a3f9c2dbb9ea630b55f45d8b19990"
+        },
+        {
+          "level": 1,
+          "url": "models/shrub-native-cluster.lod1.gltf",
+          "triangles": 1440,
+          "drawCalls": 1,
+          "bufferBytes": 138240,
+          "sha256": "a102bc68db17215605a03645dfe4b04e7a5a32acb7c7b65c3179016429cc4efd"
+        },
+        {
+          "level": 2,
+          "url": "models/shrub-native-cluster.lod2.gltf",
+          "triangles": 400,
+          "drawCalls": 1,
+          "bufferBytes": 38400,
+          "sha256": "8a92ba2a1371b5bca6621fe808b27a8eff60e79ce1a8d00ce0a155b19f127bce"
+        }
+      ]
+    },
+    {
+      "id": "storefront-art-deco",
+      "label": "Art Deco storefront",
+      "category": "storefronts",
+      "description": "Symmetrical dark-metal shopfront with stepped cream sign band.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.9100000858306885,
+          -0.06999996304512024,
+          -0.33000001311302185
+        ],
+        "max": [
+          2.9100000858306885,
+          3.9600000381469727,
+          0.3100000023841858
+        ]
+      },
+      "dimensions": [
+        5.82,
+        4.03,
+        0.64
+      ],
+      "materials": [
+        "stucco-ivory",
+        "metal-dark",
+        "glass-blue",
+        "brick-cream",
+        "concrete"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/storefront-art-deco.lod0.gltf",
+          "triangles": 3964,
+          "drawCalls": 5,
+          "bufferBytes": 380544,
+          "sha256": "c3aa2d1c58c4452401cac0d3145c3c0bef1aedc8db3ddd0b0f3227b1c50d6af0"
+        },
+        {
+          "level": 1,
+          "url": "models/storefront-art-deco.lod1.gltf",
+          "triangles": 372,
+          "drawCalls": 5,
+          "bufferBytes": 35712,
+          "sha256": "c86d777d2f4e9d12870c790ec0b9008393d1c41ff5483ebef7312482ef765133"
+        },
+        {
+          "level": 2,
+          "url": "models/storefront-art-deco.lod2.gltf",
+          "triangles": 192,
+          "drawCalls": 4,
+          "bufferBytes": 18432,
+          "sha256": "efc94fbb376130d5732a6531f97e358d0ff36939b40ff2b535553ed286413aac"
+        }
+      ]
+    },
+    {
+      "id": "storefront-cafe",
+      "label": "Neighborhood cafe front",
+      "category": "storefronts",
+      "description": "Intimate two-bay cafe front with centered door and copper awning.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.184999942779541,
+          -0.06999996304512024,
+          -0.33000001311302185
+        ],
+        "max": [
+          2.184999942779541,
+          2.8499999046325684,
+          0.7850000262260437
+        ]
+      },
+      "dimensions": [
+        4.37,
+        2.92,
+        1.115
+      ],
+      "materials": [
+        "stucco-ivory",
+        "wood-oak",
+        "glass-blue",
+        "limestone",
+        "metal-dark",
+        "concrete",
+        "metal-copper"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/storefront-cafe.lod0.gltf",
+          "triangles": 4576,
+          "drawCalls": 7,
+          "bufferBytes": 439296,
+          "sha256": "c18bec04a1084d3a262d1f4c20b40e8e601fc7d1337c7b3099f2c525a0c03b7b"
+        },
+        {
+          "level": 1,
+          "url": "models/storefront-cafe.lod1.gltf",
+          "triangles": 360,
+          "drawCalls": 7,
+          "bufferBytes": 34560,
+          "sha256": "2d159d097d3dcbfda2c48184380fe6b8f806367b9e94e0b517ffcffacb8366e8"
+        },
+        {
+          "level": 2,
+          "url": "models/storefront-cafe.lod2.gltf",
+          "triangles": 216,
+          "drawCalls": 7,
+          "bufferBytes": 20736,
+          "sha256": "9fbeb720ec5dafe506ec2315e18461c34cda1b1acc6817114787afbde795da9e"
+        }
+      ]
+    },
+    {
+      "id": "storefront-corner-shop",
+      "label": "Corner shopfront",
+      "category": "storefronts",
+      "description": "Wrapped corner glazing with a recessed side entry.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.6600000858306885,
+          -0.06999996304512024,
+          -1.5800000429153442
+        ],
+        "max": [
+          2.740000009536743,
+          3.1500000953674316,
+          0.3100000023841858
+        ]
+      },
+      "dimensions": [
+        5.4,
+        3.22,
+        1.89
+      ],
+      "materials": [
+        "brick-cream",
+        "limestone",
+        "glass-blue",
+        "metal-dark",
+        "concrete"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/storefront-corner-shop.lod0.gltf",
+          "triangles": 3604,
+          "drawCalls": 5,
+          "bufferBytes": 345984,
+          "sha256": "0012b28ecdd97213737882067d8d91402a8f0f03fde8253f89e517ba17bb8cb0"
+        },
+        {
+          "level": 1,
+          "url": "models/storefront-corner-shop.lod1.gltf",
+          "triangles": 396,
+          "drawCalls": 5,
+          "bufferBytes": 38016,
+          "sha256": "3be00a9f2cf164f3337bd7dc72babb2b263ccfd6554aef011d4868b93fd22549"
+        },
+        {
+          "level": 2,
+          "url": "models/storefront-corner-shop.lod2.gltf",
+          "triangles": 192,
+          "drawCalls": 5,
+          "bufferBytes": 18432,
+          "sha256": "069fb1a279dbcc8c9b666f5060d310c137865caaa2a66e08a16bc987b85dbbf8"
+        }
+      ]
+    },
+    {
+      "id": "storefront-department",
+      "label": "Department store frontage",
+      "category": "storefronts",
+      "description": "Large five-bay glazed frontage with strong limestone framing.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -4.159999847412109,
+          -0.06999996304512024,
+          -0.33000001311302185
+        ],
+        "max": [
+          4.159999847412109,
+          4.210000038146973,
+          0.3100000023841858
+        ]
+      },
+      "dimensions": [
+        8.32,
+        4.28,
+        0.64
+      ],
+      "materials": [
+        "brick-red",
+        "limestone",
+        "glass-blue",
+        "metal-dark",
+        "concrete"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/storefront-department.lod0.gltf",
+          "triangles": 4072,
+          "drawCalls": 5,
+          "bufferBytes": 390912,
+          "sha256": "63ef1783312ca0e27dce884027e43dd3b46aa9afeb3044cc53ba3cc64270c6ac"
+        },
+        {
+          "level": 1,
+          "url": "models/storefront-department.lod1.gltf",
+          "triangles": 384,
+          "drawCalls": 5,
+          "bufferBytes": 36864,
+          "sha256": "e950ac145c413689b1d0284eaa8762a36f9b37b077ab819050ae34d42690d66a"
+        },
+        {
+          "level": 2,
+          "url": "models/storefront-department.lod2.gltf",
+          "triangles": 192,
+          "drawCalls": 5,
+          "bufferBytes": 18432,
+          "sha256": "98ffa67fc14c6b3bd462bad2903552962362e6d4bafe2e79e7b23c81ebe7192b"
+        }
+      ]
+    },
+    {
+      "id": "storefront-hardware",
+      "label": "Hardware store front",
+      "category": "storefronts",
+      "description": "Durable wide four-bay front with galvanized canopy.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -3.4100000858306885,
+          -0.06999996304512024,
+          -0.33000001311302185
+        ],
+        "max": [
+          3.4100000858306885,
+          3.200000047683716,
+          1.0850000381469727
+        ]
+      },
+      "dimensions": [
+        6.82,
+        3.27,
+        1.415
+      ],
+      "materials": [
+        "brick-red",
+        "glass-blue",
+        "limestone",
+        "concrete",
+        "metal-dark",
+        "metal-galvanized",
+        "stucco-ivory"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/storefront-hardware.lod0.gltf",
+          "triangles": 5548,
+          "drawCalls": 7,
+          "bufferBytes": 532608,
+          "sha256": "168eec2aab2eb80092b03dafb8c5b9fd9208d9a4d205a2d302178b941df1e804"
+        },
+        {
+          "level": 1,
+          "url": "models/storefront-hardware.lod1.gltf",
+          "triangles": 384,
+          "drawCalls": 6,
+          "bufferBytes": 36864,
+          "sha256": "d9ac4b9c1c1c5ea8a3122d912c07dcc4c9d6aa9ad6034e4f6507bb6d9a11287c"
+        },
+        {
+          "level": 2,
+          "url": "models/storefront-hardware.lod2.gltf",
+          "triangles": 216,
+          "drawCalls": 5,
+          "bufferBytes": 20736,
+          "sha256": "7bf12bf74e60b07c0f4a7b6a1fe512548a37a7e7995b346d5d9f08b1be5035eb"
+        }
+      ]
+    },
+    {
+      "id": "storefront-main-street",
+      "label": "Main Street storefront",
+      "category": "storefronts",
+      "description": "Three-bay recessed shopfront with stone piers and sign band.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.9600000381469727,
+          -0.06999996304512024,
+          -0.33000001311302185
+        ],
+        "max": [
+          2.9600000381469727,
+          3.759999990463257,
+          0.3100000023841858
+        ]
+      },
+      "dimensions": [
+        5.92,
+        3.83,
+        0.64
+      ],
+      "materials": [
+        "brick-red",
+        "limestone",
+        "glass-blue",
+        "metal-dark",
+        "concrete",
+        "wood-painted"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/storefront-main-street.lod0.gltf",
+          "triangles": 3964,
+          "drawCalls": 6,
+          "bufferBytes": 380544,
+          "sha256": "76dc4668d7c4d42e9d456ca4d1eee52dfe93030521162124ecca327dad74f465"
+        },
+        {
+          "level": 1,
+          "url": "models/storefront-main-street.lod1.gltf",
+          "triangles": 372,
+          "drawCalls": 6,
+          "bufferBytes": 35712,
+          "sha256": "cae08d43c155822da924e7f93371f85522e66b9369e81d8020c1b87870c4b6f0"
+        },
+        {
+          "level": 2,
+          "url": "models/storefront-main-street.lod2.gltf",
+          "triangles": 192,
+          "drawCalls": 5,
+          "bufferBytes": 18432,
+          "sha256": "150bfd28589afd9fa3b013701b1d60c60ce9e2058709990fedc794c89fca56b0"
+        }
+      ]
+    },
+    {
+      "id": "storefront-pharmacy",
+      "label": "Corner pharmacy front",
+      "category": "storefronts",
+      "description": "Bright three-bay pharmacy facade with wraparound glazing and awning.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -3.109999895095825,
+          -0.06999996304512024,
+          -1.5800000429153442
+        ],
+        "max": [
+          3.190000057220459,
+          3.859999895095825,
+          0.8050000071525574
+        ]
+      },
+      "dimensions": [
+        6.3,
+        3.93,
+        2.385
+      ],
+      "materials": [
+        "brick-cream",
+        "limestone",
+        "glass-blue",
+        "metal-dark",
+        "concrete",
+        "wood-painted",
+        "stucco-ivory"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/storefront-pharmacy.lod0.gltf",
+          "triangles": 6448,
+          "drawCalls": 7,
+          "bufferBytes": 619008,
+          "sha256": "602a54242146fb32c7bf8abdd0e1a5b15722019c96b4b68425714db3ff93ff52"
+        },
+        {
+          "level": 1,
+          "url": "models/storefront-pharmacy.lod1.gltf",
+          "triangles": 444,
+          "drawCalls": 6,
+          "bufferBytes": 42624,
+          "sha256": "2c3e02e27d8d49bd57d9f048fa91c471266434cdfa7dfd879da2d45fab0acd25"
+        },
+        {
+          "level": 2,
+          "url": "models/storefront-pharmacy.lod2.gltf",
+          "triangles": 216,
+          "drawCalls": 6,
+          "bufferBytes": 20736,
+          "sha256": "bd7707e6ca974f4fbe88dc71df8489b4f6c005298ac556c57edd4b938f70a1e6"
+        }
+      ]
+    },
+    {
+      "id": "storefront-striped-awning",
+      "label": "Striped awning storefront",
+      "category": "storefronts",
+      "description": "Broad display front beneath a rounded striped fabric awning.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.759999990463257,
+          -0.06999996304512024,
+          -0.33000001311302185
+        ],
+        "max": [
+          2.759999990463257,
+          3,
+          0.9449999928474426
+        ]
+      },
+      "dimensions": [
+        5.52,
+        3.07,
+        1.275
+      ],
+      "materials": [
+        "brick-red",
+        "limestone",
+        "glass-blue",
+        "metal-dark",
+        "concrete",
+        "wood-painted",
+        "stucco-ivory"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/storefront-striped-awning.lod0.gltf",
+          "triangles": 5116,
+          "drawCalls": 7,
+          "bufferBytes": 491136,
+          "sha256": "025bd1d5301f15fa12624b162c38b877f2e9a0a29057d80b46a935d1a49d5b4c"
+        },
+        {
+          "level": 1,
+          "url": "models/storefront-striped-awning.lod1.gltf",
+          "triangles": 384,
+          "drawCalls": 6,
+          "bufferBytes": 36864,
+          "sha256": "fa7a9dc1fcebd0b71813ee0454830b856c5b18805e027d91daa3b8f9b9b737c4"
+        },
+        {
+          "level": 2,
+          "url": "models/storefront-striped-awning.lod2.gltf",
+          "triangles": 216,
+          "drawCalls": 6,
+          "bufferBytes": 20736,
+          "sha256": "4a77996182f7a309534061b1e15e15d97a22bc39842a7ae4c9de640ef176120c"
+        }
+      ]
+    },
+    {
+      "id": "street-bench-slat",
+      "label": "Slatted Park Bench",
+      "category": "streets",
+      "description": "Oak-slat public bench with dark cast-metal end frames and armrests.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.1749999523162842,
+          0.07999102771282196,
+          -0.5559259653091431
+        ],
+        "max": [
+          1.1749999523162842,
+          1.4921540021896362,
+          0.5299999713897705
+        ]
+      },
+      "dimensions": [
+        2.35,
+        1.4122,
+        1.0859
+      ],
+      "materials": [
+        "wood-oak",
+        "metal-dark"
+      ],
+      "sockets": [],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/street-bench-slat.lod0.gltf",
+          "triangles": 2772,
+          "drawCalls": 2,
+          "bufferBytes": 266112,
+          "sha256": "1435295eeb8a03845f2fffc2033d13eaad18344a5b5a313164b4814b5edb8b59"
+        },
+        {
+          "level": 1,
+          "url": "models/street-bench-slat.lod1.gltf",
+          "triangles": 720,
+          "drawCalls": 2,
+          "bufferBytes": 69120,
+          "sha256": "951402a37347309515d5ce501bd0a1fbb5fb5ce7a91d22db0938bd9787c1c001"
+        },
+        {
+          "level": 2,
+          "url": "models/street-bench-slat.lod2.gltf",
+          "triangles": 132,
+          "drawCalls": 2,
+          "bufferBytes": 12672,
+          "sha256": "49916e31b7e6554a7a48cbde4064dfc2ffb4bd0654ab362013472ab065d4bc9a"
+        }
+      ]
+    },
+    {
+      "id": "street-bike-rack",
+      "label": "Inverted-U Bike Rack",
+      "category": "streets",
+      "description": "Bank of stainless inverted-U bicycle racks with surface-mount plates.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.6200000047683716,
+          5.364418242947977e-9,
+          -0.5799999833106995
+        ],
+        "max": [
+          1.6200000047683716,
+          1.0149999856948853,
+          0.5799999833106995
+        ]
+      },
+      "dimensions": [
+        3.24,
+        1.015,
+        1.16
+      ],
+      "materials": [
+        "metal-galvanized",
+        "metal-dark"
+      ],
+      "sockets": [],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/street-bike-rack.lod0.gltf",
+          "triangles": 3680,
+          "drawCalls": 2,
+          "bufferBytes": 353280,
+          "sha256": "96de2d6df70e98ec537d09a654c52d82ff91d62a5197bc94977223d81d0fcdb1"
+        },
+        {
+          "level": 1,
+          "url": "models/street-bike-rack.lod1.gltf",
+          "triangles": 1344,
+          "drawCalls": 1,
+          "bufferBytes": 129024,
+          "sha256": "6bbaa3228b3aca87efa17c6bd911f079f98e04967c9d092fdc30ceb3e2cbaf96"
+        },
+        {
+          "level": 2,
+          "url": "models/street-bike-rack.lod2.gltf",
+          "triangles": 288,
+          "drawCalls": 1,
+          "bufferBytes": 27648,
+          "sha256": "b2fe40b04f1c94ebb226bb781b171eee68d21b0958f2e20fa7dcb66583eb4e05"
+        }
+      ]
+    },
+    {
+      "id": "street-bollard-row",
+      "label": "Bollard Row",
+      "category": "streets",
+      "description": "Four removable streetscape bollards with contrasting cap bands.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.9550000429153442,
+          -8.344650304081824e-9,
+          -0.1550000011920929
+        ],
+        "max": [
+          1.9550000429153442,
+          1.0299999713897705,
+          0.1550000011920929
+        ]
+      },
+      "dimensions": [
+        3.91,
+        1.03,
+        0.31
+      ],
+      "materials": [
+        "metal-dark",
+        "metal-galvanized",
+        "brick-cream"
+      ],
+      "sockets": [],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/street-bollard-row.lod0.gltf",
+          "triangles": 5664,
+          "drawCalls": 3,
+          "bufferBytes": 543744,
+          "sha256": "500df627159f6b181bab6bdff953f055823a428fdba052ed38b0c011756d567a"
+        },
+        {
+          "level": 1,
+          "url": "models/street-bollard-row.lod1.gltf",
+          "triangles": 1248,
+          "drawCalls": 2,
+          "bufferBytes": 119808,
+          "sha256": "6d7f1c09cfdcab2d1deee0bfc93c9f60ec166995cc283cc5da5973139455d8f0"
+        },
+        {
+          "level": 2,
+          "url": "models/street-bollard-row.lod2.gltf",
+          "triangles": 208,
+          "drawCalls": 2,
+          "bufferBytes": 19968,
+          "sha256": "da84dd9f4a880848bb9414b05bdd0221d05324474a0b8078ebaacf0353f0f2db"
+        }
+      ]
+    },
+    {
+      "id": "street-bus-shelter",
+      "label": "Bus Shelter",
+      "category": "streets",
+      "description": "Glass-and-steel transit shelter with roof canopy, bench, and route panel.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.4000000953674316,
+          1.7881393032936899e-9,
+          -0.875
+        ],
+        "max": [
+          2.4000000953674316,
+          2.988041877746582,
+          0.875
+        ]
+      },
+      "dimensions": [
+        4.8,
+        2.988,
+        1.75
+      ],
+      "materials": [
+        "concrete",
+        "metal-dark",
+        "roof-metal",
+        "glass-blue",
+        "wood-painted",
+        "brick-cream"
+      ],
+      "sockets": [
+        {
+          "name": "curb-center",
+          "position": [
+            0,
+            0,
+            0.95
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/street-bus-shelter.lod0.gltf",
+          "triangles": 1080,
+          "drawCalls": 6,
+          "bufferBytes": 103680,
+          "sha256": "273cf5bdb773d7e5f1c2dabfbc7a3f3af6f7cf60876866d57656f2ed33e321ee"
+        },
+        {
+          "level": 1,
+          "url": "models/street-bus-shelter.lod1.gltf",
+          "triangles": 120,
+          "drawCalls": 6,
+          "bufferBytes": 11520,
+          "sha256": "36ee5497984e8c076420167ffe543c114bb63e69332beb4058d68a0c1c6f981c"
+        },
+        {
+          "level": 2,
+          "url": "models/street-bus-shelter.lod2.gltf",
+          "triangles": 72,
+          "drawCalls": 5,
+          "bufferBytes": 6912,
+          "sha256": "c39d2b19d14b431e7be752a5dea99a20e8e838e79c61eb59fa66de05c43ad046"
+        }
+      ]
+    },
+    {
+      "id": "street-curb-ramp",
+      "label": "Accessible Curb Ramp",
+      "category": "streets",
+      "description": "Modular sidewalk corner ramp with flares and tactile warning panel.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.0999999046325684,
+          3.5762786065873797e-9,
+          -1.600000023841858
+        ],
+        "max": [
+          2.0999999046325684,
+          0.344584196805954,
+          1.5293140411376953
+        ]
+      },
+      "dimensions": [
+        4.2,
+        0.3446,
+        3.1293
+      ],
+      "materials": [
+        "concrete",
+        "brick-red"
+      ],
+      "sockets": [
+        {
+          "name": "road-edge",
+          "position": [
+            0,
+            0,
+            1.55
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/street-curb-ramp.lod0.gltf",
+          "triangles": 11124,
+          "drawCalls": 2,
+          "bufferBytes": 1067904,
+          "sha256": "d83b24d89eabccadcb4bba86729457bc7d0abb7476b592691d6526d7a5dd855f"
+        },
+        {
+          "level": 1,
+          "url": "models/street-curb-ramp.lod1.gltf",
+          "triangles": 36,
+          "drawCalls": 2,
+          "bufferBytes": 3456,
+          "sha256": "4b11f516c2702ef9fe97445bb09c6242bd0ba8fb245c8212cfaf6a1f51e93428"
+        },
+        {
+          "level": 2,
+          "url": "models/street-curb-ramp.lod2.gltf",
+          "triangles": 36,
+          "drawCalls": 2,
+          "bufferBytes": 3456,
+          "sha256": "4b11f516c2702ef9fe97445bb09c6242bd0ba8fb245c8212cfaf6a1f51e93428"
+        }
+      ]
+    },
+    {
+      "id": "street-fence-chainlink",
+      "label": "Chain-Link Fence",
+      "category": "streets",
+      "description": "Utility fence panel with tubular posts, top rail, and open mesh suggestion.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -3.3658645153045654,
+          0.004999952390789986,
+          -0.07500000298023224
+        ],
+        "max": [
+          3.3658645153045654,
+          2.1549999713897705,
+          0.07500000298023224
+        ]
+      },
+      "dimensions": [
+        6.7317,
+        2.15,
+        0.15
+      ],
+      "materials": [
+        "metal-galvanized"
+      ],
+      "sockets": [
+        {
+          "name": "left",
+          "position": [
+            -3.1,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "right",
+          "position": [
+            3.1,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/street-fence-chainlink.lod0.gltf",
+          "triangles": 884,
+          "drawCalls": 1,
+          "bufferBytes": 84864,
+          "sha256": "9927fbfbb9c573536b4ca59e94f54fad68580f2c42426b12487f6cd512c3ef2c"
+        },
+        {
+          "level": 1,
+          "url": "models/street-fence-chainlink.lod1.gltf",
+          "triangles": 144,
+          "drawCalls": 1,
+          "bufferBytes": 13824,
+          "sha256": "022b486a2dd4fe21ee68c13392301410ae96e7fba7a49bd749ed28e97c89f47f"
+        },
+        {
+          "level": 2,
+          "url": "models/street-fence-chainlink.lod2.gltf",
+          "triangles": 96,
+          "drawCalls": 1,
+          "bufferBytes": 9216,
+          "sha256": "4d5c9c9d989adf7a758ce8da2a658b2314e533b97fff8e202896a7649b1b4fe9"
+        }
+      ]
+    },
+    {
+      "id": "street-fence-picket",
+      "label": "Steel Picket Fence",
+      "category": "streets",
+      "description": "Modular powder-coated picket fence panel with masonry-ready end posts.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -3,
+          2.3841858265427618e-8,
+          -0.09000000357627869
+        ],
+        "max": [
+          3,
+          1.7999999523162842,
+          0.09000000357627869
+        ]
+      },
+      "dimensions": [
+        6,
+        1.8,
+        0.18
+      ],
+      "materials": [
+        "metal-dark"
+      ],
+      "sockets": [
+        {
+          "name": "left",
+          "position": [
+            -3,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "right",
+          "position": [
+            3,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/street-fence-picket.lod0.gltf",
+          "triangles": 1992,
+          "drawCalls": 1,
+          "bufferBytes": 191232,
+          "sha256": "1c823fdd84c7c72266ded0157f347dbd060bb0f233cc708d32c94efed8453408"
+        },
+        {
+          "level": 1,
+          "url": "models/street-fence-picket.lod1.gltf",
+          "triangles": 132,
+          "drawCalls": 1,
+          "bufferBytes": 12672,
+          "sha256": "4d4b5973e5f346f1581037df276a53e97dc169a054226088aef5ec6aad92b79e"
+        },
+        {
+          "level": 2,
+          "url": "models/street-fence-picket.lod2.gltf",
+          "triangles": 96,
+          "drawCalls": 1,
+          "bufferBytes": 9216,
+          "sha256": "6a572175b0a193dc5580f5e7cc2d17c50df748eb935c9d927aa7a83afc0f830d"
+        }
+      ]
+    },
+    {
+      "id": "street-lamp-cobra",
+      "label": "Cobrahead Streetlight",
+      "category": "streets",
+      "description": "Galvanized roadway light with tapered mast, curved arm, and broad luminaire.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -0.23999999463558197,
+          5.9604643443123e-10,
+          -0.23999999463558197
+        ],
+        "max": [
+          0.23999999463558197,
+          7.6256890296936035,
+          2.662748336791992
+        ]
+      },
+      "dimensions": [
+        0.48,
+        7.6257,
+        2.9027
+      ],
+      "materials": [
+        "metal-galvanized",
+        "concrete",
+        "metal-dark",
+        "glass-blue"
+      ],
+      "sockets": [
+        {
+          "name": "power",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/street-lamp-cobra.lod0.gltf",
+          "triangles": 956,
+          "drawCalls": 4,
+          "bufferBytes": 91776,
+          "sha256": "9f6715528d19f6c453bff0f511fc2ffdd8ec34b7405f4dbfc89a33f16c399bfb"
+        },
+        {
+          "level": 1,
+          "url": "models/street-lamp-cobra.lod1.gltf",
+          "triangles": 252,
+          "drawCalls": 4,
+          "bufferBytes": 24192,
+          "sha256": "7b66917ce19f30ffdbce6104cb33519f114287a08dedf4ec3624c89fae36de79"
+        },
+        {
+          "level": 2,
+          "url": "models/street-lamp-cobra.lod2.gltf",
+          "triangles": 96,
+          "drawCalls": 3,
+          "bufferBytes": 9216,
+          "sha256": "00ddcea3a0b75e28704edc491c88dece6e58653ae3a48740f075c49baf8f0932"
+        }
+      ]
+    },
+    {
+      "id": "street-lamp-heritage",
+      "label": "Heritage Pedestrian Lamp",
+      "category": "streets",
+      "description": "Decorative pedestrian lamp with fluted base, crossbar, and twin lanterns.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -0.9767853021621704,
+          0.004999999888241291,
+          -0.3400000035762787
+        ],
+        "max": [
+          0.9767853021621704,
+          4.614999771118164,
+          0.3400000035762787
+        ]
+      },
+      "dimensions": [
+        1.9536,
+        4.61,
+        0.68
+      ],
+      "materials": [
+        "metal-dark",
+        "glass-blue"
+      ],
+      "sockets": [
+        {
+          "name": "power",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/street-lamp-heritage.lod0.gltf",
+          "triangles": 564,
+          "drawCalls": 2,
+          "bufferBytes": 54144,
+          "sha256": "bd117d905f72a67e2fc09ea9738f7ac958050b0dd1657cc2c36c02349bbc5b32"
+        },
+        {
+          "level": 1,
+          "url": "models/street-lamp-heritage.lod1.gltf",
+          "triangles": 180,
+          "drawCalls": 2,
+          "bufferBytes": 17280,
+          "sha256": "8d1e7cfa3d029f9e216dce3add70dad317d2bec0f9d73367b2059f65b6ad6150"
+        },
+        {
+          "level": 2,
+          "url": "models/street-lamp-heritage.lod2.gltf",
+          "triangles": 120,
+          "drawCalls": 2,
+          "bufferBytes": 11520,
+          "sha256": "71a87b6072354b77944fbde74f9d348ca6e34d04542895123414b93c58233860"
+        }
+      ]
+    },
+    {
+      "id": "street-newspaper-boxes",
+      "label": "Street Publication Boxes",
+      "category": "streets",
+      "description": "Pair of sidewalk publication boxes with glazed fronts and pedestal bases.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -0.7599999904632568,
+          -3.5762786065873797e-9,
+          -0.3100000023841858
+        ],
+        "max": [
+          0.7599999904632568,
+          1.4600000381469727,
+          0.36250001192092896
+        ]
+      },
+      "dimensions": [
+        1.52,
+        1.46,
+        0.6725
+      ],
+      "materials": [
+        "metal-dark",
+        "brick-red",
+        "glass-blue",
+        "brick-cream"
+      ],
+      "sockets": [],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/street-newspaper-boxes.lod0.gltf",
+          "triangles": 864,
+          "drawCalls": 4,
+          "bufferBytes": 82944,
+          "sha256": "d7d0917bbc40aa43484336c31354a9dc79d335fd0334873a4e8dd0f59ffcbd39"
+        },
+        {
+          "level": 1,
+          "url": "models/street-newspaper-boxes.lod1.gltf",
+          "triangles": 96,
+          "drawCalls": 4,
+          "bufferBytes": 9216,
+          "sha256": "8f5eedf87d1371bae86606eda1d2144f437a7e3f2f80b8cd0ba54a683258ea24"
+        },
+        {
+          "level": 2,
+          "url": "models/street-newspaper-boxes.lod2.gltf",
+          "triangles": 24,
+          "drawCalls": 2,
+          "bufferBytes": 2304,
+          "sha256": "0af338ad3a3d777ead721aae49bda627a97517473271703d7c14d492e9b13d64"
+        }
+      ]
+    },
+    {
+      "id": "street-signal-mast",
+      "label": "Traffic Signal Mast Arm",
+      "category": "streets",
+      "description": "Urban mast-arm signal with three-section heads, pedestrian signal, and control base.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -0.3100000023841858,
+          -5.9604643443123e-10,
+          -0.3100000023841858
+        ],
+        "max": [
+          0.3100000023841858,
+          6.199999809265137,
+          5.800000190734863
+        ]
+      },
+      "dimensions": [
+        0.62,
+        6.2,
+        6.11
+      ],
+      "materials": [
+        "metal-galvanized",
+        "concrete",
+        "metal-dark",
+        "brick-red",
+        "brick-cream",
+        "foliage"
+      ],
+      "sockets": [
+        {
+          "name": "power",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "road-center",
+          "position": [
+            0,
+            0,
+            5.8
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/street-signal-mast.lod0.gltf",
+          "triangles": 860,
+          "drawCalls": 6,
+          "bufferBytes": 82560,
+          "sha256": "17af334f6c4af849a8e233268ea5a6c0d9ae48291489cd46c6bd4e0e3b9928e2"
+        },
+        {
+          "level": 1,
+          "url": "models/street-signal-mast.lod1.gltf",
+          "triangles": 252,
+          "drawCalls": 6,
+          "bufferBytes": 24192,
+          "sha256": "b5f2d5dc4d922f3708eaa28e491f3570657530f2b578fda9c99769335f3655ed"
+        },
+        {
+          "level": 2,
+          "url": "models/street-signal-mast.lod2.gltf",
+          "triangles": 72,
+          "drawCalls": 3,
+          "bufferBytes": 6912,
+          "sha256": "53ce569ef8d056f3b7e9b561022b3b5e1cf5488dd1d7fe072804ec319c0b550f"
+        }
+      ]
+    },
+    {
+      "id": "street-tree-grate",
+      "label": "Tree Grate and Guard",
+      "category": "streets",
+      "description": "Square cast-iron tree grate with a protective three-ring trunk guard.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.1450154781341553,
+          0.004999976139515638,
+          -1.024999976158142
+        ],
+        "max": [
+          1.1643691062927246,
+          3.5350775718688965,
+          1.024999976158142
+        ]
+      },
+      "dimensions": [
+        2.3094,
+        3.5301,
+        2.05
+      ],
+      "materials": [
+        "metal-dark",
+        "bark",
+        "foliage"
+      ],
+      "sockets": [],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/street-tree-grate.lod0.gltf",
+          "triangles": 6936,
+          "drawCalls": 3,
+          "bufferBytes": 665856,
+          "sha256": "26a0623baa330ca2ffd1c83e23fbcb60250d0b7620e441460bae88877cf9eb74"
+        },
+        {
+          "level": 1,
+          "url": "models/street-tree-grate.lod1.gltf",
+          "triangles": 1572,
+          "drawCalls": 3,
+          "bufferBytes": 150912,
+          "sha256": "1d154340ba3673c885fd6d96bcd50fad50b7f3fce905f92c233986fc5985f4b6"
+        },
+        {
+          "level": 2,
+          "url": "models/street-tree-grate.lod2.gltf",
+          "triangles": 276,
+          "drawCalls": 3,
+          "bufferBytes": 26496,
+          "sha256": "595c61f6c5f662ea2ed8ff44c41069357c1ec18cf4bb7917d097141c4241e62b"
+        }
+      ]
+    },
+    {
+      "id": "street-utility-cabinet",
+      "label": "Street Utility Cabinet",
+      "category": "streets",
+      "description": "Compact signal and utility cabinet with vented door on a concrete footing.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -0.6499999761581421,
+          5.9604643443123e-10,
+          -0.46000000834465027
+        ],
+        "max": [
+          0.6499999761581421,
+          1.8250000476837158,
+          0.46000000834465027
+        ]
+      },
+      "dimensions": [
+        1.3,
+        1.825,
+        0.92
+      ],
+      "materials": [
+        "concrete",
+        "metal-galvanized",
+        "roof-metal",
+        "metal-dark"
+      ],
+      "sockets": [
+        {
+          "name": "conduit",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/street-utility-cabinet.lod0.gltf",
+          "triangles": 972,
+          "drawCalls": 4,
+          "bufferBytes": 93312,
+          "sha256": "5bc7f83576496985663d2252931f49d2be350d04185ad80cc5b1b4aa2f819ad4"
+        },
+        {
+          "level": 1,
+          "url": "models/street-utility-cabinet.lod1.gltf",
+          "triangles": 84,
+          "drawCalls": 4,
+          "bufferBytes": 8064,
+          "sha256": "91900a2ecb2e0c503753121ec39a9dbde17c28cdabfe3c66d251cb4a0f91ea92"
+        },
+        {
+          "level": 2,
+          "url": "models/street-utility-cabinet.lod2.gltf",
+          "triangles": 36,
+          "drawCalls": 3,
+          "bufferBytes": 3456,
+          "sha256": "6797403e25a26afe93061967f75953551bf587e60671693c29291e5dd8365901"
+        }
+      ]
+    },
+    {
+      "id": "tree-american-elm",
+      "label": "American Elm",
+      "category": "vegetation",
+      "description": "Tall vase-form elm with a split trunk and arching upper canopy.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.635052442550659,
+          0,
+          -1.516005516052246
+        ],
+        "max": [
+          2.7629754543304443,
+          8.32572078704834,
+          1.4505046606063843
+        ]
+      },
+      "dimensions": [
+        5.398,
+        8.3257,
+        2.9665
+      ],
+      "materials": [
+        "bark",
+        "foliage"
+      ],
+      "sockets": [],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/tree-american-elm.lod0.gltf",
+          "triangles": 15488,
+          "drawCalls": 2,
+          "bufferBytes": 1486848,
+          "sha256": "a9134a9bb1af9b533336a94168aa47e6e5b38a7cd833c84ee3639aba9f954a37"
+        },
+        {
+          "level": 1,
+          "url": "models/tree-american-elm.lod1.gltf",
+          "triangles": 1848,
+          "drawCalls": 2,
+          "bufferBytes": 177408,
+          "sha256": "daa4bad646f4675d7925e1461341c9a8be91a96748a0065f8e35efeb337c73bd"
+        },
+        {
+          "level": 2,
+          "url": "models/tree-american-elm.lod2.gltf",
+          "triangles": 424,
+          "drawCalls": 2,
+          "bufferBytes": 40704,
+          "sha256": "c50e80e4e7f725c9779adf80da859ca5b208bcf2b5cc8976306b2177a24c2d3d"
+        }
+      ]
+    },
+    {
+      "id": "tree-flowering-ornamental",
+      "label": "Flowering Ornamental",
+      "category": "vegetation",
+      "description": "Compact multi-stem flowering tree for plazas, entries, and medians.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.5782208442687988,
+          0.04118375480175018,
+          -1.413036584854126
+        ],
+        "max": [
+          1.578362226486206,
+          4.206343173980713,
+          1.156122088432312
+        ]
+      },
+      "dimensions": [
+        3.1566,
+        4.1652,
+        2.5692
+      ],
+      "materials": [
+        "bark",
+        "foliage"
+      ],
+      "sockets": [],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/tree-flowering-ornamental.lod0.gltf",
+          "triangles": 6760,
+          "drawCalls": 2,
+          "bufferBytes": 648960,
+          "sha256": "e126b267ee51d8c183d22a4b42535857361f137f2e51a3853737d1b6a9783f62"
+        },
+        {
+          "level": 1,
+          "url": "models/tree-flowering-ornamental.lod1.gltf",
+          "triangles": 1512,
+          "drawCalls": 2,
+          "bufferBytes": 145152,
+          "sha256": "f5a557ae6ec7a774970c130cd2b9b80df52de137c2fef9312160d5faefab3ab0"
+        },
+        {
+          "level": 2,
+          "url": "models/tree-flowering-ornamental.lod2.gltf",
+          "triangles": 424,
+          "drawCalls": 2,
+          "bufferBytes": 40704,
+          "sha256": "3441d014f8019ac327b84be085ae8b90007a390b33ed74f95790377ecedfd529"
+        }
+      ]
+    },
+    {
+      "id": "tree-live-oak",
+      "label": "Live Oak",
+      "category": "vegetation",
+      "description": "Low, spreading shade tree with a heavy trunk and horizontal branch structure.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -3.622185468673706,
+          0,
+          -2.728382110595703
+        ],
+        "max": [
+          3.778549909591675,
+          5.712714672088623,
+          1.8167634010314941
+        ]
+      },
+      "dimensions": [
+        7.4007,
+        5.7127,
+        4.5451
+      ],
+      "materials": [
+        "bark",
+        "foliage"
+      ],
+      "sockets": [],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/tree-live-oak.lod0.gltf",
+          "triangles": 18352,
+          "drawCalls": 2,
+          "bufferBytes": 1761792,
+          "sha256": "8d4a8a6b0555eda920400d939bd1f99c5c7da2673e87b67c59d3b36fa61ccb3e"
+        },
+        {
+          "level": 1,
+          "url": "models/tree-live-oak.lod1.gltf",
+          "triangles": 2136,
+          "drawCalls": 2,
+          "bufferBytes": 205056,
+          "sha256": "6c214c748c44334a0ca452f1200c55504e52b200a5b54a35e044c5fdd397aff8"
+        },
+        {
+          "level": 2,
+          "url": "models/tree-live-oak.lod2.gltf",
+          "triangles": 504,
+          "drawCalls": 2,
+          "bufferBytes": 48384,
+          "sha256": "da4b294060ed50d24f1fdd5d83ea8fc16dc5c9671d937727b54e4a32581e344f"
+        }
+      ]
+    },
+    {
+      "id": "tree-maple-street",
+      "label": "Street Maple",
+      "category": "vegetation",
+      "description": "Mature broadleaf street tree with a raised crown and visible scaffold branches.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -2.423957347869873,
+          9.536743306171047e-8,
+          -2.0660324096679688
+        ],
+        "max": [
+          2.4291512966156006,
+          7.061944961547852,
+          1.651603102684021
+        ]
+      },
+      "dimensions": [
+        4.8531,
+        7.0619,
+        3.7176
+      ],
+      "materials": [
+        "bark",
+        "foliage"
+      ],
+      "sockets": [],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/tree-maple-street.lod0.gltf",
+          "triangles": 15488,
+          "drawCalls": 2,
+          "bufferBytes": 1486848,
+          "sha256": "d8315ca2abdd13554ac06ee708857cb37c04492a8eb2f5eabced3fc78c547cb7"
+        },
+        {
+          "level": 1,
+          "url": "models/tree-maple-street.lod1.gltf",
+          "triangles": 1848,
+          "drawCalls": 2,
+          "bufferBytes": 177408,
+          "sha256": "71202f8bf7890873dd9f209da3ad18199a54a1717ae3ccff06c530b17772478d"
+        },
+        {
+          "level": 2,
+          "url": "models/tree-maple-street.lod2.gltf",
+          "triangles": 424,
+          "drawCalls": 2,
+          "bufferBytes": 40704,
+          "sha256": "4069a50584cee93b5e800a33f50bbf657b87be849696544b73615f4d8c4d2596"
+        }
+      ]
+    },
+    {
+      "id": "tree-northern-pine",
+      "label": "Northern Pine",
+      "category": "vegetation",
+      "description": "Layered conifer with a visible trunk, tapered crown, and branch whorls.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.6249327659606934,
+          -9.536743306171047e-8,
+          -1.649999976158142
+        ],
+        "max": [
+          1.6249327659606934,
+          7.75,
+          1.649999976158142
+        ]
+      },
+      "dimensions": [
+        3.2499,
+        7.75,
+        3.3
+      ],
+      "materials": [
+        "bark",
+        "foliage"
+      ],
+      "sockets": [],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/tree-northern-pine.lod0.gltf",
+          "triangles": 408,
+          "drawCalls": 2,
+          "bufferBytes": 39168,
+          "sha256": "7ef2778b7113e14e303fb333a89d1e6c0451112de8e7436ae90f0124ab296179"
+        },
+        {
+          "level": 1,
+          "url": "models/tree-northern-pine.lod1.gltf",
+          "triangles": 120,
+          "drawCalls": 2,
+          "bufferBytes": 11520,
+          "sha256": "a57c4e7ee4399345d365a411398dfdbf7e93795ef40cea22d8381f79aa2a708a"
+        },
+        {
+          "level": 2,
+          "url": "models/tree-northern-pine.lod2.gltf",
+          "triangles": 96,
+          "drawCalls": 2,
+          "bufferBytes": 9216,
+          "sha256": "0c85981f47df6b5a38c019faf722e31132b4ccd7218dfd4226095a55c616fa33"
+        }
+      ]
+    },
+    {
+      "id": "tree-river-birch-clump",
+      "label": "River Birch Clump",
+      "category": "vegetation",
+      "description": "Three-stem ornamental birch clump suited to parks and drainage edges.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.612850308418274,
+          0.01439665537327528,
+          -1.5493230819702148
+        ],
+        "max": [
+          1.6893378496170044,
+          6.776422023773193,
+          1.032175064086914
+        ]
+      },
+      "dimensions": [
+        3.3022,
+        6.762,
+        2.5815
+      ],
+      "materials": [
+        "bark",
+        "foliage"
+      ],
+      "sockets": [],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/tree-river-birch-clump.lod0.gltf",
+          "triangles": 11556,
+          "drawCalls": 2,
+          "bufferBytes": 1109376,
+          "sha256": "e4a29a834b67b5342d27e5d7ad4960bf70ce47997cbb08d346dad69da817d696"
+        },
+        {
+          "level": 1,
+          "url": "models/tree-river-birch-clump.lod1.gltf",
+          "triangles": 1224,
+          "drawCalls": 2,
+          "bufferBytes": 117504,
+          "sha256": "18d53f78c4335249e036e17366b4a0d076c08aa128fe583bcc28f8125d86704e"
+        },
+        {
+          "level": 2,
+          "url": "models/tree-river-birch-clump.lod2.gltf",
+          "triangles": 344,
+          "drawCalls": 2,
+          "bufferBytes": 33024,
+          "sha256": "f3b1c28ca5220a8ac3343c6bb64089735d25fdeba26cd6c4f5649636bc4770c4"
+        }
+      ]
+    },
+    {
+      "id": "wetland-reed-bed",
+      "label": "Wetland Reed Bed",
+      "category": "vegetation",
+      "description": "Dense patch of tall reeds for bioswales, ponds, and drainage channels.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.643871784210205,
+          -2.3841858265427618e-8,
+          -1.2405436038970947
+        ],
+        "max": [
+          1.6216505765914917,
+          1.75,
+          1.2450000047683716
+        ]
+      },
+      "dimensions": [
+        3.2655,
+        1.75,
+        2.4855
+      ],
+      "materials": [
+        "foliage",
+        "bark"
+      ],
+      "sockets": [],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/wetland-reed-bed.lod0.gltf",
+          "triangles": 684,
+          "drawCalls": 2,
+          "bufferBytes": 65664,
+          "sha256": "e997517ee20c2ffeb8a7c763df7ad478ed2ba8699ba0e749853416c80d9a7ffc"
+        },
+        {
+          "level": 1,
+          "url": "models/wetland-reed-bed.lod1.gltf",
+          "triangles": 240,
+          "drawCalls": 1,
+          "bufferBytes": 23040,
+          "sha256": "4357a6fd4e9cb9f2ad643f5dd5625b159f01210a8d47e34522b2a78c3858fc84"
+        },
+        {
+          "level": 2,
+          "url": "models/wetland-reed-bed.lod2.gltf",
+          "triangles": 144,
+          "drawCalls": 1,
+          "bufferBytes": 13824,
+          "sha256": "e5e462b9dda8f4da010d399345e5bfe13ac60203759fbe78f875de59bf06e4fb"
+        }
+      ]
+    },
+    {
+      "id": "window-arched-masonry",
+      "label": "Arched masonry window",
+      "category": "windows",
+      "description": "Round-headed storefront loft window with stone hood.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -0.8849999904632568,
+          -1.7881393032936899e-9,
+          -0.6700000166893005
+        ],
+        "max": [
+          0.8849999904632568,
+          2.365000009536743,
+          0.23499999940395355
+        ]
+      },
+      "dimensions": [
+        1.77,
+        2.365,
+        0.905
+      ],
+      "materials": [
+        "limestone",
+        "glass-blue",
+        "metal-dark"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/window-arched-masonry.lod0.gltf",
+          "triangles": 1828,
+          "drawCalls": 3,
+          "bufferBytes": 175488,
+          "sha256": "fd38f17178edf8d9e7c8a5d2f8c5445cd61d3e43f8974bc94aaf8e9d2af3953e"
+        },
+        {
+          "level": 1,
+          "url": "models/window-arched-masonry.lod1.gltf",
+          "triangles": 384,
+          "drawCalls": 3,
+          "bufferBytes": 36864,
+          "sha256": "8ed7c65d70c0c9e562c28a8c45dfb269e7d6eca50c26488a5abc264a6c9c405d"
+        },
+        {
+          "level": 2,
+          "url": "models/window-arched-masonry.lod2.gltf",
+          "triangles": 36,
+          "drawCalls": 2,
+          "bufferBytes": 3456,
+          "sha256": "c46b667f3c868cdd7cac31ddd75732b2e80d6bfcc9fa61376b0c599466db5a26"
+        }
+      ]
+    },
+    {
+      "id": "window-bay-copper",
+      "label": "Copper-roof bay window",
+      "category": "windows",
+      "description": "Projecting three-face residential bay with copper canopy.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.5700000524520874,
+          -3.5762786065873797e-9,
+          -0.10999999940395355
+        ],
+        "max": [
+          1.5700000524520874,
+          2.5799999237060547,
+          0.9549999833106995
+        ]
+      },
+      "dimensions": [
+        3.14,
+        2.58,
+        1.065
+      ],
+      "materials": [
+        "brick-cream",
+        "limestone",
+        "glass-blue",
+        "wood-painted",
+        "metal-copper"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/window-bay-copper.lod0.gltf",
+          "triangles": 1404,
+          "drawCalls": 5,
+          "bufferBytes": 134784,
+          "sha256": "4fff203588927669a114b773debbef224df9330f78c63d6c920769e223676a75"
+        },
+        {
+          "level": 1,
+          "url": "models/window-bay-copper.lod1.gltf",
+          "triangles": 132,
+          "drawCalls": 5,
+          "bufferBytes": 12672,
+          "sha256": "2a69a7de92b65a795e9a2d4200840d78eff5c1bb6de02e0969eba41e29570ab1"
+        },
+        {
+          "level": 2,
+          "url": "models/window-bay-copper.lod2.gltf",
+          "triangles": 72,
+          "drawCalls": 4,
+          "bufferBytes": 6912,
+          "sha256": "2b51025954d4c03b38ba8ec7e46c5e46ad3ad9dde33178a14f81dc86556efb37"
+        }
+      ]
+    },
+    {
+      "id": "window-civic-pediment",
+      "label": "Civic pediment window",
+      "category": "windows",
+      "description": "Tall formal opening with heavy sill, lintel, and crown.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -0.9599999785423279,
+          -1.7881393032936899e-9,
+          -0.08500000089406967
+        ],
+        "max": [
+          0.9599999785423279,
+          2.744999885559082,
+          0.23499999940395355
+        ]
+      },
+      "dimensions": [
+        1.92,
+        2.745,
+        0.32
+      ],
+      "materials": [
+        "limestone",
+        "glass-blue",
+        "wood-painted"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/window-civic-pediment.lod0.gltf",
+          "triangles": 1404,
+          "drawCalls": 3,
+          "bufferBytes": 134784,
+          "sha256": "970ee0ffca7ee8d1fcf33212d0705c47b8d039d35677c4d980006f0c66123731"
+        },
+        {
+          "level": 1,
+          "url": "models/window-civic-pediment.lod1.gltf",
+          "triangles": 120,
+          "drawCalls": 3,
+          "bufferBytes": 11520,
+          "sha256": "6b2b87f31fa6caebbc8556112821802a6081cba9250673ba6f75db25198f6ac6"
+        },
+        {
+          "level": 2,
+          "url": "models/window-civic-pediment.lod2.gltf",
+          "triangles": 24,
+          "drawCalls": 2,
+          "bufferBytes": 2304,
+          "sha256": "0603dcb093aab18305abb3197471c73554e8ebffd8623f8f19c7809e3216a06e"
+        }
+      ]
+    },
+    {
+      "id": "window-craftsman",
+      "label": "Craftsman divided-light window",
+      "category": "windows",
+      "description": "Broad lower pane with divided upper transom and painted shutters.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.1449999809265137,
+          -1.7881393032936899e-9,
+          -0.08500000089406967
+        ],
+        "max": [
+          1.1449999809265137,
+          1.7649999856948853,
+          0.23499999940395355
+        ]
+      },
+      "dimensions": [
+        2.29,
+        1.765,
+        0.32
+      ],
+      "materials": [
+        "brick-cream",
+        "glass-blue",
+        "wood-painted",
+        "limestone",
+        "metal-dark"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/window-craftsman.lod0.gltf",
+          "triangles": 2268,
+          "drawCalls": 5,
+          "bufferBytes": 217728,
+          "sha256": "43a40194e801d29a8d178f2a7d5f58c1c661ac53f4fccbbf56743d419783c3e8"
+        },
+        {
+          "level": 1,
+          "url": "models/window-craftsman.lod1.gltf",
+          "triangles": 108,
+          "drawCalls": 4,
+          "bufferBytes": 10368,
+          "sha256": "3667295fdfaceead664c2200746fdb009aa701e5b879c0156b1188053278f030"
+        },
+        {
+          "level": 2,
+          "url": "models/window-craftsman.lod2.gltf",
+          "triangles": 24,
+          "drawCalls": 2,
+          "bufferBytes": 2304,
+          "sha256": "2e00995eb975bf60fe1fa512e9ddb51abe272eaa8de41a82ba4e3774c45be90b"
+        }
+      ]
+    },
+    {
+      "id": "window-double-hung",
+      "label": "Double-hung sash window",
+      "category": "windows",
+      "description": "Traditional recessed two-over-two sash with limestone sill.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -0.7799999713897705,
+          -1.7881393032936899e-9,
+          -0.08500000089406967
+        ],
+        "max": [
+          0.7799999713897705,
+          2.109999895095825,
+          0.23499999940395355
+        ]
+      },
+      "dimensions": [
+        1.56,
+        2.11,
+        0.32
+      ],
+      "materials": [
+        "limestone",
+        "glass-blue",
+        "wood-painted"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/window-double-hung.lod0.gltf",
+          "triangles": 1080,
+          "drawCalls": 3,
+          "bufferBytes": 103680,
+          "sha256": "829c1ffb6cbcee5cf098e3fa7fd53c9ead61721e18ae8ba9192881ccb34da6f9"
+        },
+        {
+          "level": 1,
+          "url": "models/window-double-hung.lod1.gltf",
+          "triangles": 96,
+          "drawCalls": 3,
+          "bufferBytes": 9216,
+          "sha256": "802a3e74a6acad665ebc6c34b60e410cad098ab9066632544baac9df13cbf805"
+        },
+        {
+          "level": 2,
+          "url": "models/window-double-hung.lod2.gltf",
+          "triangles": 24,
+          "drawCalls": 2,
+          "bufferBytes": 2304,
+          "sha256": "d77cb2de21f8dd667ad566adfde517dbcb072a4a9da6e4f57edc0e6bace79608"
+        }
+      ]
+    },
+    {
+      "id": "window-industrial-steel",
+      "label": "Industrial steel window",
+      "category": "windows",
+      "description": "Large multi-light factory sash in a concrete surround.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.559999942779541,
+          -1.7881393032936899e-9,
+          -0.08500000089406967
+        ],
+        "max": [
+          1.559999942779541,
+          2.5350000858306885,
+          0.23499999940395355
+        ]
+      },
+      "dimensions": [
+        3.12,
+        2.535,
+        0.32
+      ],
+      "materials": [
+        "concrete",
+        "glass-blue",
+        "metal-dark"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/window-industrial-steel.lod0.gltf",
+          "triangles": 1512,
+          "drawCalls": 3,
+          "bufferBytes": 145152,
+          "sha256": "394830bf89ff230177365264568e9f55751b7e158e8c6be82da30f76d2557814"
+        },
+        {
+          "level": 1,
+          "url": "models/window-industrial-steel.lod1.gltf",
+          "triangles": 84,
+          "drawCalls": 3,
+          "bufferBytes": 8064,
+          "sha256": "b59a8089fedc7a249a8f7aae9a7f40b8f4901d3469b491dba6a6cb74785734f3"
+        },
+        {
+          "level": 2,
+          "url": "models/window-industrial-steel.lod2.gltf",
+          "triangles": 24,
+          "drawCalls": 2,
+          "bufferBytes": 2304,
+          "sha256": "0c198b9b250a0d1bf9f2c7bf179b21c3db35df9236e4f302015f0cef01a6cb9e"
+        }
+      ]
+    },
+    {
+      "id": "window-paired-sash",
+      "label": "Paired commercial sash",
+      "category": "windows",
+      "description": "Wide paired sash with central mullion and brick lintel.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.3600000143051147,
+          -1.7881393032936899e-9,
+          -0.08500000089406967
+        ],
+        "max": [
+          1.3600000143051147,
+          2.009999990463257,
+          0.23499999940395355
+        ]
+      },
+      "dimensions": [
+        2.72,
+        2.01,
+        0.32
+      ],
+      "materials": [
+        "brick-cream",
+        "glass-blue",
+        "wood-painted",
+        "limestone",
+        "brick-red"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/window-paired-sash.lod0.gltf",
+          "triangles": 1296,
+          "drawCalls": 5,
+          "bufferBytes": 124416,
+          "sha256": "291a9c5b7f6b4988bb62b39b729772826b7871a3db6138024c66515ecc010ad7"
+        },
+        {
+          "level": 1,
+          "url": "models/window-paired-sash.lod1.gltf",
+          "triangles": 96,
+          "drawCalls": 5,
+          "bufferBytes": 9216,
+          "sha256": "b8353d08fc93f76e4d4e1db47a44334eb0d1991833d6006a08ae32c4ef570c2f"
+        },
+        {
+          "level": 2,
+          "url": "models/window-paired-sash.lod2.gltf",
+          "triangles": 24,
+          "drawCalls": 2,
+          "bufferBytes": 2304,
+          "sha256": "a922080a463c63abb1cc2fcc5677968716b6fbfe587deee31d0193eca295ac01"
+        }
+      ]
+    },
+    {
+      "id": "window-triple-ribbon",
+      "label": "Three-part ribbon window",
+      "category": "windows",
+      "description": "Three linked modern panes with deep continuous sill.",
+      "style": "American civic / contemporary vernacular",
+      "bounds": {
+        "min": [
+          -1.9049999713897705,
+          -1.7881393032936899e-9,
+          -0.08500000089406967
+        ],
+        "max": [
+          1.9049999713897705,
+          1.5850000381469727,
+          0.23499999940395355
+        ]
+      },
+      "dimensions": [
+        3.81,
+        1.585,
+        0.32
+      ],
+      "materials": [
+        "concrete",
+        "glass-blue",
+        "metal-dark",
+        "limestone"
+      ],
+      "sockets": [
+        {
+          "name": "wall-anchor",
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "lods": [
+        {
+          "level": 0,
+          "url": "models/window-triple-ribbon.lod0.gltf",
+          "triangles": 2268,
+          "drawCalls": 4,
+          "bufferBytes": 217728,
+          "sha256": "d039fca0ae96e2e7d447cc46939b0a4d2d354947b79436799cdf8b6a5c92054c"
+        },
+        {
+          "level": 1,
+          "url": "models/window-triple-ribbon.lod1.gltf",
+          "triangles": 252,
+          "drawCalls": 4,
+          "bufferBytes": 24192,
+          "sha256": "1225e37c3fe4a7dd827d0b3be73851578a8b5255feba007130e562d951edc0ce"
+        },
+        {
+          "level": 2,
+          "url": "models/window-triple-ribbon.lod2.gltf",
+          "triangles": 72,
+          "drawCalls": 2,
+          "bufferBytes": 6912,
+          "sha256": "379829c785099d0d64bffa41926471a518f6d19ce5c7105a4ff145c34897b0af"
+        }
+      ]
+    }
+  ]
+}

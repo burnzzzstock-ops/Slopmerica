@@ -5,3 +5,4 @@ dist-assets/
 shots/
 .DS_Store
 *.log
+*.local

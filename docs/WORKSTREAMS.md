@@ -31,6 +31,8 @@ Rules:
 ## Verification
 `npm install && npx vite` runs the dev server. `node scripts/shot.mjs <url> <out.png> [js] [waitMs] [w] [h]` takes a headless Chromium screenshot with SwiftShader WebGL. Chromium lives at `/opt/pw-browsers/chromium-*/chrome-linux/chrome`; if yours is elsewhere, edit the path in your own copy of the script. Look at your screenshots and iterate.
 
+Before Core merges a content branch (Cast & Feed, City Look), it runs `node scripts/ipcheck.mjs` (real slogans and exact real brand colors on the parody chains) and the content audit. Findings go to the owner; the scripts never rewrite a joke or rename a brand.
+
 ## Performance budget
 Desktop at 60fps: about 1,400 cars, 400 people, 3,000 buildings and 40k trees. Phones: about a third of that. Use InstancedMesh and merged geometry, keep draw calls low, and avoid per-frame allocations.
 

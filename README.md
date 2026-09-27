@@ -85,6 +85,12 @@ corners and a Bus Stop to Nowhere at the end of every dead end. 96 of the 100
 families are in the game. The buildings dev page has a
 Vault view (`dev/buildings.html#view=vault`).
 
+## Content checks (TypeSafe Jev)
+
+Some content judgments are made at dev time by TypeSafe's Jev model, which answers typed questions (yes/no, choice, score) with probabilities; code makes every decision. Scripts call it through `scripts/typesafe.mjs` (no dependencies; the key comes from `TYPESAFE_API_KEY` or the gitignored `.env.local` and is never printed). The game never calls Jev: scripts ship plain data, and the game behaves as before without it. Every Jev script prints its requests, tokens and cost, caches raw answers so a threshold change costs nothing, and has a `--dry-run` that needs no key.
+
+Before merging a content branch (Cast & Feed, City Look), run `node scripts/ipcheck.mjs`: real slogans and exact real brand colors the parody chains riff on, checked in code (a language model's memory of slogans is patchy). A finding the owner keeps goes in its `ACCEPTED` table with the reason.
+
 ## Playtesting
 
 - The title screen and Settings show the build (`commit · date`); every bug report carries it.
@@ -147,6 +153,7 @@ node scripts/gridtest.mjs        # Roads > Grid: three clicks lay a street grid 
 node scripts/progression.mjs     # (not a pass/fail test) a scripted player grows a Ponzi town: when each population mark is reached, money, what got built
 node scripts/weathertest.mjs     # weather keeps to the calendar: no rain or snow spell over a month, no summer snow, changes often, doesn't strobe at top speed
 node scripts/costtest.mjs        # honest service costs (running cost, committed projects, units), Next priorities, locked-fix notes, full landfill note, red bulldoze outlines
+node scripts/ipcheck.mjs         # (content gate, no key) real slogans used word for word and real brands' exact colors on the parody chains; riffs listed for review
 node scripts/linktest.mjs        # landmarks/services off the road network: tip, toast, red no-road bubble, inspector, alerts, no land value; feed pacing
 node scripts/vaulttest.mjs       # Asset Vault: pack streams in; zoned lots grow vault buildings that fit; merch lots kept; attractions; services' vault looks + toggle; road furniture; no pack = no change
 node scripts/crisisfixtest.mjs   # info views show every building with that view's problem; utility outages merge only for the same buildings; a closed warning returns when worse

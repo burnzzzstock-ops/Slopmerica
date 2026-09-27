@@ -116,13 +116,15 @@ void main() {
   } else if (k == 2) { // fire
     a = smoothstep(1.0, 0.0, r) * (1.0 - vT);
     col = mix(vec3(4.0, 2.7, 1.0), vec3(2.4, 0.45, 0.06), smoothstep(0.0, 0.7, vT));
+    // HDR flame reads as fire at night; in daylight it bloomed into a white orb
+    col *= mix(1.0, 0.3, clamp(uLight, 0.0, 1.0));
   } else if (k == 3) { // dust
     float n = pn(vUv * 2.2 + vSeed * 13.0);
     a = smoothstep(1.0, 0.2, r + (n - 0.5) * 0.4) * 0.5 * (1.0 - vT) * fadeIn;
     col = vec3(0.56, 0.47, 0.34) * uLight;
   } else if (k == 4) { // spark
     a = pow(smoothstep(1.0, 0.0, r), 3.0) * (1.0 - vT * vT);
-    col = vec3(6.0, 3.8, 1.2);
+    col = vec3(6.0, 3.8, 1.2) * mix(1.0, 0.35, clamp(uLight, 0.0, 1.0));
   } else if (k == 5) { // steam
     float n = pn(vUv * 1.6 + vSeed * 11.0);
     a = smoothstep(1.0, 0.1, r + (n - 0.5) * 0.45) * 0.45 * pow(1.0 - vT, 1.5) * fadeIn;

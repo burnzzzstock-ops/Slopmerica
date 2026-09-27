@@ -2,7 +2,8 @@
 // My Own Propane depots -> Neural Fly AI data centers with cooling towers.
 import { brandById, brandsFor, BRANDS, Brand, Archetype } from '../art/brands';
 import { M, S, Mat, rgb, WHITE } from './mesh';
-import { GenCtx, lotPad, car, wallSign, sideSign, poleSign, dumpster, hvac, fence, patch, mats, lampPost, monumentSign, inLot } from './props';
+import { GenCtx, lotPad, car, wallSign, sideSign, poleSign, dumpster, hvac, fence, patch, mats, lampPost, monumentSign, inLot, backBillboard } from './props';
+import { buildBillboard } from './billboard';
 import { FAC, WALL, ROOF, block, roofJunk } from './blocks';
 import { hexNum, signTile as sign } from './comLow';
 import { pickArch } from './archetypes';
@@ -287,10 +288,7 @@ function datacenter(g: GenCtx, b: Brand) {
   g.label = neural ? 'Neural Fly AI Data Center (drinks the reservoir)' : b.name;
 }
 
-export function genIndustry(g: GenCtx) {
-  const arch = chooseArch(g);
-  const b = pickBrand(g, arch === 'brewery' ? 'brewery' : arch);
-  g.brand = b.id;
+function genIndustryArch(g: GenCtx, arch: ReturnType<typeof chooseArch>, b: ReturnType<typeof pickBrand>) {
   switch (arch) {
     case 'warehouse': return warehouse(g, b);
     case 'factory': return factory(g, b);
@@ -299,4 +297,14 @@ export function genIndustry(g: GenCtx) {
     case 'datacenter': return datacenter(g, b);
     default: return shed(g, b);
   }
+}
+
+export function genIndustry(g: GenCtx) {
+  const arch = chooseArch(g);
+  const b = pickBrand(g, arch === 'brewery' ? 'brewery' : arch);
+  g.brand = b.id;
+  const out = genIndustryArch(g, arch, b);
+  // the industrial edge of town is where the billboards cluster
+  if (g.rng.chance(0.3)) backBillboard(g, buildBillboard, g.rng.float() * 2 - 1);
+  return out;
 }

@@ -115,6 +115,15 @@ inside the browser frame), which changed several conclusions.
 - **Runway and goal:** the budget shows road upkeep now, in a year and in four, and roughly how many more residents break even takes. The meters card lists nearer goals; the sprawl meter shows tenths of a percent early on, with marks at 1%, 2.5% and 5%.
 - **Sluggish on Ultra past 150 residents:** (a) every new day in spring and autumn recoloured the trees by re-streaming every tree on the map, and every building going up in the woods did the same: 90-130 ms hitches about once a second at top speed. Now colours repaint a slice per frame and cuts/regrades edit the drawn instances in place; the worst frames while a town grows are 16-35 ms. (b) Pedestrians drew their whole capacity, hidden people included, in the shadow pass too: 2.1M of Ultra's 4.8M triangles a frame in an empty county. Now 2.6M in all. (c) The sprawl sweep runs a fifth of the county a day instead of all of it every fifth day (a ~14 ms hitch).
 
+## Buildings, round 1 (feedback: satirical exaggeration on a realistic base, judged at neighbourhood zoom)
+
+- **The town read as a spreadsheet:** empty zoned lots stayed painted at 30% opacity outside the zoning tool; now 10%.
+- **Commercial strips shout:** brand pole signs 1.5x wider and 1.3x taller (9 m minimum); half the shops get flailing tube men (6.5 m, kinked, arms thrown); 40% fly an oversized flag; a quarter of wide shop lots and 30% of factories carry a roadside billboard on a tall pole behind the building (the billboard art existed but was never placed).
+- **Homes:** half of them fly a flag at the front corner, bigger with the house.
+- **Night:** building glow 1.45 -> 2.2 (nightglow.mjs: 0.15% blown pixels, limit 0.5%); 60% of home windows lit (was 35%); warm lanterns by every front door, a bare bulb by every trailer door.
+- **Daytime white orbs by trailers** were burn-barrel fire particles at night brightness; fire and sparks are a third as bright by day.
+- **Harness:** scripts/bldshots.mjs builds the same town each run and shoots it at neighbourhood zoom (triangles unchanged at ~0.85M for those views).
+
 ## Remaining (ranked)
 
 1. Cities saved before this build keep any dead end that was built over (a disc on a through road, unconnected): bulldoze and redraw that stub. A load-time repair would move road endpoints that zoning and buildings refer to, so it wasn't done blind.

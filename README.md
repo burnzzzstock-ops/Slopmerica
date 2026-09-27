@@ -66,6 +66,7 @@ node scripts/rescheck.mjs        # render resolution vs the screen, per preset
 node scripts/musictest.mjs       # ambient piano renders offline: plays, never clips, stays in key
 node scripts/placetest.mjs       # services, depots and landmarks front the street on level pads; ghost = final
 node scripts/playtest3.mjs       # county road is the state's; road previews; undo replants; demand next step; goals
+node scripts/bldshots.mjs tag    # neighbourhood-zoom shots of homes, shops, apartments, offices, factories, day and night (CLOSE=1 adds close-ups)
 ```
 
 `BASE_URL=http://127.0.0.1:5174` points any of them at another server (handy for running the suite against a frozen copy while you keep editing). Scripts that assert exit nonzero on failure.

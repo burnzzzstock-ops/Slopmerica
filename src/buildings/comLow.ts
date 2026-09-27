@@ -6,10 +6,11 @@ import { hasTile } from '../art';
 import { M, S, Mat, rgb, WHITE, RGB } from './mesh';
 import {
   GenCtx, lotPad, parkingLot, car, tree, shrub, poleSign, wallSign, sideSign, canopy, pumpIsland, dumpster, iceBox, propaneCage,
-  vending, flagpole, tubeMan, picnicTable, smoker, lampPost, patch, mats, monumentSign, hvac, fence,
+  vending, flagpole, tubeMan, backBillboard, picnicTable, smoker, lampPost, patch, mats, monumentSign, hvac, fence,
 } from './props';
 import { FAC, WALL, ROOF } from './blocks';
 import { pickArch } from './archetypes';
+import { buildBillboard } from './billboard';
 
 function chooseArch(g: GenCtx): Archetype {
   const { spec } = g;
@@ -382,8 +383,7 @@ function carLot(g: GenCtx, b: Brand) {
   g.label = b.name;
 }
 
-export function genComLow(g: GenCtx) {
-  const arch = chooseArch(g);
+function genComLowArch(g: GenCtx, arch: ReturnType<typeof chooseArch>) {
   if (arch === 'strip') return strip(g);
   const b = pickBrand(g, arch);
   g.brand = b.id;
@@ -397,6 +397,29 @@ export function genComLow(g: GenCtx) {
     case 'carLot': return carLot(g, b);
     default: return shop(g, b);
   }
+}
+
+/**
+ * Curbside hype, on top of whatever the lot is: inflatable tube men flailing
+ * at the traffic and an oversized flag. Everything on a commercial strip
+ * shouts for attention; car lots already have theirs.
+ */
+function curbHype(g: GenCtx, arch: string) {
+  const { rng, W, D } = g;
+  if (arch === 'carLot' || W < 12) return;
+  if (rng.chance(0.5)) {
+    const n = 1 + (rng.chance(0.45) ? 1 : 0);
+    for (let i = 0; i < n; i++) tubeMan(g, -W / 2 + 2.2 + i * 2.6, D / 2 - 1.0, rng.pick([0xff3b3b, 0x3bd1ff, 0xffd400, 0x6fe36f, 0xff7ad9]));
+  }
+  if (rng.chance(0.4)) flagpole(g, -W / 2 + 1.1, D / 2 - 2.6, 13 + rng.float() * 5, 4.5 + rng.float() * 1.5);
+  if (W >= 16 && rng.chance(0.28)) backBillboard(g, buildBillboard, rng.float() * 2 - 1);
+}
+
+export function genComLow(g: GenCtx) {
+  const arch = chooseArch(g);
+  const out = genComLowArch(g, arch);
+  curbHype(g, arch);
+  return out;
 }
 
 export { store, sign as signTile };

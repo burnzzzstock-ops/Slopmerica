@@ -119,6 +119,7 @@ export class ProblemIcons {
       depthWrite: false,
     });
     this.mesh = new THREE.Mesh(this.geo, this.mat);
+    this.mesh.name = 'problem-icons';
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 20;
     scene.add(this.mesh);

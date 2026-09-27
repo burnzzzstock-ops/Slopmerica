@@ -222,9 +222,13 @@ export function lampPost(g: GenCtx, x: number, z: number, h = 8, heads = 1) {
 
 // ------------------------------------------------------------------ signs
 /** Pole sign carrying a brand panel (and optional gas price board). */
+/** Brand signs are 1.5x what a planning board would allow, and taller: they read from across town. */
+export const SIGN_SCALE = 1.5;
+
 export function poleSign(g: GenCtx, x: number, z: number, h: number, w: number, tile: string, o: { price?: boolean; tilt?: number; lit?: boolean } = {}) {
   const { mb } = g;
-  w = Math.min(w, g.W - 1);
+  w = Math.min(w * SIGN_SCALE, g.W - 1);
+  h = Math.max(h * 1.3, 9);
   [x, z] = inLot(g, x, z, w / 2 + 0.1, 0.5);
   const pw = w, ph = w / 4;
   const steel = M('metal', 2, 2, 0x8a8e92);
@@ -401,13 +405,17 @@ export function tubeMan(g: GenCtx, x: number, z: number, color: number) {
   const { mb, rng } = g;
   [x, z] = inLot(g, x, z, 1.5, 0.5);
   const m = M('plain', 2, 2, color);
+  // mid-flail: a kinked body, arms thrown about, taller than the storefront's door by a lot
   mb.push().translate(x, 0, z).rotZ((rng.float() - 0.5) * 0.4);
-  mb.cyl(0, 0, 0.3, 0, 4.5, 6, m);
-  mb.push().translate(0, 3.6, 0).rotZ(1.2);
-  mb.cyl(0, 0, 0.12, 0, 1.4, 5, m);
+  mb.cyl(0, 0, 0.42, 0, 3.4, 6, m);
+  mb.push().translate(0, 3.3, 0).rotZ((rng.float() - 0.5) * 0.9);
+  mb.cyl(0, 0, 0.38, 0, 2.9, 6, m);
+  mb.push().translate(0, 2.1, 0).rotZ(1.1 + rng.float() * 0.5);
+  mb.cyl(0, 0, 0.16, 0, 1.9, 5, m);
   mb.pop();
-  mb.push().translate(0, 3.4, 0).rotZ(-1.0);
-  mb.cyl(0, 0, 0.12, 0, 1.4, 5, m);
+  mb.push().translate(0, 1.8, 0).rotZ(-0.9 - rng.float() * 0.6);
+  mb.cyl(0, 0, 0.16, 0, 1.9, 5, m);
+  mb.pop();
   mb.pop();
   mb.pop();
 }
@@ -480,4 +488,19 @@ export function rooftopBillboard(g: GenCtx, x: number, y: number, z: number, w: 
   mb.box(-w / 2, w / 2, 2.2, 2.2 + h, -0.3, 0, { f: S(tile), b: M('bb:back', 4, 1.25), l: steel, r: steel, top: steel });
   mb.box(-w / 2, w / 2, 2.0, 2.2, 0, 0.9, { side: steel, top: M('grille', 2, 2, 0x777777) });
   mb.pop();
+}
+
+/**
+ * A roadside billboard on a tall pole at the back of the lot, facing the
+ * street and towering over the building: every commercial strip needs one
+ * more thing shouting. Keeps the lot's own label.
+ */
+export function backBillboard(g: GenCtx, build: (g: GenCtx, merch: boolean) => void, xFrac = -0.5) {
+  if (g.W < 14 || g.D < 10) return;
+  const label = g.label;
+  const x = Math.max(-g.W / 2 + 6.5, Math.min(g.W / 2 - 6.5, xFrac * (g.W / 2 - 6.5)));
+  g.mb.push().translate(x, 0, -g.D / 2 + 1.6);
+  build(g, g.rng.chance(0.12));
+  g.mb.pop();
+  g.label = label;
 }

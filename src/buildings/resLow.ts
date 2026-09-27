@@ -25,7 +25,8 @@ function setbacks(D: number, front = 0) {
   return { fs, bs, hd, gz, zf: gz - front };
 }
 
-function win(g: GenCtx, name: string, litP = 0.35) {
+// evenings: most families are home with every light on
+function win(g: GenCtx, name: string, litP = 0.6) {
   return S(g.rng.chance(litP) ? name + 'Lit' : name);
 }
 
@@ -41,6 +42,11 @@ function windowsX(g: GenCtx, z0: number, z1: number, x: number, y: number, n: nu
     const z = z0 + ((i + 0.5) * (z1 - z0)) / n;
     g.mb.decal(neg ? '-x' : '+x', z, y, x, w, h, win(g, tile));
   }
+}
+
+/** A pair of warm lanterns by the front door: what a street of homes looks like at night. */
+function doorLights(g: GenCtx, x: number, y: number, z: number, half: number) {
+  for (const dx of [-half, half]) g.mb.decal('+z', x + dx, y, z + 0.03, 0.42, 0.55, S('lampWarm'));
 }
 
 function driveway(g: GenCtx, x: number, w: number, zFrom: number, mat = mats.concrete()) {
@@ -87,11 +93,13 @@ function trailer(g: GenCtx) {
     const z = -hz + ((i + 0.5) * len) / nw;
     if (i === Math.floor(nw / 2)) {
       mb.decal(side, z, 0.6, hx, 0.9, 2.0, S('doorTrailer'));
+      // the one bare bulb by the door, always on
+      mb.decal(side, z + 0.75, 2.35, hx + 0.03, 0.4, 0.5, S('lampWarm'));
       mb.box(hx, hx + 1.8, 0, 0.6, z - 1.1, z + 1.1, { side: M('deck', 4, 4), top: M('deck', 4, 4) });
-    } else mb.decal(side, z, 1.6, hx, 1.3, 0.75, win(g, 'winTrailer', 0.4));
+    } else mb.decal(side, z, 1.6, hx, 1.3, 0.75, win(g, 'winTrailer', 0.6));
   }
   for (let i = 0; i < nw - 1; i++) mb.decal('-x', -hz + ((i + 0.7) * len) / nw, 1.6, -hx, 1.3, 0.75, win(g, 'winTrailer', 0.3));
-  mb.decal('+z', 0, 1.7, hz, 1.3, 0.75, win(g, 'winTrailer', 0.4));
+  mb.decal('+z', 0, 1.7, hz, 1.3, 0.75, win(g, 'winTrailer', 0.6));
   if (rng.chance(0.6)) dish(g, hx - 0.6, 3.6, hz - 1.5, 0.8);
   acUnit(g, -hx - 0.6, -hz + 2);
   mb.pop();
@@ -126,6 +134,7 @@ function shack(g: GenCtx) {
   for (const px of [cx - w / 2 + 0.2, cx + w / 2 - 0.2]) mb.boxC(px, pz + 1.6, 0.15, 0.15, 0.4, 2.2, { side: M('wood', 4, 4), top: null });
   mb.poly([[cx - w / 2 - 0.2, 2.5, pz + 2.0], [cx + w / 2 + 0.2, 2.5, pz + 2.0], [cx + w / 2 + 0.2, 2.75, pz], [cx - w / 2 - 0.2, 2.75, pz]], roof);
   mb.decal('+z', cx - w / 4, 0.4, pz, 0.9, 2.0, S('doorFront', 0x9a8a78));
+  mb.decal('+z', cx - w / 4 + 0.75, 2.1, pz + 0.03, 0.38, 0.48, S('lampWarm'));
   mb.decal('+z', cx + w / 4, 1.1, pz, 0.9, 1.2, rng.chance(0.3) ? S('winBoard') : win(g, 'winHouse', 0.5));
   mb.decal('+x', cz, 1.1, cx + w / 2, 0.9, 1.2, win(g, 'winHouse', 0.3));
   // stovepipe
@@ -191,6 +200,7 @@ function ranch(g: GenCtx) {
   // front: picture window, door, windows
   const doorX = x0 + hw * (0.38 + rng.float() * 0.2);
   mb.decal('+z', doorX, 0, zf, 1.0, 2.1, S(rng.pick(['doorFront', 'doorBlue', 'doorBlack'])));
+  doorLights(g, doorX, 1.9, zf, 0.8);
   porchSteps(g, doorX, zf, 1.6, 0.3);
   mb.decal('+z', x0 + hw * 0.18, 0.8, zf, 2.6, 1.5, win(g, 'winPicture', 0.4));
   windowsZ(g, doorX + 1.2, x1 - 0.4, zf, 1.0, Math.max(1, Math.floor((x1 - doorX) / 3)), rng.chance(0.5) ? 'winShutter' : 'winHouse', 1.3, 1.3);
@@ -240,6 +250,7 @@ function tract(g: GenCtx) {
   // entry
   const ex = left ? (gb + x1) / 2 : (x0 + ga) / 2;
   mb.decal('+z', ex, 0.2, zf, 1.0, 2.1, S(rng.pick(['doorBlack', 'doorFront', 'doorBlue'])));
+  doorLights(g, ex, 2.0, zf, 0.8);
   mb.boxC(ex, zf + 0.9, 2.2, 1.8, 0, 0.2, M('concretePad', 4, 4));
   if (plan === 2) {
     mb.boxC(ex, zf + 1.6, 0.2, 0.2, 0.2, 2.6, { side: trim, top: null });
@@ -308,6 +319,7 @@ function mcmansion(g: GenCtx, mega: boolean) {
   mb.gable(fx - fw / 2, fx + fw / 2, zf - 1.5, fz, H + 0.6, 2.8, 'z', roof, front, 0.3);
   mb.decal('+z', fx, 2.6, fz, 1.2, 2.8, win(g, 'winTall', 0.55));
   mb.decal('+z', fx, 0.15, fz, 1.6, 2.3, S(mega ? 'doorDouble' : 'doorSide'));
+  doorLights(g, fx, 2.2, fz, 1.15);
   const stoop = Math.min(2.4, D / 2 - fz - 0.1);
   if (stoop > 0.6) mb.box(fx - fw / 2 - 0.3, fx + fw / 2 + 0.3, 0, 0.25, fz, fz + stoop, M('concretePad', 4, 4, 0xe0d8c8));
   patch(g, fx - 0.7, fx + 0.7, fz + 2.4, D / 2, mats.concrete(), 0.1);
@@ -395,6 +407,7 @@ function farmhouse(g: GenCtx) {
   mb.shed(x0, x1, zf + 0.2, pz, 3.1, 0.5, roof, null, 0.25);
   const doorX = gx > 0 ? x0 + hw * 0.3 : x0 + hw * 0.7;
   mb.decal('+z', doorX, 0.35, zf, 1.2, 2.3, S('doorBlack'));
+  doorLights(g, doorX, 2.3, zf, 0.95);
   mb.decal('+z', doorX, 2.9, zf + 0.15, 1.6, 0.4, S('gather'), 0.1);
   windowsZ(g, x0 + 0.4, x1 - 0.4, zf, 0.9, Math.max(2, Math.floor(hw / 3.5)), 'winModern', 1.1, 1.5);
   windowsX(g, zb, zf, x0, 3.6, 2, 'winModern', 1.0, 1.4, true);
@@ -428,4 +441,6 @@ export function genResLow(g: GenCtx) {
   else if (L === 3) g.label = tract(g);
   else if (L === 4) g.label = mcmansion(g, false);
   else g.label = r < 0.5 && g.W >= 14 && g.D >= 16 ? farmhouse(g) : mcmansion(g, g.W >= 14);
+  // half the street flies a flag at the front corner, bigger the pricier the house
+  if (L >= 2 && g.W >= 10 && g.rng.chance(0.5)) flagpole(g, -g.W / 2 + 0.7, g.D / 2 - 0.7, 6.5 + L * 0.6, 1.9 + L * 0.3);
 }

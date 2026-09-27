@@ -397,7 +397,9 @@ export class Zoning {
       n++;
     }
     this.overlayMesh.count = n;
-    (this.overlayMesh.material as THREE.MeshBasicMaterial).opacity = this.overlayOn ? 0.55 : 0.3;
+    // outside the zoning tool, empty zoned lots are only a hint: at 0.3 the town
+    // read as a spreadsheet of coloured squares from every camera
+    (this.overlayMesh.material as THREE.MeshBasicMaterial).opacity = this.overlayOn ? 0.55 : 0.1;
     this.overlayMesh.instanceMatrix.needsUpdate = true;
     if (this.overlayMesh.instanceColor) this.overlayMesh.instanceColor.needsUpdate = true;
   }

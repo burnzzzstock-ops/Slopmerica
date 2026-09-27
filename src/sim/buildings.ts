@@ -6,7 +6,7 @@ import { CELL, WATER } from '../config';
 import { MAX_LEVEL, type BuildingModel, type LandmarkId, type ZoneType } from '../contracts';
 import { closestOnSampled, SpatialHash, V2 } from '../core/math';
 import { Rng } from '../core/rng';
-import { buildingMaterial, generateBuilding, generateLandmark, landmarkFootprint, setArtMap, VARIANTS } from '../buildings/generator';
+import { buildingMaterial, generateBuilding, generateLandmark, landmarkFootprint, setArtMap, variantsFor } from '../buildings/generator';
 import { generateConstruction, kitMaterial } from '../buildings/kitGenerator';
 import { applyAtmosphere } from '../world/seasons';
 import type { MapId } from '../world/maps';
@@ -391,7 +391,7 @@ export class Buildings {
     let y = 0;
     for (const c of cells) y += this.terrain.h(c.x, c.z);
     y /= cells.length;
-    const variant = this.rng.int(0, VARIANTS - 1);
+    const variant = this.rng.int(0, variantsFor(zone) - 1);
     const brand = zone === 'resLow' || zone === 'resHigh' ? undefined : this.brandFor(zone, this.rng)?.id;
     const e = this.modelFor(zone, level, w, d, variant, brand);
     const b: Bld = {
@@ -522,7 +522,7 @@ export class Buildings {
         continue;
       }
       const zt = zone as ZoneType;
-      const e = this.modelFor(zt, level, w, d, this.rng.int(0, VARIANTS - 1), brand || undefined);
+      const e = this.modelFor(zt, level, w, d, this.rng.int(0, variantsFor(zt) - 1), brand || undefined);
       const b: Bld = {
         id: this.nextId++, zone: zt, level, w, d, x, z, y, yaw, hw: (w * CELL) / 2, hd: (d * CELL) / 2, cells: [], seg,
         label: e.model.label, brand: e.model.brand ?? (brand || undefined), model: e.model, state: prog >= 1 ? 'active' : 'building', progress: Math.min(1, prog),
@@ -633,7 +633,7 @@ export class Buildings {
     const max = MAX_LEVEL[b.zone];
     if (b.level >= max) return;
     b.level++;
-    const e = this.modelFor(b.zone, b.level, b.w, b.d, this.rng.int(0, VARIANTS - 1), b.brand);
+    const e = this.modelFor(b.zone, b.level, b.w, b.d, this.rng.int(0, variantsFor(b.zone) - 1), b.brand);
     b.model = e.model;
     b.label = e.model.label;
     b.cap = capacityFor(b.zone, b.level, b.w * b.d);

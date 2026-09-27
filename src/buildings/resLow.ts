@@ -7,6 +7,18 @@ import {
   GenCtx, lotPad, patch, car, tree, shrub, fence, poolInground, poolAbove, trampoline, burnBarrel, smoker, flagpole, dish,
   boatTrailer, hoop, mailbox, porchSteps, acUnit, mats, picnicTable,
 } from './props';
+import { decorate, occupy } from './satire';
+import { stylesFor } from './houses';
+
+/** The original styles get the same satire yards as the catalog's. */
+function legacyYard(g: GenCtx, x0: number, x1: number, zb: number, zf: number, porch = 0, junk = false) {
+  const { W, D, rng } = g;
+  occupy(g, x0 - 0.3, x1 + 0.3, zb - 0.3, zf + porch + 0.3);
+  occupy(g, W / 2 - 1.0, W / 2 - 0.4, D / 2 - 0.9, D / 2 - 0.3); // mailbox
+  decorate(g, 'curb', { x0: -W / 2 + 0.3, x1: W / 2 - 1.2, z0: D / 2 - 1.5, z1: D / 2 - 0.15 }, rng.int(0, junk ? 2 : 1));
+  decorate(g, 'frontYard', { x0: -W / 2 + 0.3, x1: W / 2 - 0.3, z0: zf + porch + 0.3, z1: D / 2 - 0.5 }, junk ? rng.int(2, 4) : rng.int(2, 3));
+  decorate(g, 'backYard', { x0: -W / 2 + 0.5, x1: W / 2 - 0.5, z0: -D / 2 + 0.5, z1: zb - 0.5 }, rng.int(2, junk ? 4 : 3));
+}
 
 const SIDING = [0xe8e2d0, 0xd8d2c4, 0xc9c3b3, 0xb7c1c9, 0x9fb0a0, 0xe6d8a8, 0xc4b19a, 0xf2f0ea, 0xa9b8c7, 0x8f9a8a, 0xd9c3b0];
 const TRACT = [0xd8d2c4, 0xcfc6b4, 0xc9c3b3, 0xbfb7a6, 0xd6cdb9, 0xb9b2a4];
@@ -51,6 +63,7 @@ function doorLights(g: GenCtx, x: number, y: number, z: number, half: number) {
 
 function driveway(g: GenCtx, x: number, w: number, zFrom: number, mat = mats.concrete()) {
   patch(g, x - w / 2, x + w / 2, zFrom, g.D / 2, mat, 0.1);
+  occupy(g, x - w / 2, x + w / 2, zFrom, g.D / 2);
 }
 
 function yardTrees(g: GenCtx, n: number, zmin: number, zmax: number, avoidX: [number, number][] = []) {
@@ -115,6 +128,11 @@ function trailer(g: GenCtx) {
   if (rng.chance(0.5)) boatTrailer(g, -W / 2 + 1.6, 0, 0.1);
   const gx = Math.max(-W / 2 + 2, Math.min(W / 2 - 2, yardX));
   patch(g, gx - 1.6, gx + 1.6, D / 2 - 6, D / 2, mats.gravel(), 0.1);
+  occupy(g, gx - 1.6, gx + 1.6, D / 2 - 6, D / 2);
+  const ex = along ? len / 2 : tw / 2 + 1.8, ez = along ? tw / 2 + 1.8 : len / 2;
+  const hz0 = Math.max(-D / 2 + 1.2, cz - ez);
+  occupy(g, -W / 2, W / 2, -D / 2, -D / 2 + 3.5); // the back-lot junk and the pool
+  legacyYard(g, cx - ex, cx + ex, hz0, cz + ez, 0, true);
   return HOUSE_KIND[1][wide ? 2 : 0];
 }
 
@@ -147,6 +165,9 @@ function shack(g: GenCtx) {
   if (W - w >= 3) mb.boxC(cx - w / 2 - 0.8, cz, 0.9, 2.4, 0, 1.0, { side: M('wood', 4, 4, 0x7a5a3a), top: M('wood', 4, 4, 0x6a4a2a) });
   if (rng.chance(0.5)) burnBarrel(g, cx + w / 2 + 1.5, cz - d / 2);
   if (W >= 14 && rng.chance(0.5)) poolAbove(g, cx + (cx > 0 ? -w / 2 - 3 : w / 2 + 3), -D / 2 + 3, 1.6);
+  occupy(g, -W / 2, W / 2, -D / 2, -D / 2 + 4.2);
+  occupy(g, cx - w / 2 - 4.5, cx + w / 2 + 4.5, D / 2 - 5.5, D / 2);
+  legacyYard(g, cx - w / 2 - 1.3, cx + w / 2 + 0.3, cz - d / 2, cz + d / 2, 1.8, true);
   return HOUSE_KIND[1][1];
 }
 
@@ -212,6 +233,9 @@ function ranch(g: GenCtx) {
   yardTrees(g, rng.int(0, 2), zf + 2, D / 2 - 2, [[gx - 3, gx + 3]]);
   if (rng.chance(0.5)) acUnit(g, x1 - 1, zb - 0.8);
   if (rng.chance(0.3)) smoker(g, x0 + 1.5, zb - 2);
+  occupy(g, x0 - 0.3, x1 + 0.3, zf, zf + 1.6); // shrubs and steps
+  if (garage) occupy(g, flip ? x0 - gw : x1, flip ? x0 : x1 + gw, zb, zf);
+  legacyYard(g, x0, x1, zb, zf, 1.2);
   if (D >= 16) {
     fence(g, -W / 2 + 0.3, zb - 0.5, -W / 2 + 0.3, -D / 2 + 0.3, 1.2, 'fence');
     fence(g, W / 2 - 0.3, -D / 2 + 0.3, W / 2 - 0.3, zb - 0.5, 1.2, 'fence');
@@ -272,7 +296,11 @@ function tract(g: GenCtx) {
   fence(g, -W / 2 + 0.2, -D / 2 + 0.2, W / 2 - 0.2, -D / 2 + 0.2);
   acUnit(g, left ? x1 - 1 : x0 + 1, zb - 0.7);
   if (rng.chance(0.6)) car(g, (ga + gb) / 2 + (rng.float() - 0.5), D / 2 - 2.8, Math.PI, rng.pick(['suv', 'van', 'pickup', 'sedan']));
-  if (rng.chance(0.3)) trampoline(g, 0, -D / 2 + 3);
+  occupy(g, ga, gb, zf, gz);
+  occupy(g, ex - 1.2, ex + 1.2, zf, D / 2);
+  const tramp = rng.chance(0.3);
+  if (tramp) { trampoline(g, 0, -D / 2 + 3); occupy(g, -2.2, 2.2, -D / 2, -D / 2 + 5.2); }
+  legacyYard(g, x0, x1, zb, zf, 1.3);
   return `${FLOOR_PLANS[(plan + rng.int(0, 1) * 3) % FLOOR_PLANS.length]} (Tract Home)`;
 }
 
@@ -374,6 +402,10 @@ function mcmansion(g: GenCtx, mega: boolean) {
   smoker(g, left ? x0 + 1 : x1 - 1, zb - 1.2);
   acUnit(g, left ? x1 - 1 : x0 + 1, zb - 0.7);
   acUnit(g, left ? x1 - 2.2 : x0 + 2.2, zb - 0.7);
+  occupy(g, ga, gb, zf, gz);
+  occupy(g, fx - 2.2, fx + 2.2, zf, D / 2);
+  if (mega || D >= 24) occupy(g, -W / 2, W / 2, zb - 7, zb);
+  legacyYard(g, x0, x1, zb - 1.6, zf, 1.4);
   fence(g, -W / 2 + 0.2, zb, -W / 2 + 0.2, -D / 2 + 0.2);
   fence(g, W / 2 - 0.2, -D / 2 + 0.2, W / 2 - 0.2, zb);
   fence(g, -W / 2 + 0.2, -D / 2 + 0.2, W / 2 - 0.2, -D / 2 + 0.2);
@@ -430,17 +462,37 @@ function farmhouse(g: GenCtx) {
   if (pd > 2.5) poolInground(g, 0, zb - pd / 2 - 1.5, Math.min(hw - 3, 10), pd);
   for (let i = 0; i < 4; i++) tree(g, -W / 2 + 1.5 + ((W - 3) * i) / 3, D / 2 - 1.8, 0.7, 'round');
   smoker(g, x1 - 1, zb - 1);
+  if (barn) occupy(g, x1 + 1.5, x1 + 7.5, zf - 6, D / 2);
+  occupy(g, -W / 2, W / 2, zb - 7, zb);
+  occupy(g, -W / 2, W / 2, D / 2 - 3.2, D / 2); // the row of trees
+  legacyYard(g, x0, x1, zb, zf, 2.6);
   return rng.chance(0.2) ? 'Barndominium Estate' : 'Modern Farmhouse';
+}
+
+/** The original styles, as catalog entries (weights keep them common: they're the backbone). */
+const LEGACY: { id: string; lv: [number, number]; weight: number; minW?: number; minD?: number; build(g: GenCtx): string }[] = [
+  { id: 'trailer', lv: [1, 1], weight: 4, build: trailer },
+  { id: 'shack', lv: [1, 1], weight: 2, build: shack },
+  { id: 'ranch', lv: [2, 2], weight: 4, build: ranch },
+  { id: 'tract', lv: [3, 3], weight: 4, build: tract },
+  { id: 'mcmansion', lv: [4, 4], weight: 4, build: (g) => mcmansion(g, false) },
+  { id: 'megaMcmansion', lv: [5, 5], weight: 2, build: (g) => mcmansion(g, g.W >= 14) },
+  { id: 'farmhouse', lv: [5, 5], weight: 2, minW: 14, minD: 16, build: farmhouse },
+];
+
+/** Every house style, legacy and catalog, that fits this lot. */
+export function resLowStyles(level: number, W: number, D: number) {
+  const legacy = LEGACY.filter((s) => level >= s.lv[0] && level <= s.lv[1] && W >= (s.minW ?? 0) && D >= (s.minD ?? 0));
+  return [...legacy, ...stylesFor(level, W, D).map((s) => ({ ...s, weight: s.weight ?? 1 }))];
 }
 
 export function genResLow(g: GenCtx) {
   const L = g.spec.level;
-  const r = g.rng.float();
-  if (L <= 1) g.label = r < 0.62 ? trailer(g) : shack(g);
-  else if (L === 2) g.label = ranch(g);
-  else if (L === 3) g.label = tract(g);
-  else if (L === 4) g.label = mcmansion(g, false);
-  else g.label = r < 0.5 && g.W >= 14 && g.D >= 16 ? farmhouse(g) : mcmansion(g, g.W >= 14);
-  // half the street flies a flag at the front corner, bigger the pricier the house
-  if (L >= 2 && g.W >= 10 && g.rng.chance(0.5)) flagpole(g, -g.W / 2 + 0.7, g.D / 2 - 0.7, 6.5 + L * 0.6, 1.9 + L * 0.3);
+  const pool = resLowStyles(L, g.W, g.D);
+  const forced = (g.spec as { style?: string }).style;
+  const st = (forced && [...LEGACY, ...stylesFor(L, 99, 99)].find((s) => s.id === forced)) || g.rng.weighted(pool, (s) => s.weight ?? 1);
+  g.label = st.build(g);
+  (g as GenCtx & { styleId?: string }).styleId = st.id;
+  // legacy styles: half the street flies a flag at the front corner, bigger the pricier the house
+  if (LEGACY.includes(st as (typeof LEGACY)[number]) && L >= 2 && g.W >= 10 && g.rng.chance(0.5)) flagpole(g, -g.W / 2 + 0.7, g.D / 2 - 0.7, 6.5 + L * 0.6, 1.9 + L * 0.3);
 }

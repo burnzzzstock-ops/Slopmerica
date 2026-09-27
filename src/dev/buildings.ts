@@ -9,6 +9,7 @@ import { ZONE_TYPES, type BuildingModel, type LandmarkId, type ZoneType } from '
 import { buildingMaterial, generateBillboard, generateBuilding, generateLandmark, landmarkFootprint, loadArt, setBuildingNight } from '../buildings/generator';
 import { BILLBOARDS } from '../art/billboards';
 import { atlasStats, atlasTextures } from '../art';
+import { resLowStyles } from '../buildings/resLow';
 
 const P = new URLSearchParams(location.hash.replace('#', ''));
 const app = document.getElementById('app')!;
@@ -192,6 +193,31 @@ function buildZones() {
   return { w: cols * colW, d: row * rowD };
 }
 
+/** Every house style, forced, on a 2x3 lot (and the narrow ones on 1x2). view=houses */
+function buildHouses() {
+  const seen = new Set<string>();
+  const list: { id: string; level: number; w: number; d: number }[] = [];
+  const sizes: [number, number][] = P.get('narrow') === '1' ? [[1, 2]] : [[2, 3]];
+  for (const [w, d] of sizes) for (let level = 1; level <= 5; level++) for (const st of resLowStyles(level, w * 8, d * 8)) {
+    if (seen.has(st.id + w)) continue;
+    seen.add(st.id + w);
+    list.push({ id: st.id, level, w, d });
+  }
+  const perRow = +(P.get('cols') ?? '8');
+  const seeds = +(P.get('seeds') ?? '1');
+  let i = 0;
+  for (const it of list) for (let s = 0; s < seeds; s++) {
+    const [m, ms] = timed(() => generateBuilding({ zone: 'resLow', level: it.level, widthCells: it.w, depthCells: it.d, seed: 11 + s * 7919 + i * 31, style: it.id } as never));
+    const tris = m.geometry.getAttribute('position').count / 3;
+    stat(`house ${it.id}`, ms, tris);
+    const x = (i % perRow) * 26, z = -Math.floor(i / perRow) * 36;
+    place(m, x + it.w * 4, z, it.d * 8, `${it.id} L${it.level} ${it.w}x${it.d}`, ms);
+    if (i % perRow === 0) addRoad(-10, perRow * 26, z);
+    i++;
+  }
+  return { w: perRow * 26, d: Math.ceil(i / perRow) * 36 };
+}
+
 function buildLandmarks() {
   let x = 0;
   for (const id of LANDMARKS) {
@@ -258,6 +284,7 @@ function refreshHud() {
   btn('Landmarks', view === 'landmarks', () => go('view', 'landmarks'));
   btn('Billboards', view === 'billboards', () => go('view', 'billboards'));
   btn('Atlas', view === 'atlas', () => go('view', 'atlas'));
+  btn('Houses', view === 'houses', () => go('view', 'houses'));
 }
 
 // ------------------------------------------------------------------ main
@@ -275,7 +302,7 @@ async function main() {
   if (view === 'atlas') return showAtlas();
   applyNight();
   const t1 = performance.now();
-  const ext = view === 'landmarks' ? buildLandmarks() : view === 'billboards' ? buildBillboards() : buildZones();
+  const ext = view === 'landmarks' ? buildLandmarks() : view === 'billboards' ? buildBillboards() : view === 'houses' ? buildHouses() : buildZones();
   const genMs = performance.now() - t1;
   flush();
   // camera
@@ -334,7 +361,8 @@ function validate(zone: ZoneType) {
     if (g.index || Object.keys(g.attributes).sort().join(',') !== 'color,normal,position,uv') bad++;
     const p = g.getAttribute('position').array as Float32Array;
     const uv = g.getAttribute('uv').array as Float32Array;
-    for (let i = 0; i < uv.length; i++) if (!(uv[i] >= 0 && uv[i] <= 1)) { bad++; break; }
+    // u 0..1 is the main atlas, 2..3 the satire sheet
+    for (let i = 0; i < uv.length; i++) if (!((uv[i] >= 0 && uv[i] <= 1) || (i % 2 === 0 && uv[i] >= 2 && uv[i] <= 3))) { bad++; break; }
     let ox = 0, oz = 0;
     for (let i = 0; i < p.length; i += 3) {
       if (!Number.isFinite(p[i] + p[i + 1] + p[i + 2])) { bad++; break; }

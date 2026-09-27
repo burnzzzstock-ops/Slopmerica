@@ -129,6 +129,24 @@ export class MB {
     return this.P.length / 9;
   }
 
+  /**
+   * Which cells of a grid (cell m, nx x nz from x0,z0) already hold geometry
+   * that stands higher than yMin: a triangle's bounding box marks its cells.
+   */
+  footprint(yMin: number, cell: number, x0: number, z0: number, nx: number, nz: number): Uint8Array {
+    const out = new Uint8Array(nx * nz), P = this.P;
+    for (let i = 0; i < P.length; i += 9) {
+      const ymax = Math.max(P[i + 1], P[i + 4], P[i + 7]);
+      if (ymax < yMin) continue;
+      const ax = Math.min(P[i], P[i + 3], P[i + 6]), bx = Math.max(P[i], P[i + 3], P[i + 6]);
+      const az = Math.min(P[i + 2], P[i + 5], P[i + 8]), bz = Math.max(P[i + 2], P[i + 5], P[i + 8]);
+      const i0 = Math.max(0, Math.floor((ax - x0) / cell)), i1 = Math.min(nx - 1, Math.floor((bx - x0) / cell));
+      const j0 = Math.max(0, Math.floor((az - z0) / cell)), j1 = Math.min(nz - 1, Math.floor((bz - z0) / cell));
+      for (let j = j0; j <= j1; j++) for (let k = i0; k <= i1; k++) out[j * nx + k] = 1;
+    }
+    return out;
+  }
+
   /** True when no transform is active (local == lot space). */
   get identity() {
     return this.ident;

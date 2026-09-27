@@ -15,6 +15,7 @@ import { genComLow } from './comLow';
 import { genComHigh } from './comHigh';
 import { genIndustry } from './industry';
 import { genOffice } from './office';
+import { satirePass } from './satire';
 import { buildLandmark, LANDMARK_FOOTPRINT, setLandmarkMap } from './landmarks';
 import { buildBillboard } from './billboard';
 import { brandFits } from './archetypes';
@@ -31,17 +32,25 @@ export function setArtMap(map: MapId) {
   setLandmarkMap(map);
 }
 
+const dressed = (fn: (g: GenCtx) => void) => (g: GenCtx) => {
+  fn(g);
+  satirePass(g);
+};
 const GEN: Record<ZoneType, (g: GenCtx) => void> = {
   resLow: genResLow,
-  resHigh: genResHigh,
-  comLow: genComLow,
-  comHigh: genComHigh,
-  industry: genIndustry,
-  office: genOffice,
+  resHigh: dressed(genResHigh),
+  comLow: dressed(genComLow),
+  comHigh: dressed(genComHigh),
+  industry: dressed(genIndustry),
+  office: dressed(genOffice),
 };
 
 /** Distinct looks per zone/level/size before seeds start repeating. */
 export const VARIANTS = 16;
+/** Homes have fifty-odd styles: more variants so a street doesn't repeat. */
+export function variantsFor(zone: ZoneType) {
+  return zone === 'resLow' ? 40 : VARIANTS;
+}
 const CACHE_MAX = 900;
 const cache = new Map<string, BuildingModel>();
 
@@ -92,11 +101,12 @@ export function generateBuilding(spec: LotSpec): BuildingModel {
   const level = Math.max(1, Math.min(5, Math.round(spec.level || 1)));
   const w = Math.max(1, Math.min(4, Math.round(spec.widthCells || 1)));
   const d = Math.max(1, Math.min(4, Math.round(spec.depthCells || 1)));
-  const variant = mix(spec.seed | 0) % VARIANTS;
+  const variant = mix(spec.seed | 0) % variantsFor(zone);
   // The level picks the building; a requested brand is kept only if it has a
   // building that fits here (otherwise the generator picks one and reports it in model.brand).
   const brand = spec.brand && brandFits(zone, level, w, d, spec.brand) ? spec.brand : undefined;
-  const key = `${zone}|${level}|${w}x${d}|${variant}|${brand ?? ''}`;
+  const style = (spec as { style?: string }).style;
+  const key = `${zone}|${level}|${w}x${d}|${variant}|${brand ?? ''}${style ? '|' + style : ''}`;
   const hit = cacheGet(key);
   if (hit) return copy(hit);
   const norm: LotSpec = { ...spec, zone, level, widthCells: w, depthCells: d, brand };

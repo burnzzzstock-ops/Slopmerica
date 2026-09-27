@@ -6,6 +6,10 @@
 // half-resolution emissive atlas (night windows, signs, screens) with the
 // same layout. Every tile gets an 8px gutter (wrapped for repeating
 // facades, edge-clamped for signs) so mipmaps don't bleed between tiles.
+//
+// A second sheet ('sat', 2048²) holds the satire signage so the main atlas
+// keeps its resolution. Its tiles' u runs 2..3: the building material
+// samples both sheets and picks by u (see buildings/material.ts).
 import * as THREE from 'three';
 import type { Ctx } from './draw';
 
@@ -32,6 +36,7 @@ interface TileDef {
   wrap: boolean;
   emissive: boolean;
   shrink: boolean; // may be scaled down if the atlas overflows
+  sheet: Sheet;
   paint: Painter;
   // layout results (physical px in the albedo atlas)
   x: number;
@@ -40,7 +45,12 @@ interface TileDef {
   ph: number;
 }
 
+export type Sheet = 'main' | 'sat';
 export const ATLAS_SIZE = 4096;
+export const SAT_SIZE = 2048;
+/** a 'sat' sheet tile's u is offset by this (the shader picks the sheet by u > 1.5) */
+export const SAT_U = 2;
+const SIZE: Record<Sheet, number> = { main: ATLAS_SIZE, sat: SAT_SIZE };
 const EMI_SCALE = 0.5;
 const PAD = 6;
 
@@ -50,12 +60,12 @@ const tiles = new Map<string, Tile>();
 let registrars: (() => void)[] = [];
 let laidOut = false;
 let painted = false;
-let usedHeight = 0;
+const usedHeight: Record<Sheet, number> = { main: 0, sat: 0 };
 
 /** Register a tile. Called by the art modules' register functions. */
-export function defTile(name: string, w: number, h: number, paint: Painter, o: { wrap?: boolean; emissive?: boolean; shrink?: boolean; res?: number } = {}) {
+export function defTile(name: string, w: number, h: number, paint: Painter, o: { wrap?: boolean; emissive?: boolean; shrink?: boolean; res?: number; sheet?: Sheet } = {}) {
   if (byName.has(name)) return;
-  const d: TileDef = { name, w, h, res: o.res ?? 1, wrap: !!o.wrap, emissive: !!o.emissive, shrink: o.shrink ?? !o.wrap, paint, x: 0, y: 0, pw: 0, ph: 0 };
+  const d: TileDef = { name, w, h, res: o.res ?? 1, wrap: !!o.wrap, emissive: !!o.emissive, shrink: o.shrink ?? !o.wrap, sheet: o.sheet ?? 'main', paint, x: 0, y: 0, pw: 0, ph: 0 };
   defs.push(d);
   byName.set(name, d);
 }
@@ -75,22 +85,22 @@ interface Seg {
   w: number;
 }
 
-function pack(scale: number): boolean {
+function pack(list: TileDef[], size: number, scale: number): boolean {
   // Skyline bottom-left packer, tallest first. Shrinkable tiles are scaled by `scale`.
-  for (const d of defs) {
+  for (const d of list) {
     const k = (d.shrink ? scale : 1) * d.res;
     d.pw = even(d.w * k);
     d.ph = even(d.h * k);
   }
-  const order = [...defs].sort((a, b) => b.ph - a.ph || b.pw - a.pw || (a.name < b.name ? -1 : 1));
-  let sky: Seg[] = [{ x: 0, y: 0, w: ATLAS_SIZE }];
+  const order = [...list].sort((a, b) => b.ph - a.ph || b.pw - a.pw || (a.name < b.name ? -1 : 1));
+  let sky: Seg[] = [{ x: 0, y: 0, w: size }];
   let maxY = 0;
   for (const d of order) {
     const W = d.pw + PAD * 2, H = d.ph + PAD * 2;
     let bestY = Infinity, bestX = 0;
     for (let i = 0; i < sky.length; i++) {
       const x = sky[i].x;
-      if (x + W > ATLAS_SIZE) break;
+      if (x + W > size) break;
       let y = 0, left = W, j = i;
       while (left > 0 && j < sky.length) {
         y = Math.max(y, sky[j].y);
@@ -98,7 +108,7 @@ function pack(scale: number): boolean {
         j++;
       }
       if (left > 0) continue;
-      if (y + H <= ATLAS_SIZE && y < bestY) {
+      if (y + H <= size && y < bestY) {
         bestY = y;
         bestX = x;
       }
@@ -126,7 +136,7 @@ function pack(scale: number): boolean {
     }
     maxY = Math.max(maxY, bestY + H);
   }
-  usedHeight = maxY;
+  usedHeight[list[0]?.sheet ?? 'main'] = maxY;
   return true;
 }
 
@@ -136,16 +146,21 @@ function ensureLayout() {
   const regs = registrars;
   registrars = [];
   for (const r of regs) r();
-  let scale = 1;
-  while (!pack(scale) && scale > 0.4) scale *= 0.92;
-  if (scale < 1) console.warn(`[atlas] shrank signs/billboards to ${(scale * 100).toFixed(0)}% to fit`);
+  for (const sheet of ['main', 'sat'] as Sheet[]) {
+    const list = defs.filter((d) => d.sheet === sheet);
+    if (!list.length) continue;
+    let scale = 1;
+    while (!pack(list, SIZE[sheet], scale) && scale > 0.4) scale *= 0.92;
+    if (scale < 1) console.warn(`[atlas] shrank ${sheet} signs/billboards to ${(scale * 100).toFixed(0)}% to fit`);
+  }
   for (const d of defs) {
+    const S = SIZE[d.sheet], du = d.sheet === 'sat' ? SAT_U : 0;
     tiles.set(d.name, {
       name: d.name,
-      u0: (d.x + PAD) / ATLAS_SIZE,
-      u1: (d.x + PAD + d.pw) / ATLAS_SIZE,
-      v1: 1 - (d.y + PAD) / ATLAS_SIZE,
-      v0: 1 - (d.y + PAD + d.ph) / ATLAS_SIZE,
+      u0: du + (d.x + PAD) / S,
+      u1: du + (d.x + PAD + d.pw) / S,
+      v1: 1 - (d.y + PAD) / S,
+      v0: 1 - (d.y + PAD + d.ph) / S,
       w: d.w,
       h: d.h,
     });
@@ -177,15 +192,16 @@ export function tileNames(prefix = '') {
 
 export function atlasStats() {
   ensureLayout();
-  let area = 0;
+  let area = 0, satArea = 0, satTiles = 0;
   const byPrefix: Record<string, number> = {};
   for (const d of defs) {
     const a = (d.pw + PAD * 2) * (d.ph + PAD * 2);
+    if (d.sheet === 'sat') { satArea += a; satTiles++; continue; }
     area += a;
     const p = d.name.includes(':') ? d.name.split(':')[0] : d.wrap ? 'wall' : 'decal';
     byPrefix[p] = (byPrefix[p] ?? 0) + a / (ATLAS_SIZE * ATLAS_SIZE);
   }
-  return { tiles: defs.length, usedHeight, fill: area / (ATLAS_SIZE * ATLAS_SIZE), byPrefix };
+  return { tiles: defs.length - satTiles, usedHeight: usedHeight.main, fill: area / (ATLAS_SIZE * ATLAS_SIZE), byPrefix, sat: { tiles: satTiles, usedHeight: usedHeight.sat, fill: satArea / (SAT_SIZE * SAT_SIZE) } };
 }
 
 // ------------------------------------------------------------------ canvases & textures
@@ -193,6 +209,10 @@ let canvasA: HTMLCanvasElement | null = null;
 let canvasE: HTMLCanvasElement | null = null;
 let texA: THREE.CanvasTexture | null = null;
 let texE: THREE.CanvasTexture | null = null;
+let satA: HTMLCanvasElement | null = null;
+let satE: HTMLCanvasElement | null = null;
+let texSA: THREE.CanvasTexture | null = null;
+let texSE: THREE.CanvasTexture | null = null;
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement('canvas');
@@ -224,8 +244,18 @@ export function atlasTextures() {
     e.fillRect(0, 0, canvasE.width, canvasE.height);
     texA = setupTex(new THREE.CanvasTexture(canvasA));
     texE = setupTex(new THREE.CanvasTexture(canvasE));
+    satA = makeCanvas(SAT_SIZE, SAT_SIZE);
+    satE = makeCanvas(SAT_SIZE * EMI_SCALE, SAT_SIZE * EMI_SCALE);
+    const sa = satA.getContext('2d')!;
+    sa.fillStyle = '#9a948a';
+    sa.fillRect(0, 0, SAT_SIZE, SAT_SIZE);
+    const se = satE.getContext('2d')!;
+    se.fillStyle = '#000';
+    se.fillRect(0, 0, satE.width, satE.height);
+    texSA = setupTex(new THREE.CanvasTexture(satA));
+    texSE = setupTex(new THREE.CanvasTexture(satE));
   }
-  return { map: texA, emissive: texE!, canvas: canvasA!, emissiveCanvas: canvasE! };
+  return { map: texA, emissive: texE!, canvas: canvasA!, emissiveCanvas: canvasE!, satMap: texSA!, satEmissive: texSE!, satCanvas: satA!, satEmissiveCanvas: satE! };
 }
 
 let tmpA: HTMLCanvasElement | null = null;
@@ -305,16 +335,20 @@ export function paintAtlas(fonts: string[]): Promise<void> {
   painting = (async () => {
     ensureLayout();
     await fontsReady(fonts);
-    const { map, emissive, canvas, emissiveCanvas } = atlasTextures();
+    const { map, emissive, canvas, emissiveCanvas, satMap, satEmissive, satCanvas, satEmissiveCanvas } = atlasTextures();
     const a = canvas.getContext('2d')!;
     const e = emissiveCanvas.getContext('2d')!;
+    const sa = satCanvas.getContext('2d')!;
+    const se = satEmissiveCanvas.getContext('2d')!;
     const t0 = performance.now();
-    for (const d of defs) paintOne(d, a, e);
+    for (const d of defs) d.sheet === 'sat' ? paintOne(d, sa, se) : paintOne(d, a, e);
     map.needsUpdate = true;
     emissive.needsUpdate = true;
+    satMap.needsUpdate = true;
+    satEmissive.needsUpdate = true;
     painted = true;
     const st = atlasStats();
-    console.info(`[atlas] painted ${st.tiles} tiles in ${(performance.now() - t0).toFixed(0)}ms, ${(st.fill * 100).toFixed(0)}% full, height ${st.usedHeight}`);
+    console.info(`[atlas] painted ${st.tiles} tiles in ${(performance.now() - t0).toFixed(0)}ms, ${(st.fill * 100).toFixed(0)}% full, height ${st.usedHeight}; satire sheet ${st.sat.tiles} tiles, ${(st.sat.fill * 100).toFixed(0)}% full`);
   })();
   return painting;
 }

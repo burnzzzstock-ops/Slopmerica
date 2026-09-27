@@ -5,12 +5,14 @@ import { registerFacades } from './facades';
 import { registerSigns } from './signs';
 import { registerBillboards } from './billboards';
 import { registerLandmarkArt } from './landmarkArt';
+import { registerSatireArt } from './satireArt';
 import { F } from './draw';
 
 addRegistrar(registerFacades);
 addRegistrar(registerSigns);
 addRegistrar(registerBillboards);
 addRegistrar(registerLandmarkArt);
+addRegistrar(registerSatireArt);
 
 export { T, hasTile, tileNames, atlasStats, atlasTextures, atlasPainted } from './atlas';
 export type { Tile } from './atlas';

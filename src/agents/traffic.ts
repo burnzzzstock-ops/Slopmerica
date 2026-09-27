@@ -80,6 +80,10 @@ export interface Car {
   arrived?: boolean;
   /** seconds of brake lights left (set when slowing hard) */
   brakeT: number;
+  /** last acceleration (m/s²) and the body's lean out of turns / nose dive under braking (radians) */
+  acc: number;
+  roll: number;
+  dive: number;
   /** called once when the car leaves the simulation (arrived, wrecked, or its road was removed) */
   onDone?: (c: Car, arrived: boolean) => void;
 }
@@ -519,7 +523,7 @@ export class Traffic {
       len: spec.length, drunk, reckless: drunk || (!sober && Math.random() < 0.08), smoker: !sober && (!oB || this.policySmokingAllowed?.(oB) !== false) && (!dB || this.policySmokingAllowed?.(dB) !== false) && Math.random() < 0.2, redsRun: 0, wob: Math.random() * 10,
       // codex:policies end
       junction: null, crashed: 0, crashYaw: 0, crashRoll: 0, x: 0, y: 0, z: 0, yaw: 0, purpose, dest,
-      lat: NaN, latV: 0, ryaw: NaN, turn: 0, turnV: Infinity, turnFor: -1, laneCd: 2 + Math.random() * 3, brakeT: 0,
+      lat: NaN, latV: 0, ryaw: NaN, turn: 0, turnV: Infinity, turnFor: -1, laneCd: 2 + Math.random() * 3, brakeT: 0, acc: 0, roll: 0, dive: 0,
       driver: Math.floor(Math.random() * ARCHETYPES.length), smokeT: Math.random() * 2, bac: drunk ? 0.09 + Math.random() * 0.2 : 0,
       dep: 0, arr: -1, lotO: null, lotD: null, local,
     };
@@ -710,6 +714,7 @@ export class Traffic {
         let acc = a * (1 - Math.pow(c.v / Math.max(1, v0), 4) - (gap < Infinity ? Math.pow(sStar / Math.max(0.1, gap), 2) : 0));
         acc = clamp(acc, -12, a);
         c.brakeT = acc < -1.2 ? 0.6 : Math.max(0, c.brakeT - dt);
+        c.acc = acc;
         c.v = Math.max(0, c.v + acc * dt);
         const move = Math.min(c.v * dt, Math.max(0, gap + 0.5));
         c.s += move;
@@ -1025,11 +1030,19 @@ export class Traffic {
         } else pitch = lerp(0, lanePitch, e);
       }
       // the drawn heading eases (the junction and lane seams used to snap it)
+      const prevYaw = c.ryaw;
       if (!Number.isFinite(c.ryaw) || c.crashed > 0) c.ryaw = yaw;
       else c.ryaw = angLerp(c.ryaw, yaw, ease);
+      // body motion: lean out of the turn, dip the nose when braking (springy, not rigid)
+      if (Number.isFinite(prevYaw) && this.lastDt > 0) {
+        let dy = c.ryaw - prevYaw;
+        dy = Math.atan2(Math.sin(dy), Math.cos(dy)) / this.lastDt;
+        c.roll = lerp(c.roll, clamp(dy * c.v * 0.011, -0.075, 0.075), ease * 0.6);
+        c.dive = lerp(c.dive, clamp(-c.acc * 0.009, -0.03, 0.045), ease * 0.6);
+      }
       c.x = x; c.y = y; c.z = z; c.yaw = c.ryaw;
       if (c.crashed > 0) R.set(c.h, x, y, z, yaw + c.crashYaw, pitch, c.crashRoll);
-      else R.set(c.h, x, y, z, c.ryaw, pitch, 0);
+      else R.set(c.h, x, y, z, c.ryaw, pitch + c.dive, c.roll);
       R.setBraking(c.h, c.v < 3 || (c.crashed === 0 && c.v > 3 && c.brakeT > 0));
       R.setTurn(c.h, c.crashed > 0 ? 0 : signal);
       if (signal) this.sigWhy[c.junction ? 'box' : lot ? 'lot' : Math.abs(c.latV) > 0.2 ? 'lane' : c.v < 1 ? 'queue' : 'approach']++;

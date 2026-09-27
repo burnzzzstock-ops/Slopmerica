@@ -63,7 +63,8 @@ let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra)); if (!ok) bad++; };
 check(`people outside stay in proportion (at most ${peak('town')} of ${last.pop} residents, ≤ 12%)`, peak('town') <= Math.max(6, last.pop * 0.12), r);
 check(`no building empties out at once (at most ${peak('maxFromOne')} people from one building)`, peak('maxFromOne') <= 8, r);
-check(`people leave a building one at a time (at most ${last.burst} from one building within 5 s, of ${last.departures} departures)`, last.burst <= 1, { burst: last.burst, departures: last.departures });
+// (a couple walking out together is two at once, and that's life; a conga line is not)
+check(`people leave a building one at a time, or as a pair (at most ${last.burst} from one building within 5 s, of ${last.departures} departures)`, last.burst <= 2, { burst: last.burst, departures: last.departures });
 check(`rush-hour cars stay in proportion (${last.target} for ${last.pop} people, ≤ 20%)`, last.target <= Math.max(8, last.pop * 0.2), r);
 check(`boats fit the town (${last.small.boats} at ${last.small.pop} people${last.water ? '' : ', no water found'})`, last.water && last.small.boats <= 3, last.small);
 check('no page errors', errs.length === 0, errs.slice(0, 3));

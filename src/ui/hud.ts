@@ -1157,7 +1157,7 @@ export class Hud implements UiSink {
           const r = ROAD_TYPES[id];
           const locked = !g.sim.isUnlocked({ road: id });
           return `<button class="card ${t.roadType === id && t.active === 'road' ? 'on' : ''} ${this.fresh.has(`road:${id}`) ? 'new' : ''}" data-road="${id}" ${locked ? 'disabled' : ''} title="${esc(r.blurb)}">
-            <span class="ci">${r.icon}</span><b>${esc(r.name)}</b><small>${locked ? `🔒 Pop ${r.unlockPop.toLocaleString()}` : `$${r.costPerM}/m · ${r.lanesPerDir * 2} lanes${r.centerTurn ? ' + turn' : ''}`}</small></button>`;
+            <span class="ci">${r.icon}</span><b>${esc(r.name)}</b><small>${locked ? `🔒 Pop ${r.unlockPop.toLocaleString()}` : `$${r.costPerM}/m · ${r.oneWay ? `${r.lanesPerDir} lane${r.lanesPerDir > 1 ? 's' : ''}, one way` : `${r.lanesPerDir * 2} lanes${r.centerTurn ? ' + turn' : ''}`}`}</small></button>`;
         }).join('')}<span class="sp-sep" aria-hidden="true"></span>${LAYOUT_ORDER.map((id) => {
           const l = LAYOUTS[id];
           const locked = g.sim.mode !== 'sandbox' && g.sim.peakPop < l.unlockPop;

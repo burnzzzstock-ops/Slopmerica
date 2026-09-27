@@ -1141,15 +1141,17 @@ style({ id: 'castle', lv: [4, 5], minW: 14, build(g) {
   const gr = garage(g, L, 'detached', rng.chance(0.5) ? -1 : 1, wall, M('shingles', 4, 4, 0x5a5a5a), 2);
   // vinyl battlements
   for (let x = L.x0; x < L.x1 - 0.3; x += 1.2) mb.box(x, x + 0.6, L.H + 0.6, L.H + 1.3, L.zf - 0.35, L.zf, wall);
-  for (const x of [L.x0, L.x1]) {
+  for (const x0 of [L.x0, L.x1]) {
+    const x = clamp(x0, -g.W / 2 + 1.9, g.W / 2 - 1.9);
     mb.cyl(x, L.zf, 1.6, 0, L.H + 3, 10, wall);
     for (let a = 0; a < 8; a += 2) mb.boxC(x + Math.sin((a / 8) * Math.PI * 2) * 1.4, L.zf + Math.cos((a / 8) * Math.PI * 2) * 1.4, 0.6, 0.6, L.H + 3, 0.7, wall);
   }
   const cx = (L.x0 + L.x1) / 2;
   door(g, cx, L.zf, 0, 'doorDouble', 1.1, 1.9, 2.8);
   windows(g, L, 'winTall', { floors: 2, fh: 3, w: 0.8, h: 1.6, skipFront: [[cx - 1.2, cx + 1.2]] });
-  mb.cyl(L.x1, L.zf, 0.06, L.H + 3.7, L.H + 7, 5, M('metal', 2, 2));
-  mb.poly([[L.x1 + 0.05, L.H + 5.6, L.zf], [L.x1 + 2.2, L.H + 5.5, L.zf], [L.x1 + 2.2, L.H + 6.9, L.zf], [L.x1 + 0.05, L.H + 7, L.zf]], S('sat:flag:team'));
+  const fp = Math.min(L.x1, g.W / 2 - 2.6);
+  mb.cyl(fp, L.zf, 0.06, L.H + 3.7, L.H + 7, 5, M('metal', 2, 2));
+  mb.poly([[fp + 0.05, L.H + 5.6, L.zf], [fp + 2.2, L.H + 5.5, L.zf], [fp + 2.2, L.H + 6.9, L.zf], [fp + 0.05, L.H + 7, L.zf]], S('sat:flag:team'));
   if (gr) drive(g, gr.gx, 5, gr.gz, mats.gravel(), ['lifted', 'suv']);
   walk(g, cx, L.zf, 2);
   yardLife(g, L, 'rich');
@@ -1282,7 +1284,7 @@ style({ id: 'fallingNoWater', lv: [5, 5], minW: 14, build(g) {
   }
   mb.box(L.x0 + 3, L.x0 + 4.4, 0, 10.5, L.zb + 1.5, L.zb + 3, stone);
   mb.decal('+z', (L.x0 + L.x1) / 2 - 1, 0.6, L.zf - 0.6, 5, 2.2, win(g, 'winModern', 0.8));
-  mb.flat(L.x0 - 2, L.x0, L.zf - 2, L.zf + 1, 0.12, M('pool', 2, 2)); // the dry creek, filled with a hose
+  mb.flat(Math.max(-g.W / 2 + 0.3, L.x0 - 2), L.x0, L.zf - 2, L.zf + 1, 0.12, M('pool', 2, 2)); // the dry creek, filled with a hose
   const Lb: Lay = { ...L, zf: L.zf + 1.4, H: 9.3 };
   yardLife(g, Lb, 'rich', { trees: 3, fence: false });
   return pickName(g, ['Fallingwater (No Water)', 'Organic Architecture (Leaks Organically)', 'Cantilever Estate']);
@@ -1339,6 +1341,251 @@ style({ id: 'barndo', lv: [4, 5], minW: 14, build(g) {
   drive(g, L.x0 + 3, 5, L.zf, mats.gravel(), ['lifted', 'cyber']);
   yardLife(g, L, 'rich', { fence: false, trees: 2 });
   return pickName(g, ['Barndominium Estate', 'Barndo (Shiplap Interior)', 'Luxury Barn (No Animals)']);
+} });
+
+// ---- round two: more ways to live --------------------------------------------------
+style({ id: 'floridaBlock', lv: [2, 4], minW: 14, build(g) {
+  const { mb, rng, D } = g;
+  lotPad(g, M('lawnDry', 8, 8));
+  const L = site(g, 11, 8, 0.8);
+  L.H = 2.9;
+  const wall = M('stucco', 4, 4, rgb(rng.pick([0xf2d0c0, 0xc8e8e0, 0xf4e6b0, 0xe0d0f0, 0xf2f0ea])));
+  house(g, L, wall, M('metalRoof', 3, 3, 0xf2f0ea), 'hip', 1.2, { ov: 0.6 });
+  const cx = (L.x0 + L.x1) / 2;
+  const gr = garage(g, L, 'flush', rng.chance(0.5) ? -1 : 1, wall, M('metalRoof', 3, 3, 0xf2f0ea), 1);
+  door(g, cx, L.zf, 0.2, rng.pick(['doorFront', 'doorGlass']), 0.7);
+  windows(g, L, 'winHouse', { w: 1.3, skipFront: [[cx - 0.8, cx + 0.8]] });
+  if (gr) drive(g, gr.gx, 3.2, L.zf, mats.concrete(), ['sedan', 'suv', 'van']);
+  // the screened pool cage out back
+  const pz = Math.max(-D / 2 + 1, L.zb - 6.5);
+  if (L.zb - pz > 3) {
+    poolInground(g, cx, (pz + L.zb) / 2, Math.min(7, L.x1 - L.x0 - 3), Math.min(3.5, L.zb - pz - 1.4));
+    const screen = M('chainlink', 1, 1, 0xe8e8e8, { ao: false });
+    mb.box(L.x0 + 0.5, L.x1 - 0.5, 0, 3.4, pz, L.zb, { side: screen, top: screen, b: screen, f: null });
+    for (let x = L.x0 + 0.5; x <= L.x1 - 0.4; x += 2) for (const z of [pz, L.zb]) mb.boxC(x, z, 0.08, 0.08, 0, 3.4, { side: M('metal', 2, 2, 0xf2f2f2), top: null });
+    occupy(g, L.x0, L.x1, pz - 0.3, L.zb);
+  }
+  if (rng.chance(0.5)) tree(g, L.x0 - 1, L.zf + 2, 0.8, 'palm');
+  yardLife(g, L, 'plain', { fence: false, shrubs: false });
+  return pickName(g, ['Florida Block Home (Pool Cage Included)', 'CBS Ranch w/ Lanai', 'Snowbird Special']);
+} });
+
+style({ id: 'bilevel', lv: [2, 3], build(g) {
+  const { mb, rng, W } = g;
+  lotPad(g, M('lawn', 8, 8));
+  const L = site(g, W >= 14 ? 11 : 7, 8, 1.4);
+  L.H = 5.0;
+  const brick = M(rng.pick(['brick', 'brickTan']), 2, 2), wall = wallOf(g, 'siding', PAL.siding);
+  house(g, L, wall, M('shingles', 4, 4, rgb(rng.pick(PAL.roof))), 'gable', 1.6);
+  mb.box(L.x0, L.x1, 0, 2.2, L.zb, L.zf, { side: brick, top: null });
+  const cx = (L.x0 + L.x1) / 2;
+  // the split foyer: a door half a floor up, steps to it
+  door(g, cx, L.zf, 1.1, 'doorFront', 0.8);
+  porchSteps(g, cx, L.zf, 1.6, 1.1);
+  row(g, '+z', L.x0 + 0.3, L.x1 - 0.3, L.zf, 3.1, 3, 'winPicture', 2.0, 1.2, [[cx - 1, cx + 1]]);
+  row(g, '+z', L.x0 + 0.3, L.x1 - 0.3, L.zf, 0.7, 2, 'winHouse', 1.4, 0.8, [[cx - 1, cx + 1]]);
+  windows(g, L, 'winHouse', { front: false, y0: 3.0 });
+  walk(g, cx, L.zf + 1.4);
+  yardLife(g, L, 'plain');
+  return pickName(g, ['Split-Foyer Bi-Level', 'Raised Ranch (Stairs Either Way)', 'Bi-Level (Half Up, Half Down)']);
+} });
+
+style({ id: 'earthship', lv: [2, 4], build(g) {
+  const { mb, rng } = g;
+  lotPad(g, M('dirt', 8, 8));
+  const L = site(g, 10, 7, 1.4);
+  L.H = 3.0;
+  const cx = (L.x0 + L.x1) / 2;
+  // bermed into the ground at the back, a raked glass greenhouse face to the south (the street, sure)
+  mb.blob(cx, 0, L.zb + 1.5, Math.min((L.x1 - L.x0) / 2 + 1.2, g.W / 2 - 0.7 - Math.abs(cx)), 3.4, 3.2, M('lawnDry', 4, 4), 1, 0.15, 4);
+  mb.box(L.x0, L.x1, 0, L.H, L.zb + 1, L.zf - 1.2, { side: M('stucco', 3, 3, 0xd8b890), top: M('flatRoof', 3, 3) });
+  mb.poly([[L.x0, 0, L.zf], [L.x1, 0, L.zf], [L.x1, L.H + 0.4, L.zf - 1.2], [L.x0, L.H + 0.4, L.zf - 1.2]], M('glassPlain', 1.5, 1.5));
+  for (let x = L.x0 + 0.3; x < L.x1; x += 1.5) mb.cyl(x, L.zf - 0.5, 0.3, 0, 0.3, 8, M('plain', 2, 2, 0x1b1b1c)); // tire planters
+  mb.box(L.x0 + 1, L.x1 - 1, L.H + 0.4, L.H + 0.5, L.zb + 1.5, L.zf - 1.4, M('solar', 1, 1.6));
+  door(g, cx, L.zf - 0.6, 0, 'doorGlass', 0);
+  yardLife(g, L, 'plain', { fence: false, trees: 2, shrubs: false });
+  return pickName(g, ['Earthship (Tires Inside the Walls)', 'Off-Grid Earthship', 'Earthship (Smells Faintly of Tires)']);
+} });
+
+style({ id: 'bunker', lv: [3, 5], minW: 14, build(g) {
+  const { mb, rng } = g;
+  lotPad(g, M('gravel', 6, 6, 0xc8c0b0));
+  const L = site(g, 11, 8, 0.4);
+  L.H = 3.2;
+  const conc = M('concrete', 3, 3, 0xb8b4ac);
+  house(g, L, conc, M('flatRoof', 4, 4), 'flat', 0);
+  for (let x = L.x0 + 1; x < L.x1 - 0.5; x += 2.2) mb.decal('+z', x, 2.2, L.zf, 1.4, 0.25, M('plain', 2, 2, 0x1b1b1c)); // slit windows
+  mb.decal('+z', (L.x0 + L.x1) / 2, 0, L.zf, 1.6, 2.2, S('doorMetal', 0x6a6a6a), 0.1);
+  for (const x of [L.x0 + 0.3, L.x1 - 0.3]) { mb.boxC(x, L.zf + 0.2, 0.2, 0.3, L.H, 0.25, M('plain', 2, 2, 0x2a2a2a)); } // cameras
+  mb.cyl(L.x1 - 1.5, L.zb + 1.5, 0.35, L.H, L.H + 1.6, 8, M('metal', 2, 2)); // air intake
+  const bx = (L.x0 + L.x1) / 2;
+  mb.blob(bx, 0, (L.zb + L.zf) / 2, Math.min((L.x1 - L.x0) / 2 + 2.5, g.W / 2 - 0.6 - Math.abs(bx)), 1.4, (L.zf - L.zb) / 2 + 2, M('lawn', 4, 4), 1, 0.1, 6); // the berm hiding the rest
+  yardLife(g, L, 'junk', { fence: true, trees: 0, shrubs: false, frontN: 1 });
+  return pickName(g, ['Luxury Bunker (Above-Ground Portion)', 'Doomsday Condo', 'Blast-Rated Ranch']);
+} });
+
+style({ id: 'treehouse', lv: [2, 3], build(g) {
+  const { mb, rng } = g;
+  lotPad(g, M('lawn', 8, 8));
+  const L = site(g, 6, 6, 0.4);
+  const cx = (L.x0 + L.x1) / 2, cz = (L.zb + L.zf) / 2;
+  const bark = M('wood', 2, 2, 0x5a3a1a);
+  mb.cyl(cx, cz, 0.9, 0, 9, 8, bark);
+  for (let i = 0; i < 4; i++) { const a = i * 1.57 + 0.4; mb.push().translate(cx, 6.5, cz).rotY(a).rotZ(0.7); mb.cyl(0, 0, 0.25, 0, 4.2, 6, bark); mb.pop(); }
+  const cr = Math.min(5.5, g.W / 2 - 0.6 - Math.abs(cx));
+  mb.blob(cx, 11.5, cz, cr, 3.6, cr, mats.leaf(rgb(0x4f7a32)), 1, 0.25, 8);
+  const Lh: Lay = { x0: cx - 2.6, x1: cx + 2.6, zb: cz - 2.2, zf: cz + 2.2, H: 7.8, porch: 0 };
+  mb.box(Lh.x0 - 0.6, Lh.x1 + 0.6, 5.2, 5.4, Lh.zb - 0.6, Lh.zf + 0.9, M('deck', 3, 3));
+  mb.box(Lh.x0, Lh.x1, 5.4, 7.8, Lh.zb, Lh.zf, { side: M('wood', 3, 3, 0xa07a50), top: null });
+  mb.gable(Lh.x0, Lh.x1, Lh.zb, Lh.zf, 7.8, 1.2, 'x', M('metalRoof', 3, 3, 0x2a4a3a), M('wood', 3, 3, 0xa07a50), 0.3);
+  mb.decal('+z', cx, 5.4, Lh.zf, 0.9, 1.9, S('doorFront', 0x8a6a4a));
+  mb.decal('+z', cx + 1.5, 6.2, Lh.zf, 0.8, 0.8, win(g, 'winHouse'));
+  for (let i = 0; i < 9; i++) mb.box(Lh.x1 + 0.2, Lh.x1 + 0.9, i * 0.6, i * 0.6 + 0.08, Lh.zf + 0.3, Lh.zf + 0.4, M('wood', 1, 1)); // the ladder
+  occupy(g, cx - 3.4, cx + 3.4, cz - 3, cz + 3.2);
+  yardLife(g, { ...L, x0: cx - 3, x1: cx + 3, zb: cz - 3, zf: cz + 3 }, 'plain', { fence: false, trees: 0, shrubs: false });
+  return pickName(g, ['Treehouse (Primary Residence)', 'Treehouse (Permitted as a Shed)', 'Canopy Living']);
+} });
+
+style({ id: 'hobbit', lv: [3, 4], build(g) {
+  const { mb, rng } = g;
+  lotPad(g, M('lawn', 8, 8));
+  const L = site(g, 9, 7, 1.2);
+  const cx = (L.x0 + L.x1) / 2, cz = (L.zb + L.zf) / 2;
+  mb.blob(cx, 0, cz, (L.x1 - L.x0) / 2 + 0.5, 3.6, (L.zf - L.zb) / 2 + 0.5, M('lawn', 3, 3), 1, 0.08, 12);
+  mb.cyl(cx, L.zf + 0.3, 1.1, 0, 0.2, 12, M('stone', 2, 2));
+  mb.push().translate(cx, 1.1, L.zf + 0.35).rotX(Math.PI / 2); mb.cyl(0, 0, 1.05, -0.1, 0.1, 14, M('plain', 2, 2, 0x2a6a3a)); mb.pop(); // the round green door
+  for (const s of [-1, 1]) { mb.push().translate(cx + s * 2.4, 1.4, L.zf + 0.1).rotX(Math.PI / 2); mb.cyl(0, 0, 0.55, -0.05, 0.05, 10, M('glassPlain', 1, 1)); mb.pop(); }
+  chimney(g, cx + 1.5, cz - 1, 4.4, M('stone', 2, 2), 0.7);
+  walk(g, cx, L.zf + 0.4);
+  yardLife(g, { ...L, H: 3.6 }, 'hoa', { fence: false });
+  return pickName(g, ['Hobbit Hole (Zoning Variance Pending)', 'Earth-Sheltered Home', 'Hill House (Literally)']);
+} });
+
+style({ id: 'houseboatLand', lv: [1, 2], minD: 16, build(g) {
+  const { mb, rng } = g;
+  lotPad(g, M('lawnDry', 8, 8));
+  const L = site(g, 4.2, 12, 1.0);
+  const cx = (L.x0 + L.x1) / 2;
+  for (const z of [L.zb + 2, L.zb + 6, L.zb + 10]) mb.boxC(cx, z, 3, 0.5, 0, 0.8, M('cinder', 3, 3));
+  mb.box(cx - 2.1, cx + 2.1, 0.8, 1.9, L.zb, L.zb + 12, { side: M('plain', 2, 2, 0xf2f2ee), top: M('deck', 3, 3) });
+  mb.poly([[cx - 2.1, 0.8, L.zb + 12], [cx + 2.1, 0.8, L.zb + 12], [cx, 1.9, L.zb + 13.2]], M('plain', 2, 2, 0xf2f2ee));
+  mb.box(cx - 1.8, cx + 1.8, 1.9, 4.2, L.zb + 1, L.zb + 9, { side: M('siding', 3, 3, rgb(rng.pick([0x8ecfc9, 0xf7d774, 0xf2a7c3]))), top: M('plain', 2, 2, 0xe8e8e8) });
+  row(g, '+x', L.zb + 1.5, L.zb + 8.5, cx + 1.8, 2.6, 3, 'winTrailer', 1.1, 0.8);
+  row(g, '-x', L.zb + 1.5, L.zb + 8.5, cx - 1.8, 2.6, 3, 'winTrailer', 1.1, 0.8);
+  mb.decal('+z', cx, 1.9, L.zb + 9, 0.9, 2, S('doorGlass'));
+  mb.decal('+x', L.zb + 11, 0.95, cx + 2.1, 3.2, 0.7, S('sat:yard:reduced'), 0.05);
+  const Lb: Lay = { x0: cx - 2.2, x1: cx + 2.2, zb: L.zb, zf: L.zb + 13.2, H: 4.2, porch: 0 };
+  yardLife(g, Lb, 'junk', { fence: false });
+  return pickName(g, ['Houseboat (Nowhere Near Water)', 'Dry-Docked Houseboat', 'Houseboat (Waiting for the Flood)']);
+} });
+
+style({ id: 'fourplex', lv: [3, 4], minW: 14, build(g) {
+  const { mb, rng } = g;
+  lotPad(g, M('lawnDry', 8, 8));
+  const L = site(g, 12, 9, 1.4);
+  L.H = 5.8;
+  const wall = wallOf(g, rng.chance(0.5) ? 'brickTan' : 'siding', PAL.beige, 3, 3);
+  house(g, L, wall, M('shingles', 4, 4, rgb(rng.pick(PAL.roof))), 'hip', 1.4);
+  const cx = (L.x0 + L.x1) / 2;
+  for (const s of [-1, 1]) {
+    door(g, cx + s * 3.4, L.zf, 0.1, 'doorFront', 0.5, 0.9);
+    door(g, cx + s * 1.3, L.zf, 3.0, 'doorFront', 0.5, 0.9);
+  }
+  // the exterior stair and landing to the upper units
+  mb.box(L.x0 + 2, L.x1 - 2, 2.9, 3.05, L.zf, L.zf + 1.3, M('deck', 3, 3));
+  for (let i = 0; i < 9; i++) mb.box(cx - 0.6, cx + 0.6, i * 0.32, i * 0.32 + 0.1, L.zf + 1.3 + (8 - i) * 0.3, L.zf + 1.6 + (8 - i) * 0.3, M('deck', 2, 2));
+  windows(g, L, 'winHouse', { floors: 2, fh: 2.9, front: false });
+  row(g, '+z', L.x0 + 0.2, L.x1 - 0.2, L.zf, 0.9, 6, 'winHouse', 0.9, 1.2);
+  row(g, '+z', L.x0 + 0.2, L.x1 - 0.2, L.zf, 3.8, 6, 'winHouse', 0.9, 1.2);
+  for (let i = 0; i < 4; i++) mb.boxC(L.x0 + 1.5 + i * 3, L.zb - 0.5, 0.25, 0.4, 1.0, 0.3, M('plain', 2, 2, 0x9a9a9a)); // four meters
+  yardLife(g, { ...L, porch: 4.2 }, 'junk');
+  return pickName(g, ['Fourplex (Investor Owned)', 'Quadplex (LLC #7)', 'Fourplex (Rent Due Friday)']);
+} });
+
+style({ id: 'specGlass', lv: [5, 5], minW: 14, build(g) {
+  const { mb, rng } = g;
+  lotPad(g, M('lawn', 8, 8));
+  const L = site(g, 14, 9, 1.6);
+  L.H = 6.4;
+  const frame = M('metalPanel', 3, 3, 0x2a2a2c), glass = M('glassPlain', 2, 2);
+  mb.box(L.x0, L.x1, 0, L.H, L.zb, L.zf, { side: glass, l: frame, r: frame, top: null });
+  mb.box(L.x0 - 1.2, L.x1 + 0.4, L.H, L.H + 0.5, L.zb - 0.4, L.zf + 1.8, { side: M('plain', 2, 2, 0xf4f3ef), top: M('flatRoof', 4, 4) });
+  mb.box(L.x0, L.x1, 3.1, 3.3, L.zb, L.zf, M('plain', 2, 2, 0xf4f3ef));
+  for (let x = L.x0 + 2.3; x < L.x1 - 0.5; x += 2.3) mb.boxC(x, L.zf + 0.02, 0.12, 0.08, 0, L.H, frame);
+  mb.decal('+z', (L.x0 + L.x1) / 2, 0.2, L.zf + 0.03, L.x1 - L.x0 - 1, 6, win(g, 'winModern', 0.9), 0.02);
+  mb.decal('+z', (L.x0 + L.x1) / 2, 0.02, L.zf + 1.6, 2.2, 0.6, S('sat:yard:reduced'), 0.1);
+  porch(g, L, 'stoop', (L.x0 + L.x1) / 2);
+  yardLife(g, L, 'rich', { trees: 1, frontN: 1 });
+  return pickName(g, ['Spec Home (Unsold Since 2022)', 'Glass Box ($4.2M, Reduced)', 'Transitional Modern (No Furniture)']);
+} });
+
+style({ id: 'texasRanch', lv: [4, 5], minW: 14, minD: 20, build(g) {
+  const { mb, rng, W, D } = g;
+  lotPad(g, M('lawnDry', 8, 8));
+  const L = site(g, 14, 8, 2.4);
+  L.zf -= 2; L.zb -= 2;
+  L.H = 3.2;
+  const stone = M('stone', 3, 3, 0xe0d0b0);
+  house(g, L, stone, M('metalRoof', 3, 3, rgb(rng.pick([0x7a3a2a, 0x3a4a3a, 0x5a5a5a]))), 'gable', 1.6, { ov: 0.8 });
+  const cx = (L.x0 + L.x1) / 2;
+  door(g, cx, L.zf, 0.3, 'doorDouble', 1.1, 1.8, 2.4);
+  porch(g, L, 'posts', cx, { post: M('wood', 2, 2, 0x6a4a2a), roof: M('metalRoof', 3, 3, 0x7a3a2a), y: 0.3 });
+  windows(g, L, 'winHouse', { w: 1.4, skipFront: [[cx - 1.4, cx + 1.4]] });
+  // the gate arch over the drive, bigger than the house deserves
+  const gx = rng.chance(0.5) ? -W / 2 + 3 : W / 2 - 3, gz = D / 2 - 0.8;
+  for (const dx of [-2.2, 2.2]) mb.boxC(gx + dx, gz, 0.4, 0.4, 0, 5.2, M('stone', 2, 2));
+  mb.box(gx - 2.5, gx + 2.5, 4.4, 5.0, gz - 0.12, gz + 0.12, M('metal', 2, 2, 0x2a2a2a));
+  mb.decal('+z', gx, 4.45, gz + 0.12, 3.2, 0.5, S('sat:flag:lawn'), 0.03);
+  drive(g, gx, 3.6, L.zf + L.porch, M('gravel', 3, 3, 0xd8c8a8), ['lifted', 'pickup']);
+  occupy(g, gx - 2.8, gx + 2.8, gz - 0.6, D / 2);
+  yardLife(g, L, 'rich', { fence: false, trees: 2 });
+  return pickName(g, ['Texas Ranch (Gate Bigger Than House)', 'Hill Country Ranch Home', 'Ranchette (0.4 Acres)']);
+} });
+
+style({ id: 'cottagecore', lv: [2, 3], build(g) {
+  const { mb, rng, W, D } = g;
+  lotPad(g, M('lawn', 8, 8));
+  const L = site(g, W >= 14 ? 8 : 6.5, 6.5, 1.0);
+  L.H = 2.8;
+  const wall = wallOf(g, 'wood', [0xf2f0ea, 0xe8f0e0, 0xf4e6d0, 0xd8e8f0], 3, 3);
+  const roofM = M('shingles', 3, 3, rgb(rng.pick([0x6a5a6a, 0x5a6a5a, 0x7a5a4a])));
+  extrude(g, L.x0, L.x1, P.gable(L.zb, L.zf, L.H, 3.2), wall, roofM, wall, 0.4);
+  const cx = (L.x0 + L.x1) / 2;
+  door(g, cx, L.zf, 0.2, rng.pick(['doorBlue', 'doorFront']), 0.6);
+  for (const s of [-1, 1]) {
+    mb.decal('+z', cx + s * 2, 0.9, L.zf, 1.1, 1.2, win(g, 'winShutter'));
+    mb.box(cx + s * 2 - 0.6, cx + s * 2 + 0.6, 0.7, 0.9, L.zf, L.zf + 0.3, M('wood', 1, 1, 0x8a5a3a)); // flower box
+    for (let k = 0; k < 4; k++) mb.blob(cx + s * 2 - 0.45 + k * 0.3, 1.0, L.zf + 0.15, 0.12, 0.12, 0.12, M('plain', 2, 2, rng.pick([0xff6fa8, 0xffd23f, 0xb07aff])), 0);
+  }
+  dormers(g, L, 3.2, 1, roofM, wall);
+  chimney(g, L.x1 - 0.5, (L.zb + L.zf) / 2, L.H + 3.6, M('brick', 2, 2), 0.5);
+  fence(g, -W / 2 + 0.3, D / 2 - 0.3, W / 2 - 0.3, D / 2 - 0.3, 1.0, 'fence');
+  walk(g, cx, L.zf + 0.9);
+  yardLife(g, L, 'plain', { trees: 2 });
+  return pickName(g, ['Cottagecore Cottage', 'Storybook Cottage (Airbnb Adjacent)', 'Grandmacore Cottage']);
+} });
+
+style({ id: 'modular', lv: [2, 3], minW: 14, minD: 16, build(g) {
+  const { mb, rng } = g;
+  lotPad(g, M('lawnDry', 8, 8));
+  const L = site(g, 13, 8, 0.8);
+  L.H = 2.8;
+  const wall = wallOf(g, 'siding', PAL.beige);
+  house(g, L, wall, M('shingles', 4, 4, rgb(rng.pick(PAL.roof))), 'gable', 1.4);
+  const cx = (L.x0 + L.x1) / 2;
+  mb.box(cx - 0.05, cx + 0.05, 0, L.H + 1.4, L.zf, L.zf + 0.04, M('plain', 2, 2, 0x8a8a84)); // the seam between the halves
+  door(g, cx - 2.5, L.zf, 0.3, 'doorFront', 0.6);
+  porchSteps(g, cx - 2.5, L.zf, 1.4, 0.3);
+  windows(g, L, 'winHouse', { skipFront: [[cx - 3.2, cx - 1.8]] });
+  // the other half hasn't been craned in yet
+  if (L.zb > -g.D / 2 + 5) {
+    const tz = -g.D / 2 + 2.5;
+    mb.box(L.x0, L.x1 - 1, 1.0, 3.6, tz - 1.9, tz + 1.9, { side: wall, top: M('plain', 2, 2, 0x5a8adf) });
+    mb.decal('+z', (L.x0 + L.x1) / 2, 1.3, tz + 1.9, 4, 0.8, S('sat:banner:space'), 0.05);
+    occupy(g, L.x0, L.x1, tz - 2, tz + 2);
+  }
+  yardLife(g, L, 'plain');
+  return pickName(g, ['Modular Home (Delivered in Halves)', 'Manufactured Home (Upgraded Vocabulary)', 'Modular (Other Half Backordered)']);
 } });
 
 /** Styles that fit this lot (level, width, depth). */

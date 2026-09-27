@@ -3296,6 +3296,9 @@ a {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* left: 50% leaves a shrink-to-fit box only half the screen: on a phone the
+     first-steps card wrapped into a tall column over the middle of the map */
+  width: max-content;
   max-width: min(820px, calc(100vw - 24px));
   padding: 6px 8px 6px 12px;
   background: rgba(10, 9, 16, 0.86);

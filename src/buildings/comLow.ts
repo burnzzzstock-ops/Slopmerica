@@ -1,6 +1,7 @@
 // comLow: the stroad. Gas stations with canopies, fast food with drive-thru
 // lanes and pole signs, Dollar Colonel, smoke/vape/pawn/liquor, strip malls with
 // a sign for every tenant. Parking goes out front.
+import { decorate } from './satire';
 import { brandById, brandsFor, BRANDS, Brand, Archetype } from '../art/brands';
 import { hasTile } from '../art';
 import { M, S, Mat, rgb, WHITE, RGB } from './mesh';
@@ -41,6 +42,12 @@ function store(g: GenCtx, x0: number, x1: number, z0: number, z1: number, h: num
   mb.box(x0, x1, 0, Math.min(h, 4), z0, z1, { f: front, b: side, l: side, r: side, top: null });
   if (h > 4) mb.box(x0, x1, 4, h, z0, z1, { side, top: null });
   mb.parapet(x0, x1, z0, z1, h, 0.8, side, o.roof ?? ROOF.flat());
+  // up on the roof: a dish farm, a JESUS SAVES billboard, the owner's helipad
+  if (x1 - x0 > 7 && z1 - z0 > 6 && g.rng.chance(0.4)) {
+    mb.push().translate(0, h + 0.02, 0);
+    decorate(g, 'roof', { x0: x0 + 1, x1: x1 - 1, z0: z0 + 1, z1: z1 - 1.5 }, 1);
+    mb.pop();
+  }
   if (o.band !== null && o.band !== undefined) {
     const bm = M('plain', 2, 2, o.band, { ao: false });
     mb.box(x0 - 0.15, x1 + 0.15, h - 0.2, h + 0.9, z1, z1 + 0.25, { side: bm, top: bm, b: null });

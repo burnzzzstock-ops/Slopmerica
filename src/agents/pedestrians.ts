@@ -43,6 +43,8 @@ export interface Ped {
   ryaw?: number;
   /** extra step to the walker's right (m): walking side by side, keeping right */
   lat?: number;
+  /** which way to face once they've walked to their spot */
+  face?: number;
 }
 
 /** Leg cycles per metre: a stride (two steps) is about 1.4 m walking, 2.2 m running. */
@@ -162,6 +164,8 @@ export class Pedestrians {
         if (u >= 1) {
           delete p.go;
           if (g.remove) { p.gone = true; continue; }
+          // arrived: turn to face the street, the grill, each other
+          if (p.face !== undefined && p.kind !== 'walk') p.yaw = p.face;
           if (p.kind === 'walk') this.placeOnSidewalk(p);
         }
         this.renderer.set(p.h, p.x, p.y, p.z, p.ryaw ?? p.yaw, p.go ? 'walk' : p.action, p.phase);
@@ -285,6 +289,7 @@ export class Pedestrians {
   private addFrom(p: Omit<Ped, 'h'>, from: V2) {
     const tx = p.x, tz = p.z;
     p.home = from;
+    p.face = p.yaw;
     this.goTo(p, from.x, from.z, tx, tz, false);
     this.add(p);
   }
@@ -406,6 +411,32 @@ export class Pedestrians {
         if (!vices.length) vices = ['phone'];
         // codex:policies end
         this.addFrom({ arch, kind: 'loiter', action: vices[Math.floor(Math.random() * vices.length)], seg: 0, dir: 1, s: 0, side: 1, speed: 0, life: 25 + Math.random() * 40, x, y: bld.y + 0.05, z, yaw: bld.yaw + (Math.random() - 0.5) * 1.5, phase: Math.random() * 10, label: bld.label, fromBld: bld.id }, this.door(bld));
+        return;
+      }
+    }
+    // residents out in their yards: a beer on the lawn, on the phone, a smoke, the backyard hang
+    if (r < 0.72) {
+      const yards = this.b.near(cam.x, cam.z, R).filter((b) => b.state === 'active' && b.zone === 'resLow' && b.occ > 0 && b.abandoned === undefined);
+      const bld = yards.length ? this.pickBuilding(yards) : null;
+      if (bld) {
+        const c = Math.cos(bld.yaw), s = Math.sin(bld.yaw);
+        const back = Math.random() < 0.5;
+        const lx = (Math.random() - 0.5) * bld.hw * 1.3, lz = back ? -bld.hd + 2 + Math.random() * 2.5 : bld.hd - 1.6 - Math.random() * 2;
+        const at = (ox: number, oz: number) => ({ x: bld.x + ox * c + oz * s, z: bld.z - ox * s + oz * c });
+        const acts: PersonAction[] = back ? ['drink', 'drink', 'phone', 'smoke', 'idle', 'dance', 'drink'] : ['phone', 'idle', 'drink', 'smoke', 'idle'];
+        const pick = () => {
+          const a = acts[Math.floor(Math.random() * acts.length)];
+          return (a === 'smoke' || a === 'vape') && this.policySmokingAllowedAt?.(bld.x, bld.z) === false ? 'idle' : a;
+        };
+        // out back, often two of them facing each other
+        const pals = back && Math.random() < 0.45 ? 2 : 1;
+        // they come round the side of the house (the front door for the front yard)
+        const from = back ? at(Math.sign(lx || 1) * bld.hw * 0.9, lz) : this.door(bld);
+        for (let k = 0; k < pals; k++) {
+          const p = at(lx + k * 1.3, lz);
+          const yaw = pals > 1 ? bld.yaw + (k ? -Math.PI / 2 : Math.PI / 2) : bld.yaw + (back ? Math.PI : 0) + (Math.random() - 0.5) * 1.2;
+          this.addFrom({ arch: this.archFor('loiter'), kind: 'loiter', action: pick(), seg: 0, dir: 1, s: 0, side: 1, speed: 0, life: 30 + Math.random() * 45, x: p.x, y: this.terrain.h(p.x, p.z) + 0.05, z: p.z, yaw, phase: Math.random() * 10, label: bld.label, fromBld: bld.id }, from);
+        }
         return;
       }
     }

@@ -1,6 +1,7 @@
 // Civic Foundry in the game: the PBR street furniture, street trees, bus
 // shelters and utility cabinets from the asset library (packed by
-// scripts/civic-pack.mjs into civic/pack.json + pack.bin), drawn as
+// scripts/civic-pack.mjs into civic/pack.json + pack.bin, or pack.b64.txt
+// in the single-file build), drawn as
 // instanced meshes per asset x LOD x material with distance LODs. The pack
 // streams in after the town is up; if it can't load (offline file, old
 // build) the game looks exactly as before.
@@ -16,7 +17,19 @@ import { clamp, lerp, locate, norm, sub } from '../core/math';
 interface PackPrim { mat: string; count: number; pos: number; nrm: number; uv: number }
 interface PackAsset { label: string; category: string; bounds: { min: number[]; max: number[] }; dims: number[]; lods: { level: number; prims: PackPrim[] }[] }
 interface PackMat { id: string; albedo: string; normal: string; orm: string; roughness: number; metalness: number; normalScale: number }
-interface Pack { version: number; source: string; bytes: number; materials: PackMat[]; assets: Record<string, PackAsset> }
+interface Pack {
+  version: number; source: string; bytes: number; materials: PackMat[]; assets: Record<string, PackAsset>;
+  /** the geometry as base64 text instead of pack.bin (the published page's host doesn't serve .bin) */
+  bin64?: string;
+}
+
+/** base64 text to bytes */
+function unbase64(text: string): ArrayBuffer {
+  const s = atob(text.trim());
+  const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out.buffer;
+}
 
 /** One placed copy of an asset. */
 export interface CivicItem { asset: string; x: number; y: number; z: number; yaw: number; s?: number }
@@ -77,10 +90,10 @@ export class CivicLayer {
     if (this.status !== 'off') return;
     this.status = 'loading';
     (async () => {
-      const [json, bin] = await Promise.all([
-        fetch(new URL('pack.json', base)).then((r) => { if (!r.ok) throw new Error(`pack.json ${r.status}`); return r.json() as Promise<Pack>; }),
-        fetch(new URL('pack.bin', base)).then((r) => { if (!r.ok) throw new Error(`pack.bin ${r.status}`); return r.arrayBuffer(); }),
-      ]);
+      const get = async (name: string) => { const r = await fetch(new URL(name, base)); if (!r.ok) throw new Error(`${name} ${r.status}`); return r; };
+      const json = await (await get('pack.json')).json() as Pack;
+      const bin = json.bin64 ? unbase64(await (await get(json.bin64)).text()) : await (await get('pack.bin')).arrayBuffer();
+      if (bin.byteLength !== json.bytes) throw new Error(`pack geometry is ${bin.byteLength} bytes, expected ${json.bytes}`);
       this.build(json, bin, base);
       this.status = 'ready';
       this.dirty = true;

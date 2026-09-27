@@ -26,7 +26,8 @@ import type { FeedContext, FeedEventKind, VehicleKind, ZoneType } from '../contr
 import type { DemandKey, LossCause } from './sim';
 import { POLICY } from './policyEffects';
 import { crumb } from '../ui/bugreport';
-import { frontageCandidates, inRect, rectCorners, specialAt, type Frontage } from './frontage';
+import { frontageCandidates, frontageOn, inRect, rectCorners, specialAt, type Frontage } from './frontage';
+import { pointAt, tangentAt } from '../core/math';
 import { PlacementGhost } from '../tools/placementGhost';
 
 type ZB = Bld & { zone: ZoneType };
@@ -48,7 +49,14 @@ interface SvcDef {
   w: number;
   d: number;
   cost: number;
-  upkeep: number; // $/week
+  upkeep: number; // $/week, fixed
+  /**
+   * Running cost that grows with use, on top of upkeep: fuel and chemicals
+   * ($ per MW or kL your plants supply, per day), trucks ($ per ton collected,
+   * per day), or staff ($ per person served, fire: per building, per week).
+   * Without it one station served a whole town and big towns printed money.
+   */
+  run?: number;
   buildDays: number;
   unlock: number; // population
   power?: number; // MW
@@ -67,23 +75,23 @@ interface SvcDef {
 }
 
 const SVC: SvcDef[] = [
-  { id: 'gasPeaker', cat: 'power', name: 'Frack Gas Peaker', blurb: 'Cheap, fast, smells like a birthday candle in a gas station.', icon: '🔥', w: 4, d: 3, cost: 16000, upkeep: 90, buildDays: 8, unlock: 0, power: 14, pollution: 0.3, noise: 0.7, height: 16 },
-  { id: 'coalPlant', cat: 'power', name: 'Clean Coal™ Plant', blurb: 'The ™ does a lot of work. Huge output, huge smoke.', icon: '🏭', w: 6, d: 6, cost: 38000, upkeep: 200, buildDays: 14, unlock: 0, power: 45, pollution: 1.2, noise: 0.9, height: 62 },
-  { id: 'solarFarm', cat: 'power', name: 'Freedom Solar Farm', blurb: 'Zero emissions. Output drops at night and under clouds.', icon: '☀️', w: 6, d: 4, cost: 30000, upkeep: 40, buildDays: 10, unlock: 400, power: 10, height: 4 },
-  { id: 'nuclearPlant', cat: 'power', name: 'Three Mile Island Jr.', blurb: 'Enough power for the whole county. What could go wrong.', icon: '☢️', w: 7, d: 7, cost: 220000, upkeep: 700, buildDays: 30, unlock: 5000, power: 220, noise: 0.5, height: 52 },
-  { id: 'waterPump', cat: 'water', name: 'Artesian Tap Pump', blurb: 'Pumps river water. Must touch water. Keep it far from the sewage outfall.', icon: '🚰', w: 2, d: 2, cost: 9000, upkeep: 45, buildDays: 6, unlock: 0, water: 3200, nearWater: true, noise: 0.3, height: 7 },
-  { id: 'wellTower', cat: 'water', name: 'Groundwater Well Tower', blurb: 'Works anywhere. Small output. Boil notice pending (a joke: the water is fine).', icon: '🗼', w: 2, d: 2, cost: 7000, upkeep: 30, buildDays: 6, unlock: 0, water: 800, height: 26 },
-  { id: 'sewageOutfall', cat: 'sewage', name: 'Sewage Outfall', blurb: 'Straight into the river. Must touch water. Pollutes the neighborhood.', icon: '🚽', w: 2, d: 2, cost: 6000, upkeep: 25, buildDays: 5, unlock: 0, sewage: 3800, nearWater: true, pollution: 0.5, noise: 0.2, height: 4 },
-  { id: 'treatmentPlant', cat: 'sewage', name: 'Poop Palace Treatment', blurb: 'Actually cleans it. Costs more. Smells less.', icon: '🧫', w: 5, d: 4, cost: 32000, upkeep: 150, buildDays: 12, unlock: 1000, sewage: 6000, nearWater: true, pollution: 0.06, noise: 0.3, height: 7 },
-  { id: 'landfill', cat: 'garbage', name: 'Mt. Trashmore Landfill', blurb: 'Trucks collect trash within reach. Fills up. Stinks up the neighbors.', icon: '🗑️', w: 6, d: 6, cost: 14000, upkeep: 70, buildDays: 8, unlock: 0, store: 9000, collect: 36, cov: 'garbage', reach: 220, pollution: 0.3, noise: 0.5, vehicle: 'garbageTruck', height: 16 },
-  { id: 'incinerator', cat: 'garbage', name: 'Freedom Incinerator', blurb: 'Burns 60 t/day forever and makes 8 MW. The smoke is a feature.', icon: '♨️', w: 4, d: 4, cost: 42000, upkeep: 180, buildDays: 12, unlock: 1200, collect: 60, cov: 'garbage', reach: 260, power: 8, pollution: 0.8, noise: 0.6, vehicle: 'garbageTruck', height: 44 },
-  { id: 'fireStation', cat: 'fire', name: 'Volunteer Fire Dept.', blurb: 'Reaches buildings by drive time. Prevents fires and saves the ones that catch.', icon: '🚒', w: 3, d: 3, cost: 12000, upkeep: 80, buildDays: 6, unlock: 0, cov: 'fire', reach: 100, capacity: 260, noise: 0.3, vehicle: 'firetruck', height: 13 },
-  { id: 'sheriff', cat: 'police', name: "Sheriff's Office", blurb: 'Keeps crime down within reach. Qualified immunity included.', icon: '🚓', w: 3, d: 3, cost: 11000, upkeep: 85, buildDays: 6, unlock: 0, cov: 'police', reach: 110, capacity: 2600, noise: 0.2, vehicle: 'police', height: 9 },
-  { id: 'clinic', cat: 'health', name: 'Urgent Care (Out of Network)', blurb: 'Treats the sick within reach. You will receive a bill.', icon: '🩺', w: 3, d: 3, cost: 14000, upkeep: 95, buildDays: 6, unlock: 0, cov: 'health', reach: 110, capacity: 1800, vehicle: 'ambulance', height: 7 },
-  { id: 'hospital', cat: 'health', name: "St. Deductible's Hospital", blurb: 'Big reach, big capacity, bigger deductible.', icon: '🏥', w: 5, d: 4, cost: 60000, upkeep: 320, buildDays: 14, unlock: 1500, cov: 'health', reach: 200, capacity: 8000, noise: 0.3, vehicle: 'ambulance', height: 25 },
-  { id: 'school', cat: 'education', name: 'Charter School of Excellence™', blurb: 'Educated residents unlock level 3+ homes and better offices.', icon: '🏫', w: 4, d: 4, cost: 16000, upkeep: 100, buildDays: 8, unlock: 0, cov: 'school', reach: 130, capacity: 1600, noise: 0.2, height: 10 },
-  { id: 'college', cat: 'education', name: 'Prosperity Gospel University', blurb: 'College grads unlock the top levels. Tuition is a spiritual journey.', icon: '🎓', w: 6, d: 5, cost: 70000, upkeep: 350, buildDays: 16, unlock: 2000, cov: 'college', reach: 320, capacity: 9000, height: 28 },
-  { id: 'park', cat: 'parks', name: 'Pocket Park', blurb: 'Raises land value nearby. No skateboarding.', icon: '🌳', w: 2, d: 2, cost: 3000, upkeep: 8, buildDays: 3, unlock: 0, cov: 'parks', reach: 45, height: 9 },
+  { id: 'gasPeaker', cat: 'power', name: 'Frack Gas Peaker', blurb: 'Cheap, fast, smells like a birthday candle in a gas station.', icon: '🔥', w: 4, d: 3, cost: 16000, upkeep: 120, run: 8, buildDays: 8, unlock: 0, power: 14, pollution: 0.3, noise: 0.7, height: 16 },
+  { id: 'coalPlant', cat: 'power', name: 'Clean Coal™ Plant', blurb: 'The ™ does a lot of work. Huge output, huge smoke.', icon: '🏭', w: 6, d: 6, cost: 38000, upkeep: 320, run: 5, buildDays: 14, unlock: 0, power: 45, pollution: 1.2, noise: 0.9, height: 62 },
+  { id: 'solarFarm', cat: 'power', name: 'Freedom Solar Farm', blurb: 'Zero emissions. Output drops at night and under clouds.', icon: '☀️', w: 6, d: 4, cost: 30000, upkeep: 90, buildDays: 10, unlock: 400, power: 10, height: 4 },
+  { id: 'nuclearPlant', cat: 'power', name: 'Three Mile Island Jr.', blurb: 'Enough power for the whole county. What could go wrong.', icon: '☢️', w: 7, d: 7, cost: 220000, upkeep: 1400, run: 2, buildDays: 30, unlock: 5000, power: 220, noise: 0.5, height: 52 },
+  { id: 'waterPump', cat: 'water', name: 'Artesian Tap Pump', blurb: 'Pumps river water. Must touch water. Keep it far from the sewage outfall.', icon: '🚰', w: 2, d: 2, cost: 9000, upkeep: 70, run: 0.03, buildDays: 6, unlock: 0, water: 3200, nearWater: true, noise: 0.3, height: 7 },
+  { id: 'wellTower', cat: 'water', name: 'Groundwater Well Tower', blurb: 'Works anywhere. Small output. Boil notice pending (a joke: the water is fine).', icon: '🗼', w: 2, d: 2, cost: 7000, upkeep: 45, run: 0.05, buildDays: 6, unlock: 0, water: 800, height: 26 },
+  { id: 'sewageOutfall', cat: 'sewage', name: 'Sewage Outfall', blurb: 'Straight into the river. Must touch water. Pollutes the neighborhood.', icon: '🚽', w: 2, d: 2, cost: 6000, upkeep: 35, run: 0.02, buildDays: 5, unlock: 0, sewage: 3800, nearWater: true, pollution: 0.5, noise: 0.2, height: 4 },
+  { id: 'treatmentPlant', cat: 'sewage', name: 'Poop Palace Treatment', blurb: 'Actually cleans it. Costs more. Smells less.', icon: '🧫', w: 5, d: 4, cost: 32000, upkeep: 260, run: 0.05, buildDays: 12, unlock: 1000, sewage: 6000, nearWater: true, pollution: 0.06, noise: 0.3, height: 7 },
+  { id: 'landfill', cat: 'garbage', name: 'Mt. Trashmore Landfill', blurb: 'Trucks collect trash within reach. Fills up. Stinks up the neighbors.', icon: '🗑️', w: 6, d: 6, cost: 14000, upkeep: 90, run: 2, buildDays: 8, unlock: 0, store: 9000, collect: 36, cov: 'garbage', reach: 220, pollution: 0.3, noise: 0.5, vehicle: 'garbageTruck', height: 16 },
+  { id: 'incinerator', cat: 'garbage', name: 'Freedom Incinerator', blurb: 'Burns 60 t/day forever and makes 8 MW. The smoke is a feature.', icon: '♨️', w: 4, d: 4, cost: 42000, upkeep: 260, run: 2, buildDays: 12, unlock: 1200, collect: 60, cov: 'garbage', reach: 260, power: 8, pollution: 0.8, noise: 0.6, vehicle: 'garbageTruck', height: 44 },
+  { id: 'fireStation', cat: 'fire', name: 'Volunteer Fire Dept.', blurb: 'Reaches buildings by drive time. Prevents fires and saves the ones that catch.', icon: '🚒', w: 3, d: 3, cost: 12000, upkeep: 120, run: 0.7, buildDays: 6, unlock: 0, cov: 'fire', reach: 100, capacity: 260, noise: 0.3, vehicle: 'firetruck', height: 13 },
+  { id: 'sheriff', cat: 'police', name: "Sheriff's Office", blurb: 'Keeps crime down within reach. Qualified immunity included.', icon: '🚓', w: 3, d: 3, cost: 11000, upkeep: 120, run: 0.07, buildDays: 6, unlock: 0, cov: 'police', reach: 110, capacity: 1600, noise: 0.2, vehicle: 'police', height: 9 },
+  { id: 'clinic', cat: 'health', name: 'Urgent Care (Out of Network)', blurb: 'Treats the sick within reach. You will receive a bill.', icon: '🩺', w: 3, d: 3, cost: 14000, upkeep: 130, run: 0.08, buildDays: 6, unlock: 0, cov: 'health', reach: 110, capacity: 1200, vehicle: 'ambulance', height: 7 },
+  { id: 'hospital', cat: 'health', name: "St. Deductible's Hospital", blurb: 'Big reach, big capacity, bigger deductible.', icon: '🏥', w: 5, d: 4, cost: 60000, upkeep: 650, run: 0.08, buildDays: 14, unlock: 1500, cov: 'health', reach: 200, capacity: 6000, noise: 0.3, vehicle: 'ambulance', height: 25 },
+  { id: 'school', cat: 'education', name: 'Charter School of Excellence™', blurb: 'Educated residents unlock level 3+ homes and better offices.', icon: '🏫', w: 4, d: 4, cost: 16000, upkeep: 140, run: 0.09, buildDays: 8, unlock: 0, cov: 'school', reach: 130, capacity: 1100, noise: 0.2, height: 10 },
+  { id: 'college', cat: 'education', name: 'Prosperity Gospel University', blurb: 'College grads unlock the top levels. Tuition is a spiritual journey.', icon: '🎓', w: 6, d: 5, cost: 70000, upkeep: 750, run: 0.09, buildDays: 16, unlock: 2000, cov: 'college', reach: 320, capacity: 7000, height: 28 },
+  { id: 'park', cat: 'parks', name: 'Pocket Park', blurb: 'Raises land value nearby. No skateboarding.', icon: '🌳', w: 2, d: 2, cost: 3000, upkeep: 20, buildDays: 3, unlock: 0, cov: 'parks', reach: 45, height: 9 },
 ];
 export const SERVICE_DEFS = new Map<string, SvcDef>(SVC.map((d) => [d.id, d]));
 for (const d of SVC) CUSTOM_BUILDINGS.set(d.id, { label: d.name, w: d.w, d: d.d, buildDays: d.buildDays, model: () => serviceModel(d.id, d.w, d.d), paint: d.id === 'park' ? Paint.Lawn : Paint.Paved });
@@ -308,6 +316,43 @@ function facilities(g: Game, active = true): Fac[] {
     if (d && (!active || b.state === 'active')) out.push(Object.assign(b, { def: d }));
   }
   return out;
+}
+
+/**
+ * Each active facility's running cost for a week at today's use (SvcDef.run):
+ * plants split what your own plants supply (imports are billed separately)
+ * by capacity, dumps split the tons your trucks collect, stations pay per
+ * person or building they serve, up to capacity.
+ */
+function runningCosts(g: Game, fac = facilities(g)): Map<number, number> {
+  const out = new Map<number, number>();
+  const sol = solarFactor(g);
+  const capOf = (f: Fac, u: Util) => (f.def[u] ?? 0) * (f.def.id === 'solarFarm' ? sol : 1);
+  for (const u of UTILS) {
+    const cat: SvcCat = u;
+    const plants = fac.filter((f) => f.def.cat === cat && capOf(f, u) > 0);
+    const total = plants.reduce((a, f) => a + capOf(f, u), 0);
+    const own = Math.max(0, S.util[u].served - S.util[u].imported);
+    for (const f of plants) if (f.def.run) out.set(f.id, (own * capOf(f, u)) / total * f.def.run * 7);
+  }
+  const dumps = fac.filter((f) => f.def.collect);
+  const cap = dumps.reduce((a, f) => a + (f.def.collect ?? 0), 0);
+  for (const f of dumps) if (f.def.run) out.set(f.id, (S.garbage.collected * (f.def.collect ?? 0)) / cap * f.def.run * 7);
+  for (const f of fac) {
+    if (!f.def.run || !f.def.capacity) continue;
+    out.set(f.id, Math.min(fsOf(f).load, f.def.capacity) * f.def.run);
+  }
+  return out;
+}
+
+/** "$12/MW a day", "$0.08 a week per person served": what SvcDef.run means for one def */
+export function runText(d: SvcDef): string {
+  if (!d.run) return '';
+  const m = d.run < 1 ? `$${d.run.toFixed(2)}` : `$${d.run}`;
+  if (d.cat === 'power') return `${m}/MW a day in fuel`;
+  if (d.cat === 'water' || d.cat === 'sewage') return `${m}/kL pumped`;
+  if (d.collect) return `${m}/t collected`;
+  return d.cov === 'fire' ? `${m}/wk per building covered` : `${m}/wk per person served`;
 }
 
 // ============================================================== road graph
@@ -1135,8 +1180,9 @@ function initHooks(g: Game) {
   // the week's bill: what was actually imported, or (forecast) today's daily rate × 7
   H.weekly.push((add, forecast) => {
     const byCat = new Map<SvcCat, number>();
+    const run = runningCosts(g);
     for (const f of facilities(g, false)) {
-      const up = f.state === 'active' ? f.def.upkeep : 0;
+      const up = f.state === 'active' ? f.def.upkeep + (run.get(f.id) ?? 0) : 0;
       byCat.set(f.def.cat, (byCat.get(f.def.cat) ?? 0) + up);
     }
     for (const c of CATS) { const v = byCat.get(c.id); if (v) add(`${c.label} upkeep`, v, 'services'); }
@@ -1151,8 +1197,68 @@ function initHooks(g: Game) {
   });
 }
 
+// ============================================================== valid sites
+/**
+ * While placing a service: green rings on the curb in front of every spot
+ * around the view where it fits, checked a few a frame, nearest first.
+ * Playtesters took many tries to find room for a hospital, a university or
+ * an incinerator against a red ghost; the rules stay, now you can see them.
+ */
+const SITE_STEP = 16, SITE_R = 420, SITE_BUDGET = 24, SITE_MAX = 160;
+const sites = { key: '', queue: [] as Frontage[], found: [] as { x: number; y: number; z: number }[], mesh: null as THREE.InstancedMesh | null };
+const siteM = new THREE.Matrix4(), siteQ = new THREE.Quaternion(), siteP = new THREE.Vector3(), siteS = new THREE.Vector3();
+
+function sitesFrame(g: Game) {
+  const d = SERVICE_DEFS.get(placing);
+  const on = !!d && g.tools.active === 'ext' && g.tools.extTool === 'svcPlace' && !built;
+  if (!sites.mesh) {
+    if (!on) return;
+    const geo = new THREE.RingGeometry(2.2, 3.2, 24);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x5dff7a, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false });
+    sites.mesh = new THREE.InstancedMesh(geo, mat, SITE_MAX);
+    sites.mesh.name = 'svc-sites'; sites.mesh.frustumCulled = false; sites.mesh.renderOrder = 6; sites.mesh.count = 0;
+    g.scene.add(sites.mesh);
+  }
+  sites.mesh.visible = on;
+  if (!on || !d) { sites.key = ''; return; }
+  const T = g.rts.target, X = Math.round(T.x / 150) * 150, Z = Math.round(T.z / 150) * 150;
+  const hw = (d.w * CELL) / 2, hd = (d.d * CELL) / 2;
+  // new view block, roads, buildings or a money bracket: look again
+  const key = `${placing}|${X},${Z}|${g.net.segs.size}|${g.buildings.list.size}|${Math.floor(g.sim.money / 5000)}`;
+  if (key !== sites.key) {
+    sites.key = key; sites.found = []; sites.queue = [];
+    for (const seg of g.net.segsNear(X - SITE_R, Z - SITE_R, X + SITE_R, Z + SITE_R)) {
+      if (seg.over || seg.type === 'highway') continue;
+      for (let at = SITE_STEP / 2; at < seg.length; at += SITE_STEP) {
+        const p = pointAt(seg.samp, at), t = tangentAt(seg.samp, at);
+        for (const side of [1, -1]) {
+          const f = frontageOn(g.net, seg, at, p.x - t.z * side * 20, p.z + t.x * side * 20, hd);
+          if (f) sites.queue.push(f);
+        }
+      }
+    }
+    sites.queue.sort((a, b) => Math.hypot(b.x - T.x, b.z - T.z) - Math.hypot(a.x - T.x, a.z - T.z)); // nearest at the end
+  }
+  let changed = false;
+  for (let n = 0; n < SITE_BUDGET && sites.queue.length && sites.found.length < SITE_MAX; n++) {
+    const f = sites.queue.pop()!;
+    if (sites.found.some((q) => Math.hypot(q.x - f.door.x, q.z - f.door.z) < hw * 1.5)) continue;
+    if (canPlaceService(g, placing, f.x, f.z, f.yaw).ok) { sites.found.push({ x: f.door.x, y: f.roadY + 0.4, z: f.door.z }); changed = true; }
+  }
+  const m = sites.mesh;
+  if (changed || m.count !== sites.found.length) {
+    const k = Math.max(1, Math.min(hw, hd) * 0.3 / 3.2);
+    siteS.set(k, 1, k);
+    sites.found.forEach((q, i) => { siteP.set(q.x, q.y, q.z); siteM.compose(siteP, siteQ, siteS); m.setMatrixAt(i, siteM); });
+    m.count = sites.found.length;
+    m.instanceMatrix.needsUpdate = true;
+  }
+}
+
 // ============================================================== frame: fires, icons, overlays
 function frame(g: Game, dt: number) {
+  sitesFrame(g);
   if (!S.icons) return;
   S.icons.tick(dt);
   // burning buildings: flames + smoke near the camera
@@ -1675,13 +1781,13 @@ registerTool({
     // just bought: say so (phones for a few seconds, desktop until the pointer moves off it)
     if (built && b && (g.isTouch ? g.time - built.t < 3 : onBuilt(g, g.tools.hoverPoint))) {
       const def = defOf(b) ?? d;
-      return { text: `✅ Built ${def.icon} ${def.name}: ${usd(def.cost)} paid, ${usd(def.upkeep)}/wk upkeep. ${g.isTouch ? 'Tap where the next one goes.' : 'Move off it to place another.'}`, good: true };
+      return { text: `✅ Built ${def.icon} ${def.name}: ${usd(def.cost)} paid, ${usd(def.upkeep)}/wk upkeep${def.run ? ` + ${runText(def)}` : ''}. ${g.isTouch ? 'Tap where the next one goes.' : 'Move off it to place another.'}`, good: true };
     }
-    if (lastCheck && !lastCheck.ok) return { text: `${d.name}: ${lastCheck.reason}`, bad: true };
+    if (lastCheck && !lastCheck.ok) return { text: `${d.name}: ${lastCheck.reason}${snappable(lastCheck.reason) ? ' · green rings: spots where it fits' : ''}`, bad: true };
     if (g.isTouch && !planned) return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} · tap where it goes` };
     // what this purchase does to the budget, from the same forecast the HUD shows
     const after = g.sim.afterSpend(d.cost, d.upkeep);
-    return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} now + $${d.upkeep}/wk · ${after.text}${lastCheck?.road ? ` · fronts ${esc(lastCheck.road)}${lastCheck.snapped ? ' (slid to the nearest spot that fits)' : ''}` : lastCheck?.snapped ? ' · 📍 moved to the nearest good spot' : ''}${planned ? ' · tap Build, or tap elsewhere to move it' : ''}`, bad: after.credit };
+    return { text: `${d.icon} ${d.name} · $${d.cost.toLocaleString()} now + $${d.upkeep}/wk${d.run ? ` + ${runText(d)}` : ''} · ${after.text}${lastCheck?.road ? ` · fronts ${esc(lastCheck.road)}${lastCheck.snapped ? ' (slid to the nearest spot that fits)' : ''}` : lastCheck?.snapped ? ' · 📍 moved to the nearest good spot' : ''}${planned ? ' · tap Build, or tap elsewhere to move it' : ''}`, bad: after.credit };
   },
 });
 
@@ -1711,9 +1817,10 @@ function statusLine(c: SvcCat, g: Game): string {
     const d = cheapestLocal(g, c, (x) => !!x[c]);
     if (d && (st.imported > 0.001 || short)) {
       const out = (d[c] ?? 0) * (d.id === 'solarFarm' ? solarFactor(g) : 1);
-      const save = perWk(Math.min(out, st.imported)) - d.upkeep;
+      const made = Math.min(out, st.imported);
+      const save = perWk(made) - d.upkeep - made * (d.run ?? 0) * 7;
       const fix = st.noLink ? `. Build it on the cut-off roads, or connect those roads to the highway` : st.capped ? `: covers what the highway can't sell` : save > 0 ? `: saves about <b class="pos">${usd(save)}/wk</b> on imports` : `: costs about ${usd(-save)}/wk more than importing`;
-      rows.push(`<span class="svc-trade">${d.icon} A ${esc(d.name)} (${usd(d.cost)} + ${usd(d.upkeep)}/wk) makes ${fmt(out, c)}${fix}${d.nearWater ? ' (must touch water)' : ''}.</span>`);
+      rows.push(`<span class="svc-trade">${d.icon} A ${esc(d.name)} (${usd(d.cost)} + ${usd(d.upkeep)}/wk${d.run ? ` + ${runText(d)}` : ''}) makes ${fmt(out, c)}${fix}${d.nearWater ? ' (must touch water)' : ''}.</span>`);
     }
     return `<div class="svc-stat ${short ? 'bad' : ''}">${rows.join('<br>')}</div>`;
   }
@@ -1772,7 +1879,7 @@ registerPanel({
         const does = d.power ? fmt(d.power, 'power') : d.water ? fmt(d.water, 'water') : d.sewage ? fmt(d.sewage, 'sewage') : d.collect ? `${d.collect} t/day` : d.reach ? `${(d.reach / 60).toFixed(1)} min reach` : '';
         // the unlock rule, said where it matters: earned once, kept for good
         const rule = !d.unlock || g.sim.mode === 'sandbox' ? '' : locked ? ` Unlocks at ${d.unlock.toLocaleString()} people, and stays unlocked even if the city shrinks.` : pop < d.unlock ? ` Earned at ${d.unlock.toLocaleString()} people: yours to keep while the city is smaller.` : '';
-        return `<button class="card ${on ? 'on' : ''}" data-svc="${d.id}" ${locked ? 'disabled' : ''} title="${esc(d.blurb + rule)}"><span class="ci">${d.icon}</span><b>${esc(d.name)}</b><small>${locked ? `🔒 Pop ${d.unlock.toLocaleString()}` : `$${d.cost.toLocaleString()} · $${d.upkeep}/wk${does ? ` · ${does}` : ''}`}</small></button>`;
+        return `<button class="card ${on ? 'on' : ''}" data-svc="${d.id}" ${locked ? 'disabled' : ''} title="${esc(d.blurb + rule)}${d.run ? ` Costs $${d.upkeep}/wk plus ${esc(runText(d))}.` : ''}"><span class="ci">${d.icon}</span><b>${esc(d.name)}</b><small>${locked ? `🔒 Pop ${d.unlock.toLocaleString()}` : `$${d.cost.toLocaleString()} · $${d.upkeep}/wk${d.run ? '+' : ''}${does ? ` · ${does}` : ''}`}</small></button>`;
       }).join('')}</div>
       <div class="svc-blurb">${esc(sel && sel.cat === panelCat ? sel.blurb : list[0]?.blurb ?? '')}</div>`;
     el.querySelectorAll<HTMLButtonElement>('[data-cat]').forEach((b) => b.addEventListener('click', () => {
@@ -1785,7 +1892,7 @@ registerPanel({
       rerender();
     }));
     el.querySelectorAll<HTMLButtonElement>('[data-svc]').forEach((b) => b.addEventListener('click', () => {
-      placing = b.dataset.svc as ServiceModelId;
+      placing = b.dataset.svc as ServiceModelId; built = null;
       g.tools.setExt('svcPlace');
       const v = VIEW_FOR_CAT[panelCat];
       if (v) g.overlays.setExt(viewObjs.get(v)!);
@@ -1821,7 +1928,9 @@ registerInspector((sel, g) => {
   const d = defOf(b);
   if (d) {
     const fs = fsOf(b);
+    const run = b.state === 'active' ? Math.round(runningCosts(g).get(b.id) ?? 0) : 0;
     const rows: string[] = [`<div><span>Upkeep</span><b>$${d.upkeep}/wk</b></div>`];
+    if (d.run) rows.push(`<div><span>Running cost</span><b>$${run.toLocaleString()}/wk <small>(${runText(d)})</small></b></div>`);
     for (const u of UTILS) if (d[u]) rows.push(`<div><span>Supplies</span><b>${fmt(d.id === 'solarFarm' ? (d[u] ?? 0) * solarFactor(g) : d[u] ?? 0, u)}</b></div>`);
     if (d.store) {
       const days = fs.rate > 0.05 ? Math.round((d.store - fs.stored) / fs.rate) : null;

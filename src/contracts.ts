@@ -62,7 +62,8 @@ export interface LotSpec {
 }
 
 export interface Emitter {
-  kind: 'smoke' | 'steam' | 'fire' | 'cigarette' | 'sparkle';
+  /** chimney: wood-stove / fireplace smoke, only when it's cold enough to light one */
+  kind: 'smoke' | 'chimney' | 'steam' | 'fire' | 'cigarette' | 'sparkle';
   pos: [number, number, number]; // local space
 }
 

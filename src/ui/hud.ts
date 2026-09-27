@@ -43,6 +43,8 @@ type PanelId = 'roads' | 'zones' | 'landmarks' | 'views' | 'budget' | 'communes'
 
 /** Phones get these in the toolbar; everything else lives in the More drawer. */
 const PHONE_PRIMARY = ['inspect', 'roads', 'zones', 'ext:services', 'views', 'bulldoze'];
+const DESK_PRIMARY = ['inspect', 'roads', 'zones', 'ext:services', 'landmarks', 'upgrade', 'bulldoze', 'views', 'budget', 'help', 'bug'];
+const BUILD_TOOLS = ['roads', 'zones', 'ext:services', 'landmarks'];
 const COMPACT = IS_TOUCH || (typeof window !== 'undefined' && window.innerWidth < 700);
 
 /**
@@ -96,6 +98,12 @@ export class Hud implements UiSink {
   private demandKey: DemandKey | null = null;
   private demandHtml = '';
   private demandCells: ZCell[] = [];
+  private nextBar?: HTMLElement;
+  private nextBarObs?: ResizeObserver;
+  private nextHidden = '';
+  private nextKey = '';
+  private budgetSeen = false;
+  private firstStepsDone = (() => { try { return localStorage.getItem('slopmerica.firstSteps') === '1'; } catch { return false; } })();
   private nextStepT = -99;
   private domT = 0;
   private v = new THREE.Vector3();
@@ -245,7 +253,7 @@ export class Hud implements UiSink {
     this.top = this.mk('header', 'topbar');
     this.top.innerHTML = `
       <div class="tb-city">
-        <div class="tb-name">${esc(this.game.cityName)}</div>
+        <div class="tb-name" role="button" tabindex="0" id="tb-home" title="Back to town (H)">${esc(this.game.cityName)}</div>
         <div class="tb-date" id="tb-date"></div>
       </div>
       <div class="tb-speed" role="group" aria-label="Game speed">
@@ -276,6 +284,9 @@ export class Hud implements UiSink {
     const togglePop = () => { this.game.audio.play('click', 0.4); if (this.popPop && !this.popPop.hidden) this.closePop(); else this.openPop(); };
     popStat.addEventListener('click', togglePop);
     popStat.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePop(); } });
+    const home = this.top.querySelector('#tb-home') as HTMLElement;
+    home.addEventListener('click', () => this.game.goHome());
+    home.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.game.goHome(); } });
     const treasury = this.top.querySelector('#tb-treasury') as HTMLElement;
     const openBudget = () => { if (this.panel !== 'budget') this.onTool('budget'); };
     treasury.addEventListener('click', openBudget);
@@ -680,26 +691,148 @@ export class Hud implements UiSink {
    * builders want where there's no lot left, open new street frontage when
    * every lot along the roads is spoken for, or wait while builders work.
    */
+  /** The one thing to do next, as text (demand card, bar tooltip). */
   nextStep(): string {
+    return this.nextAction().text;
+  }
+
+  /**
+   * The one thing to do next, from all four demands at once, with a button
+   * that does it: zone what builders want where there's no lot left, open new
+   * street frontage when every lot along the roads is spoken for, or wait
+   * while builders work. Lot words are exact: zoned lots with no building yet,
+   * zoned lots that all have buildings, and unzoned lots along your roads.
+   */
+  nextAction(): { text: string; act?: string; label?: string } {
     const g = this.game, s = g.sim, cells: ZCell[] = [];
-    const free = [...g.zones.cells.values()].filter((c) => c.row === 0 && c.valid && !c.zone && !c.bld && (!g.net.allowed || g.net.allowed(c.x, c.z))).length;
+    let free = 0;
+    const zonedAny = new Map<string, number>();
+    for (const c of g.zones.cells.values()) {
+      if (!c.valid) continue;
+      if (c.zone) zonedAny.set(c.zone, (zonedAny.get(c.zone) ?? 0) + 1);
+      else if (c.row === 0 && !c.bld && (!g.net.allowed || g.net.allowed(c.x, c.z))) free++;
+    }
     const ranked = DEMAND_KEYS.map((k) => {
       const zone = this.demandZone(k);
       const open = zone ? DEM[k].zones.reduce((n, z) => n + (z && s.isUnlocked({ zone: z }) ? g.zones.candidates(z, cells).length : 0), 0) : 0;
-      return { k, v: Math.round(s.demand[k]), zone, open };
+      const zoned = DEM[k].zones.reduce((n, z) => n + (z ? zonedAny.get(z) ?? 0 : 0), 0);
+      return { k, v: Math.round(s.demand[k]), zone, open, zoned };
     }).sort((a, b) => b.v - a.v);
     for (const r of ranked) {
       if (r.v < 5) break;
       const D = DEM[r.k];
       if (!r.zone) continue;
-      if (r.open > 0) return `Wait: builders are putting up ${D.noun} on ${r.open} empty lot${r.open === 1 ? '' : 's'} (${D.letter} ${signed(r.v)}).`;
-      if (free > 0) return `Zone ${D.noun}: builders want them (${D.letter} ${signed(r.v)}) and every ${D.one} lot is taken. ${free} empty lots line your roads.`;
-      return `Build a street: builders want ${D.noun} (${D.letter} ${signed(r.v)}) but every lot along your roads is zoned. Short streets off existing ones are cheapest.`;
+      const why = `${D.letter} ${signed(r.v)}`;
+      if (r.open > 0) return { text: `Wait: builders are putting up ${D.noun} on ${r.open} zoned lot${r.open === 1 ? '' : 's'} (${why}). Speed up to watch it happen.`, act: 'speed', label: '▶▶▶ Speed up' };
+      if (free > 0) {
+        const state = r.zoned ? `every lot zoned for ${D.noun} has a building` : `no lots are zoned for ${D.noun} yet`;
+        return { text: `Zone ${D.noun} beside a road: builders want them (${why}) and ${state}. ${free} unzoned lots line your roads.`, act: `zone:${r.zone}`, label: `${ZONE_ICON[r.zone]} Zone ${D.noun}` };
+      }
+      return { text: `Build a street: builders want ${D.noun} (${why}) but every lot along your roads is zoned. Short streets off existing ones are cheapest.`, act: 'road', label: '🛣️ Roads' };
     }
     const locked = ranked.find((r) => r.v >= 5 && !r.zone);
-    if (locked) { const u = UNLOCKS.find((x) => x.zone === DEM[locked.k].zones[0]); return `Grow: builders want ${DEM[locked.k].noun}, which unlock at ${u?.pop.toLocaleString() ?? 'a bigger'} people. Zone what's in demand meanwhile.`; }
+    if (locked) { const u = UNLOCKS.find((x) => x.zone === DEM[locked.k].zones[0]); return { text: `Grow: builders want ${DEM[locked.k].noun}, which unlock at ${u?.pop.toLocaleString() ?? 'a bigger'} people. Zone what's in demand meanwhile.` }; }
     const worst = DEMAND_KEYS.flatMap((k) => s.demandParts[k].filter((p) => !p.base && p.v !== null && p.v < -3)).sort((a, b) => a.v! - b.v!)[0];
-    return `Wait: nothing wants building right now${worst ? ` (biggest drag: ${worst.text})` : ''}. Taxes, services and jobs move demand.`;
+    return { text: `Wait: nothing wants building right now${worst ? ` (biggest drag: ${worst.text})` : ''}. Taxes, services and jobs move demand.`, act: 'budget', label: '💰 Budget' };
+  }
+
+  /**
+   * A first town, one step at a time: a street, homes on it, the first house
+   * finished, jobs, then a look at the money. Each ticks off as it happens.
+   */
+  firstSteps(): { n: number; of: number; text: string; act?: string; label?: string } | null {
+    const g = this.game, s = g.sim;
+    if (this.firstStepsDone) return null;
+    const own = [...g.net.segs.values()].some((q) => q.name !== 'Old County Road');
+    let res = false, jobs = false;
+    for (const c of g.zones.cells.values()) {
+      if (!c.zone) continue;
+      if (c.zone === 'resLow' || c.zone === 'resHigh') res = true;
+      else jobs = true;
+    }
+    const home = [...g.buildings.list.values()].some((b) => (b.zone === 'resLow' || b.zone === 'resHigh') && b.state === 'active');
+    const steps: { done: boolean; text: string; act?: string; label?: string }[] = [
+      // zoning homes straight onto the county road counts too: the demand card suggests it
+      { done: own || res, text: 'Draw a street off Old County Road (or zone homes right along it). Short and cheap beats long and grand.', act: 'road', label: '🛣️ Roads' },
+      { done: res, text: 'Zone homes along your street: paint the lots beside it.', act: 'zone:resLow', label: '🏡 Zone homes' },
+      { done: home, text: 'Let builders finish the first home. Speed up while they work.', act: 'speed', label: '▶▶▶ Speed up' },
+      { done: jobs, text: 'Give people jobs: zone shops or industry nearby.', act: 'zone:comLow', label: '🛒 Zone shops' },
+      { done: this.budgetSeen, text: 'Check the money: taxes in, upkeep out, and how long it lasts.', act: 'budget', label: '💰 Budget' },
+    ];
+    const i = steps.findIndex((x) => !x.done);
+    if (i < 0) { this.firstStepsDone = true; try { localStorage.setItem('slopmerica.firstSteps', '1'); } catch { /* not remembered */ } return null; }
+    return { n: i + 1, of: steps.length, ...steps[i] };
+  }
+
+  private doAction(act: string) {
+    const g = this.game;
+    crumb(`next step ${act}`);
+    if (act.startsWith('zone:')) {
+      g.tools.zoneType = act.slice(5) as ZoneType;
+      if (this.panel !== 'zones') this.onTool('zones');
+      g.tools.set('zone');
+      this.renderPanel();
+    } else if (act === 'road') { if (this.panel !== 'roads') this.onTool('roads'); }
+    else if (act === 'speed') g.sim.speed = 3;
+    else if (act === 'budget') this.openPanel('budget');
+    this.refreshTop();
+  }
+
+  /** The persistent "Next" line under the top bar: first steps, then demand; and the next unlock. */
+  private renderNextBar() {
+    if (!this.nextBar) {
+      this.nextBar = this.mk('div', 'next-bar');
+      this.nextBar.setAttribute('role', 'status');
+      this.nextBar.addEventListener('click', (e) => {
+        const el = (e.target as HTMLElement).closest('[data-act]') as HTMLElement | null;
+        if (!el) return;
+        const act = el.dataset.act!;
+        if (act === 'hide') { this.nextHidden = this.nextKey; this.nextBar!.hidden = true; return; }
+        this.doAction(act);
+      });
+    }
+    const fs = this.firstSteps();
+    const a = fs ?? this.nextAction();
+    const G = this.game.sim.nextGoals();
+    const unlock = G.unlock ? `<span class="nb-unlock" title="Next unlock">🔓 ${G.unlock.pop.toLocaleString()}: ${esc(G.unlock.what)} <small>(${this.game.sim.population.toLocaleString()} now)</small></span>` : '';
+    const key = a.text;
+    this.nextKey = key;
+    const busy = this.game.tools.active !== 'inspect' || !!this.game.tools.placingLabel;
+    this.nextBar.hidden = this.nextHidden === key || (busy && !fs);
+    const html = `<span class="nb-step">${fs ? `<b>Step ${fs.n}/${fs.of}</b>` : '<b>Next</b>'} ${esc(a.text)}</span>${a.act ? `<button class="chip on" data-act="${a.act}">${esc(a.label ?? 'Go')}</button>` : ''}${unlock}<button class="nb-x" data-act="hide" aria-label="Hide until the next step" title="Hide until the next step">✕</button>`;
+    if (this.nextBar.innerHTML !== html) this.nextBar.innerHTML = html;
+    this.placeNextBar();
+  }
+
+  /** wide windows: beside the toolbar, in space the map doesn't use; narrow
+   *  ones: just above the toolbar or an open drawer (never over the drawing
+   *  badge). Runs whenever the drawer or toolbar changes size, not just on the
+   *  bar's own refresh, so a drawer opening never ends up under it. */
+  private placeNextBar() {
+    if (!this.nextBar) return;
+    if (!this.nextBarObs && typeof ResizeObserver !== 'undefined') {
+      this.nextBarObs = new ResizeObserver(() => this.placeNextBar());
+      this.nextBarObs.observe(this.sub);
+      this.nextBarObs.observe(this.bar);
+    }
+    const tb = this.bar.getBoundingClientRect(), W = window.innerWidth, H = window.innerHeight;
+    const side = W - tb.right - 24;
+    const st = this.nextBar.style;
+    if (!IS_TOUCH && side >= 250) {
+      this.nextBar.classList.add('side');
+      const w = Math.round(Math.min(340, side));
+      st.left = 'auto'; st.right = '12px'; st.transform = 'none';
+      st.maxWidth = `${w}px`;
+      // an open drawer that reaches under it: sit on top of the drawer instead
+      const sr = !this.sub.hidden ? this.sub.getBoundingClientRect() : null;
+      const over = sr && sr.right > W - 12 - w;
+      st.bottom = `${Math.round(over ? H - sr!.top + 8 : H - tb.bottom)}px`;
+    } else {
+      this.nextBar.classList.remove('side');
+      st.left = ''; st.right = ''; st.transform = ''; st.maxWidth = '';
+      const anchor = !this.sub.hidden ? this.sub.getBoundingClientRect().top : tb.top;
+      st.bottom = `${Math.max(8, Math.round(H - anchor + 8))}px`;
+    }
   }
 
   /** occupied, vacant and open lots for one demand type, and jobs against workers */
@@ -739,7 +872,12 @@ export class Hud implements UiSink {
     const open = zone ? D.zones.reduce((n, z) => n + (z && s.isUnlocked({ zone: z }) ? g.zones.candidates(z, this.demandCells).length : 0), 0) : 0;
     let status: string;
     if (!zone) status = `🔒 ${D.noun[0].toUpperCase() + D.noun.slice(1)} unlock at ${lock?.pop.toLocaleString() ?? 'a bigger'} people.`;
-    else if (v >= 5) status = open ? `Builders are putting up ${D.noun} on the ${open} empty lot${open === 1 ? '' : 's'} zoned for them.` : `Builders want to put up ${D.noun}, but every lot zoned for them is taken. Zone more along a road.`;
+    else if (v >= 5) {
+      const zoned = [...g.zones.cells.values()].some((c) => c.zone === D.zones[0] || (!!D.zones[1] && c.zone === D.zones[1]));
+      status = open ? `Builders are putting up ${D.noun} on the ${open} zoned lot${open === 1 ? '' : 's'} with no building yet.`
+        : zoned ? `Builders want to put up ${D.noun}, but every lot zoned for them has a building. Zone more along a road.`
+        : `Builders want to put up ${D.noun}, but no lots are zoned for them yet. Zone some along a road.`;
+    }
     else if (k === 'res' && v <= -30) status = v <= -60 ? 'Nobody is moving in, and some residents are packing up.' : 'Nobody is moving in.';
     else status = `Too little demand: no new ${D.noun} are being built.`;
     const parts = s.demandParts[k].filter((p) => !p.base && (p.v === null || Math.abs(p.v) >= 0.5));
@@ -826,7 +964,7 @@ export class Hud implements UiSink {
       if (bar.getAttribute('aria-label') !== label) bar.setAttribute('aria-label', label);
     }
     // hovering the bars says what to do about them (refreshed every couple of seconds)
-    if (this.game.time - this.nextStepT > 2) {
+    if (this.game.time - this.nextStepT > 1) {
       this.nextStepT = this.game.time;
       const t = `Next: ${this.nextStep()} Click a bar for why.`;
       for (const b of this.top.querySelectorAll<HTMLElement>('.dbar')) if (b.title !== t) b.title = t;
@@ -834,6 +972,7 @@ export class Hud implements UiSink {
       const f = s.popFlow(14), pe = $('tb-popstat');
       const pt = `Population ${s.population.toLocaleString()} (most ever ${Math.max(s.peakPop, s.population).toLocaleString()}). Last 14 days: +${f.in.toLocaleString()} moved in, −${Math.round(f.out).toLocaleString()} left${f.causes.length ? ` (${f.causes.slice(0, 3).map((c) => `${LOSS_LABEL[c.cause]} ${Math.round(c.n).toLocaleString()}`).join(', ')})` : ''}. Click for the breakdown.`;
       if (pe.title !== pt) { pe.title = pt; pe.setAttribute('aria-label', pt); }
+      this.renderNextBar();
     }
     if (this.demandKey) this.renderDemand();
     this.renderMeters();
@@ -883,8 +1022,18 @@ export class Hud implements UiSink {
       this.bar.innerHTML = primary.map(btn).join('') + btn(['more', '<i class="more-dots"><b></b><b></b><b></b></i>', 'More']);
       this.bar.classList.add('compact');
     } else {
-      this.bar.innerHTML = all.map(btn).join('') +
-        `<a class="tbtn merch" href="${MERCH_URL}" target="_blank" rel="noopener" title="Real Slop merch"><span class="ti slop-mini">Slop</span><span class="tl">Merch</span></a>`;
+      // desktop: the building tools up front and a little larger, the rest
+      // (land, transit, districts, terraforming, communes, the feed,
+      // disasters) behind More: twenty small buttons were hard to scan
+      const hint: Record<string, string> = { inspect: 'Esc', zones: 'Z', upgrade: 'U', bulldoze: 'B' };
+      const primary = DESK_PRIMARY.map((id) => all.find((x) => x[0] === id)).filter(Boolean) as [string, string, string][];
+      this.moreItems = all.filter((x) => !DESK_PRIMARY.includes(x[0]));
+      this.bar.innerHTML = primary.map(btn).join('') + btn(['more', '<i class="more-dots"><b></b><b></b><b></b></i>', 'More']);
+      this.bar.querySelectorAll<HTMLButtonElement>('button.tbtn').forEach((b) => {
+        const id = b.dataset.t!;
+        if (BUILD_TOOLS.includes(id)) b.classList.add('build');
+        if (hint[id]) b.title = `${b.title} (${hint[id]})`;
+      });
     }
     this.bar.querySelectorAll<HTMLButtonElement>('button.tbtn').forEach((b) => b.addEventListener('click', () => this.onTool(b.dataset.t!)));
     // narrow desktop windows: the bar scrolls sideways; let the mouse wheel do
@@ -964,6 +1113,7 @@ export class Hud implements UiSink {
   }
 
   private openPanel(p: PanelId) {
+    if (p === 'budget') this.budgetSeen = true;
     if (this.panel && this.panel !== p && this.panel.startsWith('ext:')) {
       const old = EXT.panels.find((x) => `ext:${x.id}` === this.panel);
       old?.close?.(this.game);
@@ -972,9 +1122,10 @@ export class Hud implements UiSink {
     this.panel = p;
     this.sub.hidden = !p;
     this.sub.classList.remove('min');
-    if (!p) { if (this.game.tools.active === 'road' || this.game.tools.active === 'zone' || this.game.tools.active === 'dezone') this.game.tools.set('inspect'); this.syncToolbar(); return; }
+    if (!p) { if (this.game.tools.active === 'road' || this.game.tools.active === 'zone' || this.game.tools.active === 'dezone') this.game.tools.set('inspect'); this.syncToolbar(); this.placeNextBar(); return; }
     this.renderPanel();
     this.syncToolbar();
+    this.placeNextBar();
   }
 
   private renderPanel() {
@@ -1114,6 +1265,7 @@ export class Hud implements UiSink {
           <div><b>Demand</b> tap the R C I O bars to see why they're up or down and what to zone</div>` : `
           <div><b>Demand</b> click the R C I O bars to see why they're up or down and what to zone</div>
           <div><b>Move</b> WASD / arrows · drag · push the mouse against a screen edge</div>
+          <div><b>Back to town</b> H, or click the town's name</div>
           <div><b>Rotate</b> right-drag · Q/E</div>
           <div><b>Tilt</b> right-drag up/down · R/F</div>
           <div><b>Zoom</b> wheel</div>
@@ -1202,6 +1354,7 @@ export class Hud implements UiSink {
     else if (e.key.toLowerCase() === 'b') this.onTool('bulldoze');
     else if (e.key.toLowerCase() === 'u') this.onTool('upgrade');
     else if (e.key.toLowerCase() === 'z') this.onTool('zones');
+    else if (e.key.toLowerCase() === 'h') this.game.goHome();
     else if (e.key === 'Escape' && this.demandKey) {
       const k = this.demandKey;
       this.closeDemand();
@@ -1475,7 +1628,10 @@ export class Hud implements UiSink {
       // toasts drop below the action bar instead of printing over it
       // (measured when the bar appears and 4x a second, not every frame)
       this.remeasureToasts = false;
-      const toastTop = showActions ? `${Math.round(this.actions.getBoundingClientRect().bottom + 6)}px` : '';
+      // on desktop they sit at the right, so they also clear the card column there (an emergency, in the red)
+      const crisisB = !IS_TOUCH && [...this.sideCards.children].some((c) => !(c as HTMLElement).hidden) ? this.sideCards.getBoundingClientRect().bottom + 8 : 0;
+      const barB = showActions ? this.actions.getBoundingClientRect().bottom + 6 : 0;
+      const toastTop = Math.max(crisisB, barB) ? `${Math.round(Math.max(crisisB, barB))}px` : '';
       if (this.toasts.style.top !== toastTop) this.toasts.style.top = toastTop;
     }
     if (showActions) {

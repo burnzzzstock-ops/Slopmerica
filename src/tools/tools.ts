@@ -602,7 +602,7 @@ export class Tools implements PointerHandlers {
         const t = ROAD_TYPES[pick.seg.type];
         this.tip = this.active === 'upgrade'
           ? t.next ? { text: `ONE MORE LANE: ${t.name} → ${ROAD_TYPES[t.next].name} (shift = whole street)` } : { text: 'Already MAX LANES', bad: true }
-          : { text: `Bulldoze ${pick.seg.name}`, bad: true };
+          : { text: `Bulldoze ${pick.seg.name}${this.transitNote(pick.seg.id)}`, bad: true };
       } else this.tip = null;
     } else if (this.active === 'landmark') {
       const fp = landmarkFootprint(this.landmark);
@@ -628,6 +628,14 @@ export class Tools implements PointerHandlers {
         this.tip = { text: `${ZONE_LABEL[this.zoneType]}: ${d.ok ? `builders want it (${d.letter} +${d.v})` : `waiting for demand (${d.letter} ${d.v > 0 ? '+' : ''}${d.v}; starts at +5)`} · dim lots are waiting` };
       }
     } else this.tip = null;
+  }
+
+  /** " · ends the 69 Express bus line" when a road carries bus stops */
+  private transitNote(segId: number): string {
+    const lines = (this.game as { transit?: { linesOnSeg(id: number): { name: string }[] } }).transit?.linesOnSeg(segId) ?? [];
+    if (!lines.length) return '';
+    const the = (n: string) => (/^the /i.test(n) ? n : `the ${n}`);
+    return ` · ⚠️ ends ${lines.map((l) => the(l.name)).join(' and ')} bus line${lines.length > 1 ? 's' : ''} (${lines.length > 1 ? 'their' : 'its'} stops are on it)`;
   }
 
   private idleTouchTip(): { text: string; bad?: boolean } | null {

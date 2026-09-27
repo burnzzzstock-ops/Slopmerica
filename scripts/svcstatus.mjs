@@ -33,7 +33,7 @@ await page.click('button.tbtn[data-t="ext:services"]');
 await page.click('[data-cat="water"]');
 const w1 = await line();
 check(`water: supplied by imports, with the weekly price ("${w1.slice(0, 110)}…")`, /Everyone supplied · \d+% imported/.test(w1) && /imported [\d,]+ kL\/day \(\$[\d,]+\/wk/.test(w1), w1);
-check('water: compares the cheapest local option', /A Groundwater Well Tower \(\$7,000 \+ \$30\/wk\) makes 800 kL\/day: (saves about|costs about)/.test(w1), w1);
+check('water: compares the cheapest local option', /A Groundwater Well Tower \(\$7,000 \+ \$\d+\/wk \+ \$0\.\d\d\/kL pumped\) makes 800 kL\/day: (saves about|costs about)/.test(w1), w1);
 const need1 = Number((w1.match(/Needed ([\d,]+) kL/) || [])[1]?.replace(/,/g, ''));
 // the city grows while the panel stays open
 await page.evaluate(() => window.__dbg.run(14));
@@ -47,7 +47,7 @@ await page.click('[data-cat="fire"]');
 const fire = await line();
 check(`fire: no coverage says what that risks ("${fire}")`, /No fire coverage yet/.test(fire) && /catch fire/.test(fire), fire);
 const card = await page.evaluate(() => document.querySelector('[data-svc="fireStation"] small')?.textContent ?? '');
-check(`cards say what a building does (${card})`, /\$12,000 · \$80\/wk · [\d.]+ min reach/.test(card), card);
+check(`cards say what a building does (${card})`, /\$12,000 · \$\d+\/wk\+? · [\d.]+ min reach/.test(card), card);
 // bulldoze the county road just outside town: the homes lose their route to the highway
 await page.click('[data-cat="water"]');
 const cut = await page.evaluate(() => {

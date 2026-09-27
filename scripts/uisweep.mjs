@@ -57,13 +57,14 @@ for (const id of ids) {
   if (t !== 'inspect') console.log('  !! after closing', id, 'tool is still', t);
 }
 if (ids.includes('more')) {
-  await page.tap('button.tbtn[data-t="more"]');
+  const press = (sel) => (phone ? page.tap(sel) : page.click(sel));
+  await press('button.tbtn[data-t="more"]');
   await page.waitForTimeout(400);
   const more = await page.evaluate(() => [...document.querySelectorAll('[data-more]')].map((b) => b.dataset.more));
-  await page.tap('button.tbtn[data-t="more"]');
+  await press('button.tbtn[data-t="more"]');
   for (const id of more) {
     if (id === 'feed') continue;
-    await visit('more_' + id, async () => { await page.tap('button.tbtn[data-t="more"]'); await page.waitForTimeout(300); await page.tap(`[data-more="${id}"]`); });
+    await visit('more_' + id, async () => { await press('button.tbtn[data-t="more"]'); await page.waitForTimeout(300); await press(`[data-more="${id}"]`); });
     await page.keyboard.press('Escape');
     await page.evaluate(() => window.__game.tools.set('inspect'));
   }

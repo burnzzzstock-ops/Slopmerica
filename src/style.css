@@ -1709,7 +1709,7 @@ a {
 .cursor-tip.bad {
   color: #ff8a80;
 }
-.cursor-tip.good {
+.cursor-tip.good, #ta-tip.good {
   color: var(--lime);
 }
 .float {
@@ -3181,6 +3181,23 @@ a {
    top bar, toolbar and road drawer covering ~40% of the height while
    building; tool drawers now share their title row with their mode chips and
    cards are one row tall. Phones keep their own layout (max-width 760px). */
+/* desktop: notices stack at the right under the top bar, compact, instead of
+   three wide banners over the middle of the map */
+@media (min-width: 761px) {
+  .toasts {
+    left: auto;
+    right: 12px;
+    width: min(380px, 38vw);
+    align-items: flex-end;
+  }
+  .toast {
+    font-size: 13px;
+    font-weight: 700;
+    text-align: left;
+    padding: 7px 12px;
+    max-width: 100%;
+  }
+}
 @media (min-width: 761px) {
   .topbar { top: calc(6px + var(--safe-t)); padding: 4px 12px; gap: 12px; border-radius: 12px; }
   .tb-name { font-size: 14px; }
@@ -3269,3 +3286,68 @@ a {
 .seg .chip { border-color: transparent; }
 .toast.again { animation: toastAgain 0.25s ease-out; }
 @keyframes toastAgain { from { transform: scale(1.05); } to { transform: scale(1); } }
+
+/* the persistent "Next" line: first steps, then what demand wants, and the next unlock */
+.next-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 90px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(820px, calc(100vw - 24px));
+  padding: 6px 8px 6px 12px;
+  background: rgba(10, 9, 16, 0.86);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  pointer-events: auto;
+  z-index: 4;
+}
+.next-bar .nb-step { flex: 1 1 auto; min-width: 0; }
+.next-bar .nb-step b { color: var(--lime); margin-right: 4px; }
+.next-bar .chip { flex: none; white-space: nowrap; }
+.next-bar .nb-unlock { flex: none; color: var(--ink-2); white-space: nowrap; border-left: 1px solid var(--line); padding-left: 8px; }
+.next-bar .nb-unlock small { opacity: 0.75; }
+.next-bar .nb-x { flex: none; background: none; border: 0; color: var(--ink-2); cursor: pointer; font-size: 13px; padding: 2px 4px; }
+@media (max-width: 760px) {
+  .next-bar { font-size: 12px; gap: 6px; }
+  .next-bar .nb-unlock { display: none; }
+}
+
+#tb-home { cursor: pointer; }
+#tb-home:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* desktop: the four building tools read first */
+@media (min-width: 761px) {
+  .toolbar .tbtn.build .ti { font-size: 1.25em; }
+  .toolbar .tbtn.build .tl { font-weight: 900; }
+  .toolbar .tbtn[data-t="more"] { margin-left: 4px; }
+}
+
+/* desktop: every zone type in view at once, wrapping instead of scrolling sideways */
+@media (min-width: 761px) {
+  .sp-grid.zones {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    overflow-x: visible;
+  }
+}
+
+/* feed peek: the newest post only, two lines, no extras */
+.xfeed.peek .xpost:not(:first-child),
+.xfeed.peek .xreplies,
+.xfeed.peek .xstats,
+.xfeed.peek .ximg,
+.xfeed.peek .xnote { display: none; }
+.xfeed.peek .xtext { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.xfeed.peek .xfeed-list { cursor: pointer; }
+.xfeed.collapsed .xfeed-expand { display: none; }
+
+.next-bar.side { flex-wrap: wrap; align-items: flex-start; }
+.next-bar.side .nb-step { flex-basis: 100%; }
+.next-bar.side .nb-unlock { border-left: 0; padding-left: 0; white-space: normal; flex: 1 1 auto; }
+.next-bar.side .nb-x { position: absolute; top: 4px; right: 4px; }
+.next-bar.side .nb-step { padding-right: 16px; }

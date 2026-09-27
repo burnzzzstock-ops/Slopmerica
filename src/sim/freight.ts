@@ -38,7 +38,8 @@ const isShop = (b: Bld) => isShopBuilding(b) && b.state === 'active' && b.abando
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const factoryCapacity = (b: Bld) => Math.max(30, b.cap * (8 + b.level * 3));
-const shopCapacity = (b: Bld) => Math.max(18, b.cap * (5 + b.level * 2));
+// about one to three months of sales at SELL_RATE: shelves that never empty make supply chains moot
+const shopCapacity = (b: Bld) => Math.max(18, b.cap * (2 + b.level * 0.6));
 
 function syncBuildings(g: Game) {
   const liveFactories = new Set<number>(), liveShops = new Set<number>();
@@ -59,7 +60,9 @@ function syncBuildings(g: Game) {
   for (const [id, s] of shops) if (!liveShops.has(id)) { totals.shopSpoiled += s.stock; shops.delete(id); }
 }
 
-function incoming(toId: number) { let n = 0; for (const s of shipments.values()) if (s.toId === toId) n += s.qty; return n; }
+function incoming(toId: number, kind?: FreightKind) { let n = 0; for (const s of shipments.values()) if (s.toId === toId && (!kind || s.kind === kind)) n += s.qty; return n; }
+function trucksIn(toId: number) { let n = 0; for (const s of shipments.values()) if (s.toId === toId && s.kind === 'local') n++; return n; }
+function trucksOut(fromId: number) { let n = 0; for (const s of shipments.values()) if (s.fromId === fromId && s.kind === 'local') n++; return n; }
 function outbound(fromId: number) { let n = 0; for (const s of shipments.values()) if (s.fromId === fromId) n += s.qty; return n; }
 function recordRoute(car: Car) { for (const step of car.path) truckRoutes.set(step.seg, (truckRoutes.get(step.seg) ?? 0) + 1); routesDirty = true; }
 
@@ -95,17 +98,27 @@ function launch(g: Game, kind: FreightKind, qty: number, from: Bld | 'edge', to:
   shipments.set(id, { id, kind, qty, fromId, toId, car }); recordRoute(car); return true;
 }
 
+/**
+ * Goods move at truck speed: a game day is 2.5 s of driving, ~30 m, so a
+ * delivery across town takes a week or two and an import from the county
+ * line longer. At full rates shops sold a truckload in five days and sat
+ * empty ("No goods to sell") most of the time, paying no tax. A shop also
+ * rides out a few days of bare shelves (DRY_DAYS) before it closes.
+ */
+const DRY_DAYS = 8;
+const SELL_RATE = 0.12, MAKE_RATE = 0.2;
+
 function produceAndSell(g: Game) {
   for (const b of g.buildings.list.values()) {
     if (isFactory(b)) {
       const s = factories.get(b.id)!;
-      const actual = Math.min(Math.max(0, b.occ) * (0.45 + b.level * 0.12), Math.max(0, s.capacity - s.stock));
+      const actual = Math.min(Math.max(0, b.occ) * (0.45 + b.level * 0.12) * MAKE_RATE, Math.max(0, s.capacity - s.stock));
       s.stock += actual; s.produced += actual; totals.produced += actual;
     } else if (isShop(b)) {
       const s = shops.get(b.id)!;
       let nearbyPopulation = 0;
       for (const n of g.buildings.near(b.x, b.z, 180)) if (n.zone === 'resLow' || n.zone === 'resHigh') nearbyPopulation += n.occ;
-      const sold = Math.min(s.stock, Math.max(0.35, b.occ * 0.28 + nearbyPopulation * 0.012));
+      const sold = Math.min(s.stock, Math.max(0.35, b.occ * 0.28 + nearbyPopulation * 0.012) * SELL_RATE);
       s.stock -= sold; s.sold += sold; totals.sold += sold;
       if (s.stock < 0.05) s.dryDays++; else s.dryDays = 0;
     }
@@ -114,20 +127,33 @@ function produceAndSell(g: Game) {
 
 function scheduleDeliveries(g: Game) {
   const available = [...factories.entries()].map(([id, s]) => ({ b: g.buildings.list.get(id), s }))
-    .filter((x): x is { b: Bld; s: FactoryStock } => !!x.b && POLICY_MOBILITY.truckAllowed(x.b) && x.s.stock >= 4 && !outbound(x.b.id)).sort((a, b) => b.s.stock - a.s.stock);
+    // up to three trucks out per factory: one at a time left most shops dry for a week-long round trip
+    .filter((x): x is { b: Bld; s: FactoryStock } => !!x.b && POLICY_MOBILITY.truckAllowed(x.b) && x.s.stock >= 4 && trucksOut(x.b.id) < 3).sort((a, b) => b.s.stock - a.s.stock);
   for (const [id, shop] of shops) {
     const b = g.buildings.list.get(id);
-    if (!b || !isShop(b) || !POLICY_MOBILITY.truckAllowed(b) || incoming(id) > 0 || shop.stock >= shop.capacity * 0.45) continue;
-    const factory = available.find((x) => x.s.stock >= 4);
+    // a slow import still on the road from the county line doesn't stop a nearby factory from delivering
+    const importing = incoming(id, 'import') > 0;
+    // two loads on the way at most: across a big town one arrives weeks after it was ordered
+    const coming = incoming(id, 'local');
+    if (!b || !isShop(b) || !POLICY_MOBILITY.truckAllowed(b) || trucksIn(id) >= 2 || shop.stock + coming >= shop.capacity * 0.6) continue;
+    // the nearest factory with a decent load (a truck across town takes weeks), else the biggest pile
+    let factory: (typeof available)[number] | undefined, best = Infinity;
+    for (const x of available) {
+      if (x.s.stock < 20 || trucksOut(x.b.id) >= 3) continue;
+      const d = Math.hypot(x.b.x - b.x, x.b.z - b.z);
+      if (d < best) { best = d; factory = x; }
+    }
+    factory ??= available.find((x) => x.s.stock >= 4 && trucksOut(x.b.id) < 3);
     let sent = false;
     if (factory) {
-      const qty = Math.min(30, factory.s.stock, shop.capacity - shop.stock);
+      const qty = Math.min(120, factory.s.stock, shop.capacity - shop.stock - coming);
       factory.s.stock -= qty;
       sent = launch(g, 'local', qty, factory.b, b);
       if (!sent) factory.s.stock += qty;
     }
-    if (!sent && shop.dryDays >= 2 && g.traffic.outsideConnections() > 0) {
-      launch(g, 'import', Math.min(24, shop.capacity - shop.stock), 'edge', b);
+    // an import rolls in from the county line, days away: order before the shelves are bare
+    if (!sent && !importing && (shop.dryDays >= 1 || shop.stock < shop.capacity * 0.2) && g.traffic.outsideConnections() > 0) {
+      launch(g, 'import', Math.min(60, shop.capacity - shop.stock), 'edge', b);
     }
   }
   if (g.traffic.outsideConnections() > 0) for (const [id, s] of factories) {
@@ -251,7 +277,7 @@ registerSystem({
     routeMaterial = new THREE.LineDashedMaterial({ color: 0xffb62e, dashSize: 10, gapSize: 7, transparent: true, opacity: 0.95, depthWrite: false });
     routeLines = new THREE.LineSegments(new THREE.BufferGeometry(), routeMaterial); routeLines.visible = false; routeLines.renderOrder = 7; routeLines.frustumCulled = false; g.scene.add(routeLines);
     g.traffic.freightTrip = () => false;
-    g.sim.hooks.vacancy.push((b) => { const s = shops.get(b.id); return s && s.stock < 0.05 && s.dryDays >= 5 ? 'No goods to sell' : null; });
+    g.sim.hooks.vacancy.push((b) => { const s = shops.get(b.id); return s && s.stock < 0.05 && s.dryDays >= DRY_DAYS ? 'No goods to sell' : null; });
     g.sim.hooks.demand.push((d, why) => { const share = importShare(); if (share > 0) { d.ind += Math.min(25, share * 30); why.ind.push(`Shops import ${Math.round(share * 100)}% of goods`); } });
     g.sim.hooks.landValue.push((b) => b.zone === 'industry' ? 0 : -Math.min(5, (truckRoutes.get(b.seg) ?? 0) * 0.35));
     // the forecast repeats last week's freight; the bill is this week's
@@ -264,7 +290,7 @@ registerSystem({
     });
     (g as Game & { freight?: unknown }).freight = {
       stats: () => ({
-        factories: factories.size, shops: shops.size, dryShops: [...shops.values()].filter((s) => s.dryDays >= 5).length,
+        factories: factories.size, shops: shops.size, dryShops: [...shops.values()].filter((s) => s.dryDays >= DRY_DAYS).length,
         activeTrucks: shipments.size,
         activeByKind: { local: [...shipments.values()].filter((s) => s.kind === 'local').length, import: [...shipments.values()].filter((s) => s.kind === 'import').length, export: [...shipments.values()].filter((s) => s.kind === 'export').length },
         importShare: round1(importShare() * 100), lastWeek: { ...lastWeek }, totals: { ...totals }, ...balance(),

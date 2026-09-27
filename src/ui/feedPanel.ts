@@ -34,18 +34,32 @@ export class FeedPanel implements FeedSink {
   constructor(private game: Game, parent: HTMLElement, collapsed: boolean) {
     this.collapsed = collapsed;
     this.el = document.createElement('section');
-    this.el.className = 'xfeed' + (collapsed ? ' collapsed' : '');
+    // open, it peeks: the newest post in two lines, so the opening map isn't
+    // a third feed; click it (or ⤢) for the whole timeline
+    this.el.className = 'xfeed peek' + (collapsed ? ' collapsed' : '');
     this.el.innerHTML = `
       <header class="xfeed-head">
         <span class="xlogo">𝕏</span>
         <span class="xtitle">formerly Chirper</span>
+        <button class="xfeed-toggle xfeed-expand" id="xfeed-expand" aria-label="Show the whole feed" title="Show the whole feed">⤢</button>
         <button class="xfeed-toggle" id="xfeed-toggle" aria-label="Toggle feed">–</button>
       </header>
       <div class="xfeed-list"></div>`;
     parent.appendChild(this.el);
     this.list = this.el.querySelector('.xfeed-list')!;
     this.el.querySelector('#xfeed-toggle')!.addEventListener('click', () => this.setCollapsed(!this.collapsed));
+    this.el.querySelector('#xfeed-expand')!.addEventListener('click', () => this.setExpanded(!this.expanded));
+    this.list.addEventListener('click', (e) => { if (!this.expanded && !(e.target as HTMLElement).closest('a')) this.setExpanded(true); });
     this.el.querySelector('.xfeed-head')!.addEventListener('dblclick', () => this.setCollapsed(!this.collapsed));
+  }
+
+  expanded = false;
+  setExpanded(x: boolean) {
+    this.expanded = x;
+    this.el.classList.toggle('peek', !x);
+    const b = this.el.querySelector('#xfeed-expand') as HTMLElement;
+    b.textContent = x ? '⤡' : '⤢';
+    b.title = b.ariaLabel = x ? 'Just the newest post' : 'Show the whole feed';
   }
 
   setCollapsed(c: boolean) {

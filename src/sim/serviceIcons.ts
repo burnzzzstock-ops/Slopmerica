@@ -92,7 +92,7 @@ function drawAtlas(): THREE.CanvasTexture {
 
 /** How big a bubble is in the world at `dist` from the camera (the shader and pick() share it). */
 function bubbleSize(dist: number, n: number) {
-  if (n <= 1) return Math.min(26, Math.max(3.2, dist * 0.035));
+  if (n <= 1) return Math.min(22, Math.max(1.0, dist * 0.03));
   // a neighbourhood's bubble keeps a readable size far out, and grows a little with its count
   return Math.min(140, Math.max(3.2, dist * 0.035)) * Math.min(2, 1.25 + 0.12 * Math.log2(n));
 }
@@ -134,7 +134,8 @@ export class ProblemIcons {
           float dist = -mv.z;
           // constant-ish screen size: grows with distance, clamped (bubbleSize() in JS)
           bool many = iCount > 1.5;
-          float s = many ? clamp(dist * 0.035, 3.2, 140.0) * min(2.0, 1.25 + 0.12 * log2(iCount)) : clamp(dist * 0.035, 3.2, 26.0);
+          // (a single icon's floor of 3.2 m made the ones next to the camera balloon to twice the others)
+          float s = many ? clamp(dist * 0.035, 3.2, 140.0) * min(2.0, 1.25 + 0.12 * log2(iCount)) : clamp(dist * 0.03, 1.0, 22.0);
           mv.xy += position.xy * s;
           vFade = 1.0 - (many ? smoothstep(3600.0, 4400.0, dist) : smoothstep(1400.0, 1900.0, dist));
           vUv = vec2((iIcon + uv.x) / ${COLS.toFixed(1)}, uv.y);

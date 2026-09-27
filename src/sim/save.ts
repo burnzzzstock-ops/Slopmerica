@@ -193,4 +193,7 @@ export function autosave(g: Game) {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') save();
   });
+  // the page going away without being hidden first (a new build of the
+  // artifact replacing it mid-game rolled a city back to its last autosave)
+  window.addEventListener('pagehide', () => save());
 }

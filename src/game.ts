@@ -5,6 +5,7 @@ import type { FeedContext, FeedEventKind, LandmarkId } from './contracts';
 import { generateMap, MapData, MapId } from './world/maps';
 import { Terrain } from './world/terrain';
 import { Trees } from './world/trees';
+import { seasonOf } from './world/seasons';
 import { GroundDetail } from './world/groundDetail';
 import { createWater } from './world/water';
 import { Environment } from './world/sky';
@@ -307,6 +308,15 @@ export class Game {
 
   private startCache: { x: number; z: number; yaw: number; edge: { x: number; z: number } } | null = null;
   /** Find flat, dry, roomy land near the middle of the map for the first town. */
+  /** Back over the town: the middle of what's been built, or where the county road arrives. */
+  goHome() {
+    let x = 0, z = 0, n = 0;
+    for (const b of this.buildings.list.values()) { x += b.x; z += b.z; n++; }
+    const S = this.startView();
+    if (n) { x /= n; z /= n; } else { x = S.x; z = S.z; }
+    this.rts.setView(x, z, Math.max(420, Math.min(900, this.rts.distance)), this.rts.yaw, 0.85);
+  }
+
   startView() {
     if (this.startCache) return this.startCache;
     const T = this.terrain;
@@ -975,14 +985,18 @@ export class Game {
     if (this.emitT <= 0 && spd > 0) {
       this.emitT = 0.6;
       const tgt = this.rts.target;
+      // fireplaces and wood stoves only burn when it's cold: never in Florida,
+      // mostly winter on the Golden Coast, autumn through spring in the hollers
+      const season = seasonOf(Math.floor(this.sim.day) % 365), mapId = this.map.def.id;
+      const chimneyP = mapId === 'florida' ? 0 : season === 'winter' ? 0.45 : mapId === 'appalachia' && season !== 'summer' ? 0.2 : 0;
       if (this.rts.distance < 900) {
         for (const b of this.buildings.near(tgt.x, tgt.z, 450)) {
           if (b.state !== 'active' || !b.model.emitters.length) continue;
           const c = Math.cos(b.yaw), s = Math.sin(b.yaw);
           for (const em of b.model.emitters) {
-            if (Math.random() > 0.5) continue;
+            if (Math.random() > (em.kind === 'chimney' ? chimneyP : 0.5)) continue;
             const [lx, ly, lz] = em.pos;
-            this.particles.emit(em.kind === 'cigarette' ? 'cigarette' : em.kind === 'fire' ? 'fire' : em.kind === 'steam' ? 'steam' : em.kind === 'sparkle' ? 'confetti' : 'smoke', b.x + lx * c + lz * s, b.y + ly, b.z - lx * s + lz * c, { count: em.kind === 'cigarette' ? 1 : 3, spread: 0.6 });
+            this.particles.emit(em.kind === 'cigarette' ? 'cigarette' : em.kind === 'fire' ? 'fire' : em.kind === 'steam' ? 'steam' : em.kind === 'sparkle' ? 'confetti' : 'smoke', b.x + lx * c + lz * s, b.y + ly, b.z - lx * s + lz * c, { count: em.kind === 'cigarette' ? 1 : 2, spread: 0.6 });
           }
         }
       }

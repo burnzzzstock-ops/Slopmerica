@@ -543,7 +543,8 @@ export class Hud implements UiSink {
     }
     const home = [...g.buildings.list.values()].some((b) => (b.zone === 'resLow' || b.zone === 'resHigh') && b.state === 'active');
     const steps: { done: boolean; text: string; act?: string; label?: string }[] = [
-      { done: own, text: 'Draw a street off Old County Road. Short and cheap beats long and grand.', act: 'road', label: '🛣️ Roads' },
+      // zoning homes straight onto the county road counts too: the demand card suggests it
+      { done: own || res, text: 'Draw a street off Old County Road (or zone homes right along it). Short and cheap beats long and grand.', act: 'road', label: '🛣️ Roads' },
       { done: res, text: 'Zone homes along your street: paint the lots beside it.', act: 'zone:resLow', label: '🏡 Zone homes' },
       { done: home, text: 'Let builders finish the first home. Speed up while they work.', act: 'speed', label: '▶▶▶ Speed up' },
       { done: jobs, text: 'Give people jobs: zone shops or industry nearby.', act: 'zone:comLow', label: '🛒 Zone shops' },

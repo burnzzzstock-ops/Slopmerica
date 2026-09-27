@@ -126,7 +126,7 @@ inside the browser frame), which changed several conclusions.
 
 ## Round 4 (a Codex first-five-minutes review of Golden Coast, and the user's Sawgrass Springs screenshots)
 
-- **The first five minutes:** a "Next" line sits by the toolbar the whole game. A new town gets five steps (a street off Old County Road, zone homes, the first home, zone jobs, open the budget), each with a button that does it (opens Roads, starts zoning homes with the drawer open, speeds up time); after that it follows demand. It shows the next unlock ("250: Luxury Slop apartments (40 now)") and can be hidden.
+- **The first five minutes:** a "Next" line sits by the toolbar the whole game. A new town gets five steps (a street off Old County Road or homes zoned right along it, zone homes, the first home, zone jobs, open the budget), each with a button that does it (opens Roads, starts zoning homes with the drawer open, speeds up time); after that it follows demand. It shows the next unlock ("250: Luxury Slop apartments (40 now)") and can be hidden.
 - **Wording:** demand no longer says "every lot is taken" in an empty town: it says "no lots are zoned for homes yet", "every lot zoned for homes has a building", and counts unzoned lots along roads separately.
 - **Construction consequences:** the road preview adds the weekly balance before and after ("weekly +$120 → −$64").
 - **Back to town:** H, or clicking the town's name, flies to the middle of the town.

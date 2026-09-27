@@ -730,13 +730,16 @@ export class Game {
       if (c.state === 'suing' && day >= c.suitDays) {
         if (Math.random() < c.suitOdds) {
           c.state = 'leaving';
-          this.feed.push('communeBribed', { commune: c.name, amount: 0 });
+          // the commune lost the county's suit (the feed's lines for it say so; its buy-out
+          // lines, posted here before, thanked them for $0)
+          this.feed.push('communeLawsuitLost', { commune: c.name });
           this.ui.banner('Lawsuit won', `${c.name} has been evicted. The drum circle moves on.`);
           setTimeout(() => this.syncBlockers(), 4500);
         } else {
           c.state = 'active';
           c.stubborn = Math.min(1, c.stubborn + 0.15);
-          this.feed.push('communeLawsuitLost', { commune: c.name });
+          // the commune won: the feed has no lines for that yet (communeLawsuitLost's all say the
+          // commune lost), so only the banner says so
           this.ui.banner('Lawsuit lost', `${c.name} won. The judge was wearing hemp.`);
         }
       }

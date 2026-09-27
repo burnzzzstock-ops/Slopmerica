@@ -154,7 +154,7 @@ export type FeedEventKind =
   | 'communeProtest'
   | 'communeBribed'
   | 'communeSued'
-  | 'communeLawsuitLost'
+  | 'communeLawsuitLost' // the commune lost the county's lawsuit and has to go
   | 'communeForever'
   | 'treesCut'
   | 'natureMilestone'

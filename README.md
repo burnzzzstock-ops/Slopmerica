@@ -91,6 +91,8 @@ Some content judgments are made at dev time by TypeSafe's Jev model, which answe
 
 Before merging a content branch (Cast & Feed, City Look), run `node scripts/ipcheck.mjs`: real slogans and exact real brand colors the parody chains riff on, checked in code (a language model's memory of slogans is patchy). A finding the owner keeps goes in its `ACCEPTED` table with the reason.
 
+**Feed tags.** `node scripts/feedtags.mjs` asks Jev about every X-feed line once (which region it assumes, how built-up a town, which weather, whether it reacts to its event, who would post it, and whether it only talks about that poster) and writes `src/content/feedTags.ts`. `postFor` then prefers lines and authors that fit the city: Florida Man only posts in Gator Gulch, the stars line only on a clear night, "day one" only in an empty valley, and "one more lane" mostly comes from Big Dale or the lane lobby. Delete the file and the feed picks as before. The review list (misfiled lines, reversed outcomes, dropped authors) is in `docs/FEED_TAGS.md`. Behind an HTTPS proxy, run the Jev scripts with `NODE_USE_ENV_PROXY=1`.
+
 ## Playtesting
 
 - The title screen and Settings show the build (`commit · date`); every bug report carries it.
@@ -154,6 +156,8 @@ node scripts/progression.mjs     # (not a pass/fail test) a scripted player grow
 node scripts/weathertest.mjs     # weather keeps to the calendar: no rain or snow spell over a month, no summer snow, changes often, doesn't strobe at top speed
 node scripts/costtest.mjs        # honest service costs (running cost, committed projects, units), Next priorities, locked-fix notes, full landfill note, red bulldoze outlines
 node scripts/ipcheck.mjs         # (content gate, no key) real slogans used word for word and real brands' exact colors on the parody chains; riffs listed for review
+node scripts/feedtags.mjs        # (Jev, $0.04 a full pass; --dry-run needs no key) tag every feed line: region, town size, weather, fits its event, likely authors
+node scripts/feedtest.mjs        # the feed picks lines that fit the map, town size and weather, never empties a pool, and posts exactly as before without the tags
 node scripts/linktest.mjs        # landmarks/services off the road network: tip, toast, red no-road bubble, inspector, alerts, no land value; feed pacing
 node scripts/vaulttest.mjs       # Asset Vault: pack streams in; zoned lots grow vault buildings that fit; merch lots kept; attractions; services' vault looks + toggle; road furniture; no pack = no change
 node scripts/crisisfixtest.mjs   # info views show every building with that view's problem; utility outages merge only for the same buildings; a closed warning returns when worse

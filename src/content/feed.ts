@@ -539,11 +539,88 @@ function engagement(persona: Persona, kind: FeedEventKind, rnd: Rng): Pick<FeedP
   return { likes, reposts, views };
 }
 
+// ---- Context tags (additive, Core thread) --------------------------------
+// scripts/feedtags.mjs asks TypeSafe's Jev about every template above once
+// (which region a line assumes, how built-up a town, which weather it suits,
+// who would post it) and writes ./feedTags.ts. postFor then prefers lines and
+// authors that fit the city. The file is optional: without it (or in Node,
+// where there's no import.meta.glob) nothing below changes a post.
+
+/** Scripts read the templates and organizations from here. */
+export const FEED_TEMPLATES = templates;
+export const FEED_ORGANIZATIONS = organizations;
+
+export interface FeedTag {
+  /** the only map the line makes sense on (Florida Man lines: Gator Gulch) */
+  region?: FeedContext['map'];
+  /** town stages the line assumes, inclusive (see townStage) */
+  stage?: [number, number];
+  /** weather groups a weatherChange or nightfall line suits (see weatherGroup) */
+  weather?: WeatherGroup[];
+  /** who would post it, most likely first: people.ts archetype ids or organization handles */
+  authors?: string[];
+}
+export interface FeedAuthor { name: string; handle: string; emoji: string; bg: string }
+interface TagFile { FEED_TAGS: Record<string, FeedTag>; FEED_AUTHORS: Record<string, FeedAuthor> }
+
+const tagFiles: Record<string, TagFile> = import.meta.env ? import.meta.glob<TagFile>('./feedTags.ts', { eager: true }) : {};
+const tagFile: TagFile | undefined = Object.values(tagFiles)[0];
+const TAGS = tagFile?.FEED_TAGS;
+const AUTHORS = tagFile?.FEED_AUTHORS ?? {};
+export const feedTagged = () => !!TAGS;
+export const feedTag = (kind: FeedEventKind, line: string): FeedTag | undefined => TAGS?.[`${kind}|${line}`];
+
+export type WeatherGroup = 'fair' | 'rain' | 'snow' | 'haze' | 'heat';
+export function weatherGroup(w: FeedContext['weather']): WeatherGroup {
+  return w === 'rain' || w === 'storm' || w === 'hurricane' ? 'rain' : w === 'snow' || w === 'blizzard' ? 'snow' : w === 'fog' || w === 'wildfireSmoke' ? 'haze' : w === 'heatwave' ? 'heat' : 'fair';
+}
+
+/** How built-up the town is: 0 empty valley, 1 a handful of homes, 2 small town, 3 growing suburb, 4 busy city, 5 sprawling metro. */
+export function townStage(ctx: Pick<FeedContext, 'population' | 'sprawlPct'>): number {
+  const p = ctx.population, s = ctx.sprawlPct;
+  const byPop = p < 50 ? 0 : p < 350 ? 1 : p < 1100 ? 2 : p < 2800 ? 3 : p < 6500 ? 4 : 5;
+  return Math.max(byPop, s >= 0.5 ? 5 : s >= 0.3 ? 4 : 0);
+}
+
+function fits(kind: FeedEventKind, line: string, ctx: FeedContext, stage: number, strict: boolean): boolean {
+  const t = feedTag(kind, line);
+  if (!t) return true;
+  if (t.region && t.region !== ctx.map) return false;
+  if (t.weather && ctx.weather && (kind === 'weatherChange' || kind === 'nightfall') && !t.weather.includes(weatherGroup(ctx.weather))) return false;
+  if (strict && t.stage && (stage < t.stage[0] || stage > t.stage[1])) return false;
+  return true;
+}
+
+/** The lines a post for this event picks from: the ones that fit the city, else loosen the town size, else all of them. */
+export function feedPool(kind: FeedEventKind, ctx: FeedContext): readonly string[] {
+  const all = templates[kind];
+  if (!TAGS) return all;
+  const stage = townStage(ctx);
+  const fit = all.filter((l) => fits(kind, l, ctx, stage, true));
+  if (fit.length) return fit;
+  const loose = all.filter((l) => fits(kind, l, ctx, stage, false));
+  return loose.length ? loose : all;
+}
+
+/** A tagged author for this line, sometimes (the same persona looks the same every time). */
+function taggedAuthor(kind: FeedEventKind, line: string, rnd: Rng): Persona | null {
+  if (kind === 'merchDrop' || kind === 'weatherChange') return null; // SLOP and the weather desk own those
+  const ids = feedTag(kind, line)?.authors;
+  if (!ids?.length || clamp(rnd()) >= 0.7) return null;
+  const id = clamp(rnd()) < 0.65 ? ids[0] : pick(ids, rnd);
+  const org = organizations.find((o) => o.handle === id);
+  if (org) return org;
+  const a = AUTHORS[id];
+  return a ? { name: a.name, handle: a.handle, badge: clamp(rnd()) < 0.38 ? 'blue' : null, bg: a.bg, emoji: a.emoji, reach: 1.5 } : null;
+}
+
 /** A post reacting to a game event, or null to stay quiet. rnd() is 0..1. */
 export function postFor(kind: FeedEventKind, ctx: FeedContext, rnd: () => number): FeedPost | null {
   const v = variables(ctx, rnd);
-  const persona = author(kind, rnd);
-  const text = pick(wrappers, rnd) + render(pick(templates[kind], rnd), v);
+  let persona = author(kind, rnd);
+  const wrapper = pick(wrappers, rnd), line = pick(feedPool(kind, ctx), rnd);
+  if (TAGS) persona = taggedAuthor(kind, line, rnd) ?? persona;
+  const text = wrapper + render(line, v);
   const noteKinds: FeedEventKind[] = ['laneAdded', 'highwayBuilt', 'natureMilestone', 'taxCut', 'ambient'];
   return {
     name: persona.name,

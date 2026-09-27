@@ -82,7 +82,9 @@ export async function systemOne(state, questions, { model = MODEL, tries = 6, ti
       wait *= 2;
       continue;
     }
-    throw new Error(`Jev ${res.status}: ${text.slice(0, 400)}`);
+    // behind an HTTPS proxy, Node's fetch only uses it when started with NODE_USE_ENV_PROXY=1
+    const hint = res.status === 403 && (process.env.HTTPS_PROXY || process.env.https_proxy) && !process.env.NODE_USE_ENV_PROXY ? ' (behind a proxy: run with NODE_USE_ENV_PROXY=1)' : '';
+    throw new Error(`Jev ${res.status}: ${text.slice(0, 400)}${hint}`);
   }
 }
 
@@ -108,21 +110,26 @@ export function answerCache(file) {
   const path = resolve(ROOT, file);
   const data = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {};
   const hash = (state, questions, model = MODEL) => createHash('sha256').update(JSON.stringify([model, state, questions])).digest('hex').slice(0, 24);
+  const touched = new Set();
+  const seen = (h) => (touched.add(h), h);
   return {
-    has: (state, questions) => hash(state, questions) in data,
-    get: (state, questions) => data[hash(state, questions)]?.answers,
+    has: (state, questions) => seen(hash(state, questions)) in data,
+    get: (state, questions) => data[seen(hash(state, questions))]?.answers,
     /** cached answers, or ask Jev and remember them */
     async ask(state, questions, opts) {
-      const h = hash(state, questions);
+      const h = seen(hash(state, questions));
       if (data[h]) { usage.cached++; return data[h].answers; }
       const r = await systemOne(state, questions, opts);
       data[h] = { answers: r.answers, model: r.model };
       return r.answers;
     },
-    save() {
+    /** write the cache; `prune` drops answers this run never looked up (questions since reworded) */
+    save({ prune = false } = {}) {
       mkdirSync(dirname(path), { recursive: true });
-      const sorted = Object.fromEntries(Object.keys(data).sort().map((k) => [k, data[k]]));
-      writeFileSync(path, JSON.stringify(sorted, null, 1) + '\n');
+      const keys = Object.keys(data).filter((k) => !prune || touched.has(k)).sort();
+      // one entry per line; a probability of exactly 0 carries nothing, so it isn't stored
+      const slim = (a) => JSON.stringify(a, (k, v) => (k === 'probabilities' && v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).filter(([, p]) => p > 0)) : v));
+      writeFileSync(path, `{\n${keys.map((k) => `${JSON.stringify(k)}: ${slim(data[k])}`).join(',\n')}\n}\n`);
     },
     size: () => Object.keys(data).length,
   };

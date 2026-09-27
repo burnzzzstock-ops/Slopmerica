@@ -4,7 +4,8 @@
 // take a SLOP merch brand's lot; the roadside attractions are in Services >
 // Parks, get built, cover their neighbours like parks and come back from a
 // save; city services with a vault version wear it (Looks: Classic switches
-// them back). Without the pack the town grows as before, the attractions are hidden
+// them back); the road furniture (gantries, an overpass, pine cell towers, a
+// substation, the bus stop to nowhere) stands where it should. Without the pack the town grows as before, the attractions are hidden
 // and a saved one stands as a plain park. SHOTS=prefix saves pictures. Exits
 // nonzero on failure.
 import { chromium } from 'playwright-core';
@@ -146,6 +147,42 @@ console.log(JSON.stringify(sv));
 check('services with a vault version wear it (coal plant, water tower, fire station, urgent care), keeping their names', Object.values(sv.out).every((o) => o.main) && sv.out.coalPlant?.label === 'Clean Coal™ Plant', sv.out);
 check(`the coal plant's stacks still smoke (${sv.out.coalPlant?.smoke})`, sv.out.coalPlant?.smoke > 0, sv.out);
 check('Services > Looks switches every one to Classic and back, live', sv.lookChip && sv.classic && sv.back && sv.n === 4, sv);
+// road furniture: a stroad through shops, a dead end, the map's own highway, the coal plant above
+const sc = await page.evaluate(() => {
+  const g = window.__game, d = window.__dbg;
+  const cx = 60, cz = 60 + 430;
+  d.road(cx - 330, cz, cx + 330, cz, 'stroad4');
+  d.road(cx + 200, cz, cx + 200, cz + 150, 'twoLane'); // a dead end
+  g.zones.update();
+  d.zone(cx - 120, cz + 30, 70, 'comLow'); d.zone(cx - 120, cz - 30, 70, 'comLow');
+  const cand = [];
+  for (let k = 0; k < 150; k++) { g.zones.candidates('comLow', cand); if (cand.length) g.buildings.tryGrow('comLow', cand); }
+  g.sim.population = 400; // bus depots unlock at 300
+  let depot = false;
+  for (const [dx, dz] of [[60, 25], [60, -25], [120, 25], [120, -25], [260, 25], [260, -25], [-280, 25]]) if (!depot) depot = g.transit.placeDepot(cx + dx, cz + dz);
+  for (const b of g.buildings.list.values()) if (b.kind === 'busDepot') { b.state = 'active'; b.progress = 1; }
+  for (let i = 0; i < 80; i++) g.frame(0.05, false);
+  const V = g.vaultScenery, items = V.items;
+  const segs = [...g.net.segs.values()];
+  // gantries run across their road: the model's span (x) along the road's normal
+  const across = items.filter((i) => i.family === 'express-lane-gantry').every((i) => {
+    let best = null, bd = Infinity;
+    for (const s of segs) for (let k = 0; k + 1 < s.samp.pts.length; k++) { const p = s.samp.pts[k], dd = Math.hypot(p.x - i.x, p.z - i.z); if (dd < bd) { bd = dd; best = { s, k }; } }
+    const a = best.s.samp.pts[best.k], b = best.s.samp.pts[best.k + 1];
+    const tx = b.x - a.x, tz = b.z - a.z, tl = Math.hypot(tx, tz);
+    const sx = Math.cos(i.yaw), sz = -Math.sin(i.yaw);
+    return bd < 2 && Math.abs((sx * tx + sz * tz) / tl) < 0.1;
+  });
+  // standing things keep off buildings and out of the water
+  const clash = items.filter((i) => ['frankenpine-cell-tower', 'bus-stop-nowhere', 'grid-substation', 'fiber-hut', 'transit-token-kiosk'].includes(i.family)).filter((i) =>
+    g.terrain.h(i.x, i.z) < 0.3 || [...g.buildings.list.values()].some((b) => Math.abs(b.x - i.x) < b.hw && Math.abs(b.z - i.z) < b.hd)).map((i) => i.family);
+  return { counts: V.counts, across, clash, depot, meshes: V.group.children.filter((m) => m.visible).length };
+});
+console.log(JSON.stringify(sc));
+const c = sc.counts;
+check(`road furniture: ${c['express-lane-gantry'] ?? 0} express-lane gantries, ${c['pedestrian-overpass'] ?? 0} overpass, ${c['frankenpine-cell-tower'] ?? 0} pine cell towers, ${c['grid-substation'] ?? 0} substation, ${c['bus-stop-nowhere'] ?? 0} bus stop to nowhere, ${c['fiber-hut'] ?? 0} fiber huts, ${c['transit-token-kiosk'] ?? 0} token kiosk`,
+  ['express-lane-gantry', 'pedestrian-overpass', 'frankenpine-cell-tower', 'grid-substation', 'bus-stop-nowhere', 'fiber-hut', 'transit-token-kiosk'].every((k) => c[k] > 0) && sc.meshes > 0, sc);
+check('gantries span their roads, and nothing stands in a building or the water', sc.across && sc.clash.length === 0, sc);
 if (process.env.SHOTS) {
   for (const [i, v] of [[60 + 220, 60 - 220, 120, 0.7, 0.5], [60 - 110, 60 - 220, 120, 2.2, 0.5], [60 - 240, 60 - 96, 90, 0.4, 0.45], [60, 60, 130, 3.6, 0.55]].entries()) {
     await page.evaluate((v) => { const g = window.__game; document.querySelector('.hud').style.visibility = 'hidden'; for (const b of g.buildings.list.values()) { b.state = 'active'; b.progress = 1; g.buildings.dropScaffold(b); g.buildings.writeMatrix(b, 1); } g.hour = 15; g.rts.setView(v[0], v[1], v[2], v[3], v[4], true); for (let k = 0; k < 12; k++) g.frame(0.05, false); g.frame(0.016, true); }, v);

@@ -206,7 +206,8 @@ Found, not changed (for the balance pass the report asks for next):
 - **In the game:** all 4,000 are packed (a 748-shape library, 78,182 parts, 2 MiB) and grow on zoned lots as real buildings in the game's own atlas with their family signs: in a test town about a fifth of the buildings, 22 families, none overhanging its lot, merch-brand lots untouched.
 - **Roadside attractions:** 16 in Services > Parks (World's Largest Fork, Miracle Twine Ball, Liberty Muffler Man, the Possum County Midway, Mount Trashmore...), covering their neighbours like parks.
 - **Services in vault clothes:** 11 city services wear their vault versions by default (the Very Clean Coal Plant with smoking stacks, the County Water Tower, the Volunteer Firehouse, Copay Castle for urgent care, Wallet ER for the hospital); Services > Looks switches them back to Classic on the spot.
-- **Not yet:** the road and transit families (toll plaza, express-lane gantry, pedestrian overpass, the bus stop to nowhere) are packed but not placed; they'd want a roadside-dressing pass like the Civic Foundry's.
+- **Road furniture:** express-lane gantries over the stroads and the Slopway, pedestrian overpasses through shopping strips, cell towers dressed as pines, substations beside power plants, token kiosks beside bus depots, fiber huts on local corners, a Bus Stop to Nowhere at every dead end.
+- **Not yet:** four families (tollbooth plaza, culvert gateway, one-bus depot, retention pond office) are packed but not placed; the bus depot keeps its SLOP Transit look. 96 of the 100 families are in the game.
 
 ## Remaining (ranked)
 

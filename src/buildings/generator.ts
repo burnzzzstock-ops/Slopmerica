@@ -180,6 +180,16 @@ export function generateVaultService(family: string, widthCells: number, depthCe
   return copy(run(key, mix('vaults', best), spec, W, D, (g) => { buildVault(g, best, W, D, SERVICE_GROW, stacks); }));
 }
 
+/** An Asset Vault model at scale `s`, centred on its own footprint (road furniture). Null if the vault isn't loaded. */
+export function generateVaultScaled(index: number, s: number): BuildingModel | null {
+  if (!vaultReady()) return null;
+  const key = `vaultx|${index}|${s.toFixed(2)}`;
+  const hit = cacheGet(key);
+  if (hit) return copy(hit);
+  const spec: LotSpec = { zone: 'industry', level: 1, widthCells: 1, depthCells: 1, seed: index };
+  return copy(run(key, mix('vaultx', index), spec, 8, 8, (g) => { buildVault(g, index, 8, 8, 1, undefined, s); }));
+}
+
 export function landmarkFootprint(id: LandmarkId): { widthCells: number; depthCells: number } {
   return { ...(LANDMARK_FOOTPRINT[id] ?? { widthCells: 4, depthCells: 4 }) };
 }

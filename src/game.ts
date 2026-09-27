@@ -33,6 +33,7 @@ import { lineCubic, V2 } from './core/math';
 import { Overlays } from './render/overlays';
 import { buildingMaterial } from './buildings/generator';
 import { CivicLayer } from './civic/layer';
+import { VaultScenery } from './vault/scenery';
 import { loadKitArt, setKitNight } from './buildings/kitGenerator';
 import { applySave, type SaveData } from './sim/save';
 import { crumb } from './ui/bugreport';
@@ -124,6 +125,8 @@ export class Game {
   readonly traffic: Traffic;
   readonly peds: Pedestrians;
   readonly civic: CivicLayer;
+  /** the Asset Vault's road furniture (gantries, overpasses, cell towers, the bus stop to nowhere) */
+  readonly vaultScenery: VaultScenery;
   readonly ambientLife: AmbientLife;
   /** the building problem icon under a screen point, and what it means (set by services) */
   problemAt?: (clientX: number, clientY: number) => { id: number; text: string | null } | null;
@@ -270,6 +273,7 @@ export class Game {
     // Civic Foundry street furniture, street trees and bus shelters (streamed in; low quality skips it)
     this.civic = new CivicLayer(this);
     if (this.q.name !== 'low') this.civic.load();
+    this.vaultScenery = new VaultScenery(this);
     this.overlays = new Overlays(this);
     this.tools = new Tools(this);
 
@@ -987,6 +991,7 @@ export class Game {
     this.peds.population = this.sim.population;
     this.peds.update(dt, spd, this.rts.target, this.rts.distance, this.time);
     this.civic.update(dt);
+    this.vaultScenery.update(dt);
     P.lap('people');
     this.communes.update(dt, this.env.night, this.time, this.camera.position);
     this.emitT -= dt;

@@ -219,9 +219,10 @@ Since the merge into the game branch, the vault is wired in (`src/vault/`, packe
 - Zoned lots grow vault buildings in extra variant slots when an asset fits the lot (shrunk to no less than 80%, never enlarged): commerce on commercial lots, homes on residential lots, yards on industry, civic offices on office lots. SLOP merch brands keep their lots.
 - 16 neighborhood families are roadside attractions in Services > Parks (park coverage, cost, upkeep, unlocks).
 - 11 infrastructure and commerce families are the looks of the matching city services (gas peaker, coal plant, solar farm, pump, water tower, outfall, treatment plant, firehouse, sheriff, urgent care, hospital), using the plan that fills the service's lot best (enlarged up to 1.8x); their stacks carry the game's smoke emitters. Services > Looks switches between these and the classic models, live.
+- Road furniture placed by the road network (`src/vault/scenery.ts`): express-lane gantries spanning the stroads and the highway (the plan whose span is closest, scaled to the carriageway), pedestrian overpasses where a stroad passes shops, Frankenpine cell towers on clear land beside the big roads, a grid substation beside each power plant, a transit token kiosk beside each bus depot, fiber huts on free corners of local junctions, and a Bus Stop to Nowhere at every dead end.
 - `scripts/vaulttest.mjs` checks all of it, including the fallback without the pack.
 
-What's still open from the list below: the road and transit families (toll plaza, express-lane gantry, pedestrian overpass, culvert gateway, bus stop to nowhere, transit token kiosk, one-bus depot, grid substation, fiber hut, cell tower, retention pond office) aren't placed, the game uses one LOD, and there's no per-building choice of plan beyond the lot fit.
+What's still open from the list below: four families aren't placed (tollbooth plaza, culvert gateway, one-bus depot, retention pond office), the game uses one LOD, and there's no per-building choice of plan beyond the lot fit.
 
 ## Integration work still required
 

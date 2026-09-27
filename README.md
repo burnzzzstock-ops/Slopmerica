@@ -59,10 +59,14 @@ Liberty Muffler Man...) are parks in Services. Eleven city services wear the
 vault's version of themselves (the Very Clean Coal Plant, the County Water
 Tower, the Volunteer Firehouse, Copay Castle for urgent care; stacks still
 smoke); Services > Looks switches them back to Classic. Without the pack the
-game falls back to its own buildings. The nine road and transit families (the
-toll plaza, the express-lane gantry, the bus stop to nowhere) are packed but
-not placed yet. The buildings dev page has a Vault view
-(`dev/buildings.html#view=vault`).
+game falls back to its own buildings. The road network dresses itself from the
+vault too (`src/vault/scenery.ts`): express-lane gantries across the stroads
+and the Slopway, pedestrian overpasses where a stroad cuts through shops,
+cell towers disguised as pines, a substation beside every power plant, a
+token kiosk beside every bus depot, "broadband promise" fiber huts on local
+corners and a Bus Stop to Nowhere at the end of every dead end. 96 of the 100
+families are in the game. The buildings dev page has a
+Vault view (`dev/buildings.html#view=vault`).
 
 ## Playtesting
 
@@ -121,7 +125,7 @@ node scripts/playtest5.mjs       # transit lines survive a street joining their 
 node scripts/housetown.mjs       # a dense town of every house style: variety, model cost, building batch budget (SHOTS=prefix)
 node scripts/motiontest.mjs      # cars: no heading snaps, brake for turns, change lanes, blink, never wrong-way on a one-way; walkers' stride, no teleports
 node scripts/civictest.mjs       # Civic Foundry pack streams in: street trees, furniture, bus shelters; instanced LODs; Low skips it
-node scripts/vaulttest.mjs       # Asset Vault: pack streams in; zoned lots grow vault buildings that fit; merch lots kept; attractions; services' vault looks + toggle; no pack = no change
+node scripts/vaulttest.mjs       # Asset Vault: pack streams in; zoned lots grow vault buildings that fit; merch lots kept; attractions; services' vault looks + toggle; road furniture; no pack = no change
 node scripts/crisisfixtest.mjs   # info views show every building with that view's problem; utility outages merge only for the same buildings; a closed warning returns when worse
 node scripts/roadgrade.mjs       # a road across a dip stands on an embankment, not a floating slab
 node scripts/audiotest.mjs       # ambience loops have no seam thump and no steady beat (no "train chugging")

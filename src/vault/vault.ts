@@ -206,9 +206,11 @@ const _m = new THREE.Matrix4(), _fit = new THREE.Matrix4(), _q = new THREE.Quate
  * parts (chimneys, stacks) get that emitter on top. Returns false if the pack
  * isn't loaded.
  */
-export function buildVault(g: GenCtx, i: number, W = g.W, D = g.D, grow = 1, stacks?: Emitter['kind']): boolean {
+export function buildVault(g: GenCtx, i: number, W = g.W, D = g.D, grow = 1, stacks?: Emitter['kind'], scale?: number): boolean {
   if (!pack || !dv || !bin) return false;
   const a = vaultAsset(i), f = vaultFit(i, W, D, grow);
+  // an explicit scale (road furniture spanning a road) overrides the lot fit
+  if (scale !== undefined) f.s = scale;
   const s = f.s;
   _fit.makeScale(s, s, s).premultiply(new THREE.Matrix4().makeTranslation(-f.cx * s, 0, -f.cz * s));
   const table = matTable(), signIdx = pack.mats.indexOf('sign'), glassIdx = pack.mats.indexOf('glass-blue');

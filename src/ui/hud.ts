@@ -38,6 +38,8 @@ const DEM: Record<DemandKey, { name: string; letter: string; noun: string; one: 
 };
 /** +12 / −7 / 0, with a real minus sign */
 const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
+/** how close a landfill forecast is to biting: 0 none, 1 within two months, 2 a month, 3 a week, 4 already full */
+const soonness = (d: number | null) => (d === null ? 0 : d <= 0 ? 4 : d < 7 ? 3 : d < 30 ? 2 : 1);
 
 type PanelId = 'roads' | 'zones' | 'landmarks' | 'views' | 'budget' | 'communes' | 'help' | 'more' | `ext:${string}` | null;
 
@@ -86,8 +88,11 @@ export class Hud implements UiSink {
   private sideCards!: HTMLElement;
   private emergencyEl: HTMLElement | null = null;
   private emergencyHtml = '';
-  /** the warning the player closed (it comes back when the situation changes), and the one showing */
-  private emergencyDismissed = '';
+  /**
+   * the warning the player closed and how bad it was then (it comes back when
+   * the situation changes or gets materially worse), and the one showing
+   */
+  private emergencyDismissed: { key: string; atRisk: number; soon: number } | null = null;
   private emergencyKey = '';
   private emergencyMin = false;
   /** what the clock did when this emergency began */
@@ -476,7 +481,10 @@ export class Hud implements UiSink {
     const e = this.game.emergency?.() ?? null;
     const lvl = e?.level ?? 'none';
     const key = e ? `${lvl}|${e.needs.map((n) => n.need).join(',')}|${e.crisis.since}|${e.forecast ? 'f' : ''}` : '';
-    if (!e || lvl === 'none' || (lvl !== 'crit' && this.emergencyDismissed === key)) {
+    const d = this.emergencyDismissed;
+    // a closed warning stays closed until it's a different one, twice as many buildings, or a landfill a stage closer to full
+    const hidden = !!e && !!d && lvl !== 'crit' && d.key === key && e.atRisk <= Math.max(3, d.atRisk * 2) && soonness(e.forecastDays) <= d.soon;
+    if (!e || lvl === 'none' || hidden) {
       if (this.emergencyEl) this.emergencyEl.hidden = true;
       return;
     }
@@ -496,7 +504,7 @@ export class Hud implements UiSink {
         else if (a === 'pause') this.game.sim.speed = 0;
         else if (a === 'play') this.game.sim.speed = 1;
         else if (a === 'min') this.emergencyMin = !this.emergencyMin;
-        else if (a === 'close') this.emergencyDismissed = this.emergencyKey;
+        else if (a === 'close') this.emergencyDismissed = { key: this.emergencyKey, atRisk: now.atRisk, soon: soonness(now.forecastDays) };
         this.emergencyHtml = '';
         this.refreshTop();
       });

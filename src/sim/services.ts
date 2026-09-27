@@ -189,6 +189,8 @@ export interface EmergencyView {
   hot: { x: number; z: number; n: number; residents: number; id: number }[];
   /** a slower failure that's coming (a landfill filling up) */
   forecast: string | null;
+  /** days until it hits (0: a landfill is already full), null with no forecast */
+  forecastDays: number | null;
   /** the crisis's state machine (the day it began, what it peaked at, the low point) */
   crisis: { since: number; cause: string; peakAtRisk: number; peakTrash: number; lowPop: number; popAtStart: number; endedAt: number };
   /** buildings with trash piling up right now, and buildings standing abandoned */
@@ -991,19 +993,35 @@ const UTIL_SOURCE: Record<Util, string> = { power: 'plant', water: 'pump', sewag
 /**
  * Buildings cut off from several utilities at once (a road network with no
  * way to the highway) are one problem, not three: one line for all of them.
+ * Only the same buildings merge: ten homes with no power and ten shops with
+ * no sewage are two problems, even with the same counts.
  */
-function mergeUtilities(needs: EmergencyNeed[]): EmergencyNeed[] {
+function mergeUtilities(needs: EmergencyNeed[], ids: Map<Need, number[]>): EmergencyNeed[] {
   const utils = needs.filter((x) => x.need === 'power' || x.need === 'water' || x.need === 'sewage');
-  if (utils.length < 2 || !utils.every((x) => x.buildings === utils[0].buildings && x.residents === utils[0].residents)) return needs;
-  const list = (a: string[], or = 'and') => (a.length < 2 ? a.join('') : `${a.slice(0, -1).join(', ')} ${or} ${a[a.length - 1]}`);
-  const kinds = utils.map((x) => x.need as Util);
-  const noLink = utils.every((x) => /^on roads with no \w+ and no route to the highway$/.test(x.why));
-  const merged: EmergencyNeed = {
-    ...utils[0], icon: utils.map((x) => x.icon).join(''), label: 'Utilities', failing: `without ${list(kinds)}`,
-    eta: [Math.min(...utils.map((x) => x.eta[0])), Math.max(...utils.map((x) => x.eta[1]))],
-    why: noLink ? `on roads with no ${list(kinds.map((k) => UTIL_SOURCE[k]), 'or')} and no route to the highway` : utils.map((x) => `${x.need}: ${x.why}`).join('; '),
+  const same = (a: Need, b: Need) => {
+    const p = ids.get(a), q = ids.get(b);
+    return !!p && !!q && p.length === q.length && p.every((v, i) => v === q[i]);
   };
-  return [merged, ...needs.filter((x) => !utils.includes(x))].sort((a, b) => b.residents - a.residents || b.buildings - a.buildings);
+  const groups: EmergencyNeed[][] = [];
+  for (const u of utils) {
+    const grp = groups.find((gr) => same(gr[0].need, u.need));
+    if (grp) grp.push(u); else groups.push([u]);
+  }
+  if (!groups.some((gr) => gr.length > 1)) return needs;
+  const list = (a: string[], or = 'and') => (a.length < 2 ? a.join('') : `${a.slice(0, -1).join(', ')} ${or} ${a[a.length - 1]}`);
+  let out = needs;
+  for (const grp of groups) {
+    if (grp.length < 2) continue;
+    const kinds = grp.map((x) => x.need as Util);
+    const noLink = grp.every((x) => /^on roads with no \w+ and no route to the highway$/.test(x.why));
+    const merged: EmergencyNeed = {
+      ...grp[0], icon: grp.map((x) => x.icon).join(''), label: 'Utilities', failing: `without ${list(kinds)}`,
+      eta: [Math.min(...grp.map((x) => x.eta[0])), Math.max(...grp.map((x) => x.eta[1]))],
+      why: noLink ? `on roads with no ${list(kinds.map((k) => UTIL_SOURCE[k]), 'or')} and no route to the highway` : grp.map((x) => `${x.need}: ${x.why}`).join('; '),
+    };
+    out = [merged, ...out.filter((x) => !grp.includes(x))];
+  }
+  return out.sort((a, b) => b.residents - a.residents || b.buildings - a.buildings);
 }
 
 /**
@@ -1015,6 +1033,8 @@ function mergeUtilities(needs: EmergencyNeed[]): EmergencyNeed[] {
  */
 function assess(g: Game, zoned: ZB[]) {
   const agg = new Map<Need, { buildings: number; residents: number; lo: number; hi: number }>();
+  /** which buildings each utility has failed, so only identical outages merge */
+  const ids = new Map<Need, number[]>();
   const cells = new Map<string, { x: number; z: number; n: number; residents: number; id: number; eta: number }>();
   let atRisk = 0, residents = 0, active = 0;
   const grace = Math.max(0, S.graceUntil - S.day);
@@ -1042,6 +1062,10 @@ function assess(g: Game, zoned: ZB[]) {
       a.lo = Math.min(a.lo, eta);
       a.hi = Math.max(a.hi, eta);
       agg.set(n, a);
+      if (n === 'power' || n === 'water' || n === 'sewage') {
+        const l = ids.get(n);
+        if (l) l.push(b.id); else ids.set(n, [b.id]);
+      }
     }
     const key = `${Math.floor(b.x / 240)},${Math.floor(b.z / 240)}`;
     const cell = cells.get(key) ?? { x: 0, z: 0, n: 0, residents: 0, id: b.id, eta };
@@ -1050,7 +1074,7 @@ function assess(g: Game, zoned: ZB[]) {
     cells.set(key, cell);
   }
   const needs: EmergencyNeed[] = mergeUtilities([...agg].map(([need, a]) => ({ need, ...NEED[need], buildings: a.buildings, residents: a.residents, eta: [a.lo, a.hi] as [number, number], why: needWhy(need) }))
-    .sort((a, b) => b.residents - a.residents || b.buildings - a.buildings));
+    .sort((a, b) => b.residents - a.residents || b.buildings - a.buildings), ids);
   const hot = [...cells.values()].map((c) => ({ x: c.x / c.n, z: c.z / c.n, n: c.n, residents: c.residents, id: c.id })).sort((a, b) => b.residents + b.n * 3 - (a.residents + a.n * 3)).slice(0, 6);
   const G = S.garbage;
   const forecast = G.fullServed && !G.why.full ? `🗑️ ${G.full.length === 1 ? `${G.full[0]} is full` : `${G.full.length} landfills are full`}: the ${G.fullServed} building${G.fullServed === 1 ? '' : 's'} only it reaches will pile up trash`
@@ -1091,7 +1115,7 @@ function assess(g: Game, zoned: ZB[]) {
   }
   S.emergency = {
     level: C.level === 'crit' ? 'crit' : C.level === 'recovering' ? 'recovering' : warn ? 'warn' : 'none',
-    needs, atRisk, residents, hot, forecast, crisis: { ...C }, trash: S.counts.trash, abandoned: S.counts.abandoned, day: S.day,
+    needs, atRisk, residents, hot, forecast, forecastDays: !forecast ? null : G.fullServed && !G.why.full ? 0 : G.daysLeft, crisis: { ...C }, trash: S.counts.trash, abandoned: S.counts.abandoned, day: S.day,
   };
   if (onset) g.ui.emergency?.(S.emergency);
 }
@@ -1283,18 +1307,32 @@ function frame(g: Game, dt: number) {
   }
 }
 
-function problemOf(b: Bld): Problem | null {
+/** the problem a building's icon shows when it has several, worst first */
+const PROBLEM_ORDER: Problem[] = ['fire', 'abandoned', 'power', 'water', 'sewage', 'garbage', 'sick', 'crime'];
+
+/**
+ * A building's worst problem, or, in an info view (`only`), its worst of that
+ * view's problems: a home with no power and trash piling up still shows in
+ * the Garbage view.
+ */
+function problemOf(b: Bld, only?: Problem[]): Problem | null {
   if (!isZoned(b) || b.state !== 'active') return null;
   const bs = S.b.get(b.id);
   if (!bs) return null;
-  if (bs.burning > 0) return 'fire';
-  if (b.abandoned !== undefined) return 'abandoned';
-  if (!bs.pw) return 'power';
-  if (!bs.wa) return 'water';
-  if (!bs.se) return 'sewage';
-  if (trashDaysOf(b, bs) > TRASH_ICON) return 'garbage';
-  if (bs.sick > 0.15) return 'sick';
-  if (bs.crime > 55) return 'crime';
+  const has = (p: Problem) => {
+    switch (p) {
+      case 'fire': return bs.burning > 0;
+      case 'abandoned': return b.abandoned !== undefined;
+      case 'power': return !bs.pw;
+      case 'water': return !bs.wa;
+      case 'sewage': return !bs.se;
+      case 'garbage': return trashDaysOf(b, bs) > TRASH_ICON;
+      case 'sick': return bs.sick > 0.15;
+      case 'crime': return bs.crime > 55;
+      default: return false;
+    }
+  };
+  for (const p of only ?? PROBLEM_ORDER) if (has(p)) return p;
   return null;
 }
 
@@ -1303,7 +1341,7 @@ export function problemText(g: Game, id: number): string | null {
   const b = g.buildings.list.get(id) as ZB | undefined;
   if (!b) return null;
   const bs = S.b.get(b.id);
-  const p = problemOf(b);
+  const p = problemOf(b, S.view ? VIEW_PROBLEMS[S.view] : undefined);
   if (!p || !bs) return null;
   const days = Math.round(trashDaysOf(b, bs)), via = bs.via >= 0 ? g.buildings.list.get(bs.via) : undefined;
   const trash: Record<TrashWhy, string> = {
@@ -1344,8 +1382,8 @@ function refreshIcons(g: Game) {
   const only = S.view ? VIEW_PROBLEMS[S.view] : undefined;
   const raw: ProblemItem[] = [];
   for (const b of g.buildings.near(cam.x, cam.z, merge ? Math.min(4000, Math.max(1500, dist * 1.3)) : 1500)) {
-    const p = problemOf(b);
-    if (!p || (only && !only.includes(p))) continue;
+    const p = problemOf(b, only);
+    if (!p) continue;
     raw.push({ x: b.x, y: b.y + b.model.height + 5, z: b.z, p, id: b.id });
     if (!merge && raw.length >= 600) break;
   }
@@ -2019,4 +2057,4 @@ registerSystem({
 export function servicesSnapshot() {
   return { util: S.util, counts: { ...S.counts }, garbage: { ...S.garbage }, facilities: S.f.size, buildings: S.b.size, emergency: S.emergency };
 }
-(globalThis as unknown as { __services?: unknown }).__services = { snapshot: servicesSnapshot, place: placeService, canPlace: canPlaceService, findSpot: findServiceSpot, S };
+(globalThis as unknown as { __services?: unknown }).__services = { snapshot: servicesSnapshot, place: placeService, canPlace: canPlaceService, findSpot: findServiceSpot, S, mergeUtilities, problemText };

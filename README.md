@@ -92,6 +92,7 @@ node scripts/playtest5.mjs       # transit lines survive a street joining their 
 node scripts/housetown.mjs       # a dense town of every house style: variety, model cost, building batch budget (SHOTS=prefix)
 node scripts/motiontest.mjs      # cars: no heading snaps, brake for turns, change lanes, blink, never wrong-way on a one-way; walkers' stride, no teleports
 node scripts/civictest.mjs       # Civic Foundry pack streams in: street trees, furniture, bus shelters; instanced LODs; Low skips it
+node scripts/crisisfixtest.mjs   # info views show every building with that view's problem; utility outages merge only for the same buildings; a closed warning returns when worse
 node scripts/roadgrade.mjs       # a road across a dip stands on an embankment, not a floating slab
 node scripts/audiotest.mjs       # ambience loops have no seam thump and no steady beat (no "train chugging")
 node scripts/econtest.mjs [map] [days]  # a town grown like a player grows one: weekly bill vs population (CHECK=1 gates it, OUT=file dumps rows)

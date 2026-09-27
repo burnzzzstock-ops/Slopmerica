@@ -1,0 +1,7 @@
+# Geometry buffers must never undergo Windows newline conversion, even when
+# their first 8 KiB happen to contain no NUL bytes.
+public/asset-library/models/*.bin binary
+public/asset-library/models/*.gltf text eol=lf
+public/asset-library/**/*.png binary
+public/asset-library/**/*.json text eol=lf
+public/asset-library/manifest.json text eol=lf

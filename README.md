@@ -15,6 +15,22 @@ npm run build:single   # dist-single/index.html, one file, works offline
 
 `#skip&map=florida&mode=sandbox` on the URL skips the title screen (maps: `appalachia`, `norcal`, `florida`; modes: `ponzi`, `sandbox`, `hippie`, `speedrun`).
 
+## Civic Foundry asset library
+
+83 original architectural, vegetation, service, and streetscape components, with
+three glTF detail levels and 18 shared PBR material sets. The separate interactive
+catalog supports filtering, orbit inspection, wireframe, and LOD comparison.
+
+```sh
+npm run assets:dev     # http://127.0.0.1:5174/asset-library.html
+npm run assets:check   # validate all generated geometry, maps, and references
+npm run assets:build   # standalone catalog in dist-assets/
+```
+
+See [the integration and authoring guide](docs/ASSET_LIBRARY.md). The exported
+library is staged for integration; it does not replace the game's building
+renderer. Normal and single-file game builds exclude the optional art pack.
+
 ## Playtesting
 
 - The title screen and Settings show the build (`commit · date`); every bug report carries it.

@@ -17,6 +17,8 @@ export default defineConfig(({ mode }) => ({
   define: { __BUILD__: JSON.stringify(buildId()) },
   plugins: mode === 'single' ? [viteSingleFile()] : [],
   build: {
+    // The optional art library has its own catalog build; keep game downloads lean.
+    copyPublicDir: false,
     outDir: mode === 'single' ? 'dist-single' : 'dist',
     target: 'es2020',
     chunkSizeWarningLimit: 4000,

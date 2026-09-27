@@ -1,0 +1,13 @@
+🐞 SLOPMERICA BUG REPORT · Broken
+What happened: Built the Slop 69 Field stadium, it says built, but nothing happens. No fans, no traffic, land value didn't go up.
+Expected: fans and money
+—
+Build: 956dc68 · 2026-09-27
+Device: Windows · Chrome · 1920×1080 @1.0x · mouse
+GPU: ANGLE (NVIDIA GeForce RTX 4070)
+Perf: 60 fps · 16 ms · high · 100% res · 420 draws
+City: Holler Hollow (appalachia, ponzi) · day 700 · pop 4,300 · $120,000 · 420 roads · 1,100 buildings
+Where: tool inspect · camera 900,-1200 · zoom 600 · speed 1
+Alerts: d698 🏟️ Slop 69 Field isn't connected to the road network: it does nothing until a road links it
+Session: 1:30:00 played
+Errors: none caught

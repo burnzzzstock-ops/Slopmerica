@@ -1,0 +1,15 @@
+🐞 SLOPMERICA BUG REPORT · Broken
+What happened: I laid a street grid, hit Undo, and the game froze with a red Something broke message.
+—
+Build: 956dc68 · 2026-09-27
+Device: Windows · Chrome · 1920×1080 @1.0x · mouse
+GPU: ANGLE (NVIDIA GeForce RTX 3060)
+Perf: 57 fps · 17 ms · high · 100% res · 390 draws
+City: Holler Hollow (appalachia, ponzi) · day 120 · pop 300 · $50,000 · 90 roads · 70 buildings
+Where: tool road · camera 0,0 · zoom 500 · speed 1
+Session: 15:00 played
+Errors (1):
+ [14:58] TypeError: Cannot read properties of undefined (reading 'x') @ undo (game.ts:560)
+Recent actions:
+ 14:50 grid 3×2 built
+ 14:57 undo

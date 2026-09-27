@@ -1,0 +1,11 @@
+🐞 SLOPMERICA BUG REPORT · Broken
+What happened: Deleted one road and my bus route got wiped out, every stop on it vanished even the ones miles away.
+—
+Build: 956dc68 · 2026-09-27
+Device: iOS 18.2 · Safari · 390×844 @3.0x · touch
+GPU: Apple GPU
+Perf: 45 fps · 22 ms · medium · 75% res · 300 draws
+City: Bayou Bend (florida, ponzi) · day 330 · pop 2,100 · $60,000 · 200 roads · 500 buildings
+Where: tool bulldoze · camera -200,90 · zoom 410 · speed 1
+Session: 1:02:00 played
+Errors: none caught

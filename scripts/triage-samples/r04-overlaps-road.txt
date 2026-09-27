@@ -1,0 +1,12 @@
+🐞 SLOPMERICA BUG REPORT · Confusing
+What happened: Trying to place the fire station and it just says Overlaps a road in red. I moved it around for a while and didn't know what it wanted.
+Expected: tell me where it can go
+—
+Build: 956dc68 · 2026-09-27
+Device: iOS 18.2 · Safari · 390×844 @3.0x · touch
+GPU: Apple GPU
+Perf: 40 fps · 25 ms · medium · 75% res · 280 draws
+City: Pine Knot (appalachia, ponzi) · day 160 · pop 420 · $18,300 · 60 roads · 110 buildings
+Where: tool ext/services · camera 40,80 · zoom 300 · speed 1
+Session: 22:10 played
+Errors: none caught

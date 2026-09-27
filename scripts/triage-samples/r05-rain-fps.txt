@@ -1,0 +1,12 @@
+🐞 SLOPMERICA BUG REPORT · Slow
+What happened: When it rains in my big city the frame rate drops to like 10 and the camera is really laggy. Fine when it's sunny.
+—
+Build: 956dc68 · 2026-09-27
+Device: Windows · Chrome · 1920×1080 @1.0x · mouse
+GPU: ANGLE (NVIDIA GeForce GTX 1650)
+Perf: 11 fps · 91 ms · high · 100% res · 980 draws
+City: Slopton (norcal, ponzi) · day 900 · pop 8,200 · $310,000 · 900 roads · 2,400 buildings
+Where: tool inspect · camera 300,200 · zoom 700 · speed 2
+Frames (last 300): avg 88.0 ms · p95 120.0 ms · worst 160 ms · usually weather 41.0, render 30.2
+Session: 1:40:00 played
+Errors: none caught

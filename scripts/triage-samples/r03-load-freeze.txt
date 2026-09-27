@@ -1,0 +1,10 @@
+🐞 SLOPMERICA BUG REPORT · Broken
+What happened: I clicked Load a city file on the title screen, picked my save, and it froze on the loading screen forever. Had to close the tab and my city is gone.
+Expected: my city loads
+—
+Build: 956dc68 · 2026-09-27
+Device: Windows · Chrome · 1920×1080 @1.0x · mouse
+GPU: ANGLE (Intel Iris Xe)
+Session: 3:05 played
+Errors (1):
+ [3:01] TypeError: Cannot read properties of undefined (reading 'segs') @ applySave (save.ts:212)

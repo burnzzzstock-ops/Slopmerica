@@ -152,7 +152,7 @@ node scripts/playtest5.mjs       # transit lines survive a street joining their 
 node scripts/housetown.mjs       # a dense town of every house style: variety, model cost, building batch budget (SHOTS=prefix)
 node scripts/motiontest.mjs      # cars: no heading snaps, brake for turns, change lanes, blink, never wrong-way on a one-way; walkers' stride, no teleports
 node scripts/civictest.mjs       # Civic Foundry pack streams in: street trees, furniture, bus shelters; instanced LODs; Low skips it
-node scripts/starttest.mjs       # new county: sensible site (random among good ones, saved), county road follows the land; trees: no detail disc, no gaps
+node scripts/starttest.mjs       # new county: sensible site (random among good ones, saved), county road follows the land; trees: no detail disc, no gaps; far trees keep their shape (no rectangles)
 node scripts/gridtest.mjs        # Roads > Grid: three clicks lay a street grid (junctions, lots, price, red streets left out, one-ways alternate, one undo, touch)
 node scripts/progression.mjs     # (not a pass/fail test) a scripted player grows a Ponzi town: when each population mark is reached, money, what got built
 node scripts/weathertest.mjs     # weather keeps to the calendar: no rain or snow spell over a month, no summer snow, changes often, doesn't strobe at top speed
@@ -164,6 +164,9 @@ node scripts/nametags.mjs        # (Jev, $0.01 a full pass; --dry-run needs no k
 node scripts/nametest.mjs        # no street names from another region on any map (4,000 generated per map, and roads built in game), every list still has names
 node scripts/learnability.mjs    # (Jev, <$0.01; --dry-run needs no key; --list shows what it reads) every toast, alert, refusal and tooltip: says what happened, says what to do next, jargon; report and hand-written fixes in docs/LEARNABILITY.md
 node scripts/brandcheck.mjs      # (Jev, $0.01; --dry-run needs no key) chain names in copy that aren't in the brand registry ("Burger Duke", "Waffle Bunker"), with a proposed canonical name; docs/BRAND_NAMES.md
+node scripts/transittest.mjs     # buses: depot, lines, riders at opening, two overlapping lines split riders, diversions
+node scripts/savetest.mjs        # save, reload and Resume bring back the same town: roads, buildings, zoning, population, money
+node scripts/triage.mjs <folder>  # (Jev, <$0.01 per dozen) tester reports (🐞 text, one .txt each): area, severity, which check would catch it, duplicates; table in <folder>/TRIAGE.md. Try scripts/triage-samples (hand-labelled)
 node scripts/linktest.mjs        # landmarks/services off the road network: tip, toast, red no-road bubble, inspector, alerts, no land value; feed pacing
 node scripts/vaulttest.mjs       # Asset Vault: pack streams in; zoned lots grow vault buildings that fit; merch lots kept; attractions; services' vault looks + toggle; road furniture; no pack = no change
 node scripts/crisisfixtest.mjs   # info views show every building with that view's problem; utility outages merge only for the same buildings; a closed warning returns when worse

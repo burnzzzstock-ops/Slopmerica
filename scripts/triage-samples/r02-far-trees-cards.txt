@@ -1,0 +1,11 @@
+🐞 SLOPMERICA BUG REPORT · Looks wrong
+What happened: On Ultra the trees far away look like flat green and grey rectangles on sticks. Close up they're fine.
+—
+Build: 956dc68 · 2026-09-27
+Device: Windows · Chrome · 1920×1080 @1.0x · mouse
+GPU: ANGLE (AMD Radeon RX 6700 XT)
+Perf: 61 fps · 16 ms · ultra · 100% res · 455 draws
+City: Gator Gulch (florida, ponzi) · day 90 · pop 640 · $22,900 · 70 roads · 150 buildings
+Where: tool inspect · camera 0,0 · zoom 1400 · speed 0
+Session: 12:40 played
+Errors: none caught

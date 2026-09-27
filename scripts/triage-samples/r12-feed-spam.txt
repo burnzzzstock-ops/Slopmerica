@@ -1,0 +1,10 @@
+🐞 SLOPMERICA BUG REPORT · Looks wrong
+What happened: THERE IS TOO MANY POSTS ON THE FAKE SOCIAL. It posts every couple seconds, I can't read any of it.
+—
+Build: 956dc68 · 2026-09-27
+Device: Windows · Chrome · 1920×1080 @1.0x · mouse
+GPU: ANGLE (NVIDIA GeForce RTX 3060)
+Perf: 58 fps · 17 ms · high · 100% res · 410 draws
+City: Holler Hollow (appalachia, ponzi) · day 100 · pop 260 · $40,000 · 80 roads · 60 buildings
+Session: 20:00 played
+Errors: none caught

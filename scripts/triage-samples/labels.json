@@ -1,0 +1,142 @@
+{
+ "_note": "Hand labels, written before any Jev answers. area and check list every acceptable answer; severity 0 cosmetic, 1 workaround exists, 2 broken with no workaround, 3 crash or blocker.",
+ "r01-bus-line-gone.txt": {
+  "area": [
+   "transit"
+  ],
+  "severity": 1,
+  "check": [
+   "playtest5",
+   "transittest"
+  ],
+  "dupOf": []
+ },
+ "r02-far-trees-cards.txt": {
+  "area": [
+   "visuals"
+  ],
+  "severity": 0,
+  "check": [
+   "starttest",
+   "treelod"
+  ],
+  "dupOf": []
+ },
+ "r03-load-freeze.txt": {
+  "area": [
+   "save",
+   "crash"
+  ],
+  "severity": 3,
+  "check": [
+   "savetest",
+   "savecontinuity",
+   "playtestcheck"
+  ],
+  "dupOf": []
+ },
+ "r04-overlaps-road.txt": {
+  "area": [
+   "services",
+   "ui"
+  ],
+  "severity": 1,
+  "check": [
+   "placetest",
+   "svcstatus",
+   "tiptest"
+  ],
+  "dupOf": []
+ },
+ "r05-rain-fps.txt": {
+  "area": [
+   "performance"
+  ],
+  "severity": 1,
+  "check": [
+   "none"
+  ],
+  "dupOf": []
+ },
+ "r06-rain-year.txt": {
+  "area": [
+   "visuals",
+   "other"
+  ],
+  "severity": 0,
+  "check": [
+   "weathertest"
+  ],
+  "dupOf": []
+ },
+ "r07-route-deleted.txt": {
+  "area": [
+   "transit"
+  ],
+  "severity": 1,
+  "check": [
+   "playtest5",
+   "transittest"
+  ],
+  "dupOf": [
+   "r01-bus-line-gone.txt"
+  ]
+ },
+ "r08-stadium-nothing.txt": {
+  "area": [
+   "roads",
+   "services",
+   "ui"
+  ],
+  "severity": 1,
+  "check": [
+   "linktest"
+  ],
+  "dupOf": []
+ },
+ "r09-grid-undo-crash.txt": {
+  "area": [
+   "crash",
+   "roads"
+  ],
+  "severity": 3,
+  "check": [
+   "gridtest"
+  ],
+  "dupOf": []
+ },
+ "r10-trains.txt": {
+  "area": [
+   "other",
+   "transit"
+  ],
+  "severity": 0,
+  "check": [
+   "none"
+  ],
+  "dupOf": []
+ },
+ "r11-square-trees.txt": {
+  "area": [
+   "visuals"
+  ],
+  "severity": 0,
+  "check": [
+   "starttest",
+   "treelod"
+  ],
+  "dupOf": [
+   "r02-far-trees-cards.txt"
+  ]
+ },
+ "r12-feed-spam.txt": {
+  "area": [
+   "feed"
+  ],
+  "severity": 0,
+  "check": [
+   "linktest"
+  ],
+  "dupOf": []
+ }
+}

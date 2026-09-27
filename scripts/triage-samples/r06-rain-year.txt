@@ -1,0 +1,12 @@
+🐞 SLOPMERICA BUG REPORT · Broken
+What happened: It has been raining since June 2030 and it's now February 2032. Also it snowed in July.
+Expected: weather should change
+—
+Build: 956dc68 · 2026-09-27
+Device: Windows · Chrome · 1920×1080 @1.0x · mouse
+GPU: ANGLE (NVIDIA GeForce RTX 3060)
+Perf: 55 fps · 18 ms · high · 100% res · 500 draws
+City: Holler Hollow (appalachia, ponzi) · day 1400 · pop 2,900 · $560,000 · 300 roads · 800 buildings
+Where: tool inspect · camera 0,0 · zoom 800 · speed 3
+Session: 2:10:00 played
+Errors: none caught

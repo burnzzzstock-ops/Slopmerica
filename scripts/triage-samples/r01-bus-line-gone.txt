@@ -1,0 +1,16 @@
+🐞 SLOPMERICA BUG REPORT · Broken
+What happened: I bulldozed a little side street and my whole bus line (69 Express) disappeared. All the stops are gone and the buses too.
+Expected: only the stop on that street should go
+—
+Build: 956dc68 · 2026-09-27
+Device: Windows · Chrome · 1920×1080 @1.0x · mouse
+GPU: ANGLE (NVIDIA GeForce RTX 3060)
+Perf: 58 fps · 17 ms · high · 100% res · 412 draws
+City: Holler Hollow (appalachia, ponzi) · day 212 · pop 1,834 · $41,220 · 188 roads · 402 buildings
+Where: tool bulldoze · camera 120,-340 · zoom 520 · speed 1
+Alerts: d205 🚌 69 Express closed: its road is gone
+Session: 48:12 played
+Errors: none caught
+Recent actions:
+ 47:58 bulldoze road
+ 48:02 transit line removed

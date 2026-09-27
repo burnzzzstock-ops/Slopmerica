@@ -1,0 +1,10 @@
+🐞 SLOPMERICA BUG REPORT · Idea
+What happened: Would be cool to have trains, like a freight line through the county.
+—
+Build: 956dc68 · 2026-09-27
+Device: Windows · Chrome · 1920×1080 @1.0x · mouse
+GPU: ANGLE (Intel UHD 620)
+Perf: 35 fps · 28 ms · low · 100% res · 200 draws
+City: Gator Gulch (florida, sandbox) · day 40 · pop 100 · ∞ · 30 roads · 40 buildings
+Session: 10:00 played
+Errors: none caught

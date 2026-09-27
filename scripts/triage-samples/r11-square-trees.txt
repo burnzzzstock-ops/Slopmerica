@@ -1,0 +1,11 @@
+🐞 SLOPMERICA BUG REPORT · Looks wrong
+What happened: The trees in the distance are square boxes, not trees. Ultra settings.
+—
+Build: 956dc68 · 2026-09-27
+Device: iOS 18.2 · Safari · 390×844 @3.0x · touch
+GPU: Apple GPU
+Perf: 30 fps · 33 ms · ultra · 75% res · 400 draws
+City: Pine Knot (appalachia, ponzi) · day 50 · pop 150 · $30,000 · 30 roads · 40 buildings
+Where: tool inspect · camera 0,0 · zoom 1300 · speed 0
+Session: 8:00 played
+Errors: none caught

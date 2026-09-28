@@ -1420,8 +1420,9 @@ export class Hud implements UiSink {
 
   // ------------------------------------------------------------------ inspector
   select(sel: Selection) {
-    if (!sel) { this.inspector.hidden = true; return; }
+    if (!sel) { this.inspector.hidden = true; this.layoutCards(); return; }
     this.inspector.hidden = false;
+    queueMicrotask(() => this.layoutCards());
     this.renderInspector();
     if (COMPACT) requestAnimationFrame(() => this.keepSelectionVisible());
   }
@@ -1662,6 +1663,58 @@ export class Hud implements UiSink {
   }
 
   // ------------------------------------------------------------------ per frame
+  /**
+   * Keep the right-hand cards from covering each other (playtest 5: "Inspector,
+   * Next guidance, zoning controls, and emergency panels overlap"). Desktop:
+   * the emergency and in-the-red cards, then the inspector under them, sized
+   * to the room above the bottom panel; while inspecting, the emergency card
+   * shrinks to its headline and its Fix button. Phones: the inspector sheet
+   * puts an open drawer away while it's up. (Next already hides while a tool
+   * is in hand.)
+   */
+  private layoutCards() {
+    const insp = this.inspector, open = !insp.hidden, phone = window.innerWidth <= 760;
+    this.sideCards.classList.toggle('with-inspector', open);
+    // the tool's Done/Build badge (top centre on phones) stays above the cards
+    const ta = this.root.querySelector<HTMLElement>('.tool-actions');
+    let cardsTop = '';
+    if (ta && !ta.hidden && ta.offsetParent) {
+      const a = ta.getBoundingClientRect();
+      this.sideCards.style.top = '';
+      const c = this.sideCards.getBoundingClientRect();
+      if (a.height > 0 && a.right > c.left && a.left < c.right && a.bottom + 6 > c.top) cardsTop = `${Math.round(a.bottom + 6)}px`;
+    }
+    if (this.sideCards.style.top !== cardsTop) this.sideCards.style.top = cardsTop;
+    const panel = this.root.querySelector<HTMLElement>('.subpanel');
+    panel?.classList.toggle('under-inspector', open && phone);
+    let top = '', max = '';
+    if (open && !phone) {
+      const cards = [...this.sideCards.children].some((e) => !(e as HTMLElement).hidden && e.getBoundingClientRect().height > 0);
+      const from = cards ? this.sideCards.getBoundingClientRect().bottom + 8 : insp.getBoundingClientRect().top;
+      if (cards) top = `${Math.round(from)}px`;
+      // the highest of the toolbar, the drawer and the Next card that sit under the inspector's column
+      const ir = insp.getBoundingClientRect();
+      const floorOf = (els: (HTMLElement | null | undefined)[]) => {
+        let f = innerHeight;
+        for (const e of els) {
+          if (!e || e.hidden || !e.offsetParent || e.classList.contains('yield')) continue;
+          const r = e.getBoundingClientRect();
+          if (r.height > 0 && r.right > ir.left && r.left < ir.right && r.top > from) f = Math.min(f, r.top);
+        }
+        return f - 8;
+      };
+      const base = [this.root.querySelector<HTMLElement>('.toolbar'), panel];
+      // secondary guidance steps aside when there isn't room for both (a short window, a drawer and an emergency)
+      this.nextBar?.classList.remove('yield');
+      let floor = floorOf([...base, this.nextBar]);
+      if (floor - from < 200 && this.nextBar) { this.nextBar.classList.add('yield'); floor = floorOf(base); }
+      max = `${Math.max(180, Math.round(floor - from))}px`;
+    }
+    if (!open || phone) this.nextBar?.classList.remove('yield');
+    if (insp.style.top !== top) insp.style.top = top;
+    if (insp.style.maxHeight !== max) insp.style.maxHeight = max;
+  }
+
   update(dt: number) {
     this.feed.update(dt);
     this.domT -= dt;
@@ -1670,6 +1723,7 @@ export class Hud implements UiSink {
       this.remeasureToasts = true;
       this.refreshTop();
       this.refreshPanelLive();
+      this.layoutCards();
       if (this.perfVisible) {
         const p = this.game.perf;
         const pf = this.game.prof, w = pf.worst[0];

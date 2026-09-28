@@ -1132,6 +1132,11 @@ a {
   gap: 8px;
   pointer-events: none;
 }
+/* inspecting: the emergency card keeps its headline, lead and Fix button; the inspector sits under it */
+.side-cards.with-inspector .emergency > :not(.em-head):not(.em-lead):not(.em-acts) { display: none; }
+.inspector { overflow-y: auto; }
+.subpanel.under-inspector { display: none; }
+.next-bar.yield { display: none; }
 .side-cards > * {
   pointer-events: auto;
 }
@@ -3281,7 +3286,7 @@ a {
   .toolbar:not(.compact) .tbtn { min-width: 46px; padding: 3px 3px 2px; }
   .toolbar:not(.compact) .ti { font-size: 14px; }
   .toolbar:not(.compact) .tl { font-size: 8.5px; }
-  .subpanel { bottom: calc(46px + var(--safe-b)); padding: 5px 9px; max-height: min(44vh, 420px); }
+  .subpanel { bottom: calc(54px + var(--safe-b)); padding: 5px 9px; max-height: min(44vh, 420px); }
   .subpanel:has(> .sp-title + .sp-row) { row-gap: 4px; }
   .subpanel:has(> .sp-title + .sp-row) > .sp-title { flex: 1 1 0; min-width: 130px; white-space: nowrap; }
   .subpanel:has(> .sp-title + .sp-row) > .sp-title + .sp-row { flex: 0 0 auto; max-width: 100%; }

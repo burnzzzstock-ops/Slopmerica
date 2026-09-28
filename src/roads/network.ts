@@ -62,6 +62,8 @@ export interface Plan {
   reason?: string;
   /** the commune whose land the road would cross (the tool offers its buy-out / lawsuit) */
   blocker?: number;
+  /** rise over run between the two ends (the rule allows 15%, plus 2 m of slack) */
+  grade?: number;
   /** homes and shops this road would bulldoze (and which: the preview outlines them) */
   demolish?: number;
   demolishIds?: number[];
@@ -258,7 +260,8 @@ export class RoadNetwork {
       const pe = samp.pts[samp.pts.length - 1];
       const snapEnd = this.snap(pe.x, pe.z, 6);
       const yb = snapEnd.kind === 'node' ? this.nodes.get(snapEnd.id)!.y : this.nodeHeight(pe.x, pe.z);
-      if (Math.abs(yb - ya) > 0.15 * samp.length + 2) return { ...res, ok: false, reason: `Too steep (${Math.round((Math.abs(yb - ya) / samp.length) * 100)}% grade). Go around or zig-zag.` };
+      res.grade = Math.abs(yb - ya) / Math.max(1, samp.length);
+      if (Math.abs(yb - ya) > 0.15 * samp.length + 2) return { ...res, ok: false, reason: `Too steep (${Math.round((Math.abs(yb - ya) / samp.length) * 100)}% grade; roads climb at most 15%). Go around the red shading, or zig-zag up.` };
     }
     // buildings in the way: homes and shops make way; services and landmarks don't
     if (this.buildingsUnder && !opts.over) {

@@ -13,6 +13,7 @@ import { LANDMARK_COST, LANDMARKS, type Game } from '../game';
 import { EXT, type ExtTool } from '../ext/registry';
 import { crumb } from '../ui/bugreport';
 import type { Bld } from '../sim/buildings';
+import { GradeOverlay, MAX_GRADE } from './gradeOverlay';
 import { buildGrid, GRID_BLOCKS, gridShape, gridSpacing, planGrid, type GridBlock, type GridLineState, type GridShape } from './gridRoads';
 
 export type ToolId = 'inspect' | 'road' | 'upgrade' | 'bulldoze' | 'zone' | 'dezone' | 'landmark' | 'ext';
@@ -135,6 +136,8 @@ export class Tools implements PointerHandlers {
   }
   private highlight: THREE.Mesh;
   private brushRing: THREE.Mesh;
+  /** contours and slope shading while drawing roads or placing buildings */
+  readonly grade: GradeOverlay;
   private ghost: PlacementGhost;
 
   constructor(private game: Game) {
@@ -167,7 +170,8 @@ export class Tools implements PointerHandlers {
     this.brushRing.renderOrder = 6;
     this.brushRing.frustumCulled = false;
     this.brushRing.visible = false;
-    game.scene.add(this.preview, this.marker, this.startPin, this.highlight, this.brushRing, this.razeGroup);
+    this.grade = new GradeOverlay(game.terrain);
+    game.scene.add(this.preview, this.marker, this.startPin, this.highlight, this.brushRing, this.razeGroup, this.grade.mesh);
     this.ghost = new PlacementGhost(game.scene, 'landmark-ghost');
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') this.cancel();
@@ -755,6 +759,9 @@ export class Tools implements PointerHandlers {
     let razing: Bld[] = [];
     for (const m of this.razeGroup.children) m.visible = false;
     this.ghost.hide();
+    // contours and slope shading wherever the ground's grade decides what can go
+    if (hov && (this.active === 'road' || this.active === 'landmark' || (this.active === 'ext' && this.extTool === 'svcPlace'))) this.grade.show(hov.x, hov.z);
+    else this.grade.hide();
     // road rings stay a readable size on screen at any zoom (bigger on phones)
     this.marker.scale.setScalar(Math.max(1, this.game.rts.distance * (this.game.isTouch ? 0.009 : 0.005)));
     if (this.active === 'ext') { this.tip = this.ext?.tip?.(this.game) ?? null; return; }
@@ -788,7 +795,8 @@ export class Tools implements PointerHandlers {
           const plan = net.plan(this.start, curve, this.roadType, this.game.sim.spendable());
           this.drawRibbon(this.preview, curve, ROAD_TYPES[this.roadType].width, !!ROAD_TYPES[this.roadType].oneWay);
           this.preview.visible = true;
-          this.previewMat.color.set(plan.ok ? 0x7fd8ff : 0xff4d4d);
+          const steep = (plan.grade ?? 0) >= MAX_GRADE * 0.8;
+          this.previewMat.color.set(!plan.ok ? 0xff4d4d : steep ? 0xffb62e : 0x7fd8ff);
           const net$ = plan.cost - plan.grant;
           this.pendingCost = this.pendingEnd && plan.ok ? net$ : null;
           if (plan.ok) {
@@ -799,6 +807,7 @@ export class Tools implements PointerHandlers {
             if (plan.demolish) razing = (plan.demolishIds ?? []).map((id) => this.game.buildings.list.get(id)).filter((b): b is Bld => !!b);
             const bits = [
               `${Math.round(plan.length)} m · $${net$.toLocaleString()}${plan.grant ? ` (feds pay $${plan.grant.toLocaleString()})` : ''}`,
+              (plan.grade ?? 0) >= 0.04 ? `${steep ? '⚠️ ' : ''}grade ${Math.round((plan.grade ?? 0) * 100)}% (roads climb at most ${Math.round(MAX_GRADE * 100)}%)` : '',
               `+$${im.upkeep}/wk upkeep (→ $${im.upkeepLater}/wk as it ages)`,
               budget?.text ?? '',
               plan.bridgeLen > 5 ? 'bridge' : '',

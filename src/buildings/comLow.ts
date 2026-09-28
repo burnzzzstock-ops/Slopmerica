@@ -418,7 +418,9 @@ function curbHype(g: GenCtx, arch: string) {
     const n = 1 + (rng.chance(0.45) ? 1 : 0);
     for (let i = 0; i < n; i++) tubeMan(g, -W / 2 + 2.2 + i * 2.6, D / 2 - 1.0, rng.pick([0xff3b3b, 0x3bd1ff, 0xffd400, 0x6fe36f, 0xff7ad9]));
   }
-  if (rng.chance(0.4)) flagpole(g, -W / 2 + 1.1, D / 2 - 2.6, 13 + rng.float() * 5, 4.5 + rng.float() * 1.5);
+  // the draws stay the same either way (the rest of the lot doesn't reshuffle); the flag only goes up
+  // where nothing tall is shouting yet (playtest 5 saw a thicket of pale poles along the strip)
+  if (rng.chance(0.4)) { const fh = 13 + rng.float() * 5, fw = 4.5 + rng.float() * 1.5; if (!g.tallPoles) flagpole(g, -W / 2 + 1.1, D / 2 - 2.6, fh, fw); }
   if (W >= 16 && rng.chance(0.28)) backBillboard(g, buildBillboard, rng.float() * 2 - 1);
 }
 

@@ -94,7 +94,7 @@ function transformerYard(k: Kit, cx: number, cz: number, w: number, d: number) {
 }
 
 function flagpole(k: Kit, x: number, z: number, h = 9) {
-  k.cyl(x, z, 0.09, 0, h, 6, T.SOLID, col(0xcfd3d6));
+  k.cyl(x, z, 0.09, 0, h, 6, T.SOLID, col(0xa9adb1)); // satin aluminium (see props.ts flagpole)
   k.box(x + 0.9, z, 1.6, 0.03, h - 1.1, h - 0.1, [T.SOLID, T.SOLID, T.SOLID, T.SOLID], col(0xb22234), null);
   k.box(x + 0.45, z, 0.7, 0.035, h - 0.55, h - 0.1, T.SOLID, col(0x3c3b6e), null);
 }

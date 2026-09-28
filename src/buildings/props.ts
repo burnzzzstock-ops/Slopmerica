@@ -14,6 +14,8 @@ export interface GenCtx {
   em: Emitter[];
   label: string;
   brand?: string;
+  /** pole signs and flagpoles already on the lot (art pass: one tall pole shouting per lot is plenty) */
+  tallPoles?: number;
 }
 
 /**
@@ -233,6 +235,7 @@ export function poleSign(g: GenCtx, x: number, z: number, h: number, w: number, 
   const pw = w, ph = w / 4;
   const steel = M('metal', 2, 2, 0x8a8e92);
   const cab = M('plain', 2, 2, 0x2a2b2d);
+  g.tallPoles = (g.tallPoles ?? 0) + 1;
   mb.boxC(x - pw * 0.28, z, 0.35, 0.35, 0, h, { side: steel, top: null });
   mb.boxC(x + pw * 0.28, z, 0.35, 0.35, 0, h, { side: steel, top: null });
   // brand panel, double-sided
@@ -394,7 +397,10 @@ export function flagpole(g: GenCtx, x: number, z: number, h = 7, fw = 2.2) {
   [x, z] = inLot(g, x, z, 0.2, 0.2);
   // the flag flies toward +X: never wider than the lot allows
   if (mb.identity) fw = Math.max(0.8, Math.min(fw, g.W / 2 - x - 0.2));
-  mb.boxC(x, z, 0.12, 0.12, 0, h, { side: M('metal', 2, 2, 0xd8d8d8), top: null });
+  if (h > 8) g.tallPoles = (g.tallPoles ?? 0) + 1;
+  // satin aluminium, not paint-white: a bare pole seen edge-on (flag furled toward the camera)
+  // read as a stray white stick from across the block (playtest 5, "tall white props near the fire lot")
+  mb.boxC(x, z, 0.12, 0.12, 0, h, { side: M('metal', 2, 2, 0xa9adb1), top: null });
   const fh = fw * 0.625;
   const fm = S('flag');
   mb.poly([[x + 0.06, h - fh, z], [x + 0.06 + fw, h - fh - 0.1, z], [x + 0.06 + fw, h - 0.1, z], [x + 0.06, h, z]], fm);

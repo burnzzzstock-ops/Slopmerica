@@ -10,6 +10,7 @@ import type { Game } from '../game';
 import type { RSeg } from '../roads/network';
 import { carriageHalf, ROAD_TYPES } from '../roads/roadTypes';
 import { segDriveways, segLamps } from '../roads/roadMesh';
+import { edgeLift, WALK_TOP } from '../roads/roadSection';
 import { applyAtmosphere } from '../world/seasons';
 import { fetchPack } from '../core/pack';
 import { clamp, lerp, locate, norm, sub } from '../core/math';
@@ -164,10 +165,13 @@ export class CivicLayer {
     const g = this.g;
     for (const seg of g.net.segs.values()) this.street(seg, add);
     // bus shelters at every stop, set back from the curb, facing the road
-    const stops = (g as unknown as { transit?: { stops: Map<number, { x: number; y: number; z: number; yaw: number; side: 1 | -1 }> } }).transit?.stops;
+    const stops = (g as unknown as { transit?: { stops: Map<number, { x: number; y: number; z: number; yaw: number; side: 1 | -1; seg: number }> } }).transit?.stops;
     if (stops) for (const st of stops.values()) {
       const rx = -Math.cos(st.yaw) * st.side, rz = Math.sin(st.yaw) * st.side; // away from the road
-      add({ asset: 'street-bus-shelter', x: st.x + rx * 0.7, y: st.y + 0.12, z: st.z + rz * 0.7, yaw: Math.atan2(-rx, -rz) });
+      const sg = g.net.segs.get(st.seg);
+      // (the stop stands 1.2 m past the road's edge, the shelter 0.7 m further: on the graded ground, not floating over it)
+      const lift = sg ? edgeLift(ROAD_TYPES[sg.type], ROAD_TYPES[sg.type].width / 2 + 1.9) : 0.12;
+      add({ asset: 'street-bus-shelter', x: st.x + rx * 0.7, y: st.y + lift, z: st.z + rz * 0.7, yaw: Math.atan2(-rx, -rz) });
     }
     this.counts = counts;
     const by = new Map<string, CivicItem[]>();
@@ -200,7 +204,7 @@ export class CivicLayer {
         const tan = norm(sub(b, a));
         const r = { x: -tan.z, z: tan.x };
         const cx = lerp(a.x, b.x, f), cz = lerp(a.z, b.z, f);
-        const y = lerp(seg.hs[i], seg.hs[i + 1], f) + 0.07;
+        const y = lerp(seg.hs[i], seg.hs[i + 1], f) + WALK_TOP + 0.01; // on the raised walk
         // what's across the sidewalk?
         const probe = { x: cx + r.x * side * (hw + 6), z: cz + r.z * side * (hw + 6) };
         const bl = g.buildings.near(probe.x, probe.z, 10)[0];

@@ -5,6 +5,7 @@ import type { PersonAction } from '../contracts';
 import { clamp, closestOnSampled, lerp, locate, norm, sub, type V2 } from '../core/math';
 import type { RoadNetwork, RSeg } from '../roads/network';
 import { ROAD_TYPES } from '../roads/roadTypes';
+import { WALK_TOP } from '../roads/roadSection'; // (display height only: the raised sidewalk)
 import { isZoned, type Bld, type Buildings } from '../sim/buildings';
 import type { Terrain } from '../world/terrain';
 import { ARCHETYPES, PeopleRenderer } from './people';
@@ -306,7 +307,7 @@ export class Pedestrians {
     const keep = p.kind === 'walk' ? Math.min(0.45, t.sidewalk * 0.22) * p.dir + (p.lat ?? 0) * p.dir : 0;
     p.x = lerp(a.x, b.x, f) + r.x * (off * p.side + keep);
     p.z = lerp(a.z, b.z, f) + r.z * (off * p.side + keep);
-    p.y = t.sidewalk > 0 ? lerp(seg.hs[i], seg.hs[i + 1], f) + 0.08 : this.terrain.h(p.x, p.z);
+    p.y = t.sidewalk > 0 ? lerp(seg.hs[i], seg.hs[i + 1], f) + WALK_TOP + 0.02 : this.terrain.h(p.x, p.z);
     p.yaw = Math.atan2(tan.x * p.dir, tan.z * p.dir);
   }
 

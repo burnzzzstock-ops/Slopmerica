@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { lerp, locate, norm, sub, V2 } from '../core/math';
 import type { RoadNetwork, RSeg } from './network';
 import { carriageHalf, ROAD_TYPES } from './roadTypes';
+import { edgeLift, WALK_TOP } from './roadSection';
 
 interface Frame {
   p: V2;
@@ -143,7 +144,6 @@ export class StreetDetails {
   private readonly railPostGeo = new THREE.BoxGeometry(0.16, 0.9, 0.16);
   private readonly reflectorGeo = new THREE.BoxGeometry(0.18, 0.18, 0.08);
   private readonly crosswalkGeo = new THREE.BoxGeometry(1, 0.025, 0.34);
-  private readonly apronGeo = new THREE.BoxGeometry(1, 0.035, 1);
   private readonly stainGeo = new THREE.CircleGeometry(1, 10).rotateX(-Math.PI / 2);
   private readonly signPostGeo = new THREE.CylinderGeometry(0.045, 0.055, 2.3, 5).translate(0, 1.15, 0);
   private readonly stopSignGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.055, 8).rotateX(Math.PI / 2).translate(0, 2.35, 0);
@@ -219,7 +219,6 @@ export class StreetDetails {
     const railPosts: Placement[] = [];
     const reflectors: Placement[] = [];
     const crosswalks: Placement[] = [];
-    const aprons: Placement[] = [];
     const stains: Placement[] = [];
     const signPosts: Placement[] = [];
     const stopSigns: Placement[] = [];
@@ -247,7 +246,7 @@ export class StreetDetails {
         for (let d = s0 + 12; d < s1 - 8; d += 42) {
           const f = frameAt(seg, d), r = sideAt(f);
           const off = t.width / 2 + 2.2;
-          const p: PolePoint = { x: f.p.x + r.x * off * side, y: f.y, z: f.p.z + r.z * off * side, yaw: yawAt(f), rx: r.x, rz: r.z };
+          const p: PolePoint = { x: f.p.x + r.x * off * side, y: f.y + edgeLift(t, off), z: f.p.z + r.z * off * side, yaw: yawAt(f), rx: r.x, rz: r.z };
           line.push(p);
           utilityPoles.push(p);
           crossArms.push({ ...p, y: p.y + 7.15 });
@@ -274,20 +273,15 @@ export class StreetDetails {
         for (let d = s0 + 34 + (seg.id % 3) * 9; d < s1 - 10; d += 105) {
           const f = frameAt(seg, d), r = sideAt(f), side = ((Math.floor(d / 40) + seg.id) & 1) ? 1 : -1;
           const off = t.width / 2 + 0.65;
-          hydrants.push({ x: f.p.x + r.x * off * side, y: f.y, z: f.p.z + r.z * off * side, yaw: yawAt(f) });
+          hydrants.push({ x: f.p.x + r.x * off * side, y: f.y + edgeLift(t, off), z: f.p.z + r.z * off * side, yaw: yawAt(f) });
         }
-        // Flush concrete aprons span the sidewalk at plausible parcel intervals.
-        for (let d = s0 + 18 + (seg.id % 5) * 4; d < s1 - 12; d += 34 + (seg.id % 3) * 5) {
-          const f = frameAt(seg, d), r = sideAt(f), side = ((Math.floor(d / 30) + seg.id) & 1) ? 1 : -1;
-          const off = carriageHalf(t) + t.sidewalk * 0.52;
-          aprons.push({ x: f.p.x + r.x * off * side, y: f.y + 0.115, z: f.p.z + r.z * off * side, yaw: yawAt(f), sx: t.sidewalk + 0.35, sz: 3.1 });
-        }
+        // (driveway aprons are part of the road mesh now: the curb ramps down where segDriveways says)
         // A sparse shelter cadence reads as transit infrastructure without a route simulation.
         if (seg.length > 125 && (t.id === 'twoLane' || t.centerTurn)) {
           for (let d = s0 + 62 + (seg.id % 3) * 18; d < s1 - 34; d += 220) {
             const f = frameAt(seg, d), r = sideAt(f), side = (seg.id & 1) ? 1 : -1;
             const off = carriageHalf(t) + Math.max(0.7, t.sidewalk * 0.58);
-            const p = { x: f.p.x + r.x * off * side, y: f.y, z: f.p.z + r.z * off * side, yaw: yawAt(f) + (side < 0 ? Math.PI : 0) };
+            const p = { x: f.p.x + r.x * off * side, y: f.y + WALK_TOP, z: f.p.z + r.z * off * side, yaw: yawAt(f) + (side < 0 ? Math.PI : 0) };
             shelters.push(p);
             ads.push(p);
           }
@@ -297,7 +291,7 @@ export class StreetDetails {
         for (let d = s0 + 25 + (seg.id % 4) * 7; d < s1 - 8; d += 78) {
           const f = frameAt(seg, d), r = sideAt(f), side = ((Math.floor(d / 60) + seg.id) & 1) ? 1 : -1;
           const off = t.width / 2 + 1.0;
-          mailboxes.push({ x: f.p.x + r.x * off * side, y: f.y, z: f.p.z + r.z * off * side, yaw: yawAt(f) + (side > 0 ? 0 : Math.PI) });
+          mailboxes.push({ x: f.p.x + r.x * off * side, y: f.y + edgeLift(t, off), z: f.p.z + r.z * off * side, yaw: yawAt(f) + (side > 0 ? 0 : Math.PI) });
         }
       }
 
@@ -377,7 +371,7 @@ export class StreetDetails {
         const yaw = yawAt(f) + (atA ? Math.PI : 0);
         if (signalized) {
           const armLength = Math.max(2.6, ch * 0.78 + 0.45);
-          const p: SignalPlacement = { x, y: f.y, z, yaw, nodeId: node.id, segId: seg.id };
+          const p: SignalPlacement = { x, y: f.y + edgeLift(t, off), z, yaw, nodeId: node.id, segId: seg.id };
           signalPoles.push(p);
           signalArms.push({ ...p, sx: armLength });
           const head = { ...p, x: x - Math.cos(yaw) * armLength, z: z + Math.sin(yaw) * armLength };
@@ -388,7 +382,7 @@ export class StreetDetails {
           pedestrianHeads.push(walk);
           pedestrianPlacements.push(walk);
         } else {
-          const p = { x, y: f.y, z, yaw };
+          const p = { x, y: f.y + edgeLift(t, off), z, yaw };
           signPosts.push(p);
           stopSigns.push(p);
         }
@@ -401,7 +395,7 @@ export class StreetDetails {
         const atA = anchor.a === node.id, base = atA ? anchor.trimA : anchor.length - anchor.trimB;
         const f = frameAt(anchor, Math.max(0, Math.min(anchor.length, base + (atA ? 1 : -1) * 5)));
         const r = sideAt(f), off = ROAD_TYPES[anchor.type].width / 2 + 0.75;
-        const pole = { x: f.p.x + r.x * off, y: f.y, z: f.p.z + r.z * off, yaw: yawAt(f) };
+        const pole = { x: f.p.x + r.x * off, y: f.y + edgeLift(ROAD_TYPES[anchor.type], off), z: f.p.z + r.z * off, yaw: yawAt(f) };
         signPosts.push(pole);
         for (let i = 0; i < named.length; i++) {
           const road = named[i];
@@ -418,7 +412,7 @@ export class StreetDetails {
       const d = Math.min(seg.length - seg.trimB - 10, seg.trimA + 18);
       if (d <= seg.trimA) continue;
       const f = frameAt(seg, d), r = sideAt(f), off = t.width / 2 + 0.7;
-      const p = { x: f.p.x + r.x * off, y: f.y, z: f.p.z + r.z * off, yaw: yawAt(f) };
+      const p = { x: f.p.x + r.x * off, y: f.y + edgeLift(t, off), z: f.p.z + r.z * off, yaw: yawAt(f) };
       signPosts.push(p);
       textPanels.push({ ...p, y: p.y + 1.92, w: 0.56, h: 0.78, text: String(Math.round((t.speed * 2.237) / 5) * 5), kind: 'speed' });
     }
@@ -429,7 +423,6 @@ export class StreetDetails {
     this.addInstances(this.railPostGeo, this.darkMetal, railPosts, true);
     this.addInstances(this.reflectorGeo, this.yellow, reflectors, false);
     this.addInstances(this.crosswalkGeo, this.white, crosswalks, false, 3);
-    this.addInstances(this.apronGeo, this.white, aprons, false);
     this.addInstances(this.stainGeo, this.asphaltDark, stains, false, 4);
     this.addInstances(this.signPostGeo, this.galvanized, signPosts, true);
     this.addInstances(this.stopSignGeo, this.red, stopSigns, true);

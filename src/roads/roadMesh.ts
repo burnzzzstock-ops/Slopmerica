@@ -7,6 +7,9 @@ import { clamp, convexHull, lerp, locate, norm, sub, V2 } from '../core/math';
 import { carriageHalf, ROAD_TYPES, RoadType, RoadTypeId, ROAD_ORDER } from './roadTypes';
 import type { RNode, RoadNetwork, RSeg } from './network';
 import { StreetDetails } from './streetDetails';
+import {
+  CURB_REVEAL, DRIVE_FLARE, DRIVE_FLAT, GROUND_BELOW, GUTTER, SURF_LIFT, VERGE_RUN, curbLipAt, curbOffset, driveRamp, edgeLift,
+} from './roadSection';
 import type { SignalStateProvider } from './streetDetails';
 
 const REPEAT = 12; // meters per texture repeat along the road
@@ -33,6 +36,15 @@ class Buf {
   quad(a: number, b: number, c: number, d: number) {
     // a-b-c-d in screen-CCW order
     this.idx.push(a, b, c, a, c, d);
+  }
+  /** A quad wound so its front side faces (nx, ny, nz): the concrete is double-sided and lit by its normals, so the winding decides which side is the front */
+  quadN(a: number, b: number, c: number, d: number, nx: number, ny: number, nz: number) {
+    const P = this.pos;
+    const ux = P[b * 3] - P[a * 3], uy = P[b * 3 + 1] - P[a * 3 + 1], uz = P[b * 3 + 2] - P[a * 3 + 2];
+    const vx = P[c * 3] - P[a * 3], vy = P[c * 3 + 1] - P[a * 3 + 1], vz = P[c * 3 + 2] - P[a * 3 + 2];
+    const dot = (uy * vz - uz * vy) * nx + (uz * vx - ux * vz) * ny + (ux * vy - uy * vx) * nz;
+    if (dot >= 0) this.idx.push(a, b, c, a, c, d);
+    else this.idx.push(a, c, b, a, d, c);
   }
   /** Axis-aligned-ish box given center, half sizes and yaw. */
   box(cx: number, cy: number, cz: number, hx: number, hy: number, hz: number, yaw: number, color: [number, number, number]) {
@@ -136,14 +148,26 @@ function roadTexture(t: RoadType, maxAniso: number): THREE.CanvasTexture {
     const half = t.width / 2;
     const sw = t.sidewalk;
     if (sw > 0) {
+      // sidewalk (expansion joints every 2 m), a paler curb top along its inner edge, a darker back-of-walk
+      // edge, and the concrete gutter pan between the asphalt and the curb: all in the road's own metres
+      const gut = px(GUTTER), curbTop = px(0.16), back = px(0.14);
       ctx.fillStyle = '#9d9a92';
       ctx.fillRect(0, 0, px(sw), H);
       ctx.fillRect(W - px(sw), 0, px(sw), H);
       ctx.fillStyle = 'rgba(0,0,0,0.18)';
       for (let y = 0; y < H; y += py(2)) { ctx.fillRect(0, y, px(sw), 2); ctx.fillRect(W - px(sw), y, px(sw), 2); }
-      ctx.fillStyle = '#6f6c66';
-      ctx.fillRect(px(sw) - 3, 0, 3, H);
-      ctx.fillRect(W - px(sw), 0, 3, H);
+      ctx.fillStyle = '#b3b0a7';
+      ctx.fillRect(px(sw) - curbTop, 0, curbTop, H);
+      ctx.fillRect(W - px(sw), 0, curbTop, H);
+      ctx.fillStyle = '#8a877f';
+      ctx.fillRect(0, 0, back, H);
+      ctx.fillRect(W - back, 0, back, H);
+      ctx.fillStyle = '#8f8d87'; // gutter pan
+      ctx.fillRect(px(sw), 0, gut, H);
+      ctx.fillRect(W - px(sw) - gut, 0, gut, H);
+      ctx.fillStyle = '#56565a'; // the seam where the asphalt meets it
+      ctx.fillRect(px(sw) + gut - 1, 0, 1.5, H);
+      ctx.fillRect(W - px(sw) - gut - 0.5, 0, 1.5, H);
     }
     const ch = carriageHalf(t);
     const cx = W / 2;
@@ -262,8 +286,8 @@ interface SegGeo {
 }
 
 const CONCRETE: [number, number, number] = [0.62, 0.61, 0.58];
-const CONCRETE_DARK: [number, number, number] = [0.34, 0.3, 0.25];
-const CURB: [number, number, number] = [0.69, 0.68, 0.64];
+/** the curb's vertical face and the walk's raised ends: light concrete (linear), a shade under the top so the step reads */
+const CURB_FACE: [number, number, number] = [0.5, 0.49, 0.46];
 
 /** Render-only trim at a junction, based on intersecting carriageways rather
  * than the graph's wider curb/sidewalk clearance envelope. */
@@ -309,7 +333,7 @@ export class RoadRenderer {
   constructor(private net: RoadNetwork, renderer: THREE.WebGLRenderer) {
     const aniso = renderer.capabilities.getMaxAnisotropy();
     for (const id of ROAD_ORDER) {
-      const mat = new THREE.MeshStandardMaterial({ map: roadTexture(ROAD_TYPES[id], aniso), roughness: 0.92, metalness: 0, envMapIntensity: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+      const mat = new THREE.MeshStandardMaterial({ map: roadTexture(ROAD_TYPES[id], aniso), vertexColors: true, roughness: 0.92, metalness: 0, envMapIntensity: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
       litByLamps(mat);
       this.typeMats.set(id, mat);
       const m = new THREE.Mesh(new THREE.BufferGeometry(), mat);
@@ -424,7 +448,7 @@ export class RoadRenderer {
     for (const [id, mesh] of this.typeMeshes) {
       mesh.geometry.dispose();
       const list = perType.get(id);
-      mesh.geometry = list && list.length ? concat(list, false, true) : new THREE.BufferGeometry();
+      mesh.geometry = list && list.length ? concat(list, true, true) : new THREE.BufferGeometry();
     }
     this.junctionMesh.geometry.dispose();
     this.junctionMesh.geometry = junc.length ? concat(junc, false, true) : new THREE.BufferGeometry();
@@ -473,76 +497,122 @@ export class RoadRenderer {
     const driveways = segDriveways(this.net, seg);
     const steps: number[] = [s0];
     for (const c of seg.samp.cum) if (c > s0 + 0.2 && c < s1 - 0.2) steps.push(c);
-    // Add three curb samples per apron for a cheap, visible driveway dip.
-    for (const drive of driveways) for (const o of [-1.7, 0, 1.7]) if (drive.d + o > s0 && drive.d + o < s1) steps.push(drive.d + o);
+    // A driveway's curb drops to road level with a flat middle and a flare either side (curbLipAt).
+    const rowsAt = [-(DRIVE_FLAT + DRIVE_FLARE), -DRIVE_FLAT, 0, DRIVE_FLAT, DRIVE_FLAT + DRIVE_FLARE];
+    for (const drive of driveways) for (const o of rowsAt) if (drive.d + o > s0 && drive.d + o < s1) steps.push(drive.d + o);
     steps.push(s1);
     steps.sort((a, b) => a - b);
     for (let i = steps.length - 1; i > 0; i--) if (steps[i] - steps[i - 1] < 0.01) steps.splice(i, 1);
-    let prevL = -1, prevR = -1;
-    let prevBL = -1, prevBR = -1, prevTL = -1, prevTR = -1;
-    let prevCurb: number[][] | undefined;
+
+    // The section (roadSection.ts): carriageway + gutter, a curb face, the raised walk, then an earth bank
+    // down to the graded ground. Roads without sidewalks just get the bank.
+    const walk = t.sidewalk > 0;
+    const co = curbOffset(t), ramp = driveRamp(t);
+    const uOf = (off: number) => (off + hw) / (2 * hw);
+    const WHITE: [number, number, number] = [1, 1, 1], APRON: [number, number, number] = [1.1, 1.08, 1.03];
+    const BANK_TOP: [number, number, number] = [0.3, 0.255, 0.19], BANK_FOOT: [number, number, number] = [0.235, 0.195, 0.14];
+    interface SideIds { face: [number, number]; wedge: [number, number, number]; fascia: [number, number]; }
+    interface Row { road: number[]; walkL: number[]; walkR: number[]; L: SideIds; R: SideIds; elevated: boolean; bl: number; br: number; }
+    let prev: Row | undefined;
+    const join = (a: number[], b: number[]) => {
+      for (let i = 0; i + 1 < a.length; i++) { surf.tri(a[i], a[i + 1], b[i]); surf.tri(a[i + 1], b[i + 1], b[i]); }
+    };
+    const nodeA = this.net.nodes.get(seg.a), nodeB = this.net.nodes.get(seg.b);
     for (let k = 0; k < steps.length; k++) {
       const d = steps[k];
       const F = RoadRenderer.frame(seg, d);
       const r = { x: -F.t.z, z: F.t.x };
-      const y = F.y + 0.06;
+      const y = F.y + SURF_LIFT;
       // slope for normal
       const F2 = RoadRenderer.frame(seg, Math.min(seg.length, d + 1));
       const grade = F2.y - F.y;
       const nl = Math.hypot(grade, 1);
       const nx = (-grade * F.t.x) / nl, ny = 1 / nl, nz = (-grade * F.t.z) / nl;
-      const L = surf.v(F.p.x - r.x * hw, y, F.p.z - r.z * hw, nx, ny, nz, 0, d / REPEAT);
-      const R = surf.v(F.p.x + r.x * hw, y, F.p.z + r.z * hw, nx, ny, nz, 1, d / REPEAT);
-      if (prevL >= 0) {
-        surf.tri(prevL, prevR, L);
-        surf.tri(prevR, R, L);
-      }
-      prevL = L;
-      prevR = R;
-      // concrete sides (curb / embankment face / bridge deck)
       const elevated = F.y - F.ground > 2.6;
-      const bottom = elevated ? F.y - 1.3 : F.y - 1.1;
-      const col = elevated ? CONCRETE : CONCRETE_DARK;
-      const tl = conc.v(F.p.x - r.x * hw, y, F.p.z - r.z * hw, -r.x, 0, -r.z, 0, 0, col);
-      const bl = conc.v(F.p.x - r.x * hw, bottom, F.p.z - r.z * hw, -r.x, 0, -r.z, 0, 0, col);
-      const tr = conc.v(F.p.x + r.x * hw, y, F.p.z + r.z * hw, r.x, 0, r.z, 0, 0, col);
-      const br = conc.v(F.p.x + r.x * hw, bottom, F.p.z + r.z * hw, r.x, 0, r.z, 0, 0, col);
-      if (prevTL >= 0) {
-        conc.quad(prevTL, prevBL, bl, tl);
-        conc.quad(prevTR, tr, br, prevBR);
+      const sv = (off: number, yy: number, col: [number, number, number]) => surf.v(F.p.x + r.x * off, yy, F.p.z + r.z * off, nx, ny, nz, uOf(off), d / REPEAT, col);
+      const cv = (off: number, yy: number, n: number[], col: [number, number, number]) => conc.v(F.p.x + r.x * off, yy, F.p.z + r.z * off, n[0], n[1], n[2], 0, 0, col);
+      const lipOf = (side: number) => (walk ? curbLipAt(driveways, side, d) : 0);
+      const walkStrip = (side: number): number[] => {
+        const lip = lipOf(side), col = walk && lip < CURB_REVEAL - 1e-4 ? APRON : WHITE;
+        const ids = [sv(side * hw, y + CURB_REVEAL, col), sv(side * (co + ramp), y + CURB_REVEAL, col), sv(side * co, y + lip, col)];
+        return side < 0 ? ids : ids.reverse();
+      };
+      const row: Row = { road: [], walkL: [], walkR: [], L: { face: [-1, -1], wedge: [-1, -1, -1], fascia: [-1, -1] }, R: { face: [-1, -1], wedge: [-1, -1, -1], fascia: [-1, -1] }, elevated, bl: -1, br: -1 };
+      if (walk) {
+        row.road = [sv(-co, y, WHITE), sv(co, y, WHITE)];
+        row.walkL = walkStrip(-1);
+        row.walkR = walkStrip(1);
+      } else row.road = [sv(-hw, y, WHITE), sv(hw, y, WHITE)];
+      const topY = y + (walk ? CURB_REVEAL : 0);
+      for (const side of [-1, 1] as const) {
+        const S = side < 0 ? row.L : row.R;
+        const out = { x: side * r.x, z: side * r.z };
+        if (walk) {
+          // the curb face: from the road's level up to the walk, facing the road
+          const n = [-out.x, 0, -out.z];
+          S.face = [cv(side * co, y, n, CURB_FACE), cv(side * co, y + lipOf(side), n, CURB_FACE)];
+        }
         if (elevated) {
-          // underside
-          conc.quad(prevBL, prevBR, br, bl);
+          // a bridge deck's edge: a plain concrete fascia
+          const n = [out.x, 0, out.z];
+          S.fascia = [cv(side * hw, topY, n, CONCRETE), cv(side * hw, F.y - 1.3, n, CONCRETE)];
+        } else {
+          // an earth bank from the walk's edge to the graded ground (terrain.gradeRoad leaves it GROUND_BELOW
+          // under the road's height), then a skirt for the times the ground has dropped away since
+          // The graded ground is only that flat on the grid's vertices: across a hillside, or between vertices,
+          // it can sit a few tens of centimetres lower, so the foot is placed on the terrain itself and the
+          // bank runs long enough to keep to about 45 degrees.
+          const T = this.net.terrain;
+          let run = VERGE_RUN, yB = F.y - GROUND_BELOW - 0.03;
+          for (let it = 0; it < 3; it++) {
+            const g = T.h(F.p.x + out.x * (hw + run), F.p.z + out.z * (hw + run)) - 0.02;
+            if (g >= yB) break;
+            yB = g;
+            run = clamp(topY - yB, VERGE_RUN, 3.2);
+          }
+          const drop = topY - yB;
+          const ln = Math.hypot(drop, run);
+          const n = [(out.x * drop) / ln, run / ln, (out.z * drop) / ln];
+          S.wedge = [cv(side * hw, topY, n, BANK_TOP), cv(side * (hw + run), yB, n, BANK_FOOT), cv(side * (hw + run), yB - 1.0, [out.x, 0, out.z], BANK_FOOT)];
         }
       }
-      prevTL = tl; prevBL = bl; prevTR = tr; prevBR = br;
-
-      // A narrow raised curb reads at street level without tessellating each slab.
-      if (t.sidewalk > 0) {
-        const ch = carriageHalf(t);
-        const curb: number[][] = [];
-        for (const side of [-1, 1]) {
-          const inner = ch - 0.08, outer = ch + 0.14;
-          const ix = F.p.x + r.x * inner * side, iz = F.p.z + r.z * inner * side;
-          const ox = F.p.x + r.x * outer * side, oz = F.p.z + r.z * outer * side;
-          const base = F.y + 0.06;
-          const lowered = driveways.some((drive) => drive.side === side && Math.abs(drive.d - d) < 0.15);
-          const top = base + (lowered ? 0.025 : 0.13);
-          curb.push([
-            conc.v(ix, top, iz, 0, 1, 0, 0, 0, CURB),
-            conc.v(ox, top, oz, 0, 1, 0, 0, 0, CURB),
-            conc.v(ox, base, oz, r.x * side, 0, r.z * side, 0, 0, CURB),
-          ]);
-        }
-        if (prevCurb) {
-          for (let side = 0; side < 2; side++) {
-            const a = prevCurb[side], q = curb[side];
-            conc.quad(a[0], a[1], q[1], q[0]);
-            conc.quad(a[1], a[2], q[2], q[1]);
+      if (elevated) {
+        // underside of the deck
+        const bottom = F.y - 1.3;
+        row.bl = cv(-hw, bottom, [0, -1, 0], CONCRETE);
+        row.br = cv(hw, bottom, [0, -1, 0], CONCRETE);
+      }
+      if (prev) {
+        join(prev.road, row.road);
+        if (walk) { join(prev.walkL, row.walkL); join(prev.walkR, row.walkR); }
+        for (const side of [-1, 1] as const) {
+          const P = side < 0 ? prev.L : prev.R, S = side < 0 ? row.L : row.R;
+          const out = { x: side * r.x, z: side * r.z };
+          if (walk) conc.quadN(P.face[0], P.face[1], S.face[1], S.face[0], -out.x, 0, -out.z);
+          if (elevated && prev.elevated) conc.quadN(P.fascia[0], P.fascia[1], S.fascia[1], S.fascia[0], out.x, 0, out.z);
+          if (!elevated && !prev.elevated) {
+            const nw = [conc.nor[S.wedge[0] * 3], conc.nor[S.wedge[0] * 3 + 1], conc.nor[S.wedge[0] * 3 + 2]];
+            conc.quadN(P.wedge[0], P.wedge[1], S.wedge[1], S.wedge[0], nw[0], nw[1], nw[2]);
+            conc.quadN(P.wedge[1], P.wedge[2], S.wedge[2], S.wedge[1], out.x, 0, out.z);
           }
         }
-        prevCurb = curb;
+        if (elevated && prev.elevated) conc.quadN(prev.bl, prev.br, row.br, row.bl, 0, -1, 0);
       }
+      // where a real junction starts or ends the block, close the walk's raised end (the corner slabs come with the junction)
+      if (walk && (k === 0 || k === steps.length - 1)) {
+        const nd = k === 0 ? nodeA : nodeB;
+        if (nd && nd.segs.length >= 3) {
+          const dirn = k === 0 ? -1 : 1;
+          const n = [F.t.x * dirn, 0, F.t.z * dirn];
+          for (const side of [-1, 1] as const) {
+            const lip = lipOf(side);
+            const a = cv(side * hw, y, n, CURB_FACE), b = cv(side * hw, y + CURB_REVEAL, n, CURB_FACE);
+            const c = cv(side * co, y + lip, n, CURB_FACE), e = cv(side * co, y, n, CURB_FACE);
+            conc.quadN(a, b, c, e, n[0], n[1], n[2]);
+          }
+        }
+      }
+      prev = row;
     }
     // Pillars and lighting. Guardrails and median rails are instanced by StreetDetails.
     const yaw = (d: number) => {
@@ -569,7 +639,7 @@ export class RoadRenderer {
       const x = F.p.x + r.x * off * side, z = F.p.z + r.z * off * side;
       // lamp arm points toward the road center (arm is along local -Z)
       const ang = Math.atan2(r.x * side, r.z * side);
-      lights.push({ x, y: F.y, z, yaw: ang });
+      lights.push({ x, y: F.y + edgeLift(t, off), z, yaw: ang });
     }
     return { surf, conc, lights };
   }

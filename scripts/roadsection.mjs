@@ -28,6 +28,9 @@ const m = await page.evaluate(async () => {
   const { ROAD_TYPES, carriageHalf } = await import('/src/roads/roadTypes.ts');
   const Ray = g.rts.ray.constructor, V3 = g.camera.position.constructor;
   const roads = g.roads;
+  // where a block's plain section starts and ends (the rest is junction): the drawn trims when the code has them
+  let trimOf = (s, id) => (id === s.a ? s.trimA : s.trimB);
+  try { const RJ = await import('/src/roads/roadJunction.ts'); trimOf = (s, id) => Math.max(id === s.a ? s.trimA : s.trimB, RJ.visualTrim(g.net, s, id)); } catch { /* the old code: network trims */ }
   const meshes = [...roads.typeMeshes.values(), roads.junctionMesh, roads.concMesh];
   for (const o of meshes) o.updateMatrixWorld(true);
   const ray = new Ray();
@@ -48,6 +51,7 @@ const m = await page.evaluate(async () => {
     const ch = carriageHalf(t), hw = t.width / 2, co = ch + 0.3;
     for (const f of [0.35, 0.5, 0.65]) {
       const d = s.length * f;
+      if (d < trimOf(s, s.a) + 4 || d > s.length - trimOf(s, s.b) - 4) continue;
       const F = RoadRenderer.frame(s, d);
       if (F.y - F.ground > 2.6) continue;
       const r = { x: -F.t.z, z: F.t.x };

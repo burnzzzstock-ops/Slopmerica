@@ -9,7 +9,7 @@
 // again. A view is [dx, dz, distance, yaw, pitch] from the block's centre.
 //
 // usage: BASE_URL=http://127.0.0.1:5175 node scripts/gfxshots.mjs <outdir> [cams] [conds] [quality]
-//   cams   comma list: junction corner driveway slope street overview wide lotedge
+//   cams   comma list: junction junctop corner driveway slope street overview wide lotedge
 //          strip bigbox school sheriff utility treesmid treesfar shore houses
 //          ('slope' lays two roads up a hillside first and is always shot last)
 //   conds  comma list of day,dusk,night,moon,rain (default day,night)
@@ -33,7 +33,9 @@ const opts = process.env.PHONE ? { base, quality, width: 390, height: 780 } : { 
 const { page, errs, center } = await openBlock(browser, opts);
 
 const cams = existsSync(CAMS) ? JSON.parse(readFileSync(CAMS, 'utf8')) : {};
-const missing = want.filter((k) => !cams[k]);
+// an ad-hoc camera by world position: at:X:Z:DIST:PITCH[:YAW]  (not saved)
+for (const k of want) if (k.startsWith('at:')) { const [, x, z, d, pitch, yaw] = k.split(':').map(Number); cams[k] = [x - center.x, z - center.z, d, yaw || 0, pitch]; }
+const missing = want.filter((k) => !cams[k] && !k.startsWith('at:'));
 if (missing.length) {
   const found = await page.evaluate(async ({ c, missing }) => {
     const g = window.__game;
@@ -68,11 +70,12 @@ if (missing.length) {
     const near = (arr, f) => arr.filter((b) => dist(b.x, b.z) < 420).sort((a, b) => f(b) - f(a))[0];
     const blds = [...g.buildings.list.values()];
     for (const key of missing) {
-      if (key === 'junction' || key === 'corner') {
+      if (key === 'junction' || key === 'corner' || key === 'junctop') {
         const n = nodes[0];
         const leg = g.net.segs.get(n.segs[0]), atA = leg.a === n.id, p1 = leg.samp.pts[atA ? Math.min(3, leg.samp.pts.length - 1) : Math.max(0, leg.samp.pts.length - 4)];
         const ux = p1.x - n.x, uz = p1.z - n.z, along = Math.atan2(ux, uz);
         out.junction ??= view(n.x, n.z, 58, 0.46, along, 0);
+        out.junctop ??= [n.x - c.x, n.z - c.z, 64, along, 1.5];
         out.corner ??= view(n.x + 6 * Math.cos(along + 0.8), n.z - 6 * Math.sin(along + 0.8), 24, 0.36, along + 0.8, 0);
       } else if (key === 'driveway') {
         let drv = null;
@@ -121,7 +124,7 @@ if (missing.length) {
     }
     return out;
   }, { c: center, missing });
-  Object.assign(cams, found);
+  for (const k of Object.keys(found)) if (missing.includes(k) || !(k in cams)) cams[k] = found[k]; // never move a camera that already exists
   writeFileSync(CAMS, JSON.stringify(cams, null, 1));
   console.log('cameras found:', JSON.stringify(found));
 }
@@ -130,7 +133,7 @@ const shootCam = async (cond, cam) => {
   const [hour, moon, weather] = CONDS[cond];
   if (!cams[cam]) { console.log('skip (no camera)', cam); return; }
   await shoot(page, center, { hour, moon, weather, view: cams[cam] });
-  await page.screenshot({ path: `${outDir}/${cam}-${cond}.png`, timeout: 180000 });
+  await page.screenshot({ path: `${outDir}/${cam.replace(/[:.]/g, '_')}-${cond}.png`, timeout: 180000 });
   console.log('shot', `${outDir}/${cam}-${cond}.png`);
 };
 for (const cond of conds) for (const cam of want) if (cam !== 'slope') await shootCam(cond, cam);

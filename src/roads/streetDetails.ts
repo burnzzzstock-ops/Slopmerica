@@ -3,6 +3,7 @@ import { lerp, locate, norm, sub, V2 } from '../core/math';
 import type { RoadNetwork, RSeg } from './network';
 import { carriageHalf, ROAD_TYPES } from './roadTypes';
 import { edgeLift, WALK_TOP } from './roadSection';
+import { visualTrim } from './roadJunction';
 
 interface Frame {
   p: V2;
@@ -56,27 +57,6 @@ const frameAt = (seg: RSeg, d: number): Frame => {
 
 const yawAt = (f: Frame) => Math.atan2(f.t.x, f.t.z);
 const sideAt = (f: Frame) => ({ x: -f.t.z, z: f.t.x });
-const visualTrim = (net: RoadNetwork, seg: RSeg, nodeId: number) => {
-  const node = net.nodes.get(nodeId);
-  if (!node || node.segs.length < 2) return 0;
-  const direction = (s: RSeg) => {
-    const atA = s.a === nodeId, pts = s.samp.pts;
-    return atA
-      ? norm(sub(pts[Math.min(2, pts.length - 1)], pts[0]))
-      : norm(sub(pts[Math.max(0, pts.length - 3)], pts[pts.length - 1]));
-  };
-  const dir = direction(seg);
-  let trim = 0;
-  for (const id of node.segs) {
-    const other = net.segs.get(id);
-    if (!other || other === seg) continue;
-    const od = direction(other);
-    if (dir.x * od.x + dir.z * od.z < -0.9) continue;
-    const sin = Math.abs(dir.x * od.z - dir.z * od.x);
-    trim = Math.max(trim, carriageHalf(ROAD_TYPES[other.type]) / Math.max(0.35, sin));
-  }
-  return Math.min(trim, seg.length * 0.45);
-};
 const hash01 = (a: number, b: number) => {
   let h = Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b + 17, 0xc2b2ae35);
   h ^= h >>> 16;
@@ -334,9 +314,10 @@ export class StreetDetails {
       for (const seg of segs) {
         const t = ROAD_TYPES[seg.type];
         const atA = seg.a === node.id;
-        const base = atA ? seg.trimA : seg.length - seg.trimB;
         const dir = atA ? 1 : -1;
         const renderTrim = visualTrim(net, seg, node.id);
+        // furniture starts beyond both the sim's trim and the drawn curb return
+        const base = atA ? Math.max(seg.trimA, renderTrim) : seg.length - Math.max(seg.trimB, renderTrim);
         const markBase = atA ? renderTrim : seg.length - renderTrim;
         if (t.sidewalk > 0) {
           for (let k = -3; k <= 3; k++) {
@@ -392,7 +373,8 @@ export class StreetDetails {
       const named = [...new Map(segs.map((s) => [s.name, s])).values()].slice(0, 2);
       const anchor = named[0];
       if (anchor && named.length >= 2) {
-        const atA = anchor.a === node.id, base = atA ? anchor.trimA : anchor.length - anchor.trimB;
+        const atA = anchor.a === node.id, aTrim = Math.max(atA ? anchor.trimA : anchor.trimB, visualTrim(net, anchor, node.id));
+        const base = atA ? aTrim : anchor.length - aTrim;
         const f = frameAt(anchor, Math.max(0, Math.min(anchor.length, base + (atA ? 1 : -1) * 5)));
         const r = sideAt(f), off = ROAD_TYPES[anchor.type].width / 2 + 0.75;
         const pole = { x: f.p.x + r.x * off, y: f.y + edgeLift(ROAD_TYPES[anchor.type], off), z: f.p.z + r.z * off, yaw: yawAt(f) };

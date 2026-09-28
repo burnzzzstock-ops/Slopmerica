@@ -68,6 +68,13 @@ node scripts/placetest.mjs       # services, depots and landmarks front the stre
 node scripts/playtest3.mjs       # county road is the state's; road previews; undo replants; demand next step; goals
 node scripts/playtest4.mjs       # landfill 75/90/full warnings; emergency card + slowdown, Fix / Worst area, Recovering; why trash piles up; departures by cause; earned unlocks stay; "Built", not "already here"; blocker outline; road budget preview; merged icons
 node scripts/bldshots.mjs tag    # neighbourhood-zoom shots of homes, shops, apartments, offices, factories, day and night (CLOSE=1 adds close-ups)
+node scripts/contentaudit.mjs    # every player-facing line vs the content rules; parody-brand IP check (TypeSafe, see below)
 ```
 
 `BASE_URL=http://127.0.0.1:5174` points any of them at another server (handy for running the suite against a frozen copy while you keep editing). Scripts that assert exit nonzero on failure.
+
+## Content audit
+
+`node scripts/contentaudit.mjs` asks [TypeSafe](https://docs.typesafe.ai)'s Jev model typed questions about every player-facing line in `src/` (feed posts, billboards, brands, signs, names, UI copy), drawn from the content rules in [docs/WORKSTREAMS.md](docs/WORKSTREAMS.md). It also checks each parody brand for a near-copy name, a reused real slogan or a look-alike sign. The report goes to [docs/CONTENT_AUDIT.md](docs/CONTENT_AUDIT.md). Pieces of one billboard, brand, character card or sign are judged together, because a line cut loose from its card reads very differently. Answers are kept in `docs/content-audit.json`, so a rerun only asks about new or changed lines; a full pass is about 2,000 requests, takes a minute and costs around $0.15. It exits 1 when a line crosses a hard rule and 2 when lines couldn't be judged. The thresholds are `COPY_RULES` and `BRAND_RULES` in the script.
+
+It needs a TypeSafe API key: put `TYPESAFE_API_KEY=...` in `.env.local`. That file is gitignored, and Vite only passes `VITE_*` variables to the game, so the key never ships. `--inventory` lists what would be checked and `--dry-run` prints the requests; neither needs a key.

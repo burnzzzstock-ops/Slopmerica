@@ -3,6 +3,7 @@
 // textured detail shader, a horizon ring beyond the county line, and a height
 // texture for the water shader.
 import * as THREE from 'three';
+import { bindLamps, LAMP_PARS, lampAdd } from './nightLights';
 import { HALF, HM_N, HM_STEP, Quality, WATER, WORLD } from '../config';
 import { clamp, lerp, smoothstep, V2 } from '../core/math';
 import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from './atmos';
@@ -129,9 +130,13 @@ export class Terrain {
       sh.uniforms.tLand = LAND_MASK.tex;
       sh.uniforms.uLandOn = LAND_MASK.on;
       bindAtmos(sh);
+      bindLamps(sh);
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nattribute vec4 mats;\nvarying vec4 vMats;\nvarying vec3 vWPos;')
         .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvMats = mats;\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <lights_physical_fragment>', `${lampAdd('vWPos')}\n#include <lights_physical_fragment>`)
+        .replace('#include <common>', `#include <common>\n${LAMP_PARS}`);
       sh.fragmentShader = sh.fragmentShader
         .replace(
           '#include <common>',

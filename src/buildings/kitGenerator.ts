@@ -8,6 +8,7 @@ import { mulberry32 } from '../core/rng';
 import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from '../world/atmos';
 import { facadeTexture, loadSignFonts, SIGN_BASE, T } from './atlas';
 import { col, Kit } from './kit';
+import { bindLamps, LAMP_PARS, lampAdd } from '../world/nightLights';
 
 // ------------------------------------------------------------------ material
 let material: THREE.MeshStandardMaterial | null = null;
@@ -22,8 +23,9 @@ export function kitMaterial(): THREE.Material {
     sh.uniforms.uNightB = nightUniform;
     sh.uniforms.uGlow = GLOW;
     bindAtmos(sh);
+    bindLamps(sh);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float tile;\nvarying float vTile;\nvarying vec2 vUvT;\nvarying vec3 vBW;')
+      .replace('#include <common>', '#include <common>\nattribute float tile;\nvarying float vTile;\nvarying vec2 vUvT;\nvarying vec3 vBW;\nvarying float vKitH;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvTile = tile;\nvUvT = uv;')
       .replace(
         '#include <project_vertex>',
@@ -34,6 +36,7 @@ export function kitMaterial(): THREE.Material {
   bw = batchingMatrix * bw;
 #endif
   vBW = (modelMatrix * bw).xyz;
+  vKitH = transformed.y;
 }`,
       );
     sh.fragmentShader = sh.fragmentShader
@@ -43,6 +46,8 @@ export function kitMaterial(): THREE.Material {
 precision highp sampler2DArray;
 uniform sampler2DArray tFacade;
 uniform float uNightB, uSnow, uSnowLine, uWet, uGlow;
+varying float vKitH;
+${LAMP_PARS}
 varying float vTile;
 varying vec2 vUvT;
 varying vec3 vBW;
@@ -100,9 +105,10 @@ roughnessFactor = mix(roughnessFactor, 0.35, uWet * 0.6 * (1.0 - gGlass));`,
   totalEmissiveRadiance *= uGlow;
 }`,
       )
+      .replace('#include <lights_physical_fragment>', `${lampAdd('vBW', 'clamp(1.0 - vKitH / 3.5, 0.0, 1.0)')}\n#include <lights_physical_fragment>`)
       .replace('#include <lights_fragment_end>', cloudShadowChunk('vBW'));
   };
-  m.customProgramCacheKey = () => 'slop-kit';
+  m.customProgramCacheKey = () => 'slop-kit-lamps';
   material = m;
   return m;
 }

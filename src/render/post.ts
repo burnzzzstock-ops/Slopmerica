@@ -211,6 +211,8 @@ const gradeMat = () =>
       uToneExposure: { value: 0.95 },
       uTint: { value: new THREE.Color(1, 1, 1) },
       uSat: { value: 1.08 },
+      uTintLit: { value: new THREE.Color(1, 1, 1) },
+      uSatLit: { value: 1.08 },
       uContrast: { value: 1.06 },
       uVignette: { value: 0.28 },
       uLift: { value: new THREE.Color(0, 0, 0) },
@@ -225,8 +227,8 @@ const gradeMat = () =>
     fragmentShader: /* glsl */ `
       // three prepends the tone mapping + color space helpers to ShaderMaterials
       uniform sampler2D tColor;
-      uniform vec3 uTint, uLift;
-      uniform float uSat, uContrast, uVignette, uTime, uExposure, uShimmer, uFlash, uTilt, uFocus;
+      uniform vec3 uTint, uLift, uTintLit;
+      uniform float uSat, uSatLit, uContrast, uVignette, uTime, uExposure, uShimmer, uFlash, uTilt, uFocus;
       uniform vec2 uRes;
       float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
       // The grade owns its tone curve and display encoding (three's ACES
@@ -267,12 +269,15 @@ const gradeMat = () =>
         }
         // lightning: the whole frame jumps toward a cold white
         src += src * uFlash * 1.2 + vec3(0.02, 0.025, 0.045) * uFlash;
-        vec3 c = src * uTint * uExposure;
+        // night grade: moonlit shadow goes blue and colourless, but what a lamp
+        // lights keeps its colour (the eye sees colour again where it's bright)
+        float lit = smoothstep(0.03, 0.3, dot(src * uExposure, vec3(0.2126, 0.7152, 0.0722)));
+        vec3 c = src * mix(uTint, uTintLit, lit) * uExposure;
         c = acesFilm(c);
         // grade in display space so contrast doesn't crush the shadows
         c = srgbEncode(clamp(c, 0.0, 1.0));
         float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-        c = mix(vec3(l), c, uSat);
+        c = mix(vec3(l), c, mix(uSat, uSatLit, lit));
         c = (c - 0.5) * uContrast + 0.5;
         c = max(c, 0.0) + uLift * (1.0 - c);
         vec2 q = vUv - 0.5;
@@ -290,6 +295,9 @@ const gradeMat = () =>
 export interface PostLook {
   tint: THREE.Color;
   sat: number;
+  /** the grade where artificial light falls after dark (the night's blue and grey don't apply there) */
+  tintLit: THREE.Color;
+  satLit: number;
   contrast: number;
   lift: THREE.Color;
   exposure: number;
@@ -336,7 +344,7 @@ export class PostFX {
   bloomOn = true;
   aaMode: AAMode = 'msaa4';
   /** Weather/season look, set by the weather system each frame. */
-  readonly look: PostLook = { tint: new THREE.Color(1, 1, 1), sat: 1.0, contrast: 1.06, lift: new THREE.Color(0, 0, 0), exposure: 1, shimmer: 0, flash: 0 };
+  readonly look: PostLook = { tint: new THREE.Color(1, 1, 1), sat: 1.0, tintLit: new THREE.Color(1, 1, 1), satLit: 1.0, contrast: 1.06, lift: new THREE.Color(0, 0, 0), exposure: 1, shimmer: 0, flash: 0 };
   /** World-space AO radius; the game scales it with zoom. */
   aoRadius = 4;
 
@@ -462,6 +470,8 @@ export class PostFX {
     g.uToneExposure.value = r.toneMappingExposure;
     g.uTint.value.copy(this.look.tint);
     g.uSat.value = this.look.sat;
+    g.uTintLit.value.copy(this.look.tintLit);
+    g.uSatLit.value = this.look.satLit;
     g.uContrast.value = this.look.contrast;
     g.uLift.value.copy(this.look.lift);
     g.uVignette.value = this.vignette ? 0.26 : 0;

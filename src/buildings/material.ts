@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { atlasTextures } from '../art';
 import { GLOW } from '../config';
+import { bindLamps, LAMP_PARS, lampAdd } from '../world/nightLights';
 
 let material: THREE.MeshStandardMaterial | null = null;
 let night = 0;
@@ -35,7 +36,22 @@ export function buildingMaterial(): THREE.MeshStandardMaterial {
     material.onBeforeCompile = (sh) => {
       sh.uniforms.satMap = { value: satMap };
       sh.uniforms.satEmi = { value: satEmissive };
+      bindLamps(sh);
+      // the pools of light at night (world/nightLights.ts): lot paving and the foot of the walls
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vLampW;\nvarying float vLampH;')
+        .replace('#include <project_vertex>', `#include <project_vertex>
+{
+  vec4 lw = vec4(transformed, 1.0);
+#ifdef USE_BATCHING
+  lw = batchingMatrix * lw;
+#endif
+  vLampW = (modelMatrix * lw).xyz;
+  vLampH = transformed.y;
+}`);
       sh.fragmentShader = sh.fragmentShader
+        .replace('#include <lights_physical_fragment>', `${lampAdd('vLampW', 'clamp(1.0 - vLampH / 3.5, 0.0, 1.0)')}\n#include <lights_physical_fragment>`)
+        .replace('#include <common>', `#include <common>\nvarying vec3 vLampW;\nvarying float vLampH;\n${LAMP_PARS}`)
         .replace('#include <common>', '#include <common>\nuniform sampler2D satMap;\nuniform sampler2D satEmi;')
         .replace(
           '#include <map_fragment>',
@@ -53,7 +69,7 @@ export function buildingMaterial(): THREE.MeshStandardMaterial {
 #endif`,
         );
     };
-    material.customProgramCacheKey = () => 'slop-buildings-2sheet';
+    material.customProgramCacheKey = () => 'slop-buildings-2sheet-lamps';
   }
   return material;
 }

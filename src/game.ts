@@ -42,6 +42,7 @@ import { applySave, type SaveData } from './sim/save';
 import { crumb } from './ui/bugreport';
 import { FrameProfiler } from './core/prof';
 import type { EmergencyView } from './sim/services';
+import { NightLights, practicalPools } from './world/nightLights';
 
 /** a building's brand as players read it (buildings store the brand id, e.g. 'tacoBull') */
 const brandName = (id?: string) => brandById(id)?.name;
@@ -175,6 +176,10 @@ export class Game {
   private waterNear = 0;
   private ray = new THREE.Raycaster();
   private nightWas = false;
+  /** pools of light from street lamps, shopfronts, entrances and yards after dark */
+  readonly nightLights: NightLights;
+  private lampSig = '';
+  private lampCheck = 0;
   readonly perf = { fps: 0, frameMs: 0, renderMs: 0, calls: 0, triangles: 0, resolution: 1, quality: 'high' as Quality['name'] };
   private perfSamples = 0;
   private perfWindowMs = 0;
@@ -257,6 +262,7 @@ export class Game {
     this.zones = new Zoning(this.net, this.terrain, this.scene);
     this.buildings = new Buildings(this.scene, this.terrain, this.trees, this.zones, this.net);
     this.sim = new Sim(opts.mode, this.buildings, this.zones, this.net, this.terrain, this.trees);
+    this.nightLights = new NightLights(this.q.name === 'low' ? 512 : 1024, () => practicalPools(this.roads.lampSpots, this.buildings.list.values()));
     lap('city');
 
     const start = this.startView();
@@ -1101,6 +1107,17 @@ export class Game {
     this.peds.setNight(n);
     if (n > 0.6 && !this.nightWas) { this.nightWas = true; if (Math.random() < 0.5) this.feed.push('nightfall'); }
     if (n < 0.3) this.nightWas = false;
+    // repaint the pools when the lamps or the lit lots change (checked once a second)
+    if ((this.lampCheck -= dt) <= 0) {
+      this.lampCheck = 1;
+      let lit = 0, sum = 0;
+      for (const b of this.buildings.list.values()) if (b.state === 'active' && b.abandoned === undefined) { lit++; sum = (sum + b.id * 131) % 1000003; }
+      let at = 0;
+      for (const L of this.roads.lampSpots) at = (at + Math.round(L.x * 3 + L.z * 7)) % 1000003;
+      const sig = `${this.roads.lampSpots.length}:${at}:${lit}:${sum}`;
+      if (sig !== this.lampSig) { this.lampSig = sig; this.nightLights.invalidate(); }
+    }
+    this.nightLights.update(dt, n);
 
     const wu = this.water.mat.uniforms;
     wu.uTime.value = this.time;

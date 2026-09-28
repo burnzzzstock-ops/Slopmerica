@@ -2,6 +2,7 @@ import { GLOW } from '../config';
 // Turns the road network into meshes: textured ribbons per road type, junction
 // polygons, concrete skirts / bridge decks / barriers / pillars, and street lights.
 import * as THREE from 'three';
+import { litByLamps } from '../world/nightLights';
 import { clamp, convexHull, lerp, locate, norm, sub, V2 } from '../core/math';
 import { carriageHalf, ROAD_TYPES, RoadType, RoadTypeId, ROAD_ORDER } from './roadTypes';
 import type { RNode, RoadNetwork, RSeg } from './network';
@@ -302,11 +303,14 @@ export class RoadRenderer {
   private lampMat: THREE.MeshStandardMaterial;
   private details = new StreetDetails();
   readonly typeMats = new Map<RoadTypeId, THREE.MeshStandardMaterial>();
+  /** where the street lamps stand (for the pools of light they throw, world/nightLights.ts) */
+  lampSpots: { x: number; y: number; z: number; yaw: number }[] = [];
 
   constructor(private net: RoadNetwork, renderer: THREE.WebGLRenderer) {
     const aniso = renderer.capabilities.getMaxAnisotropy();
     for (const id of ROAD_ORDER) {
       const mat = new THREE.MeshStandardMaterial({ map: roadTexture(ROAD_TYPES[id], aniso), roughness: 0.92, metalness: 0, envMapIntensity: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+      litByLamps(mat);
       this.typeMats.set(id, mat);
       const m = new THREE.Mesh(new THREE.BufferGeometry(), mat);
       m.receiveShadow = true;
@@ -318,13 +322,16 @@ export class RoadRenderer {
     // env intensity junctions read as lighter grey discs
     this.junctionMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ map: jt, roughness: 0.92, metalness: 0, envMapIntensity: 0.5, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 }));
     this.junctionMesh.receiveShadow = true;
+    litByLamps(this.junctionMesh.material as THREE.MeshStandardMaterial);
     this.group.add(this.junctionMesh);
     this.crosswalkMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ map: crosswalkTexture(aniso), alphaTest: 0.5, roughness: 0.8, metalness: 0, envMapIntensity: 0.5, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 }));
     this.crosswalkMesh.receiveShadow = true;
+    litByLamps(this.crosswalkMesh.material as THREE.MeshStandardMaterial);
     this.group.add(this.crosswalkMesh);
     this.concMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, side: THREE.DoubleSide }));
     this.concMesh.castShadow = true;
     this.concMesh.receiveShadow = true;
+    litByLamps(this.concMesh.material as THREE.MeshStandardMaterial);
     this.group.add(this.concMesh);
 
     const pole = new THREE.CylinderGeometry(0.09, 0.13, 8, 5);
@@ -435,6 +442,7 @@ export class RoadRenderer {
       this.lampHeads.setMatrixAt(i, m);
     }
     this.lampPoles.count = this.lampHeads.count = n;
+    this.lampSpots = lights.slice(0, n);
     this.lampPoles.instanceMatrix.needsUpdate = this.lampHeads.instanceMatrix.needsUpdate = true;
     this.lampPoles.computeBoundingSphere();
     this.lampHeads.computeBoundingSphere();

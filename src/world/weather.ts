@@ -781,6 +781,9 @@ export class WeatherSystem {
       // moonlight is blue and colourless: night reads as night even when it's bright
       lk.tint.setRGB(c.tint[0] * (1 + warm * 0.25) * (1 - night * 0.16), c.tint[1] * (1 + warm * 0.04) * (1 - night * 0.07), c.tint[2] * (1 - warm * 0.3) * (1 + night * 0.1));
       lk.sat = c.sat * sat * (1 - night * 0.38);
+      // under a street lamp or a shop sign, colour is back (world/nightLights.ts)
+      lk.tintLit.setRGB(c.tint[0] * (1 + warm * 0.25), c.tint[1] * (1 + warm * 0.04), c.tint[2] * (1 - warm * 0.3));
+      lk.satLit = c.sat * sat;
       lk.contrast = c.contrast;
       // night: the eye adapts (the playtest found the town unreadable after dark),
       // and blacks lift to a moonlit blue; lit windows and street lights still pop

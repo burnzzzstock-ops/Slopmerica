@@ -45,8 +45,17 @@ const LEAF_BOOST = `
   float mipL = max(0.0, 0.5 * log2(max(dot(dxu, dxu), dot(dyu, dyu))));
   diffuseColor.a *= 1.0 + min(mipL, 3.0) * 0.3;
 #endif`;
-// (the far tree pictures don't boost: their mip chain keeps each tree's
-// coverage, see coverageMipmaps; the boost made them opaque rectangles)
+// The far tree pictures boost the same, capped way, measured on the sheet row
+// they read (their mip chain keeps each tree's coverage, see coverageMipmaps;
+// the old unbounded boost made them opaque rectangles)
+const IMPOSTOR_BOOST = `
+#ifdef USE_MAP
+  vec2 tsz = vec2(textureSize(map, 0));
+  vec2 ruv = vec2(vMapUv.x, vMapUv.y * 0.5) * tsz;
+  vec2 dxu = dFdx(ruv), dyu = dFdy(ruv);
+  float mipL = max(0.0, 0.5 * log2(max(dot(dxu, dxu), dot(dyu, dyu))));
+  diffuseColor.a *= 1.0 + min(mipL, 3.0) * 0.3;
+#endif`;
 const LEAF_ALPHA = `
 float thr = mix(0.42, 0.995, (1.0 - uLeaf) * step(0.5, vCanopy));
 #ifdef ALPHA_TO_COVERAGE
@@ -216,8 +225,12 @@ vCanopy = canopy;`)
   diffuseColor *= mix(sprSide, sprTop, vK);
 #endif`)
         // a lower cut than the cards': the baked crown's edge is soft, and at 0.5
-        // impostors covered only half the ground the detailed trees did
-        .replace('#include <alphatest_fragment>', LEAF_ALPHA.replace('0.42', '0.3'))
+        // impostors covered only half the ground the detailed trees did. Plus
+        // the leaf cards' own capped per-mip boost, measured on the sheet row
+        // the picture is read from: without it far canopies covered ~55-60% of
+        // the ground the detailed trees do (scripts/treelod.mjs); the cap keeps
+        // a small picture from filling its card (the playtest's rectangles)
+        .replace('#include <alphatest_fragment>', IMPOSTOR_BOOST + LEAF_ALPHA.replace('0.42', '0.3'))
         .replace('#include <color_fragment>', `#include <color_fragment>
 diffuseColor.rgb *= cloudShade(vTWPos);
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.88, 0.93), uSnow * 0.55 * vTop * smoothstep(uSnowLine - 30.0, uSnowLine + 60.0, vTWPos.y));`);
@@ -344,7 +357,11 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
         sh.uniforms.uLeaf = { value: 1 };
         sh.fragmentShader = sh.fragmentShader
           .replace('#include <common>', '#include <common>\nuniform float uLeaf;\nconst float vCanopy = 0.0;')
-          .replace('#include <alphatest_fragment>', LEAF_ALPHA);
+          // photographed small, the leaf texture is read at a coarse mip: the
+          // detailed trees' own boost there keeps the picture's crown as full
+          // as the tree it stands in for (without it distant forest covered
+          // ~40% of the ground the detailed trees did; scripts/treelod.mjs)
+          .replace('#include <alphatest_fragment>', LEAF_BOOST + LEAF_ALPHA);
       };
       return m;
     };
@@ -361,8 +378,7 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
     const passes: Uint8Array[] = [];
     for (const m of [litMat, albMat]) {
     mat = m;
-    renderer.setRenderTarget(rt);
-    renderer.setScissorTest(true);
+    rt.scissorTest = true;
     geos.forEach((g, i) => {
       g.computeBoundingBox();
       const bb = g.boundingBox!;
@@ -383,14 +399,22 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
       top.position.set(0, yc + Math.sin(el) * 150, Math.cos(el) * 150);
       top.lookAt(0, yc, 0);
       [side, top].forEach((cam, row) => {
-        renderer.setViewport(i * SPRITE_W, row * SPRITE_H, SPRITE_W, SPRITE_H);
-        renderer.setScissor(i * SPRITE_W, row * SPRITE_H, SPRITE_W, SPRITE_H);
+        // the tile goes on the target itself: renderer.setViewport/setScissor
+        // are scaled by the screen's pixel ratio, so on a 2-3x phone every
+        // tile came out 2-3x too big and the whole from-above row fell off the
+        // sheet (no distant trees on mobile when looking down)
+        rt.viewport.set(i * SPRITE_W, row * SPRITE_H, SPRITE_W, SPRITE_H);
+        rt.scissor.copy(rt.viewport);
+        renderer.setRenderTarget(rt);
         renderer.clear();
         renderer.render(scene, cam);
       });
       scene.remove(mesh);
     });
-    renderer.setScissorTest(false);
+    rt.scissorTest = false;
+    rt.viewport.set(0, 0, W, H);
+    rt.scissor.set(0, 0, W, H);
+    renderer.setRenderTarget(rt);
     const buf = new Uint8Array(W * H * 4);
     renderer.readRenderTargetPixels(rt, 0, 0, W, H, buf);
     passes.push(buf);
@@ -398,8 +422,6 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
     renderer.setRenderTarget(prevTarget);
     renderer.setClearColor(prevClear, prevAlpha);
     renderer.toneMapping = prevTone;
-    const size = renderer.getSize(new THREE.Vector2());
-    renderer.setViewport(0, 0, size.x, size.y);
     rt.dispose();
     litMat.dispose();
     albMat.dispose();

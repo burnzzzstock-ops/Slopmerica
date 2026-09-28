@@ -136,6 +136,7 @@ node scripts/junctiontest.mjs    # roads over a dead end join it; no near-parall
 node scripts/interchangetest.mjs # roundabout and diamond interchange (overpass, ramps, save, undo)
 node scripts/townshots.mjs tag   # builds a ~250-person river town and screenshots day, night, a junction, a factory
 node scripts/treelod.mjs         # distant trees match near ones in brightness, colour and cover (MAP=, VIEWS=)
+node scripts/impostortest.mjs    # the distant-tree billboards bake the same on a 3x phone as on a 1x desktop (both views, every species)
 node scripts/roadthrough.mjs     # a road through homes bulldozes them (and says so first); services refuse it
 node scripts/tiptest.mjs         # placement tooltips stay inside the window at every edge
 node scripts/needtest.mjs        # hovering a building's need icon says what it needs

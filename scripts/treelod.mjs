@@ -1,8 +1,9 @@
 // Distant trees (impostors) match the detailed trees they replace: renders the
 // same stand of trees as detailed models, as impostors, and with no trees,
 // and compares the brightness of tree pixels (the review saw far trees as dark
-// flat cutouts; the impostor texture was decoded as sRGB twice). Also checks
-// the handover ring isn't a visible step. Exits nonzero on failure.
+// flat cutouts; the impostor texture was decoded as sRGB twice), and how much
+// ground their canopies cover (with sun shadows off: impostors cast none).
+// Exits nonzero on failure.
 // `--shots` saves the frames to /tmp.
 import { chromium } from 'playwright-core';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
@@ -26,16 +27,17 @@ await page.evaluate(() => {
   for (let k = 0; k < 400; k++) { const x = S.x + (k % 20 - 10) * 60, z = S.z + (Math.floor(k / 20) - 10) * 60; let n = 0; for (let i = 0; i < t.n; i += 7) if (Math.abs(t.X[i] - x) < 40 && Math.abs(t.Z[i] - z) < 40) n++; if (n > bn) { bn = n; best = { x, z }; } }
   window.__spot = best;
 });
-const frame = async (mode, dist, pitch) => {
-  await page.evaluate(([mode, dist, pitch]) => {
+const frame = async (mode, dist, pitch, shadows = true) => {
+  await page.evaluate(([mode, dist, pitch, shadows]) => {
     const g = window.__game, t = g.trees, s = window.__spot;
+    g.env.sun.castShadow = shadows;
     t.q.treeNear = mode === 'near' ? 5000 : 0.001; t.dirty = true;
     g.rts.setView(s.x, s.z, dist, 0.6, pitch, true);
     for (let i = 0; i < 3; i++) g.frame(0.05, false);
     t.near.forEach((m) => { m.visible = mode !== 'none'; });
     t.far.forEach((m) => { m.visible = mode !== 'none'; });
     g.frame(0.016, true);
-  }, [mode, dist, pitch]);
+  }, [mode, dist, pitch, shadows]);
   if (shots) await page.screenshot({ path: `/tmp/treelod-${mode}-${dist}.png` });
   return (await page.screenshot()).toString('base64');
 };
@@ -58,8 +60,12 @@ for (const [dist, pitch] of VIEWS) {
   const n = await frame('near', dist, pitch), f = await frame('far', dist, pitch), o = await frame('none', dist, pitch);
   const r = await lum(n, f, o);
   const ratio = r.far / r.near;
+  // coverage is the canopy's: detailed trees also cast shadows on the ground
+  // (impostors don't), and counting shadow pixels made far forest look half as
+  // dense as it is
+  const c = await lum(await frame('near', dist, pitch, false), await frame('far', dist, pitch, false), await frame('none', dist, pitch, false));
   check(`at ${dist} m, pitch ${pitch}, impostors are as bright as detailed trees (tree pixels: detailed ${r.near} rgb(${r.nearRGB}), impostor ${r.far} rgb(${r.farRGB}), ratio ${ratio.toFixed(2)})`, ratio > 0.85 && ratio < 1.15, r);
-  check(`at ${dist} m, impostors cover about as much ground (${r.farPx} vs ${r.nearPx} px)`, r.farPx > r.nearPx * 0.6 && r.farPx < r.nearPx * 1.6, r);
+  check(`at ${dist} m, impostor canopies cover about as much ground (${c.farPx} vs ${c.nearPx} px, sun shadows off; ${r.farPx} vs ${r.nearPx} with them)`, c.farPx > c.nearPx * 0.6 && c.farPx < c.nearPx * 1.6, c);
 }
 check('no page errors', errs.length === 0, errs.slice(0, 3));
 await browser.close();

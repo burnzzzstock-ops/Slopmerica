@@ -36,6 +36,8 @@ interface Chunk {
 }
 
 const tmpA = new THREE.Color();
+/** a mown, watered lawn (blended with the map's own grass) */
+const LAWN = new THREE.Color(0x587c3a);
 
 /** Cheap smooth value noise from the hash, for far-away scenery. */
 function vnoise(x: number, z: number, scale: number, seed: number) {
@@ -612,9 +614,12 @@ if (uInfoOn > 0.0) {
       }
       if (mapId === 'florida' && h < 0.95 && h > 0) col.lerp(P.marsh, smoothstep(0.95, 0.4, h));
       const shoreBand = mapId === 'appalachia' ? 1.5 : mapId === 'florida' ? 0.3 : 4.2;
-      if (h < shoreBand) {
-        const t = smoothstep(shoreBand, shoreBand * 0.3, h);
-        col.lerp(mapId === 'appalachia' ? P.mud : P.sand, t);
+      // an uneven bank of mud and wet sand (real beaches come from map.sand below), not a
+      // uniform bright band along every river (playtest 5: "a less uniformly bright shoreline")
+      const band = shoreBand * (0.55 + 0.9 * c);
+      if (h < band) {
+        const t = smoothstep(band, band * 0.3, h);
+        col.lerp(mapId === 'appalachia' ? P.mud : tmpA.copy(P.sand).lerp(P.mud, 0.3 + 0.45 * r), t);
         if (mapId === 'appalachia') dirt += t * 1.5;
         else sand += t * 2;
       }
@@ -631,7 +636,15 @@ if (uInfoOn > 0.0) {
       rock += rk * 2.5;
       const p = this.paint[id];
       if (p === Paint.Dirt) { col.lerp(tmpA.setHex(0x86705a), 0.7); dirt += 2; }
-      else if (p === Paint.Lawn) { col.lerp(tmpA.setHex(0x5e8f3a), 0.85); grass += 1; }
+      else if (p === Paint.Lawn) {
+        // a watered lawn: greener than the land around it but from the same palette,
+        // mottled, and blended over the lot's edge cells instead of a hard green slab
+        let n = 0;
+        for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) if (this.paint[Math.min(HM_N - 1, Math.max(0, j + dj)) * HM_N + Math.min(HM_N - 1, Math.max(0, i + di))] === Paint.Lawn) n++;
+        tmpA.copy(P.grass).lerp(LAWN, 0.55).multiplyScalar(0.9 + r * 0.16);
+        col.lerp(tmpA, 0.7 * (0.4 + 0.6 * ((n - 1) / 8)));
+        grass += 1;
+      }
       else if (p === Paint.Paved) { col.lerp(tmpA.setHex(0x5a5a5c), 0.9); rock += 2; }
       else if (p === Paint.Scorched) { col.lerp(tmpA.setHex(0x2a2622), 0.8); dirt += 2; }
     }

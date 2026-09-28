@@ -48,6 +48,30 @@ interface WinOpts {
   arch?: boolean;
 }
 
+/**
+ * A lit pane on the emissive layer: a room behind glass, not a flat panel
+ * (playtest 5: "tune emissive materials to avoid flat glowing rectangles").
+ * The head shades the top, the ceiling light is brightest just under it and
+ * falls off toward the floor, furniture cuts the bottom of most rooms, and
+ * some have their blinds down.
+ */
+function litPane(c: Ctx, x: number, y: number, w: number, h: number, col: string) {
+  const g = c.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, shade(col, -0.5));
+  g.addColorStop(0.16, col);
+  g.addColorStop(1, shade(col, -0.42));
+  c.fillStyle = g;
+  c.fillRect(x, y, w, h);
+  const k = (((x * 7.13 + y * 3.71) % 1) + 1) % 1;
+  c.fillStyle = 'rgba(0,0,0,0.5)';
+  if (k < 0.55) c.fillRect(x + w * k * 0.7, y + h * 0.72, w * (0.25 + k * 0.4), h * 0.28);
+  if (k > 0.3 && k < 0.45) c.fillRect(x + w * 0.6, y + h * 0.25, w * 0.08, h * 0.75);
+  if (k > 0.82) {
+    c.fillStyle = 'rgba(0,0,0,0.35)';
+    for (let yy = y; yy < y + h * 0.45; yy += Math.max(2, h / 24)) c.fillRect(x, yy, w, Math.max(1, h / 60));
+  }
+}
+
 /** One window. On the emissive layer only the lit glass is drawn. */
 function win(c: Ctx, L: Layer, x: number, y: number, w: number, h: number, o: WinOpts = {}) {
   const fw = o.frameW ?? Math.max(2, w * 0.07);
@@ -71,6 +95,19 @@ function win(c: Ctx, L: Layer, x: number, y: number, w: number, h: number, o: Wi
       c.fillStyle = 'rgba(0,0,0,0.45)';
       c.fillRect(x + fw, y + fw, (w - fw * 2) * 0.22, h - fw * 2);
       c.fillRect(x + w - fw - (w - fw * 2) * 0.22, y + fw, (w - fw * 2) * 0.22, h - fw * 2);
+    }
+    {
+      // a room behind the glass: the head shades the top, furniture cuts the bottom
+      const gx = x + fw, gy = y + fw, gw = w - fw * 2, gh = h - fw * 2;
+      const hs = c.createLinearGradient(0, gy, 0, gy + gh * 0.3);
+      hs.addColorStop(0, 'rgba(0,0,0,0.5)');
+      hs.addColorStop(1, 'rgba(0,0,0,0)');
+      c.fillStyle = hs;
+      c.fillRect(gx, gy, gw, gh * 0.3);
+      const k = (((x * 7.13 + y * 3.71) % 1) + 1) % 1;
+      c.fillStyle = 'rgba(0,0,0,0.55)';
+      if (k < 0.6) c.fillRect(gx + gw * k * 0.8, gy + gh * 0.76, gw * (0.3 + k * 0.4), gh * 0.24);
+      if (k > 0.35 && k < 0.5) c.fillRect(gx + gw * 0.62, gy + gh * 0.3, gw * 0.08, gh * 0.7); // a floor lamp, a person, a coat stand
     }
     // mullions stay dark
     c.fillStyle = '#000';
@@ -127,11 +164,31 @@ function win(c: Ctx, L: Layer, x: number, y: number, w: number, h: number, o: Wi
     c.fillRect(gx, gy, gw * 0.22, gh);
     c.fillRect(gx + gw * 0.78, gy, gw * 0.22, gh);
   }
+  // depth: the glass sits back in the wall, so the head and one jamb shade it
+  const hs = c.createLinearGradient(0, gy, 0, gy + gh * 0.3);
+  hs.addColorStop(0, 'rgba(0,0,0,0.42)');
+  hs.addColorStop(1, 'rgba(0,0,0,0)');
+  c.fillStyle = hs;
+  c.fillRect(gx, gy, gw, gh * 0.3);
+  const js = c.createLinearGradient(gx, 0, gx + gw * 0.18, 0);
+  js.addColorStop(0, 'rgba(0,0,0,0.3)');
+  js.addColorStop(1, 'rgba(0,0,0,0)');
+  c.fillStyle = js;
+  c.fillRect(gx, gy, gw * 0.18, gh);
   c.fillStyle = frame;
   const cols = o.cols ?? 1, rows = o.rows ?? 1;
   for (let i = 1; i < cols; i++) c.fillRect(x + (i * w) / cols - fw * 0.3, y, fw * 0.6, h);
   for (let j = 1; j < rows; j++) c.fillRect(x, y + (j * h) / rows - fw * 0.3, w, fw * 0.6);
   c.restore();
+  if (!o.arch) {
+    // the opening's reveal: a shadow line along the head and left jamb, light on the right
+    const rv = Math.max(1, fw * 0.45);
+    c.fillStyle = 'rgba(0,0,0,0.3)';
+    c.fillRect(x - rv, y - rv, w + rv, rv);
+    c.fillRect(x - rv, y, rv, h);
+    c.fillStyle = 'rgba(255,255,255,0.12)';
+    c.fillRect(x + w, y, rv * 0.8, h);
+  }
   if (o.sill !== null) {
     c.fillStyle = o.sill ?? shade(frame, -0.1);
     c.fillRect(x - fw * 0.8, y + h, w + fw * 1.6, fw * 1.1);
@@ -852,10 +909,7 @@ export function registerFacades() {
       const x = i * 128 + 10;
       const lit = rw.float() < 0.5;
       if (L === 'e') {
-        if (lit) {
-          c.fillStyle = '#ffe6b0';
-          c.fillRect(x + 4, 44, 100, 190);
-        }
+        if (lit) litPane(c, x + 4, 44, 100, 190, '#ffe6b0');
         continue;
       }
       c.fillStyle = '#7d8084';
@@ -920,10 +974,7 @@ export function registerFacades() {
       for (let i = 0; i < 8; i++) {
         const lit = rw.float() < 0.45, col = litColor(rw);
         if (L === 'e') {
-          if (lit) {
-            c.fillStyle = col;
-            c.fillRect(i * 64 + 4, y + 6, 56, 100);
-          }
+          if (lit) litPane(c, i * 64 + 4, y + 6, 56, 100, col);
         } else {
           c.fillStyle = '#394652';
           c.fillRect(i * 64, y, 3, 110);
@@ -1024,8 +1075,7 @@ export function registerFacades() {
           const x = i * 128;
           if (L === 'e') {
             if (lit) {
-              c.fillStyle = warmLit ? '#ffe2a8' : '#dfe9ff';
-              c.fillRect(x + 3, y + 3, 125 * (part < 0.3 ? 0.5 : 1), 96);
+              litPane(c, x + 3, y + 3, 125 * (part < 0.3 ? 0.5 : 1), 96, warmLit ? '#ffe2a8' : '#dfe9ff');
               c.fillStyle = 'rgba(0,0,0,0.5)';
               for (let k = 0; k < 3; k++) c.fillRect(x + 12 + k * 40, y + 60, 26, 30);
             }
@@ -1076,8 +1126,7 @@ export function registerFacades() {
       for (let i = 0; i < 8; i++) {
         const lit = rw.float() < 0.5;
         if (L === 'e' && lit) {
-          c.fillStyle = '#e4ecff';
-          c.fillRect(i * 64 + 2, y + 46, 60, 56);
+          litPane(c, i * 64 + 2, y + 46, 60, 56, '#e4ecff');
         } else if (L === 'a' && lit) {
           c.fillStyle = 'rgba(230,230,210,0.35)';
           c.fillRect(i * 64 + 2, y + 44, 60, 18);

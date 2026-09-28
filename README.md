@@ -169,6 +169,9 @@ node scripts/savetest.mjs        # save, reload and Resume bring back the same t
 node scripts/triage.mjs <folder>  # (Jev, <$0.01 per dozen) tester reports (🐞 text, one .txt each): area, severity, which check would catch it, duplicates; table in <folder>/TRIAGE.md. Try scripts/triage-samples (hand-labelled)
 node scripts/overlaptest.mjs     # HUD panels never cover each other: emergency card, inspector, drawers, Next, toolbar, tool badge at 1707×1019 down to a phone
 node scripts/gradetest.mjs       # contours and slope shading around the cursor when drawing roads or placing; live road grade in the tip (amber near 15%); steep refusal names the rule and the way out
+node scripts/reflecttest.mjs     # water mirror pass: first look at water compiles no shader variants (was 12.9 s on the software GPU), image matches the old clipping, nothing under the surface shows
+node scripts/nighttest.mjs       # night exposure targets on the reference block: road median >= 50, pools p90 >= 100, lit facades clear of the ground, < 1% blown out, pools off by day
+node scripts/lookbook.mjs high   # fixed-camera captures of the reference block (noon, dusk, moonless, full moon, rain) per quality, with a contact sheet (docs/ART_DIRECTION.md)
 node scripts/linktest.mjs        # landmarks/services off the road network: tip, toast, red no-road bubble, inspector, alerts, no land value; feed pacing
 node scripts/vaulttest.mjs       # Asset Vault: pack streams in; zoned lots grow vault buildings that fit; merch lots kept; attractions; services' vault looks + toggle; road furniture; no pack = no change
 node scripts/crisisfixtest.mjs   # info views show every building with that view's problem; utility outages merge only for the same buildings; a closed warning returns when worse

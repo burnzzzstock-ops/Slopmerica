@@ -435,6 +435,13 @@ export class MB {
     this.box(x0, x1, y, y + h, z0, z0 + t, { f: inner, b: wall, l: cap, r: cap, top: cap });
     this.box(x0, x0 + t, y, y + h, z0 + t, z1 - t, { l: wall, r: inner, f: null, b: null, top: cap });
     this.box(x1 - t, x1, y, y + h, z0 + t, z1 - t, { r: wall, l: inner, f: null, b: null, top: cap });
+    // coping: a pale cap stone that oversails the wall a little, so the roof line has an edge and a shadow
+    const cope = M('plain', 0, 0, [Math.min(1, wall.c[0] * 0.5 + 0.34), Math.min(1, wall.c[1] * 0.5 + 0.33), Math.min(1, wall.c[2] * 0.5 + 0.31)], { ao: false });
+    const o = 0.07, ch = 0.12, yc = y + h;
+    this.box(x0 - o, x1 + o, yc, yc + ch, z1 - t - 0.02, z1 + o, cope);
+    this.box(x0 - o, x1 + o, yc, yc + ch, z0 - o, z0 + t + 0.02, cope);
+    this.box(x0 - o, x0 + t + 0.02, yc, yc + ch, z0 + t, z1 - t, { l: cope, r: cope, f: null, b: null, top: cope });
+    this.box(x1 - t - 0.02, x1 + o, yc, yc + ch, z0 + t, z1 - t, { l: cope, r: cope, f: null, b: null, top: cope });
   }
 
   // ---------------------------------------------------------------- surfaces of revolution

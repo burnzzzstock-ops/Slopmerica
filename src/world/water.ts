@@ -362,9 +362,12 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
         float shore = (1.0 - smoothstep(0.0, 2.2, depth)) * (1.0 - inland * 0.85);
         float roll = sin(depth * 5.5 - uTime * 1.6 + vn(vW.xz * 0.05) * 6.0);
         float surf = smoothstep(0.55, 0.95, roll) * shore * smoothstep(0.02, 0.25, depth) * (0.4 + 0.6 * vn(vW.xz * 0.2 + uTime * 0.2));
-        float edge = (1.0 - smoothstep(0.0, 0.45, depth)) * smoothstep(0.3, 0.75, vn(vW.xz*0.5 + uTime*0.3));
+        // the lap line at the edge: broken up, and mostly a coastal thing (rivers and ponds
+        // get a dark wet margin instead of a white rim; playtest 5: "angular bright shorelines")
+        float edge = (1.0 - smoothstep(0.0, 0.45, depth)) * smoothstep(0.3, 0.75, vn(vW.xz*0.5 + uTime*0.3)) * smoothstep(0.25, 0.6, vn(vW.xz * 0.06)) * (1.0 - inland * 0.8);
+        col *= 1.0 - 0.3 * inland * (1.0 - smoothstep(0.0, 0.8, depth));
         float foam = max(edge, surf * uWindAmp);
-        col = mix(col, vec3(0.93) * mix(1.0, 0.16, uNight), foam * 0.7 * (1.0 - uPollution*0.5));
+        col = mix(col, vec3(0.86) * mix(1.0, 0.16, uNight), foam * 0.6 * (1.0 - uPollution*0.5));
         // winter ice creeping in from the banks
         float ice = 0.0;
         if (uIce > 0.001) {
@@ -378,6 +381,9 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
         float alpha = mix(mix(0.5, 0.95, smoothstep(0.0, 3.5, depth)), mix(0.75, 0.97, smoothstep(0.0, 1.5, depth)), inland);
         alpha = max(alpha, foam*0.8);
         alpha = mix(alpha, 0.97, ice);
+        // melt into the bank: the visible edge follows the smooth depth contour, not the
+        // terrain triangles crossing the water plane
+        alpha *= mix(smoothstep(0.0, 0.35, depth), 1.0, ice);
         gl_FragColor = vec4(col, alpha);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>

@@ -12,6 +12,8 @@ let bad = 0;
 for (const f of files) {
   const src = fs.readFileSync(f, 'utf8');
   src.split('\n').forEach((line, i) => {
+    // CPU-side TypeScript (typed params, JS doubles) isn't a shader and keeps its precision
+    if (/\(\s*\w+\s*:\s*number/.test(line)) return;
     if (/fract\s*\(\s*sin\s*\(/.test(line) || /43758\.5/.test(line)) { console.log(`FAIL ${path.relative(root, f)}:${i + 1} sin-based hash: ${line.trim().slice(0, 100)}`); bad++; }
   });
 }

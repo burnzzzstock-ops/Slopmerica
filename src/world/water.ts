@@ -16,7 +16,10 @@ export class WaterReflection {
   readonly rt: THREE.WebGLRenderTarget;
   readonly texMat = new THREE.Matrix4();
   private cam = new THREE.PerspectiveCamera();
-  private clip = [new THREE.Plane(new THREE.Vector3(0, 1, 0), -WATER + 0.25)];
+  /** the water plane in the mirrored camera's view space, and the oblique projection's helper */
+  private plane = new THREE.Plane();
+  private cp = new THREE.Vector4();
+  private q = new THREE.Vector4();
   private frustum = new THREE.Frustum();
   private viewProjection = new THREE.Matrix4();
   private waterBounds: THREE.Box3[] = [];
@@ -65,7 +68,6 @@ export class WaterReflection {
     if (this.rt.width !== w || this.rt.height !== h) this.rt.setSize(w, h);
     // Mirror about the current water height, including a hurricane surge.
     const planeY = hide[0]?.position.y ?? WATER;
-    this.clip[0].constant = -planeY + 0.25;
     const c = this.cam;
     c.copy(camera, false);
     camera.getWorldDirection(this.t);
@@ -76,9 +78,23 @@ export class WaterReflection {
     c.lookAt(this.v.x + this.t.x, 2 * planeY - (this.v.y + this.t.y), this.v.z + this.t.z);
     c.updateMatrixWorld();
     c.projectionMatrix.copy(camera.projectionMatrix);
-    c.projectionMatrixInverse.copy(camera.projectionMatrixInverse);
     this.texMat.copy(this.bias).multiply(c.projectionMatrix).multiply(c.matrixWorldInverse);
-    // render without the water, clipped below the surface, reusing this frame's shadows
+    // Clip below the surface by making the water plane the camera's near plane
+    // (Lengyel's oblique frustum, as three's Reflector does). The renderer's
+    // clipping planes did the same job but made every material compile a second,
+    // clipped program the first time water came into view (the playtest's
+    // 124 ms reflection frame) and switch programs twice a frame after that.
+    this.plane.set(this.t.set(0, 1, 0), -(planeY - 0.25)).applyMatrix4(c.matrixWorldInverse);
+    const cp = this.cp.set(this.plane.normal.x, this.plane.normal.y, this.plane.normal.z, this.plane.constant);
+    const e = c.projectionMatrix.elements;
+    this.q.set((Math.sign(cp.x) + e[8]) / e[0], (Math.sign(cp.y) + e[9]) / e[5], -1, (1 + e[10]) / e[14]);
+    cp.multiplyScalar(2 / cp.dot(this.q));
+    e[2] = cp.x;
+    e[6] = cp.y;
+    e[10] = cp.z + 1;
+    e[14] = cp.w;
+    c.projectionMatrixInverse.copy(c.projectionMatrix).invert();
+    // render without the water, reusing this frame's shadows
     const vis = this.vis;
     vis.length = hide.length;
     for (let i = 0; i < hide.length; i++) {
@@ -86,15 +102,12 @@ export class WaterReflection {
       hide[i].visible = false;
     }
     const prevTarget = renderer.getRenderTarget();
-    const prevClip = renderer.clippingPlanes;
     const prevShadow = renderer.shadowMap.autoUpdate;
     renderer.shadowMap.autoUpdate = false;
-    renderer.clippingPlanes = this.clip;
     renderer.setRenderTarget(this.rt);
     renderer.clear();
     renderer.render(scene, c);
     renderer.setRenderTarget(prevTarget);
-    renderer.clippingPlanes = prevClip;
     renderer.shadowMap.autoUpdate = prevShadow;
     for (let i = 0; i < hide.length; i++) hide[i].visible = vis[i];
     return true;

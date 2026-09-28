@@ -273,7 +273,7 @@ export class Hud implements UiSink {
         <button data-speed="3" title="Speed 3 (3)">▶▶▶</button>
       </div>
       <div class="tb-stat tb-popstat" role="button" tabindex="0" id="tb-popstat" aria-haspopup="dialog"><span class="tb-lbl">Pop</span><b id="tb-pop">0</b></div>
-      <div class="tb-stat tb-money" role="button" tabindex="0" id="tb-treasury"><span class="tb-lbl">Treasury</span><b id="tb-money">$0</b><i id="tb-net"></i></div>
+      <div class="tb-stat tb-money" role="button" tabindex="0" id="tb-treasury"><span class="tb-lbl">Treasury</span><b id="tb-money">$0</b><i id="tb-net"></i><i id="tb-growth" class="tb-growth" hidden></i></div>
       <div class="tb-demand" role="group" aria-label="Demand">
         ${DEMAND_KEYS.map((k) => `<button class="dbar" data-dem="${k}" aria-haspopup="dialog" aria-expanded="false"><span class="dtrack"><span class="dfill" id="d-${k}" style="--c:var(--${k})"></span><em>${DEM[k].letter}</em></span></button>`).join('')}
       </div>
@@ -344,9 +344,7 @@ export class Hud implements UiSink {
     const oneTime = ONE_TIME.filter((k) => Math.round(s.ledger[k]));
     const last = Sim.split(s.lastWeek), lc = s.lastWeekCash;
     // growth money vs forever costs: the Ponzi in two numbers
-    const since = s.day - 28;
-    const growth = s.transactions.filter((t) => t.day >= since && (t.kind === 'impact' || t.kind === 'grants')).reduce((a, t) => a + t.amount, 0);
-    const weeks = Math.max(1, Math.min(4, s.day / 7));
+    const growth = s.growthWeek();
     const recent = s.transactions.slice(-12).reverse();
     return `
       <div class="bg-top">
@@ -365,7 +363,7 @@ export class Hud implements UiSink {
         ${oneTime.length ? oneTime.map((k) => row(LEDGER_LABEL[k], s.ledger[k])).join('') : '<tr><td colspan="2" class="muted">No one-time spending or income yet.</td></tr>'}
         <tr><td colspan="2" class="muted">Taxes and upkeep are billed when the week ends.</td></tr>
       </table>
-      ${growth ? `<p class="bg-growth">Growth money: new buildings' impact fees and grants brought <b class="pos">+${usd(growth / weeks)}/wk</b> on average lately. It stops when growth stops; upkeep doesn't.</p>` : ''}
+      ${growth >= 1 ? `<p class="bg-growth">Growth money: new buildings' impact fees and grants brought <b class="pos">+${usd(growth)}/wk</b> on average lately. It stops when growth stops; upkeep doesn't.</p>` : ''}
       ${this.budgetOutlook(fc)}
       <details class="bg-more"><summary>Last week: ${usd(lc.from)} → ${usd(lc.to)} (${last.total >= 0 ? '+' : ''}${usd(last.total)})</summary>
         <table>
@@ -978,13 +976,19 @@ export class Hud implements UiSink {
     $('tb-pop').textContent = s.population.toLocaleString();
     $('tb-money').textContent = money(s.money);
     $('tb-money').classList.toggle('neg', s.money < 0);
-    const net = s.weeklyNet();
-    const netEl = $('tb-net');
-    netEl.textContent = s.money === Infinity ? 'sandbox' : `${net >= 0 ? '+' : ''}${money(net)}/wk`;
+    // running (taxes in, upkeep out: forever) apart from growth money (new
+    // buildings' fees and grants: stops when growth stops). Playtest 5 had to
+    // work out which was which from the budget panel.
+    const net = s.weeklyNet(), wide = window.innerWidth > 1000;
+    const netEl = $('tb-net'), growthEl = $('tb-growth');
+    netEl.textContent = s.money === Infinity ? 'sandbox' : `${net >= 0 ? '+' : ''}${money(net)}/wk${wide ? ' running' : ''}`;
     netEl.className = net >= 0 ? 'pos' : 'neg';
+    const growth = s.money === Infinity ? 0 : s.growthWeek();
+    growthEl.hidden = !wide || growth < 1;
+    if (!growthEl.hidden) growthEl.textContent = `+${money(growth)}/wk growth`;
     if (s.money !== Infinity) {
       const fc = s.forecastWeek(), one = Sim.split(s.ledger).oneTime;
-      const tip = `Every week at today's rates: ${usd(fc.income)} taxes and fees in, ${usd(fc.expense)} upkeep, imports and loans out.${one ? ` One-time this week: ${one > 0 ? '+' : ''}${usd(one)} (construction, fees, grants).` : ''} Click for the budget.`;
+      const tip = `Running, every week at today's rates: ${usd(fc.income)} taxes and fees in, ${usd(fc.expense)} upkeep, imports and loans out (${net >= 0 ? '+' : ''}${usd(net)}/wk).${growth >= 1 ? ` Growth money: +${usd(growth)}/wk lately from new buildings' impact fees and grants; it stops when growth stops.` : ''}${one ? ` One-time this week: ${one > 0 ? '+' : ''}${usd(one)} (construction, fees, grants).` : ''} Click for the budget.`;
       const tr = $('tb-treasury');
       if (tr.title !== tip) { tr.title = tip; tr.setAttribute('aria-label', `Treasury ${usd(s.money)}, ${usd(net)} per week. ${tip}`); }
     }

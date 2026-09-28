@@ -186,6 +186,7 @@ export class Sim {
   /** how far the last closed week's cash change missed its ledger (should be 0) */
   ledgerDrift = 0;
   private fcCache: { key: string; v: ReturnType<Sim['computeForecast']> } | null = null;
+  private growthCache: { key: number; v: number } | null = null;
   history: { day: number; pop: number; money: number; nature: number; sprawl: number }[] = [];
   coverage = 0;
   maxedPct = 0;
@@ -337,6 +338,21 @@ export class Sim {
     const key = `${Math.floor(this.day * 8)}|${this.taxRate}|${this.population}`;
     if (!this.fcCache || this.fcCache.key !== key) this.fcCache = { key, v: this.computeForecast() };
     return this.fcCache.v;
+  }
+
+  /**
+   * Growth money a week: new buildings' impact fees and grants, averaged over
+   * the last four weeks. One-time income that stops when growth stops, unlike
+   * the running costs in forecastWeek().
+   */
+  growthWeek() {
+    const key = Math.floor(this.day);
+    if (this.growthCache?.key === key) return this.growthCache.v;
+    const since = this.day - 28;
+    const sum = this.transactions.filter((t) => t.day >= since && (t.kind === 'impact' || t.kind === 'grants')).reduce((a, t) => a + t.amount, 0);
+    const v = sum / Math.max(1, Math.min(4, this.day / 7));
+    this.growthCache = { key, v };
+    return v;
   }
 
   /** a ledger's recurring and one-time totals */

@@ -136,6 +136,23 @@ console.log(JSON.stringify(lf));
 const lfAlert = (lf.alerts ?? []).find((x) => /full \(9,000 t\)/.test(x)) ?? '';
 check(`a full landfill with another site taking the trash is an info note ("${lfAlert.slice(0, 120)}")`, /^info: .*your other sites .* handle the town's/.test(lfAlert), lf);
 
+// the garbage dashboard: one row per site, the full one says so, a row selects its site
+await page.evaluate(() => document.querySelector('button.tbtn[data-t="ext:services"]')?.click());
+await page.waitForTimeout(200);
+await page.evaluate(() => document.querySelector('[data-cat="garbage"]')?.click());
+await page.waitForTimeout(200);
+const gb = await page.evaluate(() => {
+  const g = window.__game;
+  const rows = [...document.querySelectorAll('.gb-row')];
+  const texts = rows.map((r) => r.textContent.replace(/\s+/g, ' '));
+  rows[0]?.click();
+  const sel = g.selection?.kind === 'building' ? g.selection.b : null;
+  return { texts, total: document.querySelector('.gb-total')?.textContent ?? '', selected: sel ? `${sel.kind} ${sel.id}` : null, first: rows[0]?.dataset.goto };
+});
+console.log(JSON.stringify(gb).slice(0, 600));
+check(`the garbage dashboard lists every site ("${(gb.texts.find((t) => /full: trucks stopped/.test(t)) ?? gb.texts[0] ?? '').slice(0, 100)}")`, gb.texts.length >= 2 && gb.texts.some((t) => /full: trucks stopped/.test(t)) && gb.texts.some((t) => /% of 9,000 t/.test(t) && /t\/day from \d+ building/.test(t)) && /Town makes/.test(gb.total), gb);
+check(`clicking a row selects that site (${gb.selected})`, gb.selected === `landfill ${gb.first}`, gb);
+
 // a road preview outlines the buildings it would bulldoze
 const raze = await page.evaluate(() => {
   const g = window.__game, t = g.tools, V = g.camera.position.constructor;

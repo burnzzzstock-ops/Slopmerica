@@ -298,6 +298,10 @@ interface FS {
   rate: number;
   /** landfill: the highest fill warning given (0, 75, 90, 100 %) */
   warned: number;
+  /** garbage: buildings its trucks serve, tons they took today, and whether they're at their limit */
+  served?: number;
+  took?: number;
+  behind?: boolean;
 }
 /** unserved = noRoad + noLink + capped: why each cut-off building is cut off */
 interface UtilStat { supply: number; demand: number; served: number; imported: number; unserved: number; noRoad: number; noLink: number; capped: number }
@@ -851,6 +855,7 @@ function garbage(g: Game, fac: Fac[], zoned: ZB[]) {
   }
   // facilities whose trucks can't keep up with what their buildings make
   const behind = new Set<number>();
+  for (const f of fac) if (f.def.cat === 'garbage') { const fs = fsOf(f); fs.served = 0; fs.took = 0; fs.behind = false; }
   for (const [fid, arr] of owned) {
     const start = cap.get(fid) ?? 0;
     let left = start;
@@ -871,6 +876,7 @@ function garbage(g: Game, fac: Fac[], zoned: ZB[]) {
     }
     const f = g.buildings.list.get(fid);
     const d = f && defOf(f);
+    if (f) { const fs = fsOf(f); fs.served = arr.length; fs.took = start - left; fs.behind = behind.has(fid); }
     if (f && d?.store) {
       const fs = fsOf(f);
       const was = fs.stored;
@@ -2102,6 +2108,38 @@ function statusLine(c: SvcCat, g: Game): string {
 
 function esc(s: string) { return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!); }
 
+/**
+ * Every landfill and incinerator on one board (playtest 5: "a per-landfill
+ * dashboard"): how full, what comes in, how long it lasts, whom it serves,
+ * what it costs. A row flies to the site.
+ */
+function garbageBoard(g: Game): string {
+  const sites = [...g.buildings.list.values()].filter((b) => defOf(b)?.cat === 'garbage');
+  if (!sites.length) return '';
+  const run = runningCosts(g);
+  const G = S.garbage;
+  const rows = sites.map((b) => {
+    const d = defOf(b)!, fs = fsOf(b);
+    const open = b.state === 'active';
+    const cost = d.upkeep + Math.round(run.get(b.id) ?? 0);
+    let fill = '', left = '';
+    if (!open) left = `opens in ~${Math.max(1, Math.ceil((b.buildDays ?? 6) * (1 - b.progress)))} d`;
+    else if (d.store) {
+      const pct = Math.min(1, fs.stored / d.store);
+      const days = fs.rate > 0.05 ? (d.store - fs.stored) / fs.rate : null;
+      fill = `<span class="gb-bar ${pct >= 0.9 ? 'bad' : pct >= 0.75 ? 'warn' : ''}"><i style="width:${Math.round(pct * 100)}%"></i></span>${Math.round(pct * 100)}% of ${d.store.toLocaleString()} t`;
+      left = pct >= 1 ? '<b class="neg">full: trucks stopped</b>' : days === null ? 'not filling' : `full in ~${spanOf(days)}`;
+    } else {
+      fill = `burns up to ${d.collect} t/day`;
+      left = 'never fills';
+    }
+    const load = open ? `${(fs.took ?? 0).toFixed((fs.took ?? 0) < 10 ? 1 : 0)} t/day from ${fs.served ?? 0} building${fs.served === 1 ? '' : 's'}${fs.behind ? ' · <b class="neg">trucks at their limit</b>' : ''}` : '—';
+    return `<button class="gb-row" data-goto="${b.id}" title="Show ${esc(b.label)} on the map"><span class="gb-name">${d.icon} ${esc(b.label)}</span><span class="gb-fill">${fill}</span><span class="gb-in">${load}</span><span class="gb-left">${left}</span><span class="gb-cost">$${cost.toLocaleString()}/wk</span></button>`;
+  });
+  const total = G ? `<div class="gb-total">Town makes ${G.made.toFixed(G.made < 10 ? 1 : 0)} t/day · trucks collect ${G.collected.toFixed(G.collected < 10 ? 1 : 0)}${G.exported > 0.05 ? ` · the county hauls ${G.exported.toFixed(1)} (pricey)` : ''}${Number.isFinite(G.daysLeft) ? ` · all landfills full in ~${spanOf(G.daysLeft)}` : ''}</div>` : '';
+  return `<div class="gb"><div class="gb-head">Your garbage sites</div>${rows.join('')}${total}</div>`;
+}
+
 registerPanel({
   id: 'services',
   icon: '🏛️',
@@ -2115,6 +2153,7 @@ registerPanel({
       <div class="sp-title">City Services <small>Power, water and sewage flow along roads. Services reach buildings by drive time.</small></div>
       <div class="sp-row svc-cats">${CATS.map((c) => `<button class="chip ${c.id === panelCat ? 'on' : ''}" data-cat="${c.id}">${c.icon} ${c.label}</button>`).join('')}</div>
       <div class="svc-live">${statusLine(panelCat, g)}</div>
+      <div class="svc-board">${panelCat === 'garbage' ? garbageBoard(g) : ''}</div>
       <div class="sp-grid">${list.map((d) => {
         const locked = !svcUnlocked(g, d);
         const on = g.tools.active === 'ext' && g.tools.extTool === 'svcPlace' && placing === d.id;
@@ -2135,6 +2174,13 @@ registerPanel({
       g.overlays.setExt(v ? viewObjs.get(v)! : null);
       rerender();
     }));
+    el.querySelector('.svc-board')?.addEventListener('click', (e) => {
+      const id = Number((e.target as HTMLElement).closest<HTMLElement>('[data-goto]')?.dataset.goto);
+      const b = g.buildings.list.get(id);
+      if (!b) return;
+      g.rts.setView(b.x, b.z, Math.min(g.rts.distance, 420));
+      g.select({ kind: 'building', b });
+    });
     el.querySelectorAll<HTMLButtonElement>('[data-look]').forEach((b) => b.addEventListener('click', () => {
       const look = b.dataset.look === 'classic' ? 'classic' : 'vault';
       if (look === svcLook()) return;
@@ -2170,6 +2216,9 @@ registerPanel({
     if (!live) return;
     const html = statusLine(panelCat, g);
     if (live.innerHTML !== html) live.innerHTML = html;
+    const board = el.querySelector('.svc-board');
+    const bh = panelCat === 'garbage' ? garbageBoard(g) : '';
+    if (board && board.innerHTML !== bh) board.innerHTML = bh;
   },
 });
 

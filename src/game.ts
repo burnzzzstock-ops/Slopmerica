@@ -98,8 +98,8 @@ export interface UiSink {
  * what was built and refunds exactly what it cost (net of any grant).
  */
 export type UndoAction =
-  | { kind: 'build'; segIds: number[]; refund: number; label: string; trees?: number[] }
-  | { kind: 'upgrade'; prev: { id: number; type: RoadTypeId }[]; refund: number; label: string }
+  | { kind: 'build'; segIds: number[]; refund: number; label: string; trees?: number[]; w?: Record<number, number> }
+  | { kind: 'upgrade'; prev: { id: number; type: RoadTypeId }[]; refund: number; label: string; w?: Record<number, number> }
   | { kind: 'place'; bldId: number; refund: number; label: string; trees?: number[] };
 
 /** landmark names and icons (Landmarks panel, the "Placing …" badge) */
@@ -334,6 +334,7 @@ export class Game {
     });
 
     this.wireEvents();
+    this.net.events.on('segSplit', ({ old, into }) => this.followSplit(old, into));
     // extension systems (transit, services, ...): init before a save restores their data
     for (const s of EXT.systems) s.init?.(this);
     this.sim.events.on('day', (d) => {
@@ -532,8 +533,37 @@ export class Game {
   }
 
   pushUndo(a: UndoAction) {
+    // what each piece is worth of the refund (its share of the price), so Undo pays for what is still there
+    if (a.kind !== 'place') {
+      a.w = {};
+      for (const id of a.kind === 'build' ? a.segIds : a.prev.map((p) => p.id)) {
+        const sg = this.net.segs.get(id);
+        if (sg) a.w[id] = Math.max(1, sg.length * ROAD_TYPES[sg.type].costPerM);
+      }
+    }
     this.undoStack.push(a);
     if (this.undoStack.length > 30) this.undoStack.shift();
+  }
+
+  /** A street joined mid-piece and split it in two new ids: every undo that remembered the old id follows the road. */
+  private followSplit(old: number, into: [RSeg, RSeg]) {
+    const total = into[0].length + into[1].length || 1;
+    for (const a of this.undoStack) {
+      if (a.kind === 'place' || !a.w || !(old in a.w)) continue;
+      const w = a.w[old];
+      delete a.w[old];
+      into.forEach((sg, i) => { a.w![sg.id] = w * (i === 0 ? into[0].length : into[1].length) / total; });
+      if (a.kind === 'build') a.segIds = a.segIds.flatMap((id) => id === old ? into.map((sg) => sg.id) : [id]);
+      else { const t = a.prev.find((p) => p.id === old)!.type; a.prev = a.prev.flatMap((p) => p.id === old ? into.map((sg) => ({ id: sg.id, type: t })) : [p]); }
+    }
+  }
+
+  /** What Undo pays back now: the price, less the share of any piece that has since been bulldozed. */
+  private undoRefund(a: UndoAction): number {
+    if (a.kind === 'place' || !a.w) return a.refund;
+    let all = 0, alive = 0;
+    for (const [id, w] of Object.entries(a.w)) { all += w; if (this.net.segs.has(Number(id))) alive += w; }
+    return all > 0 ? Math.round(a.refund * alive / all) : a.refund;
   }
 
   get canUndo() {
@@ -543,14 +573,17 @@ export class Game {
   /** what Undo would reverse, e.g. "Sheriff's Office (+$11,000 back)"; null when nothing */
   get undoLabel(): string | null {
     const a = this.undoStack[this.undoStack.length - 1];
-    return a ? `${a.label} (+${usd(a.refund)} back)` : null;
+    return a ? `${a.label} (+${usd(this.undoRefund(a))} back)` : null;
   }
 
   undo() {
     const a = this.undoStack.pop();
     if (!a) return false;
+    // what it pays back is worked out before anything is taken down: only what is still standing
+    const refund = this.undoRefund(a);
+    if (a.kind !== 'place' && refund === 0 && a.refund > 0) { this.toast(`Can't undo ${a.label}: it's already gone.`, true); this.tools.cancel(); return true; }
     if (a.kind === 'build') {
-      // splits may have renumbered segments; remove what's still there
+      // splits are followed (segSplit), bulldozed pieces are just gone: remove what's still there
       for (const id of a.segIds) if (this.net.segs.has(id)) this.net.removeSeg(id);
       if (a.trees) this.trees.replant(a.trees);
     } else if (a.kind === 'upgrade') {
@@ -562,11 +595,11 @@ export class Game {
       this.buildings.demolish(b, 'undone');
       if (a.trees) this.trees.replant(a.trees);
     }
-    this.sim.refund(a.refund, `Undo: ${a.label}`);
+    this.sim.refund(refund, `Undo: ${a.label}`);
     crumb(`undo ${a.label}`);
     this.tools.cancel();
     this.audio.play('bulldoze', 0.6);
-    this.toast(`Undone: ${a.label}, ${usd(a.refund)} back${'trees' in a && a.trees?.length ? ', trees replanted' : ''}.`);
+    this.toast(`Undone: ${a.label}, ${usd(refund)} back${refund < a.refund ? ' (part of it was already bulldozed)' : ''}${'trees' in a && a.trees?.length ? ', trees replanted' : ''}.`);
     return true;
   }
 

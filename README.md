@@ -117,6 +117,8 @@ Headless checks live in `scripts/` and drive the dev server with Playwright + Sw
 ```sh
 node scripts/playtestcheck.mjs   # bug reporter, crash toast, context loss, rescue screen (phone)
 node scripts/touchtest.mjs       # phone road drawing: plan, Build, Done, double-tap
+node scripts/phonetargets.mjs    # phone: every control in every panel reaches 44 px for a finger (measured with elementFromPoint); the one-row top bar is listed at its minimum
+node scripts/gesturetest.mjs     # phone: pinching or panning with two fingers keeps a planned road or service (real touch events); a stroke that turns into a pinch plans nothing
 node scripts/inputtest.mjs       # desktop road + zoning input
 node scripts/svctouch.mjs        # phone placement previews (services, landmarks)
 node scripts/widentest.mjs       # One More Lane keeps the street's buildings
@@ -128,6 +130,7 @@ node scripts/savecontinuity.mjs  # a reload resumes the same future (rng, ledger
 node scripts/qualitytest.mjs     # graphics presets never change the simulation
 node scripts/nantest.mjs         # one NaN/Inf pixel can't black out the screen; black-frame fallback
 node scripts/ledgertest.mjs      # the weekly rate is recurring only; weeks reconcile; budget, previews, in-the-red card
+node scripts/moneyedge.mjs       # the edge of the money: the countdown matches the weekly closes, bankruptcy is announced once (one card, game stays paused, speed keys wait), one click on the bailout gets out, recovering resets the count
 node scripts/tooltest.mjs        # one active tool: tab switches, Esc, right-click, Cancel, double-clicks, undo
 node scripts/roadrules.mjs       # a blocked road says the rule and the way out (communes)
 node scripts/zonetest.mjs        # zoning strokes report what they did; lots say why they wait
@@ -161,6 +164,7 @@ node scripts/motiontest.mjs      # cars: no heading snaps, brake for turns, chan
 node scripts/civictest.mjs       # Civic Foundry pack streams in: street trees, furniture, bus shelters; instanced LODs; Low skips it
 node scripts/starttest.mjs       # new county: sensible site (random among good ones, saved), county road follows the land; trees: no detail disc, no gaps; far trees keep their shape (no rectangles)
 node scripts/gridtest.mjs        # Roads > Grid: three clicks lay a street grid (junctions, lots, price, red streets left out, one-ways alternate, one undo, touch)
+node scripts/undotest.mjs        # Undo pays for what still stands (a bulldozed road isn't refunded twice), follows a piece split by a joining street, and leaves no road behind; the Undo button names what it will pay
 node scripts/progression.mjs     # (not a pass/fail test) a scripted player grows a Ponzi town: when each population mark is reached, money, what got built
 node scripts/weathertest.mjs     # weather keeps to the calendar: no rain or snow spell over a month, no summer snow, changes often, doesn't strobe at top speed
 node scripts/costtest.mjs        # honest service costs (running cost, committed projects, units), Next priorities, locked-fix notes, full landfill note, red bulldoze outlines
@@ -174,7 +178,12 @@ node scripts/nametest.mjs        # no street names from another region on any ma
 node scripts/learnability.mjs    # (Jev, <$0.01; --dry-run needs no key; --list shows what it reads) every toast, alert, refusal and tooltip: says what happened, says what to do next, jargon; report and hand-written fixes in docs/LEARNABILITY.md
 node scripts/brandcheck.mjs      # (Jev, $0.01; --dry-run needs no key) chain names in copy that aren't in the brand registry ("Burger Duke", "Waffle Bunker"), with a proposed canonical name; docs/BRAND_NAMES.md
 node scripts/transittest.mjs     # buses: depot, lines, riders at opening, two overlapping lines split riders, diversions
+node scripts/transithonest.mjs  # the transit panel ends with the whole network (fares, costs incl. depots, net) and that net is the budget's; a line with no depot says it is not running
+node scripts/transitcut.mjs      # a road cut between a bus line's stops: the line stops running and stops costing, says why once, and returns when the road is rebuilt
 node scripts/savetest.mjs        # save, reload and Resume bring back the same town: roads, buildings, zoning, population, money
+node scripts/loadfiletest.mjs    # Load a city file from the title: a whole city loads; a partial or damaged one (roads: {}, a null building, no clock) is turned away on the title in words; a damaged own save falls back to the checkpoint
+node scripts/disasterloop.mjs    # hurricane, wildfire, landslide and Florida Man: warn, hit, bill what they say (and say what they billed), end; a save in the warning or the response comes back as the same emergency, charged once
+node scripts/playtest6-late.mjs   # late-game pacing: a scripted commissioner (scripts/lib/latePlayer.mjs) grows a Ponzi county toward 10,000 and prints the day, treasury and buildings at each milestone, what got in the way, and page errors; SAVETEST=1 also saves, reloads and compares. A measuring tool (CHECK=1 makes it a gate), not part of the default pass
 node scripts/triage.mjs <folder>  # (Jev, <$0.01 per dozen) tester reports (🐞 text, one .txt each): area, severity, which check would catch it, duplicates; table in <folder>/TRIAGE.md. Try scripts/triage-samples (hand-labelled)
 node scripts/overlaptest.mjs     # HUD panels never cover each other: emergency card, inspector, drawers, Next, toolbar, tool badge at 1707×1019 down to a phone
 node scripts/gradetest.mjs       # contours and slope shading around the cursor when drawing roads or placing; live road grade in the tip (amber near 15%); steep refusal names the rule and the way out

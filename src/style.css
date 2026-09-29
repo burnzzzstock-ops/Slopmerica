@@ -3376,3 +3376,40 @@ a {
 .next-bar.side .nb-unlock { border-left: 0; padding-left: 0; white-space: normal; flex: 1 1 auto; }
 .next-bar.side .nb-x { position: absolute; top: 4px; right: 4px; }
 .next-bar.side .nb-step { padding-right: 16px; }
+
+/* ---- phone tap targets (playtest 6; scripts/phonetargets.mjs measures them) ----
+   On a touch screen every control a finger has to hit reaches 44 px, by real
+   size where the panel scrolls and by an invisible hit area where the one-row
+   top bar has no room. The top bar's speed buttons are the tightest: 30 px
+   wide with a 44 px tall hit area (a second row would ripple through every
+   card that hangs below it; see docs/PLAYTEST_6.md). */
+@media (pointer: coarse) {
+  .chip { min-height: 44px; min-width: 44px; padding-inline: 14px; }
+  .nb-x { min-width: 44px; min-height: 44px; margin: -8px -8px -8px -14px; }
+  .next-bar.side .nb-x { top: -2px; right: -4px; margin: 0; }
+  .next-bar.side .nb-step { padding-right: 32px; }
+  .xfeed-toggle { min-width: 44px; min-height: 44px; }
+  .bug-x { min-width: 44px; min-height: 44px; }
+  .bug-chk { min-height: 44px; }
+  .bug-actions button, .bf-actions button { min-height: 44px; }
+  .subpanel summary, .bug summary { padding-block: 14px; }
+  input[type='range'] { min-height: 44px; }
+
+  /* top bar: same look, bigger hit areas */
+  .tb-speed button, .tb-stat, .tb-meters, .dbar { position: relative; }
+  .tb-speed button::after { content: ''; position: absolute; inset: -9px -1px; }
+  .tb-stat::after { content: ''; position: absolute; inset: -13px -4px; }
+  .tb-meters::after { content: ''; position: absolute; inset: -9px -4px; }
+  .dbar::after { content: ''; position: absolute; inset: -6px -2px; }
+}
+@media (pointer: coarse) and (max-width: 760px) {
+  .tb-speed button { min-width: 30px; min-height: 26px; }
+  .topbar { gap: 4px; padding-inline: 6px; }
+  .tb-demand { gap: 3px; }
+  .mtrack { width: 26px; }
+}
+/* 44 px chips take more room: a portrait phone's drawer may grow a little before it scrolls
+   (40% of the screen; half hid too much map to place a service by touch) */
+@media (pointer: coarse) and (max-width: 760px) and (min-height: 700px) {
+  .subpanel { max-height: min(40vh, 360px); }
+}

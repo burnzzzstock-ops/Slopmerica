@@ -8,6 +8,8 @@ import { clamp, closestOnSampled, locate, lerp, norm, SpatialHash, sub } from '.
 import type { RoadNetwork, RSeg } from '../roads/network';
 import { ROAD_TYPES } from '../roads/roadTypes';
 import type { Terrain } from '../world/terrain';
+import { mulberry32 } from '../core/rng';
+import { litByLamps } from '../world/nightLights';
 
 export const ZONE_COLORS: Record<ZoneType, number> = {
   resLow: 0x4bd66f,
@@ -45,24 +47,103 @@ export interface ZCell {
 }
 
 /**
- * A lot cell: a solid rim and a light fill, so each cell reads as a lot with
- * edges against grass instead of a faint wash (zoned cells take their zone's
- * colour through the instance tint).
+ * A lot cell. Two looks: with the zoning tool out (`soft`) an even wash that thins toward the edge, with no line round it,
+ * so waiting lots read as land in a zone and not as a grid of tiles (the planting beds below say where a lot ends);
+ * with the tool in, a solid rim and a light fill, so each cell reads as a lot with edges. Zoned cells take their zone's
+ * colour through the instance tint.
  */
-function cellTexture(): THREE.Texture {
+function cellTexture(soft: boolean): THREE.Texture {
   const c = document.createElement('canvas');
   c.width = c.height = 64;
   const x = c.getContext('2d')!;
-  x.fillStyle = 'rgba(255,255,255,0.42)';
+  x.fillStyle = soft ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.42)';
   x.fillRect(0, 0, 64, 64);
-  x.strokeStyle = 'rgba(255,255,255,1)';
-  x.lineWidth = 6;
-  x.strokeRect(3, 3, 58, 58);
+  if (soft) {
+    x.globalCompositeOperation = 'destination-out';
+    for (const [x0, y0, x1, y1, w, h] of [[0, 0, 0, 22, 64, 22], [0, 64, 0, 42, 64, 22], [0, 0, 22, 0, 22, 64], [64, 0, 42, 0, 22, 64]] as const) {
+      const gr = x.createLinearGradient(x0, y0, x1, y1);
+      gr.addColorStop(0, 'rgba(0,0,0,1)');
+      gr.addColorStop(1, 'rgba(0,0,0,0)');
+      x.fillStyle = gr;
+      x.fillRect(x0 === 64 ? 42 : x0, y0 === 64 ? 42 : y0, w, h);
+    }
+  } else {
+    x.strokeStyle = 'rgba(255,255,255,1)';
+    x.lineWidth = 6;
+    x.strokeRect(3, 3, 58, 58);
+  }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
   return t;
 }
+
+/**
+ * A planting bed / verge strip: one 8 m cell long (256 px) by 2.2 m deep (70 px), tileable along its length so the strips
+ * of neighbouring cells run on into one another. Mulch a shade darker than the dry ground, low shrubs in muted greens
+ * that come in runs with gaps between them (a hedge-row is never a string of dots), dry grass at both edges, and both long
+ * edges fade out smoothly: it should read as a planted edge and never as a line.
+ */
+function bedTexture(): THREE.Texture {
+  const W = 256, H = 70;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const x = c.getContext('2d')!;
+  const rnd = mulberry32(0xbed5);
+  const wrap = (fn: (dx: number) => void) => { fn(-W); fn(0); fn(W); };
+  x.fillStyle = 'rgb(112,96,64)';
+  x.fillRect(0, 0, W, H);
+  for (let i = 0; i < 1800; i++) { // mulch and soil flecks
+    x.fillStyle = `rgba(${rnd() < 0.5 ? '150,128,92' : '78,64,44'},${0.16 + rnd() * 0.28})`;
+    x.fillRect(rnd() * W, rnd() * H, 1 + rnd() * 2.5, 1 + rnd() * 1.5);
+  }
+  // shrub runs: where the (wrapping) density wave is high there are clumps, where it is low bare mulch
+  const ph = rnd() * 6.28, ph2 = rnd() * 6.28;
+  for (let i = 0; i < 30; i++) {
+    const cx = (i + rnd()) * (W / 30);
+    const dens = 0.5 + 0.5 * (0.6 * Math.sin((cx / W) * Math.PI * 2 + ph) + 0.4 * Math.sin((cx / W) * Math.PI * 6 + ph2));
+    if (rnd() > 0.25 + dens * 0.75) continue;
+    const cy = H / 2 + (rnd() - 0.5) * 22, r = 5.5 + rnd() * 6;
+    for (const [dy, k, rgb] of [[2.5, 1.0, '58,78,44'], [0, 0.82, '82,110,58'], [-2.5, 0.5, '114,142,76']] as const) {
+      x.fillStyle = `rgb(${rgb})`;
+      wrap((dx) => { x.beginPath(); x.ellipse(cx + dx, cy + dy, r * k * 1.2, r * k, 0, 0, Math.PI * 2); x.fill(); });
+    }
+  }
+  for (let i = 0; i < 26; i++) { // dry grass blades at both edges
+    const px = rnd() * W, edge = rnd() < 0.5 ? 0 : H, len = 5 + rnd() * 9;
+    x.strokeStyle = `rgba(${140 + rnd() * 40},${128 + rnd() * 30},${70 + rnd() * 24},0.85)`;
+    x.lineWidth = 1.2;
+    for (let b = 0; b < 6; b++) {
+      const bx = px + (b - 3) * 1.8, dir = edge === 0 ? 1 : -1;
+      wrap((dx) => { x.beginPath(); x.moveTo(bx + dx, edge); x.lineTo(bx + dx + (rnd() - 0.5) * 5, edge + dir * len * (0.6 + rnd() * 0.6)); x.stroke(); });
+    }
+  }
+  x.globalCompositeOperation = 'destination-in'; // both long edges fade out (smoothstep over the outer 30%)
+  const gr = x.createLinearGradient(0, 0, 0, H);
+  const sm = (t: number) => t * t * (3 - 2 * t);
+  for (let i = 0; i <= 10; i++) gr.addColorStop(i * 0.03, `rgba(0,0,0,${sm(i / 10)})`);
+  for (let i = 0; i <= 10; i++) gr.addColorStop(0.7 + i * 0.03, `rgba(0,0,0,${sm(1 - i / 10)})`);
+  x.fillStyle = gr;
+  x.fillRect(0, 0, W, H);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = THREE.RepeatWrapping;
+  t.anisotropy = 4;
+  return t;
+}
+
+/** how each zone tints its beds: lush at homes, dusty at the factories */
+const BED_TINT: Record<ZoneType, [number, number, number]> = {
+  resLow: [0.96, 1.0, 0.9],
+  resHigh: [0.86, 1.0, 0.88],
+  comLow: [1.0, 0.97, 0.9],
+  comHigh: [0.94, 0.98, 1.0],
+  industry: [1.0, 0.9, 0.76],
+  office: [0.86, 0.98, 0.92],
+};
+/** most strips drawn at once (a strip is a dozen triangles; only the edges of unbuilt zoned land get one) */
+const BED_MAX = 8000;
 
 export class Zoning {
   cells = new Map<number, ZCell>();
@@ -73,6 +154,13 @@ export class Zoning {
   private dirtySegs = new Set<number>();
   private revalidate = new Set<number>();
   private overlayMesh: THREE.InstancedMesh;
+  private tileSoft = cellTexture(true);
+  private tileCrisp = cellTexture(false);
+  /** planting beds and verges along the edges of unbuilt zoned land (one merged mesh) */
+  private bedMesh: THREE.Mesh;
+  private bedDirty = true;
+  private bedVer = -1;
+  private bedWait = 0;
   private overlayOn = false;
   private overlayDirty = true;
   private capacity = 60000;
@@ -89,12 +177,25 @@ export class Zoning {
   constructor(private net: RoadNetwork, private terrain: Terrain, scene: THREE.Scene) {
     const g = new THREE.PlaneGeometry(CELL - 0.7, CELL - 0.7);
     g.rotateX(-Math.PI / 2);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, map: cellTexture(), transparent: true, opacity: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, map: this.tileSoft, transparent: true, opacity: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
     this.overlayMesh = new THREE.InstancedMesh(g, mat, this.capacity);
     this.overlayMesh.count = 0;
     this.overlayMesh.renderOrder = 3;
     this.overlayMesh.frustumCulled = false;
     scene.add(this.overlayMesh);
+
+    const bedMat = new THREE.MeshStandardMaterial({ map: bedTexture(), vertexColors: true, transparent: true, roughness: 1, metalness: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 });
+    // (a strip is laid on the height map, and the far terrain levels are coarser than that: fade the beds out with distance)
+    bedMat.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace('#include <alphatest_fragment>', 'diffuseColor.a *= 1.0 - smoothstep(180.0, 380.0, length(vViewPosition));\n#include <alphatest_fragment>');
+    };
+    bedMat.customProgramCacheKey = () => 'zoning-beds';
+    litByLamps(bedMat);
+    this.bedMesh = new THREE.Mesh(new THREE.BufferGeometry(), bedMat);
+    this.bedMesh.renderOrder = 2;
+    this.bedMesh.frustumCulled = false;
+    this.bedMesh.receiveShadow = true;
+    scene.add(this.bedMesh);
 
     net.events.on('segAdded', (s) => this.dirtySegs.add(s.id));
     // a widened road rebuilds its cells; the buildings on them are re-linked
@@ -394,10 +495,92 @@ export class Zoning {
       this.onRelink?.(ids);
     }
     if (this.overlayDirty) this.rebuildOverlay();
+    // the beds follow the ground: a building levelling its lot next door moves the height they sit on (checked every half second or so)
+    if (this.bedDirty || (this.bedVer !== this.terrain.surfaceVersion && ++this.bedWait > 30)) this.rebuildBeds();
+  }
+
+  /** true if a valid cell of the same zone lies across the edge of `c` toward (x, z) */
+  private zoneAcross(c: ZCell, x: number, z: number): boolean {
+    for (const o of this.hash.query(x - 2, z - 2, x + 2, z + 2)) {
+      if (o !== c && o.valid && !o.bld && o.zone === c.zone && Math.hypot(o.x - x, o.z - z) < 3.6) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Planting beds and verges along the edges of unbuilt zoned land, where the next lot is not the same zone (or is a
+   * building, or is the road): what says where a lot ends now that the idle tile has no rim. One merged, terrain-following mesh.
+   */
+  private rebuildBeds() {
+    this.bedDirty = false;
+    this.bedVer = this.terrain.surfaceVersion;
+    this.bedWait = 0;
+    const P: number[] = [], UV: number[] = [], C: number[] = [], I: number[] = [];
+    const SEG = 3, D = 2.2, HALF = CELL / 2;
+    const hash = (a: number, b: number) => { const v = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453; return v - Math.floor(v); };
+    let strips = 0;
+    // local outward normals: front (toward the road), back, and the two sides
+    const EDGES: [number, number][] = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+    const has = [false, false, false, false];
+    outer: for (const c of this.cells.values()) {
+      if (!c.valid || c.bld || !c.zone) continue;
+      const cs = Math.cos(c.yaw), sn = Math.sin(c.yaw), tint = BED_TINT[c.zone];
+      for (let e = 0; e < 4; e++) {
+        const [nx, nz] = EDGES[e];
+        has[e] = !this.zoneAcross(c, c.x + (nx * cs + nz * sn) * CELL, c.z + (-nx * sn + nz * cs) * CELL);
+      }
+      for (let e = 0; e < 4; e++) {
+        if (!has[e]) continue;
+        if (strips >= BED_MAX) break outer;
+        strips++;
+        const [nx, nz] = EDGES[e];
+        // along the edge the strip runs the whole cell, so the strips of neighbouring cells join; a side strip stops short where a
+        // front or back strip crosses its end (they overlap by half a depth)
+        let z0 = -HALF, z1 = HALF;
+        if (nx !== 0) { if (has[1]) z0 += D * 0.5; if (has[0]) z1 -= D * 0.5; }
+        const depth = D * (0.9 + 0.2 * hash(c.id, e));
+        const flip = hash(e + 3, c.id) < 0.5;
+        const base = P.length / 3;
+        for (let k = 0; k <= SEG; k++) {
+          // (local coordinates: the tangent runs along x for the front and back edges, along z for the sides)
+          const t = nx === 0 ? -HALF + (CELL * k) / SEG : z0 + ((z1 - z0) * k) / SEG;
+          const u = nx === 0 ? (t + HALF) / CELL : (t + HALF) / CELL;
+          for (const a of [HALF - depth + (hash(c.id * 7 + e, k) - 0.5) * 0.3, HALF]) { // (the inner edge wanders a little)
+            const lx = nx !== 0 ? nx * a : t, lz = nx !== 0 ? t : nz * a;
+            const wx = c.x + lx * cs + lz * sn, wz = c.z - lx * sn + lz * cs;
+            P.push(wx, this.terrain.h(wx, wz) + 0.07, wz);
+            UV.push(flip ? 1 - u : u, a === HALF ? 1 : 0);
+            const k2 = 0.92 + 0.16 * hash(c.id + k, e * 3);
+            C.push(tint[0] * k2, tint[1] * k2, tint[2] * k2);
+          }
+        }
+        // (wound to face up whichever way this edge runs)
+        const ax = P[(base + 1) * 3] - P[base * 3], az = P[(base + 1) * 3 + 2] - P[base * 3 + 2];
+        const bx = P[(base + 2) * 3] - P[base * 3], bz = P[(base + 2) * 3 + 2] - P[base * 3 + 2];
+        const up = az * bx - ax * bz > 0;
+        for (let k = 0; k < SEG; k++) {
+          const a0 = base + k * 2, b0 = a0 + 1, a1 = a0 + 2, b1 = a0 + 3;
+          if (up) I.push(a0, b0, a1, b0, b1, a1); else I.push(a0, a1, b0, b0, a1, b1);
+        }
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    if (P.length) {
+      const nor = new Float32Array(P.length);
+      for (let i = 1; i < nor.length; i += 3) nor[i] = 1;
+      g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+      g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
+      g.setIndex(I);
+    }
+    this.bedMesh.geometry.dispose();
+    this.bedMesh.geometry = g;
   }
 
   private rebuildOverlay() {
     this.overlayDirty = false;
+    this.bedDirty = true;
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     const up = new THREE.Vector3(0, 1, 0);
@@ -419,7 +602,9 @@ export class Zoning {
     this.overlayMesh.count = n;
     // outside the zoning tool, empty zoned lots are only a hint: at 0.3 the town
     // read as a spreadsheet of coloured squares from every camera
-    (this.overlayMesh.material as THREE.MeshBasicMaterial).opacity = this.overlayOn ? 0.85 : 0.14;
+    const om = this.overlayMesh.material as THREE.MeshBasicMaterial;
+    om.opacity = this.overlayOn ? 0.85 : 0.2;
+    om.map = this.overlayOn ? this.tileCrisp : this.tileSoft;
     this.overlayMesh.instanceMatrix.needsUpdate = true;
     if (this.overlayMesh.instanceColor) this.overlayMesh.instanceColor.needsUpdate = true;
   }

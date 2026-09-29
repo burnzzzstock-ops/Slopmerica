@@ -10,7 +10,9 @@
 //
 // usage: BASE_URL=http://127.0.0.1:5175 node scripts/gfxshots.mjs <outdir> [cams] [conds] [quality]
 //   cams   comma list: junction junctop corner driveway slope street overview wide lotedge
-//          strip bigbox school sheriff utility treesmid treesfar shore houses
+//          strip bigbox school sheriff utility treesmid treesfar shore houses emptylots
+//          ('emptylots' zones a run of free lots beside a road, half Low Com and half Low Res, and leaves them unbuilt;
+//          ZONETOOL=1 shoots it with the zoning tool's overlay up)
 //          ('slope' lays two roads up a hillside first and is always shot last)
 //   conds  comma list of day,dusk,night,moon,rain (default day,night)
 //   quality low|medium|high|ultra (default high); PHONE=1 shoots a 390x780 @3x touch context
@@ -116,11 +118,48 @@ if (missing.length) {
       } else if (key === 'lotedge') {
         const b = near(blds.filter((b) => b.zone === 'resLow'), (b) => -dist(b.x, b.z));
         if (b) out.lotedge = view(b.x, b.z, 34, 0.3, b.yaw, Math.max(b.hw, b.hd));
+      } else if (key === 'emptylots') {
+        // a run of free, valid cells on one side of a road near the block: 4 columns of Low Com (two rows deep) then 4 of Low Res (one row)
+        let best = null;
+        for (const [segId, blocks] of g.zones.bySeg) for (let si = 0; si < blocks.length; si++) {
+          const cols = blocks[si];
+          for (let i = 0; i + 8 <= cols.length; i++) {
+            let ok = true;
+            for (let k = i; k < i + 8 && ok; k++) for (let r = 0; r < (k < i + 4 ? 2 : 1); r++) { const cell = cols[k][r]; if (!cell || !cell.valid || cell.bld || cell.zone) ok = false; }
+            if (!ok) continue;
+            const mid = cols[i + 4][0], d = dist(mid.x, mid.z);
+            if (d < 330 && (!best || d < best.d)) best = { d, cols, i };
+          }
+        }
+        if (best) {
+          const paints = [];
+          for (let k = best.i; k < best.i + 8; k++) for (let r = 0; r < (k < best.i + 4 ? 2 : 1); r++) { const cell = best.cols[k][r]; paints.push([cell.x, cell.z, k < best.i + 4 ? 'comLow' : 'resLow']); }
+          const mid = best.cols[best.i + 4][0];
+          out.emptylotsPaints = paints;
+          out.emptylots = view(mid.x, mid.z, 52, 0.3, mid.yaw, 8);
+        }
       } else if (key === 'shore') {
         const T = g.terrain;
         for (let r = 60; r < 1500 && !out.shore; r += 20) for (let a = 0; a < 64; a++) {
           const px = c.x + Math.cos((a / 64) * 6.283) * r, pz = c.z + Math.sin((a / 64) * 6.283) * r;
           if (T.h(px, pz) < -0.5) { out.shore = [px - c.x, pz - c.z, 90, (a / 64) * 6.283 + 1.2, 0.42]; break; }
+        }
+      } else if (key === 'treesmid' || key === 'treesfar') {
+        // the densest 60 m square of the map's own trees (the simulation's set, so old and new code agree) 250-1100 m out
+        const T = g.trees, cell = 60, cnt = new Map();
+        for (let i = 0; i < T.n; i++) {
+          if (!(T.W[i] <= 1) || (T.Ex && T.Ex[i])) continue;
+          const dx = T.X[i] - c.x, dz = T.Z[i] - c.z, d = Math.hypot(dx, dz);
+          if (d < 250 || d > 1100) continue;
+          const k = Math.floor(dx / cell) + ',' + Math.floor(dz / cell);
+          cnt.set(k, (cnt.get(k) || 0) + 1);
+        }
+        let best = null, bn = 0;
+        for (const [k, v] of cnt) if (v > bn) { bn = v; best = k; }
+        if (best) {
+          const [a, b] = best.split(',').map(Number), tx = c.x + (a + 0.5) * cell, tz = c.z + (b + 0.5) * cell;
+          out.treesmid = view(tx, tz, 220, 0.34, 0.7, 0);
+          out.treesfar = view(tx, tz, 700, 0.24, 0.7, 0);
         }
       } else if (key === 'street') out.street = [-40, -30, 110, 2.4, 0.38];
       else if (key === 'overview') out.overview = [0, 0, 320, 0.7, 0.6];
@@ -141,6 +180,17 @@ const shootCam = async (cond, cam) => {
   await page.screenshot({ path: `${outDir}/${cam.replace(/[:.]/g, '_')}-${cond}.png`, timeout: 180000 });
   console.log('shot', `${outDir}/${cam}-${cond}.png`);
 };
+if (want.includes('emptylots') && cams.emptylotsPaints) {
+  const n = await page.evaluate(({ ps, tool }) => {
+    const g = window.__game;
+    let n = 0;
+    for (const [x, z, zone] of ps) n += g.zones.paint(x, z, 3, zone);
+    g.zones.setOverlay(!!tool);
+    g.zones.update();
+    return n;
+  }, { ps: cams.emptylotsPaints, tool: process.env.ZONETOOL === '1' });
+  console.log('zoned', n, 'free lots', process.env.ZONETOOL === '1' ? '(zoning tool up)' : '');
+}
 for (const cond of conds) for (const cam of want) if (cam !== 'slope') await shootCam(cond, cam);
 if (want.includes('slope') && cams.slope) {
   // lay the hillside roads now (they regrade the ground, so nothing else is shot after this)

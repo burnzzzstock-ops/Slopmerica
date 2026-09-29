@@ -17,7 +17,8 @@ import { genIndustry } from './industry';
 import { genOffice } from './office';
 import { decorate, satirePass } from './satire';
 import { BRANDS } from '../art/brands';
-import { buildVault, loadVault, vaultFamilyAssets, vaultFit, vaultPick, vaultReady } from '../vault/vault';
+import { buildVault, loadVault, vaultAsset, vaultFamilyAssets, vaultFit, vaultPick, vaultReady } from '../vault/vault';
+import { civicOverlay } from './civicOverlay';
 import { buildLandmark, LANDMARK_FOOTPRINT, setLandmarkMap } from './landmarks';
 import { buildBillboard } from './billboard';
 import { brandFits } from './archetypes';
@@ -177,7 +178,7 @@ export function generateVaultService(family: string, widthCells: number, depthCe
   const hit = cacheGet(key);
   if (hit) return copy(hit);
   const spec: LotSpec = { zone: 'industry', level: 1, widthCells, depthCells, seed: best };
-  return copy(run(key, mix('vaults', best), spec, W, D, (g) => { buildVault(g, best, W, D, SERVICE_GROW, stacks); }));
+  return copy(run(key, mix('vaults', best), spec, W, D, (g) => { if (buildVault(g, best, W, D, SERVICE_GROW, stacks)) civicOverlay(g, family, vaultAsset(best).plan); }));
 }
 
 /** An Asset Vault model at scale `s`, centred on its own footprint (road furniture). Null if the vault isn't loaded. */

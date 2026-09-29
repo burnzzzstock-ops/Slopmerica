@@ -1,12 +1,14 @@
 // Dev gallery for the City Look workstream: every zone x level at a few lot
 // sizes and seeds, all landmarks and billboards, orbit camera, day/night.
-// Hash params: view=zones|landmarks|billboards|atlas, zone=<ZoneType>, level=<n>,
+// Hash params: view=zones|landmarks|billboards|houses|vault|services|atlas, zone=<ZoneType>, level=<n>,
 // night=1, labels=0, cols=<n>, e=1 (atlas: emissive layer)
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { ZONE_TYPES, type BuildingModel, type LandmarkId, type ZoneType } from '../contracts';
-import { buildingMaterial, generateBillboard, generateBuilding, generateLandmark, generateVaultModel, landmarkFootprint, loadArt, setBuildingNight } from '../buildings/generator';
+import { buildingMaterial, generateBillboard, generateBuilding, generateLandmark, generateVaultModel, generateVaultService, landmarkFootprint, loadArt, setBuildingNight } from '../buildings/generator';
+import { serviceModel, type ServiceModelId } from '../buildings/serviceModels';
+import { kitMaterial, loadKitArt, setKitNight } from '../buildings/kitGenerator';
 import { loadVault, vaultAsset, vaultFamilyAssets } from '../vault/vault';
 import { VAULT_FAMILIES } from '../vault/families';
 import { BILLBOARDS } from '../art/billboards';
@@ -61,6 +63,7 @@ const lineMat = new THREE.MeshBasicMaterial({ color: 0xe8d25a });
 let night = P.get('night') === '1';
 function applyNight() {
   setBuildingNight(night ? 1 : 0);
+  setKitNight(night ? 1 : 0);
   // roughly matches world/sky.ts at night (hemi 0.25, moon 0.35), a touch brighter to judge massing
   hemi.intensity = night ? 0.32 : 1.1;
   hemi.color.set(night ? 0x5a6a9a : 0xcfe3ff);
@@ -102,13 +105,17 @@ function addRoad(x0: number, x1: number, z: number) {
 }
 
 function place(model: BuildingModel, x: number, z: number, D: number, sub: string, ms: number) {
-  const tris = model.geometry.getAttribute('position').count / 3;
+  const g = model.geometry;
+  const tris = (g.index ? g.index.count : g.getAttribute('position').count) / 3;
   items.push({ model, x, z: z - D / 2, label: model.label, sub, tris, ms });
 }
 
 function flush() {
   // Merge like core does: translate copies, then mergeGeometries in chunks.
-  const chunk: THREE.BufferGeometry[] = [];
+  // (The game draws the Kit-built service models, which are indexed and carry a `tile` attribute, in their own batch
+  // with kitMaterial(); the facade-atlas models go in the other. mergeGeometries wants all or none, so the lab does the same.)
+  let chunk: THREE.BufferGeometry[] = [];
+  let kit = false;
   const emPts: number[] = [];
   const emCol: number[] = [];
   const EMC: Record<string, number[]> = { smoke: [0.8, 0.8, 0.8], steam: [0.6, 0.9, 1], fire: [1, 0.4, 0.1], cigarette: [1, 0.2, 0.2], sparkle: [0.8, 1, 0.2] };
@@ -116,7 +123,7 @@ function flush() {
     if (!chunk.length) return;
     const g = mergeGeometries(chunk, false);
     if (!g) throw new Error('mergeGeometries failed: attribute mismatch');
-    const mesh = new THREE.Mesh(g, buildingMaterial());
+    const mesh = new THREE.Mesh(g, kit ? kitMaterial() : buildingMaterial());
     mesh.castShadow = mesh.receiveShadow = true;
     group.add(mesh);
     chunk.forEach((c) => c.dispose());
@@ -124,6 +131,8 @@ function flush() {
   };
   for (const it of items) {
     const g = it.model.geometry;
+    if (chunk.length && (g.index !== null) !== kit) doMerge();
+    kit = g.index !== null;
     g.translate(it.x, 0, it.z);
     chunk.push(g);
     if (chunk.length >= 40) doMerge();
@@ -242,6 +251,33 @@ function buildVaultView() {
   return { w: perRow * 42, d: Math.ceil(i / perRow) * 44 };
 }
 
+/**
+ * Every city service on its lot: the classic (Kit) model, then, for the ones the game dresses in an Asset Vault family by
+ * default (src/sim/services.ts VAULT_LOOK), that look. Row by row, six to a row; `sub` is `<service>:<classic|vault>`.
+ */
+const SERVICE_LAB: [ServiceModelId, number, number, string?, ('smoke' | 'steam')?][] = [
+  ['gasPeaker', 4, 3, 'gas-peaker-plant', 'smoke'], ['coalPlant', 6, 6, 'clean-coal-plant', 'smoke'], ['solarFarm', 6, 4, 'solar-farm'], ['nuclearPlant', 7, 7],
+  ['waterPump', 2, 2, 'pump-station'], ['wellTower', 2, 2, 'water-tower'], ['sewageOutfall', 2, 2, 'sewage-outfall'], ['treatmentPlant', 5, 4, 'wastewater-plant'],
+  ['landfill', 6, 6], ['incinerator', 4, 4], ['fireStation', 3, 3, 'volunteer-firehouse'], ['sheriff', 3, 3, 'sheriff-substation'], ['clinic', 3, 3, 'copay-castle'],
+  ['hospital', 5, 4, 'wallet-er'], ['school', 4, 4], ['college', 6, 5], ['park', 2, 2],
+];
+function buildServicesView() {
+  const perRow = +(P.get('cols') ?? '6'), PITCH = 84;
+  let i = 0;
+  const put = (id: string, look: string, d: number, make: () => BuildingModel | null) => {
+    const [m, ms] = timed(make);
+    if (!m) return;
+    stat(`service ${look}`, ms, (m.geometry.index ? m.geometry.index.count : m.geometry.getAttribute('position').count) / 3);
+    const x = (i % perRow) * PITCH, z = -Math.floor(i / perRow) * PITCH;
+    place(m, x, z, d * 8, `${id}:${look}`, ms);
+    if (i % perRow === 0) addRoad(-40, perRow * PITCH, z);
+    i++;
+  };
+  for (const [id, w, d] of SERVICE_LAB) put(id, 'classic', d, () => serviceModel(id, w, d));
+  for (const [id, w, d, fam, stacks] of SERVICE_LAB) if (fam) put(id, 'vault', d, () => generateVaultService(fam, w, d, stacks));
+  return { w: perRow * PITCH, d: Math.ceil(i / perRow) * PITCH };
+}
+
 function buildLandmarks() {
   let x = 0;
   for (const id of LANDMARKS) {
@@ -310,6 +346,7 @@ function refreshHud() {
   btn('Atlas', view === 'atlas', () => go('view', 'atlas'));
   btn('Houses', view === 'houses', () => go('view', 'houses'));
   btn('Vault', view === 'vault', () => go('view', 'vault'));
+  btn('Services', view === 'services', () => go('view', 'services'));
 }
 
 // ------------------------------------------------------------------ main
@@ -324,12 +361,13 @@ async function main() {
   // this page lives in dev/: the vault pack is one level up (loadArt reuses this load)
   void loadVault(new URL('../vault/', document.baseURI));
   await loadArt();
+  await loadKitArt();
   const artMs = performance.now() - t0;
   const view = P.get('view') ?? 'zones';
   if (view === 'atlas') return showAtlas();
   applyNight();
   const t1 = performance.now();
-  const ext = view === 'landmarks' ? buildLandmarks() : view === 'billboards' ? buildBillboards() : view === 'houses' ? buildHouses() : view === 'vault' ? buildVaultView() : buildZones();
+  const ext = view === 'landmarks' ? buildLandmarks() : view === 'billboards' ? buildBillboards() : view === 'houses' ? buildHouses() : view === 'vault' ? buildVaultView() : view === 'services' ? buildServicesView() : buildZones();
   const genMs = performance.now() - t1;
   flush();
   // camera

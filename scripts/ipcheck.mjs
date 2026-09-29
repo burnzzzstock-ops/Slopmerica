@@ -40,6 +40,9 @@ export const REAL_COLORS = [
   { owner: 'Amazon', colors: ['#232f3e', '#ff9900'] },
   { owner: 'TikTok', colors: ['#25f4ee', '#fe2c55'] },
   { owner: 'Home Depot', colors: ['#f96302'] },
+  // added 2026-09-29 after the content audit rerun flagged the Bullseye and Whole Paycheck signs
+  { owner: 'Target', colors: ['#cc0000'] },
+  { owner: 'Whole Foods', colors: ['#00674b'] },
 ];
 
 /**

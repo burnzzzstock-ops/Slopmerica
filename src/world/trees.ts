@@ -25,6 +25,11 @@ const GRID_N = Math.ceil(WORLD / CELL);
 const SPRITE_W = 256, SPRITE_H = 512;
 /** average of the canopy's own shading baked into impostors (1 = as bright as fully lit) */
 const IMPOSTOR_SHADE = 0.66;
+/** how much darker the foot of a far tree's picture is than the whole, and how much brighter its top. On average this
+ *  darkens the far pictures by about a fifth: they cast no shadow on the ground and the detailed trees do, and in Florida
+ *  (scripts/treelod.mjs) they read 18-23% lighter than the detailed trees they stand in for without it (ratio 1.23 and 1.18,
+ *  now inside the test's 0.85-1.15) */
+const FAR_FOOT = 0.61, FAR_TOP = 1.07;
 // Broadleaf crowns shade themselves far more than conifers or open oaks (the
 // shadow map darkens their inner and lower cards), so their impostors, lit as
 // one sunny face, were ~40% too bright and read as a lime carpet past the
@@ -66,6 +71,16 @@ float thr = mix(0.42, 0.995, (1.0 - uLeaf) * step(0.5, vCanopy));
 #endif`;
 const FALL = [0xd9822b, 0xc9452a, 0xe6b83a, 0xa8321f, 0xcf6a2a, 0xb5a03a];
 
+/** smooth value noise in [0, 1]: hashed lattice values, bilinear with a smoothstep. Stands are patches of it. */
+function vnoise(x: number, z: number, cell: number, salt: number): number {
+  const fx = x / cell, fz = z / cell, ix = Math.floor(fx), iz = Math.floor(fz);
+  const tx = fx - ix, tz = fz - iz, sx = tx * tx * (3 - 2 * tx), sz = tz * tz * (3 - 2 * tz);
+  const a = hash2(ix, iz, salt), b = hash2(ix + 1, iz, salt), c = hash2(ix, iz + 1, salt), d = hash2(ix + 1, iz + 1, salt);
+  return a + (b - a) * sx + (c - a) * sz + (a - b - c + d) * sx * sz;
+}
+/** room kept in the arrays for the extra trees (see the budget in the constructor: 11.5% of the trees the simulation counts, which are far fewer than the cap) */
+const EXTRA_SHARE = 0.12;
+
 export class Trees {
   readonly group = new THREE.Group();
   readonly wind = { value: 0 };
@@ -81,6 +96,15 @@ export class Trees {
   private Vr!: Uint8Array;
   private Hue!: Float32Array;
   private A!: Uint8Array;
+  // Graphics only, all drawn from the tree's position (never from the placement's random draws): a stand-wide tone, the
+  // crown's width against its height, and a lean. Together with the three models of each species they keep neighbours
+  // from being copies of each other. Ex marks the extra trees (riparian bands, ragged edges, windbreaks): drawn like any
+  // other, cut like any other, but never counted by the simulation.
+  private Tone!: Float32Array;
+  private Asp!: Float32Array;
+  private LeanX!: Float32Array;
+  private LeanZ!: Float32Array;
+  private Ex!: Uint8Array;
   /** Per-tree density weight in [0, MAX_DENSITY]. A preset draws the trees
    * whose weight is under its density; the simulation (land value, nature)
    * always counts the same reference set, so graphics quality never changes
@@ -99,7 +123,6 @@ export class Trees {
   private season = { day: -1, fall: 0, bare: 0, spring: 0, blossom: 0, dry: 0, dull: 0 };
   private look = newSeasonLook();
   private mapId: MapId;
-
   constructor(private terrain: Terrain, map: MapData, private q: Quality, renderer: THREE.WebGLRenderer) {
     this.mapId = map.def.id;
     this.renderDensity = q.treeDensity;
@@ -216,7 +239,7 @@ vCanopy = canopy;`)
       sh.uniforms.uLeaf = { value: 1 };
       bindAtmos(sh);
       sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', `#include <common>\nuniform float uLeaf, uSnow, uSnowLine;\nconst float vCanopy = 0.0;\nvarying vec3 vTWPos;\nvarying float vTop;\nvarying float vK;\n${CLOUD_GLSL}`)
+        .replace('#include <common>', `#include <common>\nuniform float uLeaf, uSnow, uSnowLine;\nconst float vCanopy = 0.0;\nconst float FAR_FOOT = ${FAR_FOOT.toFixed(2)};\nconst float FAR_TOP = ${FAR_TOP.toFixed(2)};\nvarying vec3 vTWPos;\nvarying float vTop;\nvarying float vK;\n${CLOUD_GLSL}`)
         // two baked views: the side (row 0) and from above (row 1), blended by
         // how steeply the camera looks down at the tree
         .replace('#include <map_fragment>', `#ifdef USE_MAP
@@ -233,6 +256,10 @@ vCanopy = canopy;`)
         .replace('#include <alphatest_fragment>', IMPOSTOR_BOOST + LEAF_ALPHA.replace('0.42', '0.3'))
         .replace('#include <color_fragment>', `#include <color_fragment>
 diffuseColor.rgb *= cloudShade(vTWPos);
+// the dark under a crown: the detailed trees shade their own lower halves and the ground below them, a flat picture
+// lit all over read lighter than the wood it stands in for. Darker toward the foot, brighter on top, and about a fifth
+// darker on average (FAR_FOOT and FAR_TOP)
+diffuseColor.rgb *= mix(FAR_FOOT, FAR_TOP, vTop);
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.88, 0.93), uSnow * 0.55 * vTop * smoothstep(uSnowLine - 30.0, uSnowLine + 60.0, vTWPos.y));`);
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vTWPos;\nvarying float vTop;\nvarying float vK;\nattribute vec2 aSprite;')
@@ -283,11 +310,21 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
     // draws); each tree keeps its weight so presets only differ in drawing.
     const rng = new Rng(map.def.seed + 99);
     const step = 9;
-    const cap = Math.ceil((WORLD / step + 1) ** 2);
+    const cap0 = Math.ceil((WORLD / step + 1) ** 2);
+    const cap = cap0 + Math.ceil(cap0 * EXTRA_SHARE); // (room for the extra trees after the map's own)
     const X = new Float32Array(cap), Z = new Float32Array(cap), Y = new Float32Array(cap), S = new Float32Array(cap), Rt = new Float32Array(cap);
     const K = new Uint8Array(cap), Vr = new Uint8Array(cap), Hue = new Float32Array(cap), W = new Float32Array(cap);
+    const Tone = new Float32Array(cap), Asp = new Float32Array(cap), LeanX = new Float32Array(cap), LeanZ = new Float32Array(cap), Ex = new Uint8Array(cap);
     let n = 0;
     const dens = map.def.treeDensity;
+    // what every tree gets on top, from its position alone (none of the random draws below, which fix the simulation's set)
+    const finish = (i: number, x: number, z: number) => {
+      Tone[i] = (vnoise(x, z, 110, 23) - 0.5) * 2;
+      const qx = Math.floor(x * 13.7), qz = Math.floor(z * 13.7);
+      Asp[i] = 0.9 + 0.22 * hash2(qx, qz, 41);
+      LeanX[i] = (hash2(qx, qz, 43) - 0.5) * 0.14;
+      LeanZ[i] = (hash2(qx, qz, 47) - 0.5) * 0.14;
+    };
     for (let gz = -HALF + step / 2; gz < HALF; gz += step)
       for (let gx = -HALF + step / 2; gx < HALF; gx += step) {
         const x = gx + (rng.float() - 0.5) * step * 0.95;
@@ -305,13 +342,134 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
         X[n] = x;
         Z[n] = z;
         Y[n] = h - 0.25;
-        S[n] = 0.75 + rng.float() * 0.55;
+        // a stand grows to one size: 0.88..1.12 of the tree's own 0.75..1.3
+        S[n] = (0.75 + rng.float() * 0.55) * (0.88 + 0.24 * vnoise(x, z, 150, 17));
         Rt[n] = rng.float() * Math.PI * 2;
         K[n] = KINDS.indexOf(rule.kind);
         Vr[n] = Math.floor(rng.float() * VARIANTS);
         Hue[n] = rng.float();
+        finish(n, x, z);
         n++;
       }
+    const nMap = n;
+    // The extras are 11.5% of the trees the simulation counts at most, all of them drawn at High (a swamp map with a lot of
+    // water would otherwise get a third again as many trees, and every one is drawn).
+    let refN = 0;
+    for (let i = 0; i < nMap; i++) if (W[i] <= REF_DENSITY) refN++;
+    const budget = Math.floor(refN * 0.115);
+
+    // ---- extra trees: the way real land clusters them. Their own random stream and placed after the map's trees, so the
+    // simulation's set (positions, species, weights and order) is exactly what it was; they carry a draw weight like any
+    // tree (thinned on the lighter presets) and are cut like any tree, but Ex keeps them out of every count.
+    const er = new Rng(map.def.seed + 4141);
+    const OCC = 4, on = Math.ceil(WORLD / OCC);
+    const occ = new Uint8Array(on * on);
+    const ocell = (x: number, z: number) => Math.min(on - 1, Math.max(0, Math.floor((z + HALF) / OCC))) * on + Math.min(on - 1, Math.max(0, Math.floor((x + HALF) / OCC)));
+    for (let i = 0; i < nMap; i++) occ[ocell(X[i], Z[i])] = 1;
+    const add = (x: number, z: number, kind: TreeKind, s: number, w: number): boolean => {
+      if (n >= cap || n - nMap >= budget || !this.terrain.inBounds(x, z, 2)) return false;
+      const c = ocell(x, z);
+      if (occ[c]) return false;
+      const h = this.terrain.h(x, z);
+      if (h < WATER - 0.5) return false;
+      occ[c] = 1;
+      X[n] = x; Z[n] = z; Y[n] = h - 0.25; S[n] = s * (0.9 + 0.2 * vnoise(x, z, 150, 17)); Rt[n] = er.float() * Math.PI * 2;
+      K[n] = KINDS.indexOf(kind); Vr[n] = Math.floor(er.float() * VARIANTS); Hue[n] = er.float(); W[n] = w; Ex[n] = 1;
+      finish(n, x, z);
+      n++;
+      return true;
+    };
+    // where the water is: the distance to it in 8 m cells (a chamfer pass each way, 3 per step, 4 across)
+    const WD = 8, wn = Math.ceil(WORLD / WD);
+    const wd = new Uint8Array(wn * wn).fill(255);
+    for (let j = 0; j < wn; j++) for (let i = 0; i < wn; i++) if (this.terrain.h(-HALF + (i + 0.5) * WD, -HALF + (j + 0.5) * WD) < WATER) wd[j * wn + i] = 0;
+    for (let j = 0; j < wn; j++) for (let i = 0; i < wn; i++) {
+      const k = j * wn + i;
+      let v = wd[k];
+      if (i > 0) v = Math.min(v, wd[k - 1] + 3);
+      if (j > 0) { v = Math.min(v, wd[k - wn] + 3); if (i > 0) v = Math.min(v, wd[k - wn - 1] + 4); if (i < wn - 1) v = Math.min(v, wd[k - wn + 1] + 4); }
+      wd[k] = Math.min(255, v);
+    }
+    for (let j = wn - 1; j >= 0; j--) for (let i = wn - 1; i >= 0; i--) {
+      const k = j * wn + i;
+      let v = wd[k];
+      if (i < wn - 1) v = Math.min(v, wd[k + 1] + 3);
+      if (j < wn - 1) { v = Math.min(v, wd[k + wn] + 3); if (i < wn - 1) v = Math.min(v, wd[k + wn + 1] + 4); if (i > 0) v = Math.min(v, wd[k + wn - 1] + 4); }
+      wd[k] = Math.min(255, v);
+    }
+    const florida = map.def.id === 'florida';
+    // The riparian pass, the biggest, is scaled to a share of the extras' budget (above).
+    const room = () => n - nMap < budget;
+    // 1. riparian bands: willows, sycamores and cypress along the banks (a bell 3-30 m from the water, with gaps in it),
+    //    on the meadows and levees where the map's own rules leave the banks bare
+    const ripP = (gx: number, gz: number, x: number, z: number): number => {
+      const d = wd[Math.floor((gz + HALF) / WD) * wn + Math.floor((gx + HALF) / WD)];
+      if (d === 0 || d > 14) return 0;
+      const dm = (d / 3) * WD;
+      if (dm < 3) return 0;
+      const h = this.terrain.h(x, z);
+      if (h < WATER + 0.12 || this.terrain.slope(x, z) > 0.45) return 0;
+      return Math.exp(-(((dm - 12) / 9) ** 2)) * (0.3 + 1.1 * vnoise(x, z, 70, 31)) * 0.42;
+    };
+    let expected = 0; // (how many the pass would add at full strength, from the cell centres)
+    for (let gz = -HALF + 2.75; gz < HALF; gz += 5.5) for (let gx = -HALF + 2.75; gx < HALF; gx += 5.5) expected += Math.min(1, ripP(gx, gz, gx, gz));
+    const ripScale = Math.min(1, (budget * 0.8) / Math.max(1, expected));
+    for (let gz = -HALF + 2.75; gz < HALF && room(); gz += 5.5)
+      for (let gx = -HALF + 2.75; gx < HALF; gx += 5.5) {
+        const x = gx + (er.float() - 0.5) * 4.5, z = gz + (er.float() - 0.5) * 4.5;
+        if (er.float() > ripP(gx, gz, x, z) * ripScale) continue;
+        const h = this.terrain.h(x, z);
+        const kind: TreeKind = florida ? (h < 1.2 || er.float() < 0.6 ? 'cypress' : 'palm') : 'decid';
+        add(x, z, kind, 0.95 + er.float() * 0.5, er.float() * 0.95);
+      }
+    // 2. ragged woodland edges: where a wood stops the trees thin out into shrubs and the odd small tree, not a line
+    const EC = 16, en = Math.ceil(WORLD / EC);
+    const cnt = new Uint8Array(en * en);
+    for (let i = 0; i < nMap; i++) {
+      const c = Math.min(en - 1, Math.floor((Z[i] + HALF) / EC)) * en + Math.min(en - 1, Math.floor((X[i] + HALF) / EC));
+      if (cnt[c] < 255) cnt[c]++;
+    }
+    for (let j = 1; j < en - 1; j++)
+      for (let i = 1; i < en - 1; i++) {
+        if (cnt[j * en + i]) continue;
+        let m = 0;
+        for (let v = -1; v <= 1; v++) for (let u = -1; u <= 1; u++) m = Math.max(m, cnt[(j + v) * en + i + u]);
+        if (m < 3) continue;
+        for (let t = 0; t < 2; t++) {
+          if (er.float() > 0.42) continue;
+          const x = -HALF + (i + er.float()) * EC, z = -HALF + (j + er.float()) * EC;
+          if (!this.terrain.inBounds(x, z, 2)) continue;
+          const h = this.terrain.h(x, z);
+          if (h < WATER + 0.5) continue;
+          const rule = map.treeRule(x, z, h, this.terrain.slope(x, z), this.terrain.coverAt(x, z), 0.5);
+          if (!rule) continue;
+          const shrub = er.float() < 0.55;
+          add(x, z, shrub ? 'shrub' : rule.kind, shrub ? 0.8 + er.float() * 0.5 : 0.55 + er.float() * 0.3, er.float() * 0.95);
+        }
+      }
+    // 3. windbreaks: a straight row of conifers (palms in Florida) along a field, one draw weight for the whole row so a
+    //    lighter preset draws all of it or none
+    for (let ty = 0; ty < 5; ty++)
+      for (let tx = 0; tx < 5; tx++)
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const x0 = -HALF + (tx + er.float()) * (WORLD / 5), z0 = -HALF + (ty + er.float()) * (WORLD / 5);
+          if (!this.terrain.inBounds(x0, z0, 60)) continue;
+          const h0 = this.terrain.h(x0, z0);
+          if (h0 < 4 || this.terrain.slope(x0, z0) > 0.1) continue;
+          const open = map.treeRule(x0, z0, h0, this.terrain.slope(x0, z0), this.terrain.coverAt(x0, z0), 0.5);
+          if (open && open.p > 0.1) continue; // open land only
+          const alongX = er.float() < 0.5, len = 90 + er.float() * 90, sp = 4.6 + er.float() * 0.8, w = er.float() * 0.9;
+          const pts: [number, number][] = [];
+          for (let t = 0; t < len; t += sp) {
+            const x = x0 + (alongX ? t : 0) + (er.float() - 0.5) * 0.8, z = z0 + (alongX ? 0 : t) + (er.float() - 0.5) * 0.8;
+            if (!this.terrain.inBounds(x, z, 2) || occ[ocell(x, z)] || this.terrain.h(x, z) < 3 || this.terrain.slope(x, z) > 0.2) break;
+            pts.push([x, z]);
+          }
+          if (pts.length < len / sp - 1) continue;
+          for (const [x, z] of pts) add(x, z, florida ? 'palm' : 'pine', 1 + er.float() * 0.25, w);
+          break;
+        }
+
     this.n = n;
     this.X = X.slice(0, n);
     this.Z = Z.slice(0, n);
@@ -322,6 +480,11 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
     this.Vr = Vr.slice(0, n);
     this.Hue = Hue.slice(0, n);
     this.W = W.slice(0, n);
+    this.Tone = Tone.slice(0, n);
+    this.Asp = Asp.slice(0, n);
+    this.LeanX = LeanX.slice(0, n);
+    this.LeanZ = LeanZ.slice(0, n);
+    this.Ex = Ex.slice(0, n);
     this.A = new Uint8Array(n).fill(1);
     const cellOf = (i: number) => Math.min(GRID_N - 1, Math.floor((this.Z[i] + HALF) / CELL)) * GRID_N + Math.min(GRID_N - 1, Math.floor((this.X[i] + HALF) / CELL));
     const starts = new Int32Array(GRID_N * GRID_N + 1);
@@ -332,8 +495,13 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
     const fill = starts.slice(0, GRID_N * GRID_N);
     for (let i = 0; i < n; i++) this.cellItems[fill[cellOf(i)]++] = i;
     let ref = 0;
-    for (let i = 0; i < n; i++) if (this.W[i] <= REF_DENSITY) ref++;
+    for (let i = 0; i < n; i++) if (this.isRef(i)) ref++;
     this.total = this.alive = ref;
+  }
+
+  /** a tree of the simulation's reference set (the same on every preset; the extra trees are never in it) */
+  private isRef(i: number) {
+    return this.W[i] <= REF_DENSITY && !this.Ex[i];
   }
 
   // ------------------------------------------------------------------ impostor sprites
@@ -486,7 +654,9 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
     const k = KINDS[this.K[i]];
     out.setHex(BASE_COLOR[k]);
     const h = this.Hue[i];
-    out.offsetHSL((h - 0.5) * 0.05, (h - 0.5) * 0.12, (h - 0.5) * 0.12);
+    // (+ the stand's tone: a wood is one shade, the next wood along another)
+    const tone = this.Tone[i];
+    out.offsetHSL((h - 0.5) * 0.05 + tone * 0.018, (h - 0.5) * 0.12 + tone * 0.05, (h - 0.5) * 0.12 + tone * 0.05);
     const s = this.season;
     const t = this.tmpC;
     if (DECIDUOUS.has(k) || (this.mapId === 'norcal' && k === 'oak')) {
@@ -634,11 +804,13 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
             this.slots[mi][slot] = i;
             this.slotOf[i] = (mi << 20) | slot;
             this.colorOf(i, col);
-            const s = this.S[i], cs = Math.cos(this.Rt[i]) * s, sn = Math.sin(this.Rt[i]) * s;
+            // width against height (Asp) and a lean (the y axis tips): the same three models stop reading as copies
+            const s = this.S[i], w = s * this.Asp[i], cs = Math.cos(this.Rt[i]) * w, sn = Math.sin(this.Rt[i]) * w;
+            const sh = s * (0.9 + this.Hue[i] * 0.2);
             const e = im.instanceMatrix.array as Float32Array;
             const o = slot * 16;
             e[o] = cs; e[o + 1] = 0; e[o + 2] = -sn; e[o + 3] = 0;
-            e[o + 4] = 0; e[o + 5] = s * (0.9 + this.Hue[i] * 0.2); e[o + 6] = 0; e[o + 7] = 0;
+            e[o + 4] = this.LeanX[i] * sh; e[o + 5] = sh; e[o + 6] = this.LeanZ[i] * sh; e[o + 7] = 0;
             e[o + 8] = sn; e[o + 9] = 0; e[o + 10] = cs; e[o + 11] = 0;
             e[o + 12] = this.X[i]; e[o + 13] = this.Y[i]; e[o + 14] = this.Z[i]; e[o + 15] = 1;
             const ca = im.instanceColor!.array as Float32Array;
@@ -706,7 +878,7 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
       if (h < WATER - 1.2) continue;
       this.A[i] = 1;
       this.Y[i] = h - 0.25;
-      if (this.W[i] <= REF_DENSITY) ref++;
+      if (this.isRef(i)) ref++;
     }
     if (ids.length) { this.alive += ref; this.dirty = true; }
     return ref;
@@ -719,7 +891,7 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
     for (let k = 0; k < pts.length; k += 2) {
       const p = pts[k];
       this.forCells(p.x - hw, p.z - hw, p.x + hw, p.z + hw, (i) => {
-        if (!this.A[i] || this.W[i] > REF_DENSITY || seen.has(i)) return;
+        if (!this.A[i] || !this.isRef(i) || seen.has(i)) return;
         if ((this.X[i] - p.x) ** 2 + (this.Z[i] - p.z) ** 2 < hw2) seen.add(i);
       });
     }
@@ -737,7 +909,7 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
       this.cutLog?.push(i);
       gone.push(i);
       n++;
-      if (this.W[i] <= REF_DENSITY) ref++;
+      if (this.isRef(i)) ref++;
     });
     if (n) {
       this.alive -= ref;
@@ -764,7 +936,7 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
       // planted 0.25 m into the ground; gone where it's now deeper than a cypress stands
       const h = this.terrain.h(x, z);
       if (Math.abs(h - 0.25 - this.Y[i]) < 0.12) return;
-      if (h < WATER - 1.2) { this.A[i] = 0; if (this.W[i] <= REF_DENSITY) ref++; drowned.push(i); }
+      if (h < WATER - 1.2) { this.A[i] = 0; if (this.isRef(i)) ref++; drowned.push(i); }
       else { this.Y[i] = h - 0.25; moved.push(i); }
     });
     this.alive -= ref;
@@ -777,7 +949,7 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
     let n = 0;
     const r2 = r * r;
     this.forCells(x - r, z - r, x + r, z + r, (i) => {
-      if (this.A[i] && this.W[i] <= REF_DENSITY && (this.X[i] - x) ** 2 + (this.Z[i] - z) ** 2 < r2) n++;
+      if (this.A[i] && this.isRef(i) && (this.X[i] - x) ** 2 + (this.Z[i] - z) ** 2 < r2) n++;
     });
     return n;
   }

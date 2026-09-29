@@ -388,13 +388,22 @@ export function serviceModel(id: ServiceModelId, w: number, d: number): Building
       k.gable(9, -6, 10, 14, 9, 1.6, false, col(0x5a5f66), col(0x8e4a32), T.BRICK, 0.2, T.METAL);
       k.box(-4, 1.3, 5, 0.8, 0, 3.6, T.SOLID, WHITE, T.SOLID);
       k.sign(-4, 5.6, 1.06, 16, 1.7, 'svc:school', 0, false);
+      // roofline (graphics pass, item 4): a bell cupola, a brick boiler chimney, a lantern along the gym ridge and two
+      // rooftop units, so the school stops reading as two boxes from the street
+      k.box(-6, -6, 3.2, 3.2, 7.5, 10.4, T.BRICK, col(0xa45a3c), null);
+      k.box(-6, -6, 3.7, 3.7, 10.4, 10.8, T.CONCRETE, CONCRETE, T.ROOF_FLAT, CONCRETE);
+      k.hip(-6, -6, 3.7, 3.7, 10.8, 2.6, col(0x3a4046), 0.15, T.METAL);
+      k.box(-12.5, -11.85, 1.7, 1.7, 0, 12.5, T.BRICK, col(0x8e4a32), T.CONCRETE, CONCRETE);
+      k.box(9, -6, 3, 8, 10.4, 11.9, T.METAL, col(0x8a9096), T.ROOF_FLAT, ROOF);
+      k.box(-9.5, -3, 3.4, 2.4, 7.5, 8.8, T.METAL, col(0x9aa0a6), T.ROOF_FLAT, col(0x5a5f66));
+      k.box(1, -8, 2.6, 2.2, 7.5, 8.6, T.METAL, col(0x9aa0a6), T.ROOF_FLAT, col(0x5a5f66));
       flagpole(k, -13, 7);
       // field + playground
       k.slab(-W / 2 + 1, 4, 2, D / 2 - 1, 0.06, T.LAWN, GRASS);
       k.box(-7, 10, 3, 0.1, 0, 2.2, T.SOLID, col(0xd8d8d8), null);
       k.box(9, 9.5, 4, 3, 0.0, 2.4, T.SOLID, col(0xd83a2a), T.SOLID, col(0xf2c200));
       parkedTruck(k, 10, 13.5, Math.PI / 2, col(0xf2b705), col(0xf2b705), 10);
-      height = 10;
+      height = 13;
       label = 'Charter School of Excellence™';
       break;
     }

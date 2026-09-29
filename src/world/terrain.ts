@@ -22,6 +22,7 @@ export const enum Paint {
 const CQ = 128; // quads per chunk side at LOD 0 (512 m)
 const CN = (HM_N - 1) / CQ; // chunks per side (12)
 const LOD_STEPS = [1, 2, 4, 8];
+const VERTEX_SPECKLE = [1, 0.7, 0.4, 0.2]; // per-vertex colour noise, by level (shade())
 
 interface Chunk {
   cx: number;
@@ -204,6 +205,9 @@ uniform float uLandOn;`,
   float dist = length(vWPos - cameraPosition);
   float fadeNear = 1.0 - smoothstep(140.0, 700.0, dist);
   float fadeMid = 1.0 - smoothstep(600.0, 2600.0, dist);
+  // the fine (4 m tile) layer is full under the camera and gone by 170 m (a third left at 110 m): past that its blades and
+  // clumps only compete with the buildings, and the 24 m layer carries the ground's variation
+  float fadeFine = 1.0 - smoothstep(24.0, 170.0, dist);
   gWN = normalize((vec4(vNormal, 0.0) * viewMatrix).xyz);
   // steep faces are rock regardless of the painted weights
   float cliff = smoothstep(0.78, 0.55, gWN.y);
@@ -217,10 +221,13 @@ uniform float uLandOn;`,
   vec3 rockCol = mix(vec3(0.075, 0.07, 0.062), vec3(0.15, 0.135, 0.115), band);
   rockCol = mix(rockCol, vec3(0.045, 0.075, 0.025), moss * 0.7);
   diffuseColor.rgb = mix(diffuseColor.rgb, rockCol, cliff * 0.9);
-  vec3 det = mix(b.rgb, a.rgb, 0.6) * 2.0;
+  vec3 det = mix(b.rgb, mix(vec3(0.5), a.rgb, fadeFine), 0.6) * 2.0;
   det = mix(det, pow(max(det, vec3(0.0)), vec3(1.6)) * 1.25, cliff);
   diffuseColor.rgb *= mix(mix(vec3(1.0), b.rgb * 2.0, 0.55 * fadeMid), det, fadeNear * 0.9);
-  gDetailH = mix(b.a, a.a, 0.65) * fadeNear;
+  // the detail layers' bump goes with distance faster than their colour: from a street's distance it only makes the
+  // normal wobble per pixel under the sun
+  float fadeBump = 1.0 - smoothstep(50.0, 220.0, dist);
+  gDetailH = mix(b.a, mix(0.5, a.a, fadeFine), 0.65) * fadeBump;
   float macro = tn(vWPos.xz * 0.004) * 0.6 + tn(vWPos.xz * 0.017) * 0.4;
   diffuseColor.rgb *= 0.88 + macro * 0.22;
   // seasons: grass browns in winter, NorCal hills green up in the rainy season
@@ -582,7 +589,7 @@ if (uInfoOn > 0.0) {
   }
 
   // ---------------------------------------------------------------- meshes
-  private shade(i: number, j: number, col: THREE.Color, mats: number[]) {
+  private shade(i: number, j: number, col: THREE.Color, mats: number[], lod = 0) {
     const id = j * HM_N + i;
     const h = this.heights[id];
     const P = this.pal;
@@ -648,7 +655,9 @@ if (uInfoOn > 0.0) {
       else if (p === Paint.Paved) { col.lerp(tmpA.setHex(0x5a5a5c), 0.9); rock += 2; }
       else if (p === Paint.Scorched) { col.lerp(tmpA.setHex(0x2a2622), 0.8); dirt += 2; }
     }
-    col.multiplyScalar(0.94 + r * 0.1);
+    // per-vertex speckle (+-5% at full detail; on the coarse levels each vertex covers a bigger square, so it eases off
+    // with distance instead of turning into a chequerboard of 16 or 32 m tiles)
+    col.multiplyScalar(0.99 + (r - 0.5) * 0.1 * VERTEX_SPECKLE[lod]);
     mats[0] = Math.max(0, grass);
     mats[1] = dirt;
     mats[2] = rock;
@@ -705,7 +714,7 @@ if (uInfoOn > 0.0) {
         nor[k * 3] = nx / l;
         nor[k * 3 + 1] = 1 / l;
         nor[k * 3 + 2] = nz / l;
-        this.shade(i, j, col, m);
+        this.shade(i, j, col, m, lod);
         colr[k * 3] = col.r;
         colr[k * 3 + 1] = col.g;
         colr[k * 3 + 2] = col.b;

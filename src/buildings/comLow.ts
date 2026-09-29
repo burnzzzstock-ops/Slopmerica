@@ -4,7 +4,7 @@
 import { decorate } from './satire';
 import { brandById, brandsFor, BRANDS, Brand, Archetype } from '../art/brands';
 import { hasTile } from '../art';
-import { M, S, Mat, rgb, WHITE, RGB } from './mesh';
+import { M, S, Mat, rgb, WHITE, RGB, WallGaps } from './mesh';
 import {
   GenCtx, lotPad, parkingLot, car, tree, shrub, poleSign, wallSign, sideSign, canopy, pumpIsland, dumpster, iceBox, propaneCage,
   vending, flagpole, tubeMan, backBillboard, picnicTable, smoker, lampPost, patch, mats, monumentSign, hvac, fence,
@@ -53,10 +53,11 @@ function store(g: GenCtx, x0: number, x1: number, z0: number, z1: number, h: num
     mb.box(x0 - 0.15, x1 + 0.15, h - 0.2, h + 0.9, z1, z1 + 0.25, { side: bm, top: bm, b: null });
   }
   if (o.awning !== undefined) {
-    const am = M('metal', 2, 2, o.awning, { ao: false });
-    mb.poly([[x0, 3.1, z1 + 1.4], [x1, 3.1, z1 + 1.4], [x1, 3.7, z1], [x0, 3.7, z1]], am);
-    mb.poly([[x1, 3.1, z1 + 1.4], [x0, 3.1, z1 + 1.4], [x0, 3.7, z1], [x1, 3.7, z1]], am); // underside
+    // (graphics: the shared awning helper, striped, with a valance and closed ends)
+    mb.awning(x0, x1, z1, 3.1, 1.4, M('metal', 2, 2, o.awning, { ao: false }), M('metal', 2, 2, 0xf0ece2, { ao: false }));
   }
+  // graphics (item 3): the side and back walls were one plain plane each: a plinth, pilasters, and over 6 m a belt course
+  mb.articulate(x0, x1, z0, z1, h, side, { sides: ['-z', '-x', '+x'], bay: 5.5 });
   if (o.sign) {
     const sw = o.signW ?? Math.min(x1 - x0 - 1, 9);
     wallSign(g, (x0 + x1) / 2, h - 0.05 + (o.band !== null && o.band !== undefined ? 0 : -1.2), z1 + 0.25, sw, o.sign, sw / 4.6);
@@ -175,7 +176,10 @@ function shop(g: GenCtx, b: Brand) {
   const z0 = -D / 2 + 1, z1 = z0 + bd;
   const x = (rng.float() - 0.5) * (W - bw - 2);
   const side = dollar ? M('metalPanel', 4, 4, 0xe6dcc0) : smoke ? WALL.cinder(rgb(rng.pick([0xffffff, 0xe0d8f0, 0xd8e8e0]))) : rng.chance(0.5) ? WALL.stucco(rgb(0xece4d4)) : WALL.brick();
-  store(g, x - bw / 2, x + bw / 2, z0, z1, dollar ? 5.2 : 4.4, { side, band: dollar ? 0x111111 : hexNum(b.colors[0]), sign: sign(b), signW: Math.min(bw - 0.8, dollar ? 12 : 7), awning: smoke || rng.chance(0.3) ? hexNum(b.colors[0]) : undefined });
+  const awned = smoke || rng.chance(0.3);
+  // graphics (item 3): most shops with a glass front get an awning over it; chosen from the lot's own numbers so no rng draw moves
+  const awnedToo = !dollar && (Math.round(x * 7 + bw * 13 + bd * 3) & 3) !== 0;
+  store(g, x - bw / 2, x + bw / 2, z0, z1, dollar ? 5.2 : 4.4, { side, band: dollar ? 0x111111 : hexNum(b.colors[0]), sign: sign(b), signW: Math.min(bw - 0.8, dollar ? 12 : 7), awning: awned || awnedToo ? hexNum(b.colors[0]) : undefined });
   if (smoke) {
     for (let i = 0; i < 2; i++) g.em.push({ kind: 'cigarette', pos: [x - bw / 2 + 1 + i * 1.3, 1.6, z1 + 1] });
     g.em.push({ kind: 'smoke', pos: [x + bw / 2 - 1, 1.7, z1 + 1.2] });
@@ -234,6 +238,12 @@ function strip(g: GenCtx) {
     // divider pilaster
     mb.box(a - 0.25, a + 0.25, 0, h + 0.4, bz1, bz1 + 0.5, { side: fancy ? M('stone', 3, 3) : wall, top: wall, b: null });
   }
+  // graphics (item 3): the back and side walls, 40 m of one plane, get a plinth and pilasters on the same bays as the unit
+  // dividers out front, and a cornice runs the top of every wall
+  mb.plinth(x0, x1, bz0, bz1, 0.5, wall, 0.1, ['-z', '-x', '+x']);
+  mb.pilasters(x0, x1, bz0, bz1, 0.5, h, wall, uw, ['-z']);
+  mb.pilasters(x0, x1, bz0, bz1, 0.5, h, wall, 5.5, ['-x', '+x']);
+  mb.hband(x0, x1, bz0, bz1, h - 0.4, h, wall, 0.14);
   // covered walkway + fascia with the tenant signs on it
   const cz = bz1 + 2.6;
   const col = fancy ? M('stone', 3, 3) : M('plain', 2, 2, 0xe8e4dc);
@@ -295,6 +305,8 @@ function bar(g: GenCtx, b: Brand) {
   const side = rng.chance(0.5) ? WALL.brickDark() : WALL.cinder(0x6a6a70);
   mb.box(x - bw / 2, x + bw / 2, 0, 4.2, z0, z1, { side, top: null });
   mb.parapet(x - bw / 2, x + bw / 2, z0, z1, 4.2, 0.6, side, ROOF.flat());
+  // graphics (item 3): the walls a plinth and pilasters (the front keeps its door and boarded window clear)
+  mb.articulate(x - bw / 2, x + bw / 2, z0, z1, 4.2, side, { sides: ['-z', '-x', '+x'], bay: 5 });
   mb.decal('+z', x - bw / 4, 0, z1, 1.1, 2.2, S('doorMetal'));
   mb.decal('+z', x + bw / 5, 1.2, z1, 2.2, 1.0, S('winBoard'));
   wallSign(g, x, 2.6, z1, Math.min(bw - 1.5, 6), sign(b), 1.4);

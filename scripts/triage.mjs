@@ -11,7 +11,7 @@
 // Writes <folder>/TRIAGE.md, sorted by severity, and prints it. With a
 // labels.json in the folder (hand labels), prints the agreement. Raw answers
 // cached in <folder>/triage-cache.json; thresholds below. --dry-run needs no
-// key. Exits 2 when reports couldn't be judged.
+// key and writes nothing. Exits 2 when reports couldn't be judged.
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -146,8 +146,8 @@ if (existsSync(lf)) {
     for (const f of l.dupOf) if (!x.dupOf.includes(f)) { dupFN++; misses.push(`duplicate missed: ${x.file} ~ ${f}`); }
   }
   report.push(`area ${area}/${n}`, `severity ${sev}/${n} exact, ${sev1}/${n} within one level`, `check ${check}/${n}`, `duplicates: ${dupTP} found, ${dupFN} missed, ${dupFP} false`);
-  writeFileSync(join(DIR, 'TRIAGE.md'), ['# Bug triage', '', `${rows.length} reports from \`${basename(DIR)}\`, most severe first (score 0 cosmetic … 3 crash). Suggested check at ${T.check}; same problem at ${T.dup}.`, '', ...table, '', `## Agreement with labels.json: ${report.join(' · ')}`, '', ...misses.map((m) => `- ${m}`), ''].join('\n'));
-} else writeFileSync(join(DIR, 'TRIAGE.md'), ['# Bug triage', '', `${rows.length} reports, most severe first.`, '', ...table, ''].join('\n'));
+  if (!DRY) writeFileSync(join(DIR, 'TRIAGE.md'), ['# Bug triage', '', `${rows.length} reports from \`${basename(DIR)}\`, most severe first (score 0 cosmetic … 3 crash). Suggested check at ${T.check}; same problem at ${T.dup}.`, '', ...table, '', `## Agreement with labels.json: ${report.join(' · ')}`, '', ...misses.map((m) => `- ${m}`), ''].join('\n'));
+} else if (!DRY) writeFileSync(join(DIR, 'TRIAGE.md'), ['# Bug triage', '', `${rows.length} reports, most severe first.`, '', ...table, ''].join('\n'));
 
 console.log(table.join('\n'));
 if (report.length) console.log(`\nAgreement with hand labels: ${report.join(' · ')}`);

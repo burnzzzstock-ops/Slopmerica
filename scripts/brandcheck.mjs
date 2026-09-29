@@ -13,12 +13,13 @@
 //   means     choice over the registered brand names plus "none"
 // and code proposes one canonical name per chain (docs/BRAND_NAMES.md).
 // Proposes only; the owner decides names. Cache: docs/brand-names.json.
-// --dry-run needs no key. Exits 1 when a chain mention matches no brand
+// --dry-run needs no key and writes nothing. Exits 1 when a chain mention matches no brand
 // and isn't in KNOWN.
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { answerCache, apiKey, costLine, mapPool } from './typesafe.mjs';
+import { fill, literals, tokenize } from './copyscan.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DRY = process.argv.includes('--dry-run');
@@ -51,13 +52,20 @@ for (const f of files(join(ROOT, 'src'))) {
   const rel = relative(ROOT, f).replace(/\\/g, '/');
   if (NOT_BRANDS.test(rel)) continue;
   const src = readFileSync(f, 'utf8');
-  for (const m of src.matchAll(/'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)"|`((?:[^`\\]|\\.)*)`/g)) {
-    const s = (m[1] ?? m[2] ?? m[3] ?? '').replace(/\\'/g, "'");
+  const toks = tokenize(src);
+  // a string inside a template's ${…} is read in the sentence of the nearest template around it
+  // (inner templates come first in the token list, so the first one to claim a token is nearest)
+  const around = new Map();
+  for (const t of toks) if (t.t === 'tmpl') for (const h of t.holes) for (let k = h.from; k < h.to; k++) if (!around.has(toks[k])) around.set(toks[k], t);
+  for (const lit of literals(src, toks)) {
+    const s = lit.text, line = lit.line;
     if (!/[a-z]/.test(s) || s.split(' ').length < 2) continue;
-    const line = src.slice(0, m.index).split('\n').length;
-    // a name alone in a list only counts in a list of brands (the feed's filler brands)
-    const inList = src.slice(Math.max(0, m.index - 4000), m.index).match(/const (\w+)[^=\n]*=\s*\[[^\]]*$/);
-    const alone = (ph) => ph === s.trim() && !/brand/i.test(inList?.[1] ?? '') && !/^\s*\{?\s*(label|name|sign|line|text|blurb|tagline|caption)\s*:/.test(src.slice(m.index - 12, m.index));
+    // a name alone in a list only counts in a list of brands (the feed's filler brands), or as
+    // a label, name, sign, line, text, blurb, tagline or caption field
+    const field = lit.path.split('.').pop() ?? '';
+    const alone = (ph) => ph === s.trim() && !around.has(lit.tok) && !/brand/i.test(lit.path.split(/[.[]/)[0]) && !/^(label|name|sign|line|text|blurb|tagline|caption)$/.test(field);
+    const full = fill(lit.tok.t === 'tmpl' ? lit.tok : around.get(lit.tok) ?? lit.tok, toks, '…').replace(/\s+/g, ' ').trim();
+    const sentence = (ph) => { const at = Math.max(0, full.indexOf(ph) - 80); return full.length <= 200 ? full : full.slice(at, at + 200); };
     for (const p of s.matchAll(/(?:[A-Z][\w’'-]*(?:\s+|$)){1,4}/g)) {
       const ph = p[0].trim().replace(/[.,:;!?)'’]+$/, '');
       if (alone(ph) && !rel.startsWith('src/vault/')) continue;
@@ -68,7 +76,7 @@ for (const f of files(join(ROOT, 'src'))) {
       if (!(shares || (ws.length >= 2 && SUFFIX.test(ph)))) continue;
       const key = ph.replace(/^The\s+/, '');
       if (!mentions.has(key)) mentions.set(key, []);
-      mentions.get(key).push({ where: `${rel}:${line}`, sentence: s.replace(/\$\{[^}]*\}/g, '…').slice(0, 200), vault: rel.startsWith('src/vault/') });
+      mentions.get(key).push({ where: `${rel}:${line}`, sentence: sentence(ph), vault: rel.startsWith('src/vault/') });
     }
   }
 }
@@ -123,7 +131,7 @@ md.push(`## Chains the registry doesn't have (${unreg.length})`, '', 'For the ow
 const echoes = rows.filter((x) => x.status === 'vault echo');
 md.push(`## Asset Vault businesses that echo a registered chain (${echoes.length})`, '', 'Two parody businesses for one joke: keep both, or fold one into the other.', '', '| vault business | registered chain (p) |', '|---|---|', ...echoes.map((x) => `| ${esc(x.phrase)} | ${x.brand.name} (${x.a.means.probabilities[x.brand.id].toFixed(2)}) |`), '');
 md.push(`## Consistent (${rows.filter((x) => x.status === 'consistent').length}) and not chains (${rows.filter((x) => x.status === 'not a chain').length})`, '', rows.filter((x) => x.status === 'consistent').map((x) => x.phrase).join(' · '), '', rows.filter((x) => x.status === 'not a chain').map((x) => x.phrase).join(' · '), '');
-writeFileSync(resolve(ROOT, 'docs/BRAND_NAMES.md'), md.join('\n'));
+if (!DRY) writeFileSync(resolve(ROOT, 'docs/BRAND_NAMES.md'), md.join('\n')); // (a dry run leaves the committed report alone)
 
 console.log(`${rows.length}/${items.length} mentions judged: ${variants.length} other names for a registered chain, ${unreg.length} chains the registry doesn't have, ${echoes.length} vault businesses echoing a chain, ${rows.filter((x) => x.status === 'consistent').length} consistent, ${rows.filter((x) => x.status === 'not a chain').length} not chains`);
 for (const x of variants) console.log(`REVIEW "${x.phrase}" means ${x.brand.name} (${x.at[0].where})`);

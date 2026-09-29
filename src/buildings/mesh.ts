@@ -444,6 +444,93 @@ export class MB {
     this.box(x1 - t - 0.02, x1 + o, yc, yc + ch, z0 + t, z1 - t, { l: cope, r: cope, f: null, b: null, top: cope });
   }
 
+  // ---------------------------------------------------------------- wall articulation (graphics pass, item 3)
+  // Long commercial walls used to be one unbroken plane. These break them up the way real tilt-up, block and stucco walls
+  // are broken up: a plinth round the foot, pilasters at a steady bay, a reveal band, an awning over the glass. They make
+  // NO random draws (the choices come from the geometry alone), so a lot's props and satire stay exactly where they were.
+
+  /**
+   * A plinth round the foot of the box [x0,x1]x[z0,z1]: `h` high, standing `o` proud of the wall, on the listed sides
+   * (default all four), leaving `gaps` (spans along a side, in world x for +z/-z and world z for +x/-x) for doors.
+   */
+  plinth(x0: number, x1: number, z0: number, z1: number, h: number, wall: Mat, o = 0.1, sides: WallSide[] = ALL_SIDES, gaps: WallGaps = {}) {
+    const m = wallTone(wall, 0.82);
+    for (const s of sides) {
+      for (const [a, b] of spans(s === '+z' || s === '-z' ? x0 : z0, s === '+z' || s === '-z' ? x1 : z1, gaps[s])) this.wallBox(s, s === '+z' ? z1 : s === '-z' ? z0 : s === '+x' ? x1 : x0, a, b, 0, h, o, m);
+    }
+  }
+
+  /**
+   * Pilasters up the sides of the box [x0,x1]x[z0,z1] from y0 to y1: one at each end of the wall and the rest at even
+   * spacing as close to `bay` as the wall allows. `origin` puts them on that grid instead (strip-mall unit dividers).
+   */
+  pilasters(x0: number, x1: number, z0: number, z1: number, y0: number, y1: number, wall: Mat, bay = 6, sides: WallSide[] = ALL_SIDES, gaps: WallGaps = {}, o = 0.24, w = 0.5) {
+    const m = wallTone(wall, 0.9);
+    for (const s of sides) {
+      const alongX = s === '+z' || s === '-z';
+      const a0 = alongX ? x0 : z0, a1 = alongX ? x1 : z1, len = a1 - a0;
+      if (len < bay * 0.9) continue;
+      const n = Math.max(1, Math.round(len / bay));
+      const pos = s === '+z' ? z1 : s === '-z' ? z0 : s === '+x' ? x1 : x0;
+      for (let i = 0; i <= n; i++) {
+        const c = a0 + (i * len) / n;
+        // a pilaster in a gap (a door, a sign) is left out, and so is one that would stand on a corner twice
+        if ((gaps[s] ?? []).some(([ga, gb]) => c + w / 2 > ga && c - w / 2 < gb)) continue;
+        this.wallBox(s, pos, Math.max(a0, c - w / 2), Math.min(a1, c + w / 2), y0, y1, o, m);
+      }
+    }
+  }
+
+  /** A reveal band (a cornice or a belt course) round the box between y0 and y1, standing `o` proud. */
+  hband(x0: number, x1: number, z0: number, z1: number, y0: number, y1: number, wall: Mat, o = 0.12, sides: WallSide[] = ALL_SIDES, gaps: WallGaps = {}, tone = 0.86) {
+    const m = wallTone(wall, tone);
+    for (const s of sides) {
+      const alongX = s === '+z' || s === '-z';
+      for (const [a, b] of spans(alongX ? x0 : z0, alongX ? x1 : z1, gaps[s])) this.wallBox(s, s === '+z' ? z1 : s === '-z' ? z0 : s === '+x' ? x1 : x0, a, b, y0, y1, o, m);
+    }
+  }
+
+  /**
+   * The lot of a long wall in one call: plinth, pilasters and (over 6 m tall) a belt course, on the listed sides.
+   * Heights are the wall's own; `bay` is the pilaster spacing. Front doors and signs go in `gaps`.
+   */
+  articulate(x0: number, x1: number, z0: number, z1: number, h: number, wall: Mat, o: { sides?: WallSide[]; gaps?: WallGaps; bay?: number; plinth?: number; belt?: boolean } = {}) {
+    const sides = o.sides ?? ALL_SIDES, gaps = o.gaps ?? {}, bay = o.bay ?? 6;
+    const ph = o.plinth ?? 0.5;
+    if (ph > 0) this.plinth(x0, x1, z0, z1, ph, wall, 0.1, sides, gaps);
+    this.pilasters(x0, x1, z0, z1, ph > 0 ? ph : 0, h, wall, bay, sides, gaps);
+    if (o.belt ?? h > 6) {
+      const yb = Math.round(h * 0.55 * 4) / 4;
+      this.hband(x0, x1, z0, z1, yb, yb + 0.3, wall, 0.14, sides, gaps);
+    }
+  }
+
+  /** An awning over glass on the +z face at z: sloped top, underside, valance, and its two ends closed. Stripes alternate `mat` and `alt`. */
+  awning(x0: number, x1: number, z: number, y: number, depth: number, mat: Mat, alt?: Mat) {
+    const drop = 0.55, top = y + drop, val = 0.28;
+    const n = alt ? Math.max(2, Math.round((x1 - x0) / 1.1)) : 1;
+    const dark = { ...mat, c: mulRGB(mat.c, 0.62), ao: false };
+    for (let i = 0; i < n; i++) {
+      const a = x0 + ((x1 - x0) * i) / n, b = x0 + ((x1 - x0) * (i + 1)) / n, mm = alt && i % 2 ? alt : mat;
+      this.poly([[a, y, z + depth], [b, y, z + depth], [b, top, z], [a, top, z]], mm);
+      this.poly([[a, y - val, z + depth], [b, y - val, z + depth], [b, y, z + depth], [a, y, z + depth]], mm); // valance
+    }
+    this.poly([[x1, y, z + depth], [x0, y, z + depth], [x0, top, z], [x1, top, z]], dark); // underside (faces down and out)
+    this.poly([[x0, y - val, z + depth], [x0, y, z + depth], [x0, top, z]], dark);
+    this.poly([[x1, y, z + depth], [x1, y - val, z + depth], [x1, top, z]], dark);
+  }
+
+  /** One vertical slab standing `o` proud of side `s` (wall at `pos`), from a to b along the wall and y0..y1 up it. */
+  private wallBox(s: WallSide, pos: number, a: number, b: number, y0: number, y1: number, o: number, m: Mat) {
+    if (b - a < 0.05 || y1 - y0 < 0.05) return;
+    switch (s) {
+      case '+z': this.box(a, b, y0, y1, pos, pos + o, { f: m, l: m, r: m, top: m, b: null }); break;
+      case '-z': this.box(a, b, y0, y1, pos - o, pos, { b: m, l: m, r: m, top: m, f: null }); break;
+      case '+x': this.box(pos, pos + o, y0, y1, a, b, { r: m, f: m, b: m, top: m, l: null }); break;
+      case '-x': this.box(pos - o, pos, y0, y1, a, b, { l: m, f: m, b: m, top: m, r: null }); break;
+    }
+  }
+
   // ---------------------------------------------------------------- surfaces of revolution
   /**
    * Lathe around the local Y axis at (cx, cz). profile: [radius, y] bottom to
@@ -591,6 +678,29 @@ export class MB {
 
 const IDENT = new THREE.Matrix4();
 const M4 = new THREE.Matrix4();
+
+/** Which face of a box: the outward normal. */
+export type WallSide = '+z' | '-z' | '+x' | '-x';
+const ALL_SIDES: WallSide[] = ['+z', '-z', '+x', '-x'];
+/** Spans along a wall (world x for +z/-z, world z for +x/-x) that the wall articulation leaves alone: doors, signs, docks. */
+export type WallGaps = Partial<Record<WallSide, [number, number][]>>;
+
+/** The wall's own material a little darker: articulation cut from the same stuff reads as part of the wall, in shadow. */
+function wallTone(wall: Mat, k: number): Mat {
+  return { ...wall, c: mulRGB(wall.c, k), ao: false };
+}
+
+/** [a0,a1] minus the gaps, as spans. */
+function spans(a0: number, a1: number, gaps: [number, number][] = []): [number, number][] {
+  const out: [number, number][] = [];
+  let at = a0;
+  for (const [ga, gb] of [...gaps].sort((p, q) => p[0] - q[0])) {
+    if (ga > at) out.push([at, Math.min(ga, a1)]);
+    at = Math.max(at, gb);
+  }
+  if (at < a1) out.push([at, a1]);
+  return out;
+}
 
 export function faceNormal(a: V3, b: V3, c: V3): V3 {
   const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];

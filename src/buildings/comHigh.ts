@@ -2,7 +2,7 @@
 // freeway hotels, and at L5 neon high-rises with Times Square screens.
 import { brandById, brandsFor, BRANDS, Brand, Archetype } from '../art/brands';
 import { SCREEN_ADS } from '../art/names';
-import { M, S, Mat, rgb, WHITE } from './mesh';
+import { M, S, Mat, rgb, WHITE, WallGaps } from './mesh';
 import { GenCtx, lotPad, parkingLot, car, tree, wallSign, sideSign, poleSign, dumpster, hvac, flagpole, patch, mats, fence, lampPost, monumentSign, emit } from './props';
 import { FAC, FLOOR, WALL, ROOF, block, roofJunk, neonBlade, capFloors } from './blocks';
 import { hexNum, signTile as sign, store } from './comLow';
@@ -51,6 +51,17 @@ function bigBox(g: GenCtx, b: Brand) {
   const band = M('plain', 2, 2, hexNum(b.colors[0]), { ao: false });
   mb.box(x0 - 0.1, x1 + 0.1, H - 1.6, H + 1.2, z1, z1 + 0.2, { side: band, top: band, b: null });
   const vx = (x0 + x1) / 2 + (rng.chance(0.5) ? 0 : -bw * 0.2);
+  // graphics (item 3): 28 m by 9 m of tilt-up on every side was one plane. A plinth, pilasters at a steady bay and a belt
+  // course break it; the front stops under the brand band, and the doors, dock and side sign are left clear.
+  const gaps: WallGaps = {
+    '+z': [[vx - 5.6, vx + 5.6], [x1 - 4 - 3.2, x1 - 4 + 3.2]],
+    '-z': [[x0 - 0.1, x0 + 12.1]],
+    '-x': [[(z0 + z1) / 2 - 3.9, (z0 + z1) / 2 + 3.9]],
+    '+x': garden ? [[z1 - Math.min(bd - 1, 10) - 0.3, z1 + 0.3]] : [],
+  };
+  mb.articulate(x0, x1, z0, z1, H, wall, { sides: ['-z', '-x', '+x'], gaps, bay: 7 });
+  mb.articulate(x0, x1, z0, z1, H - 1.7, wall, { sides: ['+z'], gaps, bay: 7, belt: false });
+  mb.hband(x0, x1, z0, z1, Math.round(H * 0.55 * 4) / 4, Math.round(H * 0.55 * 4) / 4 + 0.3, wall, 0.14, ['+z'], gaps);
   mb.box(vx - 5, vx + 5, 0, H + 2.5, z1, z1 + 2, { f: band, l: band, r: band, top: ROOF.flat(), b: null });
   mb.decal('+z', vx, 0, z1 + 2, 6, 3.2, M('storefront', 8, 4, WHITE, { bays: 2, floors: 1 }), 0.05);
   wallSign(g, vx, H - 1.2, z1 + 2.05, 9, sign(b), 2.3);
@@ -90,10 +101,21 @@ function mall(g: GenCtx, b: Brand) {
   mb.parapet(x0, x1, z0, z1, H, 1, wall, ROOF.flat());
   // anchor stores: taller boxes at each end
   const aw = Math.min(10, (x1 - x0) * 0.3);
+  // graphics (item 3): the mall's long walls. Pilasters at a steady bay, a plinth and a belt course; the anchors' and the
+  // entrance's ranges, and the 'for lease' decals, are left clear.
+  {
+    const cx = (x0 + x1) / 2;
+    const leaseAt: number[] = [];
+    for (let i = 0; i < 4; i++) { const sx = x0 + aw + 3 + i * ((x1 - x0 - aw * 2 - 6) / 3); if (Math.abs(sx - cx) >= 6) leaseAt.push(sx); }
+    const gaps: WallGaps = { '+z': [[x0 - 0.5, x0 + aw + 0.5], [x1 - aw - 0.5, x1 + 0.5], [cx - 5.6, cx + 5.6], ...leaseAt.map((sx): [number, number] => [sx - 1.8, sx + 1.8])] };
+    mb.articulate(x0, x1, z0, z1, H, wall, { sides: ['-z', '+z'], gaps, bay: 6.5 }); // (the ends are inside the anchor stores)
+  }
   const anchors = ['bullseye', rng.chance(0.5) ? 'specter' : 'vacant'];
   [[x0, x0 + aw], [x1 - aw, x1]].forEach(([a, c], i) => {
     const aw2 = WALL.tiltup(i ? 0xd8d4cc : 0xf0ece4);
     mb.box(a - 0.4, c + 0.4, 0, H + 3, z0 - 0.5, z1 + 0.8, { side: aw2, top: ROOF.flat() });
+    // graphics (item 3): the anchor's outer side and its back
+    mb.articulate(a - 0.4, c + 0.4, z0 - 0.5, z1 + 0.8, H + 3, aw2, { sides: i ? ['-z', '+x'] : ['-z', '-x'], bay: 5 });
     const t = anchors[i] === 'vacant' ? 'sign:vacant' : anchors[i] === 'specter' ? 'sign:spiritHalloween' : sign(anchors[i]);
     wallSign(g, (a + c) / 2, H - 0.5, z1 + 0.8, Math.min(8, aw - 1), t, 2);
     mb.decal('+z', (a + c) / 2, 0, z1 + 0.8, 4, 3, M('storefront', 8, 4, WHITE, { bays: 2, floors: 1 }), 0.05);
@@ -150,6 +172,8 @@ function flagship(g: GenCtx, b: Brand) {
     const black = M('metalPanel', 4, 4, 0x2a2a2c);
     mb.box(-bw / 2, bw / 2, 0, H, z0, z1, { f: null, side: black, top: null });
     mb.parapet(-bw / 2, bw / 2, z0, z1, H, 0.8, black, ROOF.flat(0x6a6a6a));
+    // graphics (item 3): the black side and back walls, pilasters and a plinth (the side signs stay clear)
+    mb.articulate(-bw / 2, bw / 2, z0, z1, H, black, { sides: ['-z', '-x', '+x'], bay: 6, gaps: { '+x': [[(z0 + z1) / 2 - Math.min(bd - 2, 8) / 2 - 0.3, (z0 + z1) / 2 + Math.min(bd - 2, 8) / 2 + 0.3]], '-x': [[(z0 + z1) / 2 - Math.min(bd - 2, 8) / 2 - 0.3, (z0 + z1) / 2 + Math.min(bd - 2, 8) / 2 + 0.3]] } });
     // two-storey glass front full of hoodies
     mb.poly([[-bw / 2, 0, z1], [bw / 2, 0, z1], [bw / 2, H * 0.55, z1], [-bw / 2, H * 0.55, z1]], FAC.storefront(rng, 0xd8d8d8));
     mb.poly([[-bw / 2, H * 0.55, z1], [bw / 2, H * 0.55, z1], [bw / 2, H, z1], [-bw / 2, H, z1]], black);
@@ -178,6 +202,8 @@ function flagship(g: GenCtx, b: Brand) {
   const cyber = b.id === 'cyberslop';
   mb.box(-bw / 2, bw / 2, 0, H, z0, z1, { f: M('glassPlain', 3, 3), side: cyber ? M('metal', 2, 2, 0xd8dadc) : WALL.tiltup(), top: null });
   mb.parapet(-bw / 2, bw / 2, z0, z1, H, 0.8, M('metal', 2, 2, 0xd8dadc), ROOF.flat());
+  // graphics (item 3): the tilt-up side and back walls
+  if (!cyber) mb.articulate(-bw / 2, bw / 2, z0, z1, H, WALL.tiltup(), { sides: ['-z', '-x', '+x'], bay: 6 });
   wallSign(g, 0, H - 2.4, z1 + 0.05, Math.min(bw - 2, 12), sign(b), 2.2);
   if (cyber) for (let i = 0; i < 4; i++) car(g, -bw / 2 + 3 + i * ((bw - 6) / 3), z1 - 3, Math.PI * 0.8, 'cyber', 0xb8bcc0);
   if (D >= 24) parkingLot(g, -W / 2 + 0.3, W / 2 - 0.3, z1 + 3, D / 2 - 0.3, 0.4, { trees: true, lamps: true });

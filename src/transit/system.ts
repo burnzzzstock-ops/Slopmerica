@@ -26,6 +26,8 @@ const NAMES = ['The 69 Express', 'Route 420 Crosstown', 'Grievance Line', 'The S
  * now a busy line at $2 nets a little, free fares are a real subsidy.
  */
 const RIDE_COST = 1.5;
+const BUS_WEEK = 135; // per running bus, per week
+const DEPOT_WEEK = 420; // per active depot, per week (in the budget's "SLOP Transit operations", not in any one line's cost)
 const FARE: Record<FarePolicy, { label: string; price: number; demand: number }> = {
   free: { label: 'Free', price: 0, demand: 1.28 },
   standard: { label: '$2', price: 2, demand: 1 },
@@ -112,11 +114,7 @@ export class TransitSystem {
     g.traffic.transitModeChoice = (from, to) => this.chooseTransit(from, to);
     g.peds.transitStops = () => this.waitingStops();
     g.sim.hooks.weekly.push((add) => {
-      const activeBuses = [...this.lines.values()].reduce((n, l) => n + (this.lineCanRun(l) ? l.buses : 0), 0);
-      const depotCount = this.depots().length;
-      const riders = [...this.lines.values()].reduce((n, l) => n + l.lastWeekRiders, 0);
-      const upkeep = activeBuses * 135 + depotCount * 420 + riders * RIDE_COST;
-      const fares = riders * FARE[this.fare].price;
+      const { upkeep, fares } = this.bill();
       if (upkeep) add('SLOP Transit operations', upkeep, 'transit');
       if (fares) add('Bus fares', -fares, 'transit');
     });
@@ -526,6 +524,14 @@ export class TransitSystem {
     this.accessDirty = false;
   }
 
+  /** The week's transit bill and fares. One place, so the panel, the forecast and the budget can't drift apart. */
+  bill() {
+    const buses = [...this.lines.values()].reduce((n, l) => n + (this.lineCanRun(l) ? l.buses : 0), 0);
+    const depots = this.depots().length;
+    const riders = [...this.lines.values()].reduce((n, l) => n + l.lastWeekRiders, 0);
+    return { buses, depots, riders, upkeep: buses * BUS_WEEK + depots * DEPOT_WEEK + riders * RIDE_COST, fares: riders * FARE[this.fare].price };
+  }
+
   private lineCanRun(line: TransitLine) { return line.active && line.buses > 0 && line.stopIds.length >= 2 && this.depots().length > 0; }
 
   private chooseTransit(from: Bld, to: Bld) {
@@ -693,10 +699,13 @@ export class TransitSystem {
         return `<div class="li" style="border-left:6px solid #${line.color.toString(16).padStart(6, '0')};gap:6px">
           <div class="sp-row" style="width:100%"><input data-name="${line.id}" value="${esc(line.name)}" maxlength="32" aria-label="Line name" style="min-width:150px;flex:1;background:#111;color:white;border:1px solid #555;border-radius:6px;padding:7px"><input type="color" data-color="${line.id}" value="#${line.color.toString(16).padStart(6, '0')}" aria-label="Line color"></div>
           <small>${line.stopIds.length} stops · ${Number.isFinite(h) ? h.toFixed(1) : '∞'} min headway · ${line.lastWeekRiders.toLocaleString()} riders/wk</small>
-          <small>Fares ${money(income)}/wk · running ${money(line.buses * 135 + line.lastWeekRiders * RIDE_COST)}/wk (${money(line.buses * 135)} buses + $${RIDE_COST.toFixed(2)} a ride) · busiest stop ${busiest ? busiest.id : '—'}</small>
+          ${this.lineCanRun(line)
+            ? `<small>Fares ${money(income)}/wk · running ${money(line.buses * BUS_WEEK + line.lastWeekRiders * RIDE_COST)}/wk (${money(line.buses * BUS_WEEK)} buses + $${RIDE_COST.toFixed(2)} a ride) · busiest stop ${busiest ? busiest.id : '—'}</small>`
+            : `<small data-idle>Not running, and costing nothing: ${!this.depots().length ? 'it needs an active depot' : line.stopIds.length < 2 ? 'it needs at least 2 stops' : 'it is switched off'}.</small>`}
           <div class="sp-row"><label>Buses <b>${line.buses}</b> <input type="range" min="1" max="10" value="${line.buses}" data-buses="${line.id}"></label><button class="chip" data-delete="${line.id}">Delete line</button></div>
         </div>`;
-      }).join('') || '<p>No routes. Build a depot, then draw a loop by clicking roads.</p>'}</div>`;
+      }).join('') || '<p>No routes. Build a depot, then draw a loop by clicking roads.</p>'}</div>
+      ${this.lines.size || depotCount ? (() => { const b = this.bill(); const net = b.fares - b.upkeep; return `<div class="sp-row" data-network><small><b>Whole network</b>: fares ${money(b.fares)}/wk − costs ${money(b.upkeep)}/wk (${b.buses} bus${b.buses === 1 ? '' : 'es'} × ${money(BUS_WEEK)}, ${b.riders.toLocaleString()} rides × $${RIDE_COST.toFixed(2)}, ${depotCount} depot${depotCount === 1 ? '' : 's'} × ${money(DEPOT_WEEK)}) = <b>${net < 0 ? '−' : '+'}${money(Math.abs(net))}/wk</b> in the budget</small></div>`; })() : ''}`;
     el.querySelector('[data-action="depot"]')?.addEventListener('click', () => { this.g.tools.setExt('transit-depot'); rerender(); });
     el.querySelector('[data-action="line"]')?.addEventListener('click', () => { this.g.tools.setExt('transit-line'); rerender(); });
     el.querySelector('[data-action="done"]')?.addEventListener('click', () => { this.finishDraft(); rerender(); });

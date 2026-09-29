@@ -268,6 +268,7 @@ export class TransitSystem {
     const pull = new Map<number, number>();
     for (const line of this.lines.values()) {
       line.loopLength = this.computeLoopLength(line);
+      this.noteCut(line);
       pull.set(line.id, this.lineCanRun(line) ? clamp((18 - this.headway(line)) / 18, 0.08, 0.72) : 0);
     }
     // each building's share of its people that goes to each line
@@ -532,7 +533,18 @@ export class TransitSystem {
     return { buses, depots, riders, upkeep: buses * BUS_WEEK + depots * DEPOT_WEEK + riders * RIDE_COST, fares: riders * FARE[this.fare].price };
   }
 
-  private lineCanRun(line: TransitLine) { return line.active && line.buses > 0 && line.stopIds.length >= 2 && this.depots().length > 0; }
+  /** the buses can't get from one stop to the next: a road between its stops is gone (computeLoopLength found no way round) */
+  isCut(line: TransitLine) { return line.stopIds.length >= 2 && line.loopLength === 0; }
+
+  private cutLines = new Set<number>();
+  /** say once when a road going takes a line's route with it, and once when it's back */
+  private noteCut(line: TransitLine) {
+    if (this.isCut(line)) {
+      if (!this.cutLines.has(line.id)) { this.cutLines.add(line.id); this.g.toast(`${line.name} can't run: a road between its stops is gone. Rebuild it, or delete the line.`, true); }
+    } else if (this.cutLines.delete(line.id)) this.g.toast(`${line.name} has a way through again and is running.`);
+  }
+
+  private lineCanRun(line: TransitLine) { return line.active && line.buses > 0 && line.stopIds.length >= 2 && !this.isCut(line) && this.depots().length > 0; }
 
   private chooseTransit(from: Bld, to: Bld) {
     if (this.accessDirty) this.rebuildAccess();
@@ -701,7 +713,7 @@ export class TransitSystem {
           <small>${line.stopIds.length} stops · ${Number.isFinite(h) ? h.toFixed(1) : '∞'} min headway · ${line.lastWeekRiders.toLocaleString()} riders/wk</small>
           ${this.lineCanRun(line)
             ? `<small>Fares ${money(income)}/wk · running ${money(line.buses * BUS_WEEK + line.lastWeekRiders * RIDE_COST)}/wk (${money(line.buses * BUS_WEEK)} buses + $${RIDE_COST.toFixed(2)} a ride) · busiest stop ${busiest ? busiest.id : '—'}</small>`
-            : `<small data-idle>Not running, and costing nothing: ${!this.depots().length ? 'it needs an active depot' : line.stopIds.length < 2 ? 'it needs at least 2 stops' : 'it is switched off'}.</small>`}
+            : `<small data-idle>Not running, and costing nothing: ${!this.depots().length ? 'it needs an active depot' : line.stopIds.length < 2 ? 'it needs at least 2 stops' : this.isCut(line) ? 'a road between its stops is gone, so the buses have no way through. Rebuild it or delete the line' : 'it is switched off'}.</small>`}
           <div class="sp-row"><label>Buses <b>${line.buses}</b> <input type="range" min="1" max="10" value="${line.buses}" data-buses="${line.id}"></label><button class="chip" data-delete="${line.id}">Delete line</button></div>
         </div>`;
       }).join('') || '<p>No routes. Build a depot, then draw a loop by clicking roads.</p>'}</div>

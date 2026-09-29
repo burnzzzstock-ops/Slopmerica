@@ -170,6 +170,7 @@ node scripts/learnability.mjs    # (Jev, <$0.01; --dry-run needs no key; --list 
 node scripts/brandcheck.mjs      # (Jev, $0.01; --dry-run needs no key) chain names in copy that aren't in the brand registry ("Burger Duke", "Waffle Bunker"), with a proposed canonical name; docs/BRAND_NAMES.md
 node scripts/transittest.mjs     # buses: depot, lines, riders at opening, two overlapping lines split riders, diversions
 node scripts/transithonest.mjs  # the transit panel ends with the whole network (fares, costs incl. depots, net) and that net is the budget's; a line with no depot says it is not running
+node scripts/transitcut.mjs      # a road cut between a bus line's stops: the line stops running and stops costing, says why once, and returns when the road is rebuilt
 node scripts/savetest.mjs        # save, reload and Resume bring back the same town: roads, buildings, zoning, population, money
 node scripts/loadfiletest.mjs    # Load a city file from the title: a whole city loads; a partial or damaged one (roads: {}, a null building, no clock) is turned away on the title in words; a damaged own save falls back to the checkpoint
 node scripts/disasterloop.mjs    # hurricane, wildfire, landslide and Florida Man: warn, hit, bill what they say (and say what they billed), end; a save in the warning or the response comes back as the same emergency, charged once

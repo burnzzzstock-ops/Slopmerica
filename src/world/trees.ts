@@ -11,6 +11,7 @@ import { coverageMipmaps, createFoliageAtlas, makeTreeModel, padTransparent } fr
 import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from './atmos';
 import { newSeasonLook, sampleSeason } from './seasons';
 import type { MapId } from './maps';
+import { Shore } from './shore';
 
 /** The densest preset's tree density: every tree that any preset can draw. */
 const MAX_DENSITY = 1.15;
@@ -123,8 +124,13 @@ export class Trees {
   private season = { day: -1, fall: 0, bare: 0, spring: 0, blossom: 0, dry: 0, dull: 0 };
   private look = newSeasonLook();
   private mapId: MapId;
+  /** reeds and stones at the water's edge (src/world/shore.ts): two more draw calls, however long the shore */
+  private shore: Shore;
+
   constructor(private terrain: Terrain, map: MapData, private q: Quality, renderer: THREE.WebGLRenderer) {
     this.mapId = map.def.id;
+    this.shore = new Shore(terrain, map, q);
+    this.group.add(this.shore.group);
     this.renderDensity = q.treeDensity;
     this.place(map);
     const atlas = createFoliageAtlas(renderer);
@@ -647,6 +653,7 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
       s.day = d; s.fall = L.fall; s.bare = L.bare; s.spring = L.fresh; s.blossom = L.blossom; s.dry = L.dry; s.dull = L.dull;
     }
     this.uniforms.uLeaf.value = 1 - L.bare * 0.92;
+    this.shore.setSeason(L, d);
   }
 
   private tmpC = new THREE.Color();
@@ -742,6 +749,7 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
   update(time: number, focus: THREE.Vector3, camDist: number) {
     this.uniforms.uTime.value = time;
     this.wind.value = time;
+    this.shore.update(time, focus, camDist);
     // Detailed trees cover the view when zoomed in. Zoomed out past what their
     // budget can cover, they fade out tree by tree everywhere instead of
     // shrinking to a disc of different-looking trees that follows the camera
@@ -900,6 +908,7 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
 
   /** Remove trees inside the predicate within a box. Returns count cut. */
   cut(minX: number, minZ: number, maxX: number, maxZ: number, inside: (x: number, z: number) => boolean): number {
+    this.shore.cut(minX, minZ, maxX, maxZ, inside);
     let n = 0;
     let ref = 0;
     const gone: number[] = [];
@@ -927,6 +936,7 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
    * slope were left floating over the cut or buried in the fill.
    */
   resettle(minX: number, minZ: number, maxX: number, maxZ: number) {
+    this.shore.resettle(minX, minZ, maxX, maxZ);
     let ref = 0;
     const moved: number[] = [], drowned: number[] = [];
     this.forCells(minX, minZ, maxX, maxZ, (i) => {

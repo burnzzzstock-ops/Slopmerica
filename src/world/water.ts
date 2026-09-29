@@ -303,7 +303,11 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
       void main() {
         vec2 uv = (vW.xz + ${HALF.toFixed(1)}) / ${WORLD.toFixed(1)};
         float inside = step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
-        float ground = texture2D(uHeight, clamp(uv, 0.0, 1.0)).r;
+        // the height texture has HM_N texels, the first centre on the map's edge sample and the last on the other edge: its
+        // uv is (i + 0.5) / HM_N for sample i, not i / (HM_N - 1), or the depth read is up to half a texel (2 m) off,
+        // and the visible waterline with it (0 at the middle of the map, a full 2 m at its edges)
+        vec2 huv = clamp(uv * ${((HM_N - 1) / HM_N).toFixed(8)} + ${(0.5 / HM_N).toFixed(8)}, 0.0, 1.0);
+        float ground = texture2D(uHeight, huv).r;
         float outsideDepth = 30.0;
         float depth = mix(outsideDepth, ${WATER.toFixed(1)} + uLevel - ground, inside);
         if (depth < -0.02) discard;
@@ -378,12 +382,17 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
           col = mix(col, iceCol + skyR * 0.12, ice);
         }
         col += vec3(0.55, 0.6, 0.85) * uFlash * (0.25 + fres);
-        float alpha = mix(mix(0.5, 0.95, smoothstep(0.0, 3.5, depth)), mix(0.75, 0.97, smoothstep(0.0, 1.5, depth)), inland);
+        // (river and pond water is thin at the bank: the bottom shows through it, not an opaque green lip)
+        float alpha = mix(mix(0.5, 0.95, smoothstep(0.0, 3.5, depth)), mix(0.34, 0.97, smoothstep(0.0, 1.9, depth)), inland);
         alpha = max(alpha, foam*0.8);
         alpha = mix(alpha, 0.97, ice);
         // melt into the bank: the visible edge follows the smooth depth contour, not the
         // terrain triangles crossing the water plane
-        alpha *= mix(smoothstep(0.0, 0.35, depth), 1.0, ice);
+        // the contour itself wanders a little, by -15 to +7 cm of depth (metres of bank on a gentle slope): the water laps
+        // an uneven margin instead of laying a ruler along the bank. It mostly pulls the edge back into the water (4 cm on
+        // average); where the ground stands above the plane the terrain hides it anyway
+        float dEdge = depth + (vn(vW.xz * 0.8) - 0.75) * 0.17 + (vn(vW.xz * 3.3) - 0.5) * 0.05;
+        alpha *= mix(smoothstep(0.0, 0.35, dEdge), 1.0, ice);
         gl_FragColor = vec4(col, alpha);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>

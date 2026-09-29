@@ -67,6 +67,14 @@ export const LAND_MASK = {
   on: { value: 0 },
 };
 
+/** smooth value noise in [0, 1], for the width of the shore band */
+function bankNoise(x: number, z: number, cell: number, salt: number): number {
+  const fx = x / cell, fz = z / cell, ix = Math.floor(fx), iz = Math.floor(fz);
+  const tx = fx - ix, tz = fz - iz, sx = tx * tx * (3 - 2 * tx), sz = tz * tz * (3 - 2 * tz);
+  const a = hash2(ix, iz, salt), b = hash2(ix + 1, iz, salt), c = hash2(ix, iz + 1, salt), d = hash2(ix + 1, iz + 1, salt);
+  return a + (b - a) * sx + (c - a) * sz + (a - b - c + d) * sx * sz;
+}
+
 export class Terrain {
   readonly heights: Float32Array;
   readonly cover: Float32Array;
@@ -188,7 +196,7 @@ float gSnow;
 // atmosphere extras (seasons.ts registers these into ATMOS)
 uniform float uFlowers, uPuddle, uRainAmt, uAtmoTime, uFlowerMap;
 uniform vec3 uSkyRefl;
-float gPuddle;
+float gPuddle, gShoreWet;
 uniform sampler2D tInfo;
 uniform float uInfoOn;
 uniform sampler2D tLand;
@@ -270,9 +278,21 @@ uniform float uLandOn;`,
           * smoothstep(0.62, 0.74, tn(vWPos.xz * 0.11) * 0.7 + tn(vWPos.xz * 0.47) * 0.3 + w.y * 0.1 + w.z * 0.08);
   diffuseColor.rgb *= 1.0 - gPuddle * 0.45;
   gDetailH *= 1.0 - gPuddle;
+  // the bank at the waterline: dark, smooth wet ground whose upper edge is irregular (the height it reaches wanders with
+  // noise, so the wet margin is a ragged strip and not a contour line), with a paler dry crust just above it
+  gShoreWet = 0.0;
+  if (vWPos.y < 1.2) {
+    float wn = tn(vWPos.xz * 0.85) * 0.5 + tn(vWPos.xz * 0.19 + 3.7) * 0.35 + tn(vWPos.xz * 3.1 + 9.1) * 0.15;
+    float wetTop = 0.03 + 0.5 * wn;
+    // (fading out over the first 2.6 m of depth: a hard cut-off there showed through the shallows as angular patches)
+    gShoreWet = (1.0 - smoothstep(wetTop * 0.5, wetTop + 0.1, vWPos.y)) * smoothstep(-2.6, -1.3, vWPos.y) * (1.0 - gSnow);
+    float crust = smoothstep(wetTop + 0.05, wetTop + 0.3, vWPos.y) * (1.0 - smoothstep(wetTop + 0.3, wetTop + 0.9, vWPos.y)) * (1.0 - gSnow);
+    diffuseColor.rgb *= 1.0 - 0.42 * gShoreWet;
+    diffuseColor.rgb *= 1.0 + 0.1 * crust * w.y;
+  }
 }`,
         )
-        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.45, uWet * 0.7 * (1.0 - gSnow));\nroughnessFactor = mix(roughnessFactor, 0.06, gPuddle);')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.45, uWet * 0.7 * (1.0 - gSnow));\nroughnessFactor = mix(roughnessFactor, 0.06, gPuddle);\nroughnessFactor = mix(roughnessFactor, 0.5, gShoreWet * 0.65);')
         .replace(
           '#include <opaque_fragment>',
           `{
@@ -623,7 +643,11 @@ if (uInfoOn > 0.0) {
       const shoreBand = mapId === 'appalachia' ? 1.5 : mapId === 'florida' ? 0.3 : 4.2;
       // an uneven bank of mud and wet sand (real beaches come from map.sand below), not a
       // uniform bright band along every river (playtest 5: "a less uniformly bright shoreline")
-      const band = shoreBand * (0.55 + 0.9 * c);
+      // (and it varies along the bank, in patches of a few tens of metres: a bar here, a cut bank there, instead of one
+      // width all the way along; GRAPHICS ONLY, colours, not heights)
+      const zw = j * HM_STEP - HALF;
+      const irr = 0.4 + 1.2 * (bankNoise(x, zw, 46, 41) * 0.65 + bankNoise(x, zw, 15, 43) * 0.35);
+      const band = shoreBand * (0.55 + 0.9 * c) * irr;
       if (h < band) {
         const t = smoothstep(band, band * 0.3, h);
         col.lerp(mapId === 'appalachia' ? P.mud : tmpA.copy(P.sand).lerp(P.mud, 0.3 + 0.45 * r), t);

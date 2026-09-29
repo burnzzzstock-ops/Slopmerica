@@ -3,7 +3,7 @@
 import { MAPS, MapId } from '../world/maps';
 import type { Mode } from '../sim/sim';
 import { MERCH_URL } from '../art/brands';
-import { loadSave, type SaveData } from '../sim/save';
+import { loadSave, saveProblem, type SaveData } from '../sim/save';
 import { BUILD } from './bugreport';
 import { IS_TOUCH } from '../config';
 import heroArt from '../art/keyart/hero.webp';
@@ -26,7 +26,8 @@ function parseCityFile(text: string): SaveData | string {
   try { d = JSON.parse(text); } catch { return "That file isn't a Slopmerica city (not JSON)."; }
   if (!d || typeof d !== 'object' || d.v !== 1) return "That file isn't a Slopmerica city file.";
   if (!MAPS.some((m) => m.id === d.map)) return 'That city is on a county this build does not have.';
-  if (!d.roads || !d.zones || !Array.isArray(d.buildings) || !Array.isArray(d.communes)) return 'That city file is incomplete.';
+  // the sections must be there in the shape the loader walks, or the file would get past this screen and die while loading
+  if (saveProblem(d)) return 'That city file is incomplete or damaged, so it was not loaded. Your own city is untouched.';
   return d;
 }
 

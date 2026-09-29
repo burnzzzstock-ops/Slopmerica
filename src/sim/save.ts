@@ -54,12 +54,32 @@ const CHECKPOINT = `${KEY}.checkpoint`;
 const CHECKPOINT_EVERY = 5 * 60e3;
 let lastCheckpoint = 0;
 
+/**
+ * Whether a save has the shape the loader walks (null: it does), or what is
+ * missing. Sections that merely exist aren't enough: a city file with
+ * `roads: {}` used to get past the title and die in applySave. Shapes only;
+ * the game still guards the values.
+ */
+export function saveProblem(d: unknown): string | null {
+  const s = d as Partial<SaveData> | null;
+  if (!s || typeof s !== 'object' || s.v !== 1) return 'not a Slopmerica city';
+  const arr = Array.isArray, num = (n: unknown) => typeof n === 'number' && Number.isFinite(n);
+  if (typeof s.map !== 'string') return 'no county';
+  const r = s.roads;
+  if (!r || !arr(r.nodes) || !arr(r.segs) || !arr(r.next) || r.next.length < 3) return 'no roads section';
+  if (!r.nodes.every((n) => arr(n) && n.length >= 4) || !r.segs.every((g) => arr(g) && arr(g[4]) && g[4].length >= 4 && g[4].every(arr))) return 'damaged roads';
+  if (!arr(s.zones) || !s.zones.every(arr)) return 'damaged zoning';
+  if (!arr(s.buildings) || !s.buildings.every((b) => arr(b) && b.length >= 13 && num(b[5]) && num(b[6]))) return 'damaged buildings';
+  if (!arr(s.communes) || !s.communes.every(arr)) return 'damaged communes';
+  if (!num(s.day) || !num(s.hour) || !num(s.tax) || !num(s.pop) || (s.money !== null && !num(s.money)) || !arr(s.loans)) return 'damaged treasury or clock';
+  return null;
+}
+
 const parse = (raw: string | null): SaveData | null => {
   if (!raw) return null;
   try {
     const d = JSON.parse(raw) as SaveData;
-    // enough to build a world from: the right version and the core sections
-    return d && d.v === 1 && d.map && d.roads && d.zones && d.buildings ? d : null;
+    return saveProblem(d) ? null : d;
   } catch {
     return null;
   }

@@ -3,10 +3,12 @@ import { WATER } from '../config';
 import { hash2 } from '../core/rng';
 import { registerPanel, registerSystem } from '../ext/registry';
 import type { Game } from '../game';
+import { usd } from './sim';
 import type { RSeg } from '../roads/network';
 import { Paint } from '../world/terrain';
 
 type Kind = 'hurricane' | 'landslide' | 'wildfire' | 'floridaMan';
+const NAME: Record<Kind, string> = { hurricane: 'Hurricane', landslide: 'Landslide', wildfire: 'Wildfire', floridaMan: 'Florida Man' };
 interface Event { kind: Kind; phase: 'warning' | 'response'; day: number; x: number; z: number; segs: number[]; cost: number; }
 let enabled = false;
 let initialized = false;
@@ -141,8 +143,9 @@ function recover(g: Game) {
     if (s) s.blocked = 0;
   }
   clearMarker(g);
-  if (event.cost) g.sim.spend(event.cost, `${event.kind} recovery`, 'disasters');
-  g.toast(`${event.kind} recovery complete. The invoice survived.`);
+  if (event.cost) g.sim.spend(event.cost, `${NAME[event.kind]} recovery`, 'disasters');
+  // say what it cost: the response toast only knew the hurricane's bill, and a landslide's was never named
+  g.toast(`${NAME[event.kind]} recovery complete${event.cost ? `: ${usd(event.cost)} billed to the treasury` : ''}. The invoice survived.`);
   g.feed.push('weatherChange', { weather: g.weather.kind });
   event = null;
 }
@@ -157,7 +160,7 @@ registerPanel({
   render(el, g, rerender) {
     el.innerHTML = `<div class="sp-title">Disasters <small>Optional, expensive, and extremely televised.</small></div>
       <label class="terra-field"><input type="checkbox" ${enabled ? 'checked' : ''}> Enable regional disasters</label>
-      <p>${event ? `${event.kind}: ${event.phase}` : 'No active incident.'} Sandbox starts with disasters off.</p>`;
+      <p>${event ? `${NAME[event.kind]}: ${event.phase === 'warning' ? 'warning issued, it hits tomorrow' : 'in progress, roads closed until recovery'}` : 'No active incident.'} Sandbox starts with disasters off.</p>`;
     el.querySelector<HTMLInputElement>('input')!.onchange = ev => {
       enabled = (ev.target as HTMLInputElement).checked;
       if (!enabled) recover(g);

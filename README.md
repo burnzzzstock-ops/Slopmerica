@@ -169,6 +169,7 @@ node scripts/learnability.mjs    # (Jev, <$0.01; --dry-run needs no key; --list 
 node scripts/brandcheck.mjs      # (Jev, $0.01; --dry-run needs no key) chain names in copy that aren't in the brand registry ("Burger Duke", "Waffle Bunker"), with a proposed canonical name; docs/BRAND_NAMES.md
 node scripts/transittest.mjs     # buses: depot, lines, riders at opening, two overlapping lines split riders, diversions
 node scripts/savetest.mjs        # save, reload and Resume bring back the same town: roads, buildings, zoning, population, money
+node scripts/disasterloop.mjs    # hurricane, wildfire, landslide and Florida Man: warn, hit, bill what they say (and say what they billed), end; a save in the warning or the response comes back as the same emergency, charged once
 node scripts/triage.mjs <folder>  # (Jev, <$0.01 per dozen) tester reports (🐞 text, one .txt each): area, severity, which check would catch it, duplicates; table in <folder>/TRIAGE.md. Try scripts/triage-samples (hand-labelled)
 node scripts/overlaptest.mjs     # HUD panels never cover each other: emergency card, inspector, drawers, Next, toolbar, tool badge at 1707×1019 down to a phone
 node scripts/gradetest.mjs       # contours and slope shading around the cursor when drawing roads or placing; live road grade in the tip (amber near 15%); steep refusal names the rule and the way out

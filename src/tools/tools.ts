@@ -306,7 +306,29 @@ export class Tools implements PointerHandlers {
   }
   private startedThisTouch = false;
 
+  /**
+   * Touch: the plan as it stood when a finger went down. A second finger
+   * landing (pinch, twist, two-finger pan) cancels the touch that just began;
+   * that must put the plan back, not wipe it, or you can't zoom in to look at
+   * a planned road without losing it (playtest 6).
+   */
+  private held: { start: Snap | null; pendingEnd: THREE.Vector3 | null; pendingCost: number | null; control: V2 | null; chained: boolean; lastDir: V2 | null; grid: Tools['grid']; landmarkAt: THREE.Vector3 | null } | null = null;
+  private holdPlan() {
+    this.held = { start: this.start, pendingEnd: this.pendingEnd?.clone() ?? null, pendingCost: this.pendingCost, control: this.control, chained: this.chained, lastDir: this.lastDir, grid: { ...this.grid, align: [...this.grid.align] }, landmarkAt: this.landmarkAt?.clone() ?? null };
+  }
+
   cancel() {
+    // a canvas touch is down and something cancelled it (the camera, on a second finger): undo the touch, keep the plan
+    if (this.touchDown && this.held && (this.active === 'road' || this.active === 'landmark')) {
+      const h = this.held;
+      this.held = null;
+      this.touchDown = false;
+      this.startedThisTouch = false;
+      this.painting = false;
+      this.start = h.start; this.pendingEnd = h.pendingEnd; this.pendingCost = h.pendingCost; this.control = h.control; this.chained = h.chained; this.lastDir = h.lastDir; this.grid = h.grid; this.landmarkAt = h.landmarkAt;
+      this.onChange?.();
+      return;
+    }
     this.ext?.cancel?.(this.game);
     this.landmarkAt = null;
     this.pendingEnd = null;
@@ -330,6 +352,7 @@ export class Tools implements PointerHandlers {
     if (e.button === 2) { if (!this.placingLabel && this.active !== 'ext') this.cancel(); return; }
     this.hover = p;
     if (this.active === 'ext') { this.ext?.down?.(this.game, p, e); return; }
+    if (e.pointerType !== 'mouse' && (this.active === 'road' || this.active === 'landmark')) { this.holdPlan(); this.touchDown = true; }
     if (this.active === 'road' && e.pointerType !== 'mouse' && this.roadMode === 'grid') {
       this.touchDown = true;
       this.grid.startedThisTouch = false;
@@ -387,7 +410,7 @@ export class Tools implements PointerHandlers {
     const wasPainting = this.painting;
     this.painting = false;
     if (wasPainting && (this.active === 'zone' || this.active === 'dezone')) this.strokeSummary();
-    if (e.pointerType !== 'mouse') this.touchDown = false;
+    if (e.pointerType !== 'mouse') { this.touchDown = false; this.held = null; }
     if (e.button === 2) return; // the camera turns a right-click into rightClick()
     if (this.active === 'ext') { this.ext?.up?.(this.game, p, e, wasDrag); return; }
     if (!p) return;

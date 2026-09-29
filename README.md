@@ -112,6 +112,7 @@ Headless checks live in `scripts/` and drive the dev server with Playwright + Sw
 node scripts/playtestcheck.mjs   # bug reporter, crash toast, context loss, rescue screen (phone)
 node scripts/touchtest.mjs       # phone road drawing: plan, Build, Done, double-tap
 node scripts/phonetargets.mjs    # phone: every control in every panel reaches 44 px for a finger (measured with elementFromPoint); the one-row top bar is listed at its minimum
+node scripts/gesturetest.mjs     # phone: pinching or panning with two fingers keeps a planned road or service (real touch events); a stroke that turns into a pinch plans nothing
 node scripts/inputtest.mjs       # desktop road + zoning input
 node scripts/svctouch.mjs        # phone placement previews (services, landmarks)
 node scripts/widentest.mjs       # One More Lane keeps the street's buildings

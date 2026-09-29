@@ -166,6 +166,7 @@ node scripts/weathertest.mjs     # weather keeps to the calendar: no rain or sno
 node scripts/costtest.mjs        # honest service costs (running cost, committed projects, units), Next priorities, locked-fix notes, full landfill note, red bulldoze outlines
 node scripts/contentaudit.mjs    # (content gate, Jev, ~$0.15 a full pass, reruns only ask new lines; --inventory/--dry-run need no key) every player-facing line vs the content rules, parody-brand IP; docs/CONTENT_AUDIT.md
 node scripts/ipcheck.mjs         # (content gate, no key) real slogans used word for word and real brands' exact colors on the parody chains; riffs listed for review
+node scripts/copyscan.mjs        # (no key) self-check of the copy scanner shared by contentaudit, learnability and brandcheck: literals, template holes, call arguments, every src/ file scans
 node scripts/feedtags.mjs        # (Jev, $0.04 a full pass; --dry-run needs no key) tag every feed line: region, town size, weather, fits its event, likely authors
 node scripts/feedtest.mjs        # the feed picks lines that fit the map, town size and weather, never empties a pool, and posts exactly as before without the tags; shop openings post the brand's name
 node scripts/nametags.mjs        # (Jev, $0.01 a full pass; --dry-run needs no key) street, suffix and commune names tagged by the region they belong to

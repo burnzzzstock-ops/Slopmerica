@@ -10,11 +10,12 @@
 // Jev doesn't write text: the fixes in docs/LEARNABILITY.md are written by hand
 // (FIXES below) and only proposed. Raw answers cached in docs/learnability.json;
 // thresholds below. Exits 1 when a refusal or warning doesn't say what to do
-// next, 2 when messages couldn't be judged. --dry-run needs no key.
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+// next, 2 when messages couldn't be judged. --dry-run needs no key and writes nothing.
+import { readFileSync, writeFileSync } from 'node:fs';
+import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { answerCache, apiKey, costLine, mapPool } from './typesafe.mjs';
+import { SRC, calls, expr, tokenize, walk } from './copyscan.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DRY = process.argv.includes('--dry-run');
@@ -25,92 +26,72 @@ const T = {
 };
 const SKIP_DIRS = ['src/content', 'src/art', 'src/dev', 'src/vault', 'src/buildings', 'src/audio'];
 
-// ---- scanner: the argument text of a call, and the string pieces inside it
-function readExpr(src, i, stops) {
-  // from i, read until a depth-0 stop char; understands strings, templates and ${...}
-  let depth = 0;
-  const start = i;
-  while (i < src.length) {
-    const c = src[i];
-    if (c === "'" || c === '"') { const q = c; i++; while (i < src.length && src[i] !== q) { if (src[i] === '\\') i++; i++; } i++; continue; }
-    if (c === '`') { i = skipTemplate(src, i); continue; }
-    if (c === '/' && src[i + 1] === '/') { while (i < src.length && src[i] !== '\n') i++; continue; }
-    if ('([{'.includes(c)) depth++;
-    else if (')]}'.includes(c)) { if (depth === 0) break; depth--; }
-    else if (depth === 0 && stops.includes(c)) break;
-    i++;
-  }
-  return { text: src.slice(start, i), end: i };
-}
-function skipTemplate(src, i) {
-  i++; // opening backtick
-  while (i < src.length && src[i] !== '`') {
-    if (src[i] === '\\') { i += 2; continue; }
-    if (src[i] === '$' && src[i + 1] === '{') { const r = readExpr(src, i + 2, ''); i = r.end + 1; continue; }
-    i++;
-  }
-  return i + 1;
-}
-/** string and template literals in an expression, templates with ${x.y} shown as {y} */
-function pieces(expr) {
+// ---- find the messages. Tokens come from the shared copy scanner (scripts/copyscan.mjs,
+// also used by the content audit); this script reads each message where it's shown.
+const P = (t, v) => t?.t === 'p' && t.v === v;
+/** the message pieces in a run of tokens: its strings, and its templates with each ${…}
+ *  shown as the words inside it ("A / B") or as {name} */
+function pieces(run, toks) {
+  const inHole = new Set();
+  for (const t of run) if (t.t === 'tmpl') for (const h of t.holes) for (let k = h.from; k < h.to; k++) inHole.add(toks[k]);
   const out = [];
-  let i = 0;
-  while (i < expr.length) {
-    const c = expr[i];
-    if (c === "'" || c === '"') {
-      let j = i + 1, s = '';
-      while (j < expr.length && expr[j] !== c) { if (expr[j] === '\\') { s += expr[j + 1]; j += 2; continue; } s += expr[j++]; }
-      out.push(s); i = j + 1; continue;
+  for (const t of run) {
+    if (inHole.has(t)) continue;
+    if (t.t === 'str') out.push(t.v);
+    else if (t.t === 'tmpl') {
+      let n = 0;
+      out.push(t.v.replace(/\{…\}/g, () => {
+        const h = t.holes[n++];
+        const inner = pieces(toks.slice(h.from, h.to), toks).filter((p) => /[a-z]{2}/i.test(p));
+        const name = (h.expr.match(/([A-Za-z_]\w*)\s*(?:\?\?|\)|\.toLocaleString|\.toFixed|$)/) ?? [])[1] ?? 'value';
+        return inner.length ? inner.join(' / ') : `{${name}}`;
+      }));
     }
-    if (c === '`') {
-      let j = i + 1, s = '';
-      while (j < expr.length && expr[j] !== '`') {
-        if (expr[j] === '\\') { s += expr[j + 1]; j += 2; continue; }
-        if (expr[j] === '$' && expr[j + 1] === '{') {
-          const r = readExpr(expr, j + 2, '');
-          const inner = pieces(r.text).filter((p) => /[a-z]{2}/i.test(p));
-          const name = (r.text.match(/([A-Za-z_]\w*)\s*(?:\?\?|\)|\.toLocaleString|\.toFixed|$)/) ?? [])[1] ?? 'value';
-          s += inner.length ? inner.join(' / ') : `{${name}}`;
-          j = r.end + 1; continue;
-        }
-        s += expr[j++];
-      }
-      out.push(s); i = j + 1; continue;
-    }
-    i++;
   }
   return out.map((s) => s.replace(/\s+/g, ' ').trim()).filter((s) => /[a-z]{3}/i.test(s) && s.split(' ').length >= 2);
 }
-const tsFiles = (dir) => readdirSync(dir).flatMap((f) => { const p = join(dir, f); return statSync(p).isDirectory() ? tsFiles(p) : /\.ts$/.test(f) && !/\.d\.ts$/.test(f) ? [p] : []; });
 
 const records = [];
-for (const file of tsFiles(join(ROOT, 'src'))) {
+for (const file of walk(SRC).filter((f) => !/\.d\.ts$/.test(f))) {
   const rel = relative(ROOT, file).replace(/\\/g, '/');
   if (SKIP_DIRS.some((d) => rel.startsWith(d + '/'))) continue;
-  const src = readFileSync(file, 'utf8');
-  const line = (i) => src.slice(0, i).split('\n').length;
-  const add = (kind, i, expr, bad) => {
-    const texts = [...new Set(pieces(expr))];
+  const toks = tokenize(readFileSync(file, 'utf8'));
+  const add = (kind, line, run, bad) => {
+    const texts = [...new Set(pieces(run, toks))];
     if (!texts.length) return;
-    records.push({ id: `${rel}:${line(i)}:${kind}`, where: `${rel}:${line(i)}`, kind, bad, texts });
+    records.push({ id: `${rel}:${line}:${kind}`, where: `${rel}:${line}`, kind, bad, texts });
   };
-  for (const m of src.matchAll(/\b(toast|banner)\(/g)) {
-    if (/^\s*(toast|banner)\([a-z]+: string/.test(src.slice(m.index, m.index + 40))) continue; // the definitions
-    const a = readExpr(src, m.index + m[0].length, '');
-    const first = readExpr(a.text, 0, ',');
-    const rest = a.text.slice(first.end + 1);
-    if (m[1] === 'banner') add('banner', m.index, a.text, false);
-    else add('toast', m.index, first.text, /^\s*(true|!|bad|!ok)/.test(rest) || /,\s*true\s*$/.test(a.text));
+  // toast(message, bad?) and banner(...)
+  for (const c of calls(toks, (t) => t.v === 'toast' || t.v === 'banner')) {
+    const [first, ...rest] = c.args;
+    if (!first || P(first[1], ':')) continue; // the definitions: toast(msg: string, ...)
+    if (c.name === 'banner') add('banner', c.line, c.args.flat(), false);
+    else add('toast', c.line, first, ['true', '!', 'bad'].includes(rest[0]?.[0]?.v) || (rest.length > 0 && rest.at(-1).length === 1 && rest.at(-1)[0].v === 'true'));
   }
-  for (const m of src.matchAll(/\.alert\(\s*'(\w+)'\s*,/g)) { const a = readExpr(src, m.index + m[0].length, ''); add(`alert:${m[1]}`, m.index, a.text, m[1] !== 'info'); }
-  for (const m of src.matchAll(/\breason:\s*/g)) { const a = readExpr(src, m.index + m[0].length, ',;'); add('refusal', m.index, a.text, true); }
-  for (const m of src.matchAll(/\bwhy:\s*/g)) { const a = readExpr(src, m.index + m[0].length, ',;'); add('why', m.index, a.text, false); }
-  for (const m of src.matchAll(/\btip = \{/g)) {
-    const obj = readExpr(src, m.index + m[0].length, '').text;
-    const t = obj.match(/\btext:\s*/);
-    if (!t) continue;
-    const a = readExpr(obj, t.index + t[0].length, ',');
-    add('tooltip', m.index, a.text, /\bbad:\s*(true|!)/.test(obj));
+  // x.alert('warn', message)
+  for (const c of calls(toks, (t, prev) => t.v === 'alert' && P(prev, '.'))) {
+    const [level] = c.args;
+    if (level?.length !== 1 || level[0].t !== 'str' || !/^\w+$/.test(level[0].v) || c.args.length < 2) continue;
+    add(`alert:${level[0].v}`, c.line, c.args.slice(1).flat(), level[0].v !== 'info');
+  }
+  // { reason: ... } (a refusal) and { why: ... }
+  const keyed = (key) => toks.flatMap((t, k) => (t.t === 'id' && t.v === key && P(toks[k + 1], ':') && (P(toks[k - 1], '{') || P(toks[k - 1], ',')) ? [k] : []));
+  for (const k of keyed('reason')) add('refusal', toks[k].line, expr(toks, k + 2)[0], true);
+  for (const k of keyed('why')) add('why', toks[k].line, expr(toks, k + 2)[0], false);
+  // tip = { text, bad }
+  for (let k = 0; k < toks.length - 2; k++) {
+    if (toks[k].t !== 'id' || toks[k].v !== 'tip' || !P(toks[k + 1], '=') || !P(toks[k + 2], '{')) continue;
+    const [obj] = expr(toks, k + 3, '');
+    let depth = 0, text = null, bad = false;
+    obj.forEach((t, j) => {
+      if (t.t === 'p' && !t.hole && '([{'.includes(t.v)) depth++;
+      else if (t.t === 'p' && !t.hole && ')]}'.includes(t.v)) depth--;
+      else if (depth === 0 && t.t === 'id' && P(obj[j + 1], ':')) {
+        if (t.v === 'text' && !text) text = expr(obj, j + 2, ',')[0];
+        if (t.v === 'bad' && ['true', '!'].includes(obj[j + 2]?.v)) bad = true;
+      }
+    });
+    if (text) add('tooltip', toks[k].line, text, bad);
   }
 }
 
@@ -196,7 +177,7 @@ const sect = (title, list, col) => md.push(`## ${title} (${list.length})`, '', `
 sect("Refusals and warnings that don't say what to do next", noNext.sort((a, b) => a.a.says_next.noul - b.a.says_next.noul), 'next');
 sect("Messages that don't say what happened", noWhat.sort((a, b) => a.a.says_what.noul - b.a.says_what.noul), 'what');
 sect('Jargon a first-time player may not know', jargon.sort((a, b) => b.a.jargon.score - a.a.jargon.score), 'jargon');
-writeFileSync(resolve(ROOT, 'docs/LEARNABILITY.md'), md.join('\n'));
+if (!DRY) writeFileSync(resolve(ROOT, 'docs/LEARNABILITY.md'), md.join('\n')); // (a dry run leaves the committed report alone)
 
 console.log(`${rows.length}/${records.length} messages judged: ${noNext.length} refusals/warnings without a next step, ${noWhat.length} that don't say what happened, ${jargon.length} with jargon; hand labels ${agree}/${labeled}`);
 console.log(`Jev: ${costLine()}`);

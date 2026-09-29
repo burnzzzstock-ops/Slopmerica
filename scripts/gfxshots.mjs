@@ -31,6 +31,11 @@ mkdirSync('shots/gfx', { recursive: true });
 const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
 const opts = process.env.PHONE ? { base, quality, width: 390, height: 780 } : { base, quality };
 const { page, errs, center } = await openBlock(browser, opts);
+// The street furniture and street trees (civic/layer.ts) stream in after the town is up and are placed on a 1.5 s
+// debounce of game time, which the stopped loop never spends: without this the same camera catches them in one run and
+// not in the next, and a before/after pair differs by a row of trees. Wait for the pack, then place them.
+await page.waitForFunction(() => window.__game.civic.status !== 'loading', null, { timeout: 180000 });
+await page.evaluate(() => { const g = window.__game; g.civic.update(2); g.civic.update(2); });
 
 const cams = existsSync(CAMS) ? JSON.parse(readFileSync(CAMS, 'utf8')) : {};
 // an ad-hoc camera by world position: at:X:Z:DIST:PITCH[:YAW]  (not saved)

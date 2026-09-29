@@ -7,7 +7,7 @@
 //   road median >= 50 on every night; roads under lamps (p90) >= 100;
 //   facades (p90) at least 20 above the ground's median; blown-out < 1%;
 //   the day capture is unchanged by the night lighting (pools off by day).
-// usage: node scripts/nighttest.mjs [quality]   (OUT=dir saves the captures)
+// usage: node scripts/nighttest.mjs [quality]   (OUT=dir saves the captures; ONLY=moonless,rain runs just those nights)
 // Exits nonzero on failure.
 import { chromium } from 'playwright-core';
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -19,7 +19,9 @@ const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, o
 const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
 const { page, errs, center } = await openBlock(browser, { base, quality });
 const VIEW = [-40, -30, 150, 2.4, 0.45];
-const CONDS = [['day', 14, 0.5, 'clear'], ['moonless', 23, 0, 'clear'], ['full moon', 23, 0.5, 'clear'], ['rain', 23, 0.25, 'rain']];
+const ALL_CONDS = [['day', 14, 0.5, 'clear'], ['moonless', 23, 0, 'clear'], ['full moon', 23, 0.5, 'clear'], ['rain', 23, 0.25, 'rain']];
+// ONLY=moonless,rain  runs just those nights (the day capture always runs): a quick look at one change; the full run is the test
+const CONDS = process.env.ONLY ? ALL_CONDS.filter(([n]) => n === 'day' || process.env.ONLY.split(',').includes(n)) : ALL_CONDS;
 
 // buildings red, road surfaces green, everything else writes depth only; read back top-down
 const maskPass = () => page.evaluate(() => {

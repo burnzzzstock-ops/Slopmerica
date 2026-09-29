@@ -4,7 +4,8 @@ import { GLOW } from '../config';
 import * as THREE from 'three';
 import { litByLamps } from '../world/nightLights';
 import { clamp, convexHull, lerp, locate, norm, sub, V2 } from '../core/math';
-import { carriageHalf, ROAD_TYPES, RoadType, RoadTypeId, ROAD_ORDER } from './roadTypes';
+import { mulberry32 } from '../core/rng';
+import { carriageHalf, laneOffset, ROAD_TYPES, RoadType, RoadTypeId, ROAD_ORDER } from './roadTypes';
 import type { RNode, RoadNetwork, RSeg } from './network';
 import { StreetDetails } from './streetDetails';
 import { isSimple, junctionShape, triangulate, visualTrim } from './roadJunction';
@@ -81,6 +82,9 @@ class Buf {
 }
 
 /** The points (and their heights) with any that sit within a centimetre of the one before dropped. */
+/** A street lamp: foot position, and the yaw that swings its arm (local -z) over the road. */
+type Lamp = { x: number; y: number; z: number; yaw: number };
+
 function dedupe(pts: V2[], hs: number[]): { pts: V2[]; hs: number[] } {
   const P: V2[] = [], H: number[] = [];
   for (let k = 0; k < pts.length; k++) {
@@ -139,6 +143,128 @@ function noiseFill(ctx: CanvasRenderingContext2D, w: number, h: number, base: [n
     img.data[i * 4 + 3] = 255;
   }
   ctx.putImageData(img, 0, 0);
+}
+
+// ------------------------------------------------------------------ asphalt and concrete wear
+// Graphics only: every random number here comes from a seeded generator (core/rng's mulberry32, one per road type), so a road looks the same
+// on every load and the sim never sees any of it. Everything is painted into the road's own canvas, so it costs no
+// geometry and no draw call.
+function seedOf(s: string) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+const WEAR_LIGHT = '132,130,128', WEAR_DARK = '40,40,44';
+
+/** A soft elliptical stain (rx across, ry along), drawn again on the far side of any edge it crosses so a tiling texture stays seamless. */
+function blotch(ctx: CanvasRenderingContext2D, W: number, H: number, wrapX: boolean, x: number, y: number, rx: number, ry: number, rgb: string, a: number) {
+  for (const dy of [0, -H, H]) for (const dx of wrapX ? [0, -W, W] : [0]) {
+    const cx = x + dx, cy = y + dy;
+    if (cx + rx < 0 || cx - rx > W || cy + ry < 0 || cy - ry > H) continue;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(1, ry / rx);
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+    g.addColorStop(0, `rgba(${rgb},${a})`);
+    g.addColorStop(1, `rgba(${rgb},0)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(-rx, -rx, rx * 2, rx * 2);
+    ctx.restore();
+  }
+}
+
+/** Patchy asphalt: equal numbers of paler and darker stains, so the mean tone stays where it was. */
+function mottle(ctx: CanvasRenderingContext2D, W: number, H: number, wrapX: boolean, x0: number, x1: number, count: number, size: number, rnd: () => number, strength = 1) {
+  for (let i = 0; i < count; i++) {
+    const rx = size * (0.5 + rnd() * 0.9), ry = rx * (1 + rnd() * 1.4);
+    blotch(ctx, W, H, wrapX, x0 + rnd() * (x1 - x0), rnd() * H, rx, ry, i & 1 ? WEAR_LIGHT : WEAR_DARK, (0.1 + rnd() * 0.09) * strength);
+  }
+}
+
+/** A tar-filled crack: a thin dark line with a faint paler lip, wandering along the road in a way that repeats exactly once per tile. */
+function tarSeam(ctx: CanvasRenderingContext2D, W: number, H: number, x: number, amp: number, rnd: () => number) {
+  const k1 = 1 + Math.floor(rnd() * 2), k2 = 3 + Math.floor(rnd() * 3), p1 = rnd() * 6.28, p2 = rnd() * 6.28;
+  const path = (off: number) => {
+    ctx.beginPath();
+    for (let y = 0; y <= H; y += 4) {
+      const t = (y / H) * 6.283;
+      const px = x + off + amp * Math.sin(k1 * t + p1) + amp * 0.35 * Math.sin(k2 * t + p2);
+      if (y === 0) ctx.moveTo(px, y); else ctx.lineTo(px, y);
+    }
+    ctx.stroke();
+  };
+  const dash: number[] = [];
+  for (let n = 0; n < 8; n++) dash.push(30 + rnd() * 90, 4 + rnd() * 26);
+  ctx.setLineDash(dash);
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(150,148,146,0.12)';
+  path(1.6);
+  ctx.strokeStyle = 'rgba(16,16,18,0.36)';
+  ctx.lineWidth = 1;
+  path(0);
+  ctx.setLineDash([]);
+}
+
+/** A resurfaced patch: a rectangle a shade off the surrounding tone with a sealed, darker edge. */
+function patch(ctx: CanvasRenderingContext2D, H: number, x: number, y: number, w: number, h: number, dark: boolean) {
+  for (const dy of [0, -H, H]) {
+    if (y + dy + h < 0 || y + dy > H) continue;
+    ctx.fillStyle = dark ? 'rgba(30,30,34,0.16)' : 'rgba(150,148,146,0.13)';
+    ctx.fillRect(x, y + dy, w, h);
+    ctx.strokeStyle = 'rgba(14,14,16,0.26)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + dy + 0.5, w - 1, h - 1);
+  }
+}
+
+const srgbToLinear = (v: number) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+
+/** Histogram of a rectangle's luminance (Rec. 709 weights on the sRGB bytes), one bin per byte value. */
+function lumaHist(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+  const d = ctx.getImageData(Math.round(x), Math.round(y), Math.max(1, Math.round(w)), Math.max(1, Math.round(h))).data;
+  const hist = new Float64Array(256);
+  for (let i = 0; i < d.length; i += 4) hist[Math.min(255, Math.round(0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]))]++;
+  return hist;
+}
+
+/** Mean linear-light luminance of a rectangle: what the lighting, and the eye at a distance, average. */
+function linearTone(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+  const hist = lumaHist(ctx, x, y, w, h);
+  let s = 0, n = 0;
+  for (let v = 0; v < 256; v++) { s += hist[v] * srgbToLinear(v); n += hist[v]; }
+  return s / n;
+}
+
+/**
+ * Put a rectangle's tone back after wear was painted into it: a flat wash of white or black, its strength solved so the
+ * rectangle's mean linear-light luminance is `target` again (measured before the wear). Averaging the sRGB bytes
+ * instead leaves the surface measurably lighter or darker once it is lit, because stains of equal size in bytes are
+ * not equal in light.
+ */
+function holdTone(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, target: number) {
+  const hist = lumaHist(ctx, x, y, w, h);
+  let n = 0;
+  for (let v = 0; v < 256; v++) n += hist[v];
+  const after = (a: number, white: boolean) => {
+    let s = 0;
+    for (let v = 0; v < 256; v++) if (hist[v]) s += hist[v] * srgbToLinear(white ? v + a * (255 - v) : v * (1 - a));
+    return s / n;
+  };
+  const white = after(0, true) < target;
+  let lo = 0, hi = 0.6;
+  for (let i = 0; i < 16; i++) {
+    const mid = (lo + hi) / 2;
+    if ((after(mid, white) < target) === white) lo = mid; else hi = mid;
+  }
+  ctx.fillStyle = white ? `rgba(255,255,255,${lo})` : `rgba(0,0,0,${lo})`;
+  ctx.fillRect(x, y, w, h);
+}
+
+/** Speckle worn paint: flakes of the asphalt showing through a painted rectangle. */
+function wornPaint(ctx: CanvasRenderingContext2D, rnd: () => number, x: number, y: number, w: number, h: number) {
+  ctx.fillStyle = 'rgba(92,92,96,0.62)';
+  const n = Math.round(w * h * 0.09);
+  for (let i = 0; i < n; i++) ctx.fillRect(x + rnd() * w, y + rnd() * h, 1, 1 + Math.floor(rnd() * 3));
 }
 
 /** Where a block's driveway aprons are (arc length, side): the curb dips there and nothing stands in them. */
@@ -203,11 +329,84 @@ function roadTexture(t: RoadType, maxAniso: number): THREE.CanvasTexture {
     }
     const ch = carriageHalf(t);
     const cx = W / 2;
+    const inner = (t.centerTurn ? t.laneW / 2 : 0) + t.median / 2;
+    // ---- wear, under the paint (see the notes above mulberry32): patchy asphalt, worn wheel paths, grime along the
+    // gutter, tar seams and a patch or two, then dirt on the walks. The carriageway's tone, and the walks', are put back
+    // afterwards (holdTone: mean linear-light luminance), so the wear adds texture without making the road lighter or
+    // darker (the night targets in docs/ART_DIRECTION.md are set on that tone)
+    const rnd = mulberry32(seedOf(t.id));
+    const cx0 = px(sw) + (sw > 0 ? px(GUTTER) : 0), cx1 = W - cx0;
+    const widthM = (cx1 - cx0) / px(1); // carriageway width in metres: every count below scales with it, so a six-lane road is as patchy per square metre as a two-lane one
+    // the tone to hold: what this road averaged before, with the flat oil-stain band the old texture ran down each lane's centre
+    const scratch = document.createElement('canvas');
+    scratch.width = W;
+    scratch.height = H;
+    const sctx = scratch.getContext('2d')!;
+    sctx.drawImage(c, 0, 0);
+    sctx.fillStyle = 'rgba(20,20,20,0.12)';
+    for (let k = 0; k < t.lanesPerDir; k++) {
+      const off = inner + (k + 0.5) * t.laneW;
+      sctx.fillRect(cx + px(off) - 6, 0, 12, H);
+      sctx.fillRect(cx - px(off) - 6, 0, 12, H);
+    }
+    const toneRoad = linearTone(sctx, cx0, 0, cx1 - cx0, H);
+    const walkW = px(sw) + (sw > 0 ? px(GUTTER) : 0); // (a sidewalk and its gutter pan, which the wear below also touches)
+    const toneWalk = sw > 0 ? [linearTone(ctx, 0, 0, walkW, H), linearTone(ctx, W - walkW, 0, walkW, H)] : [0, 0];
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(cx0, 0, cx1 - cx0, H);
+    ctx.clip();
+    mottle(ctx, W, H, false, cx0, cx1, Math.round(widthM * 3.4), px(2.1), rnd, 0.8); // broad cloudy areas, the scale you see from the gameplay camera
+    mottle(ctx, W, H, false, cx0, cx1, Math.round(widthM * 9), px(0.85), rnd);
+    for (let k = 0; k < t.lanesPerDir; k++) {
+      const lanes = t.oneWay ? [laneOffset(t, k)] : [-laneOffset(t, k), laneOffset(t, k)];
+      for (const lane of lanes) {
+        for (const w of [-0.78, 0.78]) {
+          // the two wheel paths: dark rubber and oil, in broken lengths with a soft edge
+          let y = rnd() * py(3);
+          while (y < H) {
+            const len = py(2 + rnd() * 9);
+            for (const wm of [0.62, 0.44, 0.26]) { ctx.fillStyle = 'rgba(28,26,24,0.055)'; ctx.fillRect(cx + px(lane + w) - px(wm) / 2, y, px(wm), Math.min(len, H - y)); }
+            y += len + py(rnd() * 3.5);
+          }
+        }
+        if (rnd() < 0.5) blotch(ctx, W, H, false, cx + px(lane) + (rnd() - 0.5) * px(0.3), rnd() * H, px(0.17), py(0.5 + rnd() * 0.9), '16,14,12', 0.32);
+      }
+    }
+    for (const side of [-1, 1]) {
+      const edge = side < 0 ? cx0 : cx1, grime = px(0.55);
+      const inward = edge - side * grime, gr = ctx.createLinearGradient(edge, 0, inward, 0);
+      gr.addColorStop(0, 'rgba(30,26,20,0.32)');
+      gr.addColorStop(1, 'rgba(30,26,20,0)');
+      ctx.fillStyle = gr;
+      ctx.fillRect(Math.min(edge, inward), 0, grime, H);
+    }
+    for (let i = 0; i < Math.max(1, Math.round(widthM / 3.5)); i++) tarSeam(ctx, W, H, cx0 + px(0.7) + rnd() * (cx1 - cx0 - px(1.4)), px(0.22), rnd);
+    for (let i = 0; i < Math.max(1, Math.round((widthM / 8) * (1 + rnd() * 1.4))); i++) patch(ctx, H, cx0 + rnd() * (cx1 - cx0 - px(2.4)), rnd() * H, px(1.0 + rnd() * 1.4), py(1.6 + rnd() * 2.2), rnd() < 0.6);
+    ctx.restore();
+    holdTone(ctx, cx0, 0, cx1 - cx0, H, toneRoad);
+    if (sw > 0) {
+      const walks: [number, number][] = [[0, px(sw)], [W - px(sw), W]];
+      ctx.save();
+      for (const [a, b] of walks) {
+        ctx.beginPath(); ctx.rect(a, 0, b - a, H); ctx.clip();
+        for (let i = 0; i < 26; i++) {
+          const rx = px(0.32 + rnd() * 0.5), ry = rx * (1 + rnd() * 1.6);
+          blotch(ctx, W, H, false, a + rnd() * (b - a), rnd() * H, rx, ry, i & 1 ? '196,194,186' : '92,90,84', 0.12 + rnd() * 0.1);
+        }
+      }
+      ctx.restore();
+      ctx.fillStyle = 'rgba(58,50,38,0.24)'; // dirt and leaf litter in the gutter pans
+      ctx.fillRect(px(sw), 0, px(GUTTER), H);
+      ctx.fillRect(W - px(sw) - px(GUTTER), 0, px(GUTTER), H);
+      holdTone(ctx, 0, 0, walkW, H, toneWalk[0]);
+      holdTone(ctx, W - walkW, 0, walkW, H, toneWalk[1]);
+    }
     const line = (mOff: number, color: string, dashed: boolean, wPx = 3) => {
       ctx.fillStyle = color;
       const x = cx + px(mOff) - wPx / 2;
-      if (!dashed) ctx.fillRect(x, 0, wPx, H);
-      else for (let y = 0; y < H; y += py(12)) ctx.fillRect(x, y, wPx, py(3.5));
+      if (!dashed) { ctx.fillRect(x, 0, wPx, H); wornPaint(ctx, rnd, x, 0, wPx, H); }
+      else for (let y = 0; y < H; y += py(12)) { ctx.fillRect(x, y, wPx, py(3.5)); wornPaint(ctx, rnd, x, y, wPx, py(3.5)); }
     };
     if (t.oneWay) {
       // one-way: yellow on the left edge, white on the right, dashes between lanes, arrows the way it runs
@@ -221,6 +420,8 @@ function roadTexture(t: RoadType, maxAniso: number): THREE.CanvasTexture {
         // (v runs up the canvas: the texture's top is further along a -> b)
         ctx.fillRect(x - sw / 2, y0 + head * 0.9, sw, y1 - y0 - head * 0.9);
         ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x + aw / 2, y0 + head); ctx.lineTo(x - aw / 2, y0 + head); ctx.closePath(); ctx.fill();
+        wornPaint(ctx, rnd, x - aw / 2, y0, aw, head);
+        wornPaint(ctx, rnd, x - sw / 2, y0 + head * 0.9, sw, y1 - y0 - head * 0.9);
       }
       const tex = new THREE.CanvasTexture(c);
       tex.wrapS = THREE.ClampToEdgeWrapping;
@@ -247,18 +448,11 @@ function roadTexture(t: RoadType, maxAniso: number): THREE.CanvasTexture {
       line(-0.15, '#e8c33a', false);
       line(0.15, '#e8c33a', false);
     }
-    const inner = (t.centerTurn ? t.laneW / 2 : 0) + t.median / 2;
     for (let k = 1; k < t.lanesPerDir; k++) {
       line(inner + k * t.laneW, '#e8e8e2', true);
       line(-(inner + k * t.laneW), '#e8e8e2', true);
     }
-    // oil stains in lane centers
-    ctx.fillStyle = 'rgba(20,20,20,0.12)';
-    for (let k = 0; k < t.lanesPerDir; k++) {
-      const off = inner + (k + 0.5) * t.laneW;
-      ctx.fillRect(cx + px(off) - 6, 0, 12, H);
-      ctx.fillRect(cx - px(off) - 6, 0, 12, H);
-    }
+    // (the old flat oil-stain bands down each lane's centre are now the broken wheel paths painted under the lines)
     void half;
   }
   const tex = new THREE.CanvasTexture(c);
@@ -274,6 +468,14 @@ function asphaltTexture(maxAniso: number) {
   c.width = c.height = 256;
   const ctx = c.getContext('2d')!;
   noiseFill(ctx, 256, 256, [84, 84, 88], 22);
+  // the same wear as the roads' own canvases (linear-light tone put back, so it meets them without a seam in tone); the tile
+  // is 8 m across and repeats in both directions, so the stains wrap and the seam wanders to match
+  const rnd = mulberry32(seedOf('junction'));
+  const tone = linearTone(ctx, 0, 0, 256, 256);
+  mottle(ctx, 256, 256, true, 0, 256, 10, 62, rnd, 0.8);
+  mottle(ctx, 256, 256, true, 0, 256, 34, 26, rnd);
+  for (let i = 0; i < 2; i++) tarSeam(ctx, 256, 256, 40 + rnd() * 176, 9, rnd);
+  holdTone(ctx, 0, 0, 256, 256, tone);
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.anisotropy = maxAniso;
@@ -321,13 +523,13 @@ const CONCRETE: [number, number, number] = [0.62, 0.61, 0.58];
 /** the curb's vertical face and the walk's raised ends: light concrete (linear), a shade under the top so the step reads */
 const CURB_FACE: [number, number, number] = [0.5, 0.49, 0.46];
 /** a corner slab's top: the sidewalk texture's average (linear), so it matches the walks it joins */
-const WALK_SLAB: [number, number, number] = [0.32, 0.31, 0.275];
+const WHITE_TINT: [number, number, number] = [1, 1, 1];
 const BANK_TOP: [number, number, number] = [0.3, 0.255, 0.19], BANK_FOOT: [number, number, number] = [0.235, 0.195, 0.14];
 
 export class RoadRenderer {
   readonly group = new THREE.Group();
   private segGeo = new Map<number, SegGeo>();
-  private nodeGeo = new Map<number, { j: Buf; cw: Buf; conc: Buf }>();
+  private nodeGeo = new Map<number, { j: Buf; cw: Buf; conc: Buf; walk: Map<RoadTypeId, Buf>; lights: Lamp[] }>();
   private crosswalkMesh: THREE.Mesh;
   private typeMeshes = new Map<RoadTypeId, THREE.Mesh>();
   private junctionMesh: THREE.Mesh;
@@ -339,7 +541,7 @@ export class RoadRenderer {
   private details = new StreetDetails();
   readonly typeMats = new Map<RoadTypeId, THREE.MeshStandardMaterial>();
   /** where the street lamps stand (for the pools of light they throw, world/nightLights.ts) */
-  lampSpots: { x: number; y: number; z: number; yaw: number }[] = [];
+  lampSpots: Lamp[] = [];
 
   constructor(private net: RoadNetwork, renderer: THREE.WebGLRenderer) {
     const aniso = renderer.capabilities.getMaxAnisotropy();
@@ -439,7 +641,8 @@ export class RoadRenderer {
     const perType = new Map<RoadTypeId, Buf[]>();
     const conc: Buf[] = [];
     const junc: Buf[] = [];
-    const lights: { x: number; y: number; z: number; yaw: number }[] = [];
+    const lights: Lamp[] = [];
+    const cornerLights: Lamp[] = [];
     for (const seg of this.net.segs.values()) {
       let g = this.segGeo.get(seg.id);
       if (!g) this.segGeo.set(seg.id, (g = this.buildSeg(seg)));
@@ -456,7 +659,15 @@ export class RoadRenderer {
       if (b.j.count) junc.push(b.j);
       if (b.cw.count) walks.push(b.cw);
       if (b.conc.count) conc.push(b.conc);
+      for (const [id, w] of b.walk) {
+        let arr = perType.get(id);
+        if (!arr) perType.set(id, (arr = []));
+        arr.push(w);
+      }
+      cornerLights.push(...b.lights);
     }
+    // (corner lamps first: if a huge network ever passes the instance cap it is the block lamps that go, not the ones that light a junction)
+    lights.unshift(...cornerLights);
     for (const [id, mesh] of this.typeMeshes) {
       mesh.geometry.dispose();
       const list = perType.get(id);
@@ -660,9 +871,11 @@ export class RoadRenderer {
     return { surf, conc, lights };
   }
 
-  private buildNode(n: RNode): { j: Buf; cw: Buf; conc: Buf } {
+  private buildNode(n: RNode): { j: Buf; cw: Buf; conc: Buf; walk: Map<RoadTypeId, Buf>; lights: Lamp[] } {
     const b = new Buf(), cw = new Buf(), conc = new Buf();
-    const out = { j: b, cw, conc };
+    const walk = new Map<RoadTypeId, Buf>();
+    const lights: Lamp[] = [];
+    const out = { j: b, cw, conc, walk, lights };
     const segs = n.segs.map((id) => this.net.segs.get(id)!).filter(Boolean);
     if (!segs.length) return out;
     const y = n.y + 0.08;
@@ -685,7 +898,7 @@ export class RoadRenderer {
     const trims = segs.map((s) => (s.a === n.id ? s.trimA : s.trimB));
     if (trims.every((t) => t < 0.01)) return out;
     const J = segs.length >= 3 ? junctionShape(this.net, n.id) : null;
-    if (!J || !this.buildJunction(n, J, b, conc)) this.buildHull(n, segs, b, y);
+    if (!J || !this.buildJunction(n, J, b, conc, walk, lights)) this.buildHull(n, segs, b, y);
     // crosswalks where each street enters a real junction (not highways or
     // gravel, not bends): the edge of the junction reads as intended
     if (segs.length >= 3 && !segs.some((s) => s.type === 'highway')) {
@@ -755,13 +968,15 @@ export class RoadRenderer {
    * with a curb-return arc at each corner, the curb face round it, the sidewalk slab behind it, and the earth
    * bank beyond. Everything starts from the legs' own ribbon ends, so the seams close.
    */
-  private buildJunction(n: RNode, J: Junction, bOut: Buf, concOut: Buf): boolean {
+  private buildJunction(n: RNode, J: Junction, bOut: Buf, concOut: Buf, walkOut: Map<RoadTypeId, Buf>, lightsOut: Lamp[]): boolean {
     const b = new Buf(), conc = new Buf();
+    const walk = new Map<RoadTypeId, Buf>();
+    const lamps: Lamp[] = [];
     const legs = J.legs;
     const A = legs.map((L) => {
       const F = RoadRenderer.frame(L.seg, clamp(L.atA ? L.trim : L.seg.length - L.trim, 0, L.seg.length));
       const ux = L.atA ? F.t.x : -F.t.x, uz = L.atA ? F.t.z : -F.t.z;
-      return { p: F.p, r: { x: -uz, z: ux }, y: F.y, e: L.e, h: L.h };
+      return { p: F.p, r: { x: -uz, z: ux }, y: F.y, e: L.e, h: L.h, type: L.seg.type };
     });
     const at = (a: { p: V2; r: V2 }, lat: number): V2 => ({ x: a.p.x + a.r.x * lat, z: a.p.z + a.r.z * lat });
     const C: V2 = { x: n.x, z: n.z };
@@ -815,9 +1030,22 @@ export class RoadRenderer {
         return { x: dx / l, z: dz / l };
       });
       const { pts: poly, hs: hp } = dedupe([...curb, ...outer], [...hCurb.map((v) => v + CURB_REVEAL), ...yo.map((v) => v + CURB_REVEAL)]);
-      const ids = poly.map((p, m) => conc.v(p.x, hp[m], p.z, 0, 1, 0, 0, 0, WALK_SLAB));
+      // (drawn in the road type's own mesh, with the sidewalk part of that road's texture and its joints running on round
+      // the corner: it is the same paving as the walks along the legs, and it stays in the surface the walks belong to)
+      const lt = A[c.i].type, wb = walk.get(lt) ?? walk.set(lt, new Buf()).get(lt)!;
+      const wu = (ROAD_TYPES[lt].sidewalk * 0.5) / ROAD_TYPES[lt].width, ax = A[c.i].r.z, az = -A[c.i].r.x;
+      const ids = poly.map((p, m) => wb.v(p.x, hp[m], p.z, 0, 1, 0, wu, (p.x * ax + p.z * az) / REPEAT, WHITE_TINT));
       const tri = triangulate(poly);
-      for (let k = 0; k < tri.length; k += 3) conc.tri(ids[tri[k]], ids[tri[k + 1]], ids[tri[k + 2]]);
+      for (let k = 0; k < tri.length; k += 3) wb.tri(ids[tri[k]], ids[tri[k + 1]], ids[tri[k + 2]]);
+      // a street lamp on the slab at the middle of the curb return, its arm over the junction. The block lamps start
+      // 8 m past the visual trim, and the trims grew with the corner radii, so without these the middle of a junction
+      // (the biggest single stretch of asphalt at night) sat between lamp pools. Only where the corner has a walk.
+      if (c.kind === 'fillet' && ROAD_TYPES[lt].sidewalk > 0) {
+        const mid = Math.floor((N - 1) / 2), mp = curb[mid];
+        const ox = mp.x - C.x, oz = mp.z - C.z, ol = Math.hypot(ox, oz) || 1;
+        const lx = mp.x + (ox / ol) * 0.7, lz = mp.z + (oz / ol) * 0.7;
+        lamps.push({ x: lx, y: hCurb[mid] + CURB_REVEAL, z: lz, yaw: Math.atan2(lx - C.x, lz - C.z) });
+      }
       const wt: number[] = [], wf: number[] = [], ws: number[] = [];
       for (let m = 0; m < K; m++) {
         const o = outer[m], d = dir[m], topY = yo[m] + CURB_REVEAL;
@@ -860,6 +1088,8 @@ export class RoadRenderer {
     }
     bOut.absorb(b);
     concOut.absorb(conc);
+    for (const [id, w] of walk) { const o = walkOut.get(id) ?? walkOut.set(id, new Buf()).get(id)!; o.absorb(w); }
+    lightsOut.push(...lamps);
     return true;
   }
 

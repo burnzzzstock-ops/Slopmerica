@@ -6,17 +6,20 @@
 //          -> { choice, confidence, probabilities: { key: p } }
 //   score  { type: 'score', instructions?, criteria: [level0, level1, ...] }  (2 to 10 levels)
 //          -> { score, confidence, probabilities: { '0': p, ... } }   score is the expected level
-// The key comes from TYPESAFE_API_KEY or the gitignored .env.local and is never
-// printed, logged or written. The game never calls Jev: scripts ship plain data
-// (TS or JSON) that the game reads, and it behaves as before without it.
+// The key comes from TYPESAFE_API_KEY or the gitignored .env.local and is only
+// ever sent to the TypeSafe API: never printed, logged or written. The game
+// never calls Jev: scripts ship plain data (TS or JSON) that the game reads, and
+// it behaves as before without it. TYPESAFE_BASE_URL and TYPESAFE_MODEL override
+// the endpoint and model. (One client for every script: contentaudit.mjs from
+// the jev-audit branch and the tagging and checking scripts.)
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const API = 'https://api.typesafe.ai/v1/systemone';
-export const MODEL = 'jev-latest';
+const API = `${process.env.TYPESAFE_BASE_URL || 'https://api.typesafe.ai'}/v1/systemone`;
+export const MODEL = process.env.TYPESAFE_MODEL || 'jev-latest';
 /** dollars per million input tokens */
 export const PRICE_PER_M_INPUT = 0.042;
 
@@ -27,12 +30,23 @@ export function apiKey() {
   key = process.env.TYPESAFE_API_KEY?.trim() ?? '';
   const env = resolve(ROOT, '.env.local');
   if (!key && existsSync(env)) {
-    for (const line of readFileSync(env, 'utf8').split(/\r?\n/)) {
-      const m = line.match(/^\s*TYPESAFE_API_KEY\s*=\s*"?([^"\s]+)"?\s*$/);
-      if (m) key = m[1];
-    }
+    // KEY=value, quoted or not, with or without a trailing comment
+    const m = readFileSync(env, 'utf8').match(/^[ \t]*TYPESAFE_API_KEY[ \t]*=[ \t]*["']?([^"'\s#]+)/m);
+    if (m) key = m[1];
   }
   return key;
+}
+
+/** a failed request; `status` is the HTTP status, 0 for no key or a network failure */
+export class TypeSafeError extends Error {
+  constructor(status, detail) {
+    const why = status === 401 ? 'the API key was rejected; check TYPESAFE_API_KEY in .env.local'
+      : status === 422 ? `the request was invalid: ${detail}`
+      : status === 0 ? detail
+      : `HTTP ${status}: ${detail}`;
+    super(`TypeSafe: ${why}`);
+    this.status = status;
+  }
 }
 
 /** running totals for this process, for the cost line every script prints */
@@ -46,11 +60,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /**
  * Ask Jev every question in `questions` about `state` (a string or a JSON
  * object). Returns { answers, model, usage }. Retries rate limits, server
- * errors and dropped connections with backoff; a bad request throws at once.
+ * errors and dropped connections with backoff (honouring Retry-After); a bad
+ * request throws a TypeSafeError at once. `retries` (retries after the first
+ * try) and `tries` (total) both work; `key` overrides the configured key.
  */
-export async function systemOne(state, questions, { model = MODEL, tries = 6, timeoutMs = 60000 } = {}) {
-  const k = apiKey();
-  if (!k) throw new Error('No TypeSafe key: set TYPESAFE_API_KEY or add it to .env.local (or run with --dry-run)');
+export async function systemOne(state, questions, { model = MODEL, key: k = apiKey(), retries, tries = retries !== undefined ? retries + 1 : 6, timeoutMs = 60000 } = {}) {
+  if (!k) throw new TypeSafeError(0, 'no API key: set TYPESAFE_API_KEY or put it in .env.local (or run with --dry-run)');
   const body = JSON.stringify({ model, state, questions });
   let wait = 1000;
   for (let attempt = 1; ; attempt++) {
@@ -62,7 +77,7 @@ export async function systemOne(state, questions, { model = MODEL, tries = 6, ti
       text = await res.text();
       clearTimeout(t);
     } catch (e) {
-      if (attempt >= tries) throw new Error(`Jev request failed after ${attempt} tries: ${e.message}`);
+      if (attempt >= tries) throw new TypeSafeError(0, `network error after ${attempt} tries: ${e.message}`);
       usage.retries++;
       await sleep(wait + Math.random() * 250);
       wait *= 2;
@@ -84,7 +99,7 @@ export async function systemOne(state, questions, { model = MODEL, tries = 6, ti
     }
     // behind an HTTPS proxy, Node's fetch only uses it when started with NODE_USE_ENV_PROXY=1
     const hint = res.status === 403 && (process.env.HTTPS_PROXY || process.env.https_proxy) && !process.env.NODE_USE_ENV_PROXY ? ' (behind a proxy: run with NODE_USE_ENV_PROXY=1)' : '';
-    throw new Error(`Jev ${res.status}: ${text.slice(0, 400)}${hint}`);
+    throw new TypeSafeError(res.status, `${text.slice(0, 400)}${hint}`);
   }
 }
 

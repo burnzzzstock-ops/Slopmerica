@@ -80,6 +80,8 @@ type Events = {
   /** Only a junction end was pulled back (trimA/trimB): same id, length and route. */
   segTrimmed: RSeg;
   segChanged: RSeg;
+  /** A street joined mid-piece: `old` is gone and `into` (two new ids) is the same road, so whatever remembered `old` can follow it. */
+  segSplit: { old: number; into: [RSeg, RSeg] };
   nodeChanged: RNode;
   changed: void;
 };
@@ -577,6 +579,7 @@ export class RoadNetwork {
     s1.builtDay = s2.builtDay = seg.builtDay;
     this.events.emit('segAdded', s1);
     this.events.emit('segAdded', s2);
+    this.events.emit('segSplit', { old: seg.id, into: [s1, s2] });
     this.updateTrims(A.id);
     this.updateTrims(B.id);
     this.updateTrims(node.id);

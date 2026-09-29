@@ -158,6 +158,7 @@ node scripts/motiontest.mjs      # cars: no heading snaps, brake for turns, chan
 node scripts/civictest.mjs       # Civic Foundry pack streams in: street trees, furniture, bus shelters; instanced LODs; Low skips it
 node scripts/starttest.mjs       # new county: sensible site (random among good ones, saved), county road follows the land; trees: no detail disc, no gaps; far trees keep their shape (no rectangles)
 node scripts/gridtest.mjs        # Roads > Grid: three clicks lay a street grid (junctions, lots, price, red streets left out, one-ways alternate, one undo, touch)
+node scripts/undotest.mjs        # Undo pays for what still stands (a bulldozed road isn't refunded twice), follows a piece split by a joining street, and leaves no road behind; the Undo button names what it will pay
 node scripts/progression.mjs     # (not a pass/fail test) a scripted player grows a Ponzi town: when each population mark is reached, money, what got built
 node scripts/weathertest.mjs     # weather keeps to the calendar: no rain or snow spell over a month, no summer snow, changes often, doesn't strobe at top speed
 node scripts/costtest.mjs        # honest service costs (running cost, committed projects, units), Next priorities, locked-fix notes, full landfill note, red bulldoze outlines

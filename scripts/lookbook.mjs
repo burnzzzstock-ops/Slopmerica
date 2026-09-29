@@ -5,18 +5,22 @@
 // shots/lookbook/<quality>-<time>-<view>.png and a contact sheet,
 // shots/lookbook/index.html. The block is grown once (scripts/refblock.mjs).
 // usage: node scripts/lookbook.mjs [qualities, default high] e.g. low,high,ultra
+//   ONLY=noon,dusk keeps just those times; PHONE=1 shoots a 390x780 @3x touch context (files are prefixed phone-)
 import { chromium } from 'playwright-core';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { ARGS, EXE, openBlock, shoot } from './refblock.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const qualities = (process.argv[2] || 'high').split(',');
-const TIMES = [['noon', 12.5, 0.5, 'clear'], ['dusk', 19.9, 0.5, 'clear'], ['moonless', 23, 0, 'clear'], ['fullmoon', 23, 0.5, 'clear'], ['rain', 22.5, 0.25, 'rain']];
+const ALL_TIMES = [['noon', 12.5, 0.5, 'clear'], ['dusk', 19.9, 0.5, 'clear'], ['moonless', 23, 0, 'clear'], ['fullmoon', 23, 0.5, 'clear'], ['rain', 22.5, 0.25, 'rain']];
+const TIMES = process.env.ONLY ? ALL_TIMES.filter(([n]) => process.env.ONLY.split(',').includes(n)) : ALL_TIMES;
+const phone = !!process.env.PHONE;
+const pre = phone ? 'phone-' : '';
 const VIEWS = { overview: [0, 0, 320, 0.7, 0.6], street: [-40, -30, 110, 2.4, 0.38], houses: [-170, -130, 120, 4.0, 0.42], shore: null };
 mkdirSync('shots/lookbook', { recursive: true });
 const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
 const shots = [];
 for (const q of qualities) {
-  const { page, errs, center } = await openBlock(browser, { base, quality: q });
+  const { page, errs, center } = await openBlock(browser, phone ? { base, quality: q, width: 390, height: 780, phone: true } : { base, quality: q });
   // the nearest bank to the block, looking along it
   VIEWS.shore ??= await page.evaluate(({ x, z }) => {
     const T = window.__game.terrain;
@@ -28,8 +32,11 @@ for (const q of qualities) {
   }, center);
   for (const [time, hour, moon, weather] of TIMES) for (const [view, v] of Object.entries(VIEWS)) {
     await shoot(page, center, { hour, moon, weather, view: v });
-    const file = `${q}-${time}-${view}.png`;
-    await page.screenshot({ path: `shots/lookbook/${file}`, timeout: 180000 });
+    const file = `${pre}${q}-${time}-${view}.png`;
+    // a software-GPU frame can take minutes when the box is busy: wait longer, and try once more before giving up
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try { await page.screenshot({ path: `shots/lookbook/${file}`, timeout: 420000 }); break; } catch (e) { console.log('shot failed', file, attempt, String(e.message).split('\n')[0]); if (attempt) throw e; }
+    }
     shots.push({ q, time, view, file });
     console.log('shot', file);
   }

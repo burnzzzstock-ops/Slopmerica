@@ -366,6 +366,8 @@ export class Environment {
   private lastNow = 0;
   /** image-based lighting adds ambient, so the hemisphere light backs off */
   private hemiScale: number;
+  /** the same, with the sun low (no environment map: see the constructor) */
+  private hemiDusk: number;
   private nightBoost: number;
   private pmrem?: THREE.PMREMGenerator;
   private envRT?: THREE.WebGLRenderTarget;
@@ -381,8 +383,15 @@ export class Environment {
     this.hemiGround = new THREE.Color(def.sky.hemiGround);
     // clearer air = deeper blue overhead
     this.dayZenith.setHex(0x3f7fd4).lerp(new THREE.Color(0x2a6ad8), THREE.MathUtils.clamp((6 - def.sky.turbidity) / 4, 0, 1));
-    this.hemiScale = renderer ? 0.5 : 1;
-    this.nightBoost = renderer ? 2 : 1;
+    // High and Ultra bake the sky into an environment map, which is most of their ambient light: the hemisphere light
+    // backs off to half and the moonless night light doubles. Medium and Low have no map (skipping its re-bake and a map
+    // lookup in every material is what makes them cheap), so the hemisphere light stands in for it, and the same street
+    // came out darker there, most of all at dusk (mean luma of the reference block, scripts/presetlight.mjs: Medium at
+    // dusk 0.23 against 0.31 on High, at noon 0.41 against 0.47, on a moonless night 0.22 against 0.25). Low already
+    // matched at noon and at night (its own exposure lift), so it is raised only with the sun low. Lighting constants only.
+    this.hemiScale = renderer ? 0.5 : q.post ? 1.7 : 1;
+    this.hemiDusk = renderer ? 0.5 : q.post ? 1.7 : 1.5;
+    this.nightBoost = renderer ? 2 : q.post ? 2 : 1;
 
     this.skyU = THREE.UniformsUtils.merge([
       THREE.UniformsLib.fog,
@@ -636,7 +645,8 @@ export class Environment {
       hemiI += this.flash * 3.5;
     }
     // the baked sky light is near-black after dark, so the hemisphere light takes over again at night
-    this.hemi.intensity = hemiI * THREE.MathUtils.lerp(this.hemiScale, 1, this.night);
+    const hemiK = THREE.MathUtils.lerp(this.hemiDusk, this.hemiScale, THREE.MathUtils.smoothstep(elev, 2, 25));
+    this.hemi.intensity = hemiI * THREE.MathUtils.lerp(hemiK, 1, this.night);
     // what the unlit shaders (water body, rain, particles) should be lit by
     this.lightLevel = THREE.MathUtils.clamp(0.1 + sunI * 0.28 + moonI * 0.3 + (hemiI - 0.62) * 0.6 + this.flash * 0.8, 0.06, 1.6);
 

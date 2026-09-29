@@ -45,11 +45,12 @@ async function grow(browser, base) {
  * Open the block at a quality preset. Returns { page, errs, center }; the game
  * loop is stopped (drive it with g.frame), the HUD hidden, the date mid-summer.
  */
-export async function openBlock(browser, { base, quality = 'high', width = 1280, height = 720 }) {
+export async function openBlock(browser, { base, quality = 'high', width = 1280, height = 720, phone = false }) {
   if (!existsSync(SAVE)) await grow(browser, base);
   const save = readFileSync(SAVE, 'utf8');
   const center = JSON.parse(readFileSync(SAVE.replace('.json', '.center.json'), 'utf8'));
-  const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
+  // phone: a real touch context (3x screen, touch, mobile UA), which is what makes the game pick the phone's pixel ratio and MSAA
+  const page = await browser.newPage(phone ? { viewport: { width, height }, deviceScaleFactor: 3, isMobile: true, hasTouch: true } : { viewport: { width, height }, deviceScaleFactor: 1 });
   const errs = [];
   page.on('pageerror', (e) => errs.push(e.message));
   await page.addInitScript(({ save, quality }) => { try { localStorage.setItem('slopmerica.quality', quality); localStorage.setItem('slopmerica.onboarded', '1'); localStorage.setItem('slopmerica.firstSteps', '1'); localStorage.setItem('slopmerica.save.v1', save); } catch { /* */ } }, { save, quality });

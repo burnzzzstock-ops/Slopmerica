@@ -31,7 +31,7 @@ mkdirSync(outDir, { recursive: true });
 mkdirSync('shots/gfx', { recursive: true });
 
 const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
-const opts = process.env.PHONE ? { base, quality, width: 390, height: 780 } : { base, quality };
+const opts = process.env.PHONE ? { base, quality, width: 390, height: 780, phone: true } : { base, quality };
 const { page, errs, center } = await openBlock(browser, opts);
 // The street furniture and street trees (civic/layer.ts) stream in after the town is up and are placed on a 1.5 s
 // debounce of game time, which the stopped loop never spends: without this the same camera catches them in one run and
@@ -177,7 +177,7 @@ const shootCam = async (cond, cam) => {
   const [hour, moon, weather] = CONDS[cond];
   if (!cams[cam]) { console.log('skip (no camera)', cam); return; }
   await shoot(page, center, { hour, moon, weather, view: cams[cam] });
-  await page.screenshot({ path: `${outDir}/${cam.replace(/[:.]/g, '_')}-${cond}.png`, timeout: 180000 });
+  await page.screenshot({ path: `${outDir}/${cam.replace(/[:.]/g, '_')}-${cond}.png`, timeout: 420000 });
   console.log('shot', `${outDir}/${cam}-${cond}.png`);
 };
 if (want.includes('emptylots') && cams.emptylotsPaints) {

@@ -123,6 +123,7 @@ node scripts/savecontinuity.mjs  # a reload resumes the same future (rng, ledger
 node scripts/qualitytest.mjs     # graphics presets never change the simulation
 node scripts/nantest.mjs         # one NaN/Inf pixel can't black out the screen; black-frame fallback
 node scripts/ledgertest.mjs      # the weekly rate is recurring only; weeks reconcile; budget, previews, in-the-red card
+node scripts/moneyedge.mjs       # the edge of the money: the countdown matches the weekly closes, bankruptcy is announced once (one card, game stays paused, speed keys wait), one click on the bailout gets out, recovering resets the count
 node scripts/tooltest.mjs        # one active tool: tab switches, Esc, right-click, Cancel, double-clicks, undo
 node scripts/roadrules.mjs       # a blocked road says the rule and the way out (communes)
 node scripts/zonetest.mjs        # zoning strokes report what they did; lots say why they wait

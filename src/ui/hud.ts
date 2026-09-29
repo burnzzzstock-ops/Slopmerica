@@ -283,7 +283,7 @@ export class Hud implements UiSink {
       </div>
       <div class="tb-weather" id="tb-weather"></div>`;
     this.top.querySelectorAll<HTMLButtonElement>('[data-speed]').forEach((b) =>
-      b.addEventListener('click', () => { this.game.sim.speed = Number(b.dataset.speed); this.game.audio.play('click', 0.4); this.refreshTop(); }),
+      b.addEventListener('click', () => { if (this.endingUp()) return; this.game.sim.speed = Number(b.dataset.speed); this.game.audio.play('click', 0.4); this.refreshTop(); }),
     );
     const meters = this.top.querySelector('#tb-meters') as HTMLElement;
     const toggleMeters = () => { this.game.audio.play('click', 0.4); if (this.meterPop && !this.meterPop.hidden) this.closeMeters(); else this.openMeters(); };
@@ -1386,12 +1386,15 @@ export class Hud implements UiSink {
     });
   }
 
+  /** an ending card (bankrupt, sprawl) is up: the game waits for its button */
+  private endingUp() { return !!this.root.querySelector('.ending'); }
+
   private hotkey(e: KeyboardEvent) {
     if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
     const s = this.game.sim;
     if (e.key === 'F3') { e.preventDefault(); this.togglePerf(); }
-    else if (e.key === ' ') { e.preventDefault(); s.speed = s.speed === 0 ? 1 : 0; }
-    else if (e.key === '1' || e.key === '2' || e.key === '3') s.speed = Number(e.key);
+    else if (e.key === ' ') { e.preventDefault(); if (!this.endingUp()) s.speed = s.speed === 0 ? 1 : 0; }
+    else if (e.key === '1' || e.key === '2' || e.key === '3') { if (!this.endingUp()) s.speed = Number(e.key); }
     // Ctrl/Cmd+Z before plain Z (Zoning), or undo never happens
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); this.game.undo(); }
     else if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -1647,6 +1650,8 @@ export class Hud implements UiSink {
   ending(kind: 'sprawl' | 'bankrupt') {
     const g = this.game;
     g.sim.speed = 0;
+    // one card per ending: every weekly close below the line re-announces bankruptcy, and a second card would need a second click
+    if (this.root.querySelector(`.ending.${kind}`)) return;
     const el = this.mk('div', 'ending ' + kind);
     el.innerHTML = kind === 'sprawl'
       ? `<div class="end-card"><div class="end-kicker">ENDLESS SPRAWL ACHIEVED</div><h1>Tokyo × Delhi × ${esc(g.cityName)}</h1>

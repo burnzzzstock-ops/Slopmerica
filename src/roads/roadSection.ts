@@ -76,6 +76,19 @@ export function curbReturnRadius(ei: number, ej: number, phi: number): number {
   return Math.min(r90 * CORNER_R_STRETCH, r90 * Math.tan(phi / 2));
 }
 
+/** Zebra crossing and stop bar (metres). The crosswalk sits this far past the crossing road's kerb line ... */
+export const ZEBRA_SETBACK = 0.45;
+/** ... is this wide (the MUTCD's minimum for a crosswalk is 1.8 m; 2.4 is the usual ladder)... */
+export const ZEBRA_MIN = 1.8, ZEBRA_MAX = 2.4;
+/** ... and ends this far short of a stopped car's nose. The network stops a car's centre 1.5 m short of its trim, so a
+ * 4.5 m car's nose is about NOSE_BACK short of the trim: that is where the stop bar goes. */
+export const NOSE_BACK = 0.75;
+export const ZEBRA_CLEAR = 0.85;
+/** the transverse line at each end of a crosswalk is this deep; the textured strip between them stops short of it */
+export const ZEBRA_EDGE = 0.26;
+/** the stop bar's depth is 0.37 m; it sits STOP_GAP behind the zebra's far edge */
+export const STOP_GAP = 0.6;
+
 /** lateral position of the curb face (the road's edge for a road without sidewalks) */
 export function curbOffset(t: RoadType): number {
   return t.sidewalk > 0 ? carriageHalf(t) + GUTTER : t.width / 2;

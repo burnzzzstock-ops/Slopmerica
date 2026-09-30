@@ -12,7 +12,7 @@
 import { clamp, lerp, locate, norm, sub, V2 } from '../core/math';
 import type { RoadNetwork, RSeg } from './network';
 import { carriageHalf, laneOffset, ROAD_TYPES } from './roadTypes';
-import { CAR_CLEAR, CORNER_R_GROW, curbOffset, curbReturnRadius, FILLET_MIN } from './roadSection';
+import { CAR_CLEAR, CORNER_R_GROW, curbOffset, curbReturnRadius, FILLET_MIN, NOSE_BACK, STOP_GAP, ZEBRA_CLEAR, ZEBRA_MAX, ZEBRA_MIN, ZEBRA_SETBACK } from './roadSection';
 
 export interface Leg {
   seg: RSeg;
@@ -27,6 +27,18 @@ export interface Leg {
   ang: number;
   /** where the leg's ribbon starts, from the node */
   trim: number;
+  /** where the zebra crossing and the stop bar go on this leg */
+  marks: LegMarks;
+}
+
+/** The paint across one leg of a junction, in metres from the node along the leg (see legMarks). */
+export interface LegMarks {
+  /** the zebra crossing spans z0 to z1 along the leg and `half` either side of its centreline */
+  z0: number;
+  z1: number;
+  half: number;
+  /** the stop bar's centre (the bar is 0.37 m deep) */
+  bar: number;
 }
 
 export interface Corner {
@@ -136,7 +148,7 @@ function buildShape(net: RoadNetwork, node: { x: number; z: number; segs: number
     const t = ROAD_TYPES[seg.type];
     if (t.sidewalk <= 0) return null; // highways, ramps and gravel lanes keep the plain hull
     const u = legDirection(net, seg, nodeId);
-    legs.push({ seg, atA: seg.a === nodeId, u, r: { x: -u.z, z: u.x }, e: curbOffset(t), h: t.width / 2, ang: Math.atan2(u.z, u.x), trim: baseTrim(net, seg, nodeId) });
+    legs.push({ seg, atA: seg.a === nodeId, u, r: { x: -u.z, z: u.x }, e: curbOffset(t), h: t.width / 2, ang: Math.atan2(u.z, u.x), trim: baseTrim(net, seg, nodeId), marks: { z0: 0, z1: 0, half: 0, bar: 0 } });
   }
   legs.sort((a, b) => a.ang - b.ang);
   const n = legs.length;
@@ -278,6 +290,7 @@ function buildShape(net: RoadNetwork, node: { x: number; z: number; segs: number
     c.kind = 'none'; // a sharp gap between two wide roads: the walks overlap, so no slab (the asphalt outline still closes)
     c.outer = [];
   }
+  for (let k = 0; k < n; k++) legs[k].marks = legMarks(legs, corners, k);
   return { nodeId, x: node.x, z: node.z, legs, corners };
 }
 
@@ -317,6 +330,43 @@ function carClearance(Li: Leg, Lj: Leg, O: V2, r: number, Ti: V2, Tj: V2): numbe
     }
   }
   return best;
+}
+
+/**
+ * Where the zebra crossing and the stop bar go across one leg of a junction, so the paint sits where the cars stand.
+ *
+ * The network stops a car's centre 1.5 m short of the leg's trim (traffic.ts), which puts a 4.5 m car's nose about NOSE_BACK
+ * short of the trim. The crossing goes ZEBRA_SETBACK past the kerb line of the road it crosses (measured at the zebra's two
+ * ends, so a skewed junction is cleared on its acute side too), is 1.8 to 2.4 m wide and ends ZEBRA_CLEAR short of that nose;
+ * the stop bar follows STOP_GAP behind it. Where the network's stop is too close to the crossing road for that, the zebra keeps
+ * its 1.8 m and the bar slides back behind the nose (the bar is under the car's bumper rather than the crossing under its wheels).
+ */
+function legMarks(legs: Leg[], corners: Corner[], k: number): LegMarks {
+  const n = legs.length, L = legs[k];
+  const half = Math.max(1, carriageHalf(ROAD_TYPES[L.seg.type]) - 0.2);
+  let clear = 0;
+  for (const [c, other] of [[corners[k], legs[(k + 1) % n]], [corners[(k + n - 1) % n], legs[(k + n - 1) % n]]] as [Corner, Leg][]) {
+    if (c.phi >= 2.8) continue; // straight across: no road crosses here
+    const s = (other.e + half * Math.cos(c.phi)) / Math.sin(c.phi);
+    if (Number.isFinite(s) && s > 0) clear = Math.max(clear, Math.min(s, 25));
+  }
+  const z0 = clear > 0 ? clear + ZEBRA_SETBACK : L.trim + 0.7;
+  const net = L.atA ? L.seg.trimA : L.seg.trimB;
+  const nose = (net > 0.01 ? net : L.trim) - NOSE_BACK;
+  const z1 = Math.max(z0 + ZEBRA_MIN, Math.min(z0 + ZEBRA_MAX, nose - ZEBRA_CLEAR));
+  return { z0, z1, half, bar: z1 + STOP_GAP + 0.19 };
+}
+
+/** The paint for a leg of a node that gets no drawn junction shape (the plain hull): the old fixed offsets from the ribbon's start. */
+export function hullMarks(net: RoadNetwork, seg: RSeg, nodeId: number): LegMarks {
+  const trim = baseTrim(net, seg, nodeId);
+  return { z0: trim + 0.7, z1: trim + 3.5, half: Math.max(1, carriageHalf(ROAD_TYPES[seg.type]) - 0.5), bar: trim + 4.45 };
+}
+
+/** The paint for one leg of a node: from the drawn junction when it has one, else the plain hull's. */
+export function legPaint(net: RoadNetwork, seg: RSeg, nodeId: number, J: Junction | null = junctionShape(net, nodeId)): LegMarks {
+  if (J) for (const L of J.legs) if (L.seg === seg) return L.marks;
+  return hullMarks(net, seg, nodeId);
 }
 
 /** True when no two non-adjacent edges of the closed polygon cross (repeated points are ignored). */

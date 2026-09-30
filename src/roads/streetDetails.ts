@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { lerp, locate, norm, sub, V2 } from '../core/math';
 import type { RoadNetwork, RSeg } from './network';
 import { carriageHalf, ROAD_TYPES } from './roadTypes';
-import { edgeLift, WALK_TOP } from './roadSection';
-import { visualTrim } from './roadJunction';
+import { edgeLift, SURF_LIFT, WALK_TOP, ZEBRA_EDGE } from './roadSection';
+import { junctionShape, legPaint, visualTrim } from './roadJunction';
 
 interface Frame {
   p: V2;
@@ -311,6 +311,7 @@ export class StreetDetails {
       if (node.segs.length < 2) continue;
       const segs = node.segs.map((id) => net.segs.get(id)).filter((s): s is RSeg => !!s);
       const signalized = segs.length >= 3 && segs.some((s) => ROAD_TYPES[s.type].signals);
+      const shape = segs.length >= 3 ? junctionShape(net, node.id) : null;
       for (const seg of segs) {
         const t = ROAD_TYPES[seg.type];
         const atA = seg.a === node.id;
@@ -318,23 +319,38 @@ export class StreetDetails {
         const renderTrim = visualTrim(net, seg, node.id);
         // furniture starts beyond both the sim's trim and the drawn curb return
         const base = atA ? Math.max(seg.trimA, renderTrim) : seg.length - Math.max(seg.trimB, renderTrim);
-        const markBase = atA ? renderTrim : seg.length - renderTrim;
-        if (t.sidewalk > 0) {
-          for (let k = -3; k <= 3; k++) {
-            const d = Math.max(0, Math.min(seg.length, markBase + dir * (1.2 + (k + 3) * 0.46)));
-            const f = frameAt(seg, d);
-            crosswalks.push({ x: f.p.x, y: f.y + 0.105, z: f.p.z, yaw: yawAt(f), sx: carriageHalf(t) * 2 });
+        // the zebra rungs and the stop bar go where roadJunction.ts's legMarks puts them: past the crossing road's kerb and
+        // short of the nose of a stopped car (the same span the textured zebra strip in roadMesh.ts covers)
+        const paint = legPaint(net, seg, node.id, shape);
+        const at = (d: number) => Math.max(0, Math.min(seg.length, atA ? d : seg.length - d));
+        // paint over the junction's asphalt rides on it: that slopes from the node's height (at the node) to the leg's at its
+        // mouth (renderTrim), which on a hillside is a few centimetres off the leg's own profile
+        const lift = (d: number, f: Frame, up: number) => {
+          if (d >= renderTrim || renderTrim < 0.1) return f.y + up;
+          const m = frameAt(seg, at(renderTrim));
+          return Math.max(f.y + up, node.y + SURF_LIFT + 0.004 + (m.y - node.y) * (d / renderTrim) + up - 0.06 + 0.02);
+        };
+        // The crossing is the textured zebra strip roadMesh.ts lays from z0 + EDGE to z1 - EDGE (bars along the road), framed by
+        // a transverse line at each end: a ladder crosswalk. (These used to be seven rungs across the whole strip, which the strip
+        // hid except for its last few centimetres and the ends of each rung; only where a real junction has a strip.)
+        if (t.sidewalk > 0 && segs.length >= 3) {
+          for (const d of [paint.z0 + ZEBRA_EDGE / 2, paint.z1 - ZEBRA_EDGE / 2]) {
+            const f = frameAt(seg, at(d));
+            crosswalks.push({ x: f.p.x, y: lift(d, f, 0.105), z: f.p.z, yaw: yawAt(f), sx: paint.half * 2, sz: (ZEBRA_EDGE - 0.02) / 0.34 });
           }
         }
         if (segs.length < 3) continue;
-        const d = Math.max(0, Math.min(seg.length, base + dir * 3.6));
+        // (a sign or signal post stands 3.6 m past the sim's trim as before, but no more than 2.5 m behind the stop bar, and
+        // never on the corner slab: the bar now sits nearer the junction than the old fixed offset put it)
+        const postD = Math.max(renderTrim + 0.6, Math.min(Math.abs(base - (atA ? 0 : seg.length)) + 3.6, paint.bar + 2.5));
+        const d = Math.max(0, Math.min(seg.length, atA ? postD : seg.length - postD));
         const f = frameAt(seg, d), r = sideAt(f);
         const approachSide = atA ? -1 : 1;
-        const barFrame = frameAt(seg, Math.max(0, Math.min(seg.length, markBase + dir * 4.45)));
+        const barFrame = frameAt(seg, at(paint.bar));
         const barSide = sideAt(barFrame), ch = carriageHalf(t);
         crosswalks.push({
           x: barFrame.p.x + barSide.x * approachSide * ch * 0.5,
-          y: barFrame.y + 0.108,
+          y: lift(paint.bar, barFrame, 0.108),
           z: barFrame.p.z + barSide.z * approachSide * ch * 0.5,
           yaw: yawAt(barFrame), sx: Math.max(1, ch - 0.35), sz: 1.1,
         });

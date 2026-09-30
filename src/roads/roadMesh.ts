@@ -8,10 +8,10 @@ import { mulberry32 } from '../core/rng';
 import { carriageHalf, laneOffset, ROAD_TYPES, RoadType, RoadTypeId, ROAD_ORDER } from './roadTypes';
 import type { RNode, RoadNetwork, RSeg } from './network';
 import { StreetDetails } from './streetDetails';
-import { isSimple, junctionShape, triangulate, visualTrim } from './roadJunction';
+import { isSimple, junctionShape, legPaint, triangulate, visualTrim } from './roadJunction';
 import type { Junction } from './roadJunction';
 import {
-  CURB_REVEAL, DRIVE_FLARE, DRIVE_FLAT, GROUND_BELOW, GUTTER, SURF_LIFT, VERGE_RUN, curbLipAt, curbOffset, driveRamp, edgeLift,
+  CURB_REVEAL, DRIVE_FLARE, DRIVE_FLAT, GROUND_BELOW, GUTTER, SURF_LIFT, VERGE_RUN, ZEBRA_EDGE, curbLipAt, curbOffset, driveRamp, edgeLift,
 } from './roadSection';
 import type { SignalStateProvider } from './streetDetails';
 
@@ -902,18 +902,26 @@ export class RoadRenderer {
     // crosswalks where each street enters a real junction (not highways or
     // gravel, not bends): the edge of the junction reads as intended
     if (segs.length >= 3 && !segs.some((s) => s.type === 'highway')) {
+      const cy = n.y + SURF_LIFT + 0.004; // (the asphalt fan's height at the node: the zebra rides on it where it lies over the junction)
       for (const s of segs) {
         const t = ROAD_TYPES[s.type];
         if (t.sidewalk <= 0) continue;
         const atA = s.a === n.id;
         const trim = visualTrim(this.net, s, n.id);
-        const d0 = trim + 0.7, d1 = trim + 3.5;
-        if (d1 > s.length * 0.45) continue;
-        const hw = carriageHalf(t) - 0.5;
+        // where the paint goes is roadJunction.ts's call (legMarks): past the crossing road's kerb, short of a stopped car's nose
+        const m = legPaint(this.net, s, n.id, J);
+        const d0 = m.z0 + ZEBRA_EDGE, d1 = m.z1 - ZEBRA_EDGE; // (the transverse lines at each end are streetDetails')
+        if (m.bar > s.length * 0.45) continue;
+        const hw = m.half;
         const row = (d: number, v: number) => {
-          const F = RoadRenderer.frame(s, atA ? d : s.length - d);
+          const F = RoadRenderer.frame(s, clamp(atA ? d : s.length - d, 0, s.length));
           const r = { x: -F.t.z, z: F.t.x };
-          const y = F.y + 0.075;
+          let y = F.y + 0.075;
+          if (d < trim) {
+            // over the junction's asphalt, which slopes from the node's height to the leg's at its mouth
+            const Ft = RoadRenderer.frame(s, clamp(atA ? trim : s.length - trim, 0, s.length));
+            y = Math.max(y, lerp(cy, Ft.y + SURF_LIFT + 0.004, d / Math.max(trim, 0.1)) + 0.02);
+          }
           return [cw.v(F.p.x - r.x * hw, y, F.p.z - r.z * hw, 0, 1, 0, 0, v), cw.v(F.p.x + r.x * hw, y, F.p.z + r.z * hw, 0, 1, 0, hw * 2, v)];
         };
         const [a0, b0] = row(d0, 0), [a1, b1] = row(d1, 1);

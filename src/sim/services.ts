@@ -1328,6 +1328,21 @@ function post(g: Game, kind: FeedEventKind, ctx: Partial<FeedContext>, chance: n
 function initHooks(g: Game) {
   const H = g.sim.hooks;
   g.sim.serviceCostPerCapita = 0; // real facilities are billed instead
+  // the College's first graduates (owner, 2026-09-30; docs/PLAYTEST_6.md: nothing said
+  // what it did once built): the first home to reach level 5 in its reach says so, once
+  // (a town loaded with level-5 homes already has its graduates)
+  let graduated = false;
+  g.buildings.onLevel = ((orig) => (b: Bld) => {
+    orig?.(b);
+    if (graduated || !isZoned(b) || !isRes(b) || b.level < 5 || !(S.b.get(b.id)?.cov.college ?? 0)) return;
+    graduated = true;
+    for (const o of g.buildings.list.values()) if (o !== b && isZoned(o) && isRes(o) && o.level >= 5) return;
+    let college: Bld | undefined;
+    for (const o of g.buildings.list.values()) if (o.kind === 'college' && (!college || Math.hypot(o.x - b.x, o.z - b.z) < Math.hypot(college.x - b.x, college.z - b.z))) college = o;
+    let n = 0;
+    for (const o of g.buildings.list.values()) if (isZoned(o) && isRes(o) && (S.b.get(o.id)?.cov.college ?? 0) > 0 && (S.b.get(o.id)?.edu ?? 0) >= 0.7) n++;
+    g.toast(`🎓 First graduates from ${college?.label ?? 'the university'}: ${n} home${n === 1 ? '' : 's'} in its reach can now grow to level 5.`);
+  })(g.buildings.onLevel);
   H.vacancy.push((b) => {
     if (!isZoned(b) || b.state !== 'active') return null;
     const bs = S.b.get(b.id);

@@ -473,10 +473,11 @@ export class Game {
       this.traffic.grandOpening(b); // a new drive-thru: the town lines up (traffic pass)
       if (this.near(b.x, b.z, 500)) this.audio.play('build', 0.3);
     })(this.buildings.onComplete);
-    this.buildings.onLevel = (b) => {
+    this.buildings.onLevel = ((orig) => (b: Bld) => {
+      orig?.(b); // (a system's own, e.g. the College's first graduates)
       if (Math.random() < 0.25) this.feed.push('buildingLeveled', { building: b.label, brand: brandName(b.brand), count: b.level });
       if (this.near(b.x, b.z, 400)) this.particles.emit('confetti', b.x, b.y + b.model.height, b.z, { count: 20, spread: 4 });
-    };
+    })(this.buildings.onLevel);
     this.buildings.onDemolish = (b, reason) => {
       if (reason === 'road' && Math.random() < 0.6) this.feed.push('buildingDemolished', { building: b.label });
       if (this.selection?.kind === 'building' && this.selection.b === b) this.select(null);

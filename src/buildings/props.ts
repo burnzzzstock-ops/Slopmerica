@@ -1,6 +1,6 @@
 // Shared lot furniture: pads, cars, trees, parking lots, signs, canopies,
 // pumps, pools, rooftop junk. Everything goes into the same MeshBuilder.
-import type { Emitter, LotSpec } from '../contracts';
+import type { Emitter, LotSpec, ParkSpot } from '../contracts';
 import type { Rng } from '../core/rng';
 import { hasTile } from '../art';
 import { MB, M, S, rgb, RGB, WHITE, mulRGB, Mat } from './mesh';
@@ -16,6 +16,12 @@ export interface GenCtx {
   brand?: string;
   /** pole signs and flagpoles already on the lot (art pass: one tall pole shouting per lot is plenty) */
   tallPoles?: number;
+  /**
+   * Traffic pass (parking): where live cars park or queue on this lot. Set to a
+   * list by the generator for zoned buildings; lot stalls, driveways and
+   * drive-thru lanes then go in it instead of baked cars.
+   */
+  spots?: ParkSpot[];
 }
 
 /**
@@ -154,6 +160,27 @@ export function shrub(g: GenCtx, x: number, z: number, s = 1) {
 }
 
 // ------------------------------------------------------------------ parking
+/**
+ * Traffic pass (live parking, audit round 7 #6): record where a live car parks
+ * or queues on this lot, if the generator collects spots (zoned buildings) and
+ * no transform is active. True: the baked car that stood there is left out.
+ */
+export function liveSpot(g: GenCtx, s: ParkSpot): boolean {
+  if (!g.spots || !g.mb.identity) return false;
+  g.spots.push(s);
+  return true;
+}
+
+/**
+ * Traffic pass: make a baked car's random draws without building it (a live car
+ * parks there instead), so everything placed after it comes out as before.
+ */
+export function withoutGeometry(g: GenCtx, fn: () => void) {
+  const real = g.mb;
+  g.mb = new MB();
+  try { fn(); } finally { g.mb = real; }
+}
+
 export interface Stall {
   x: number;
   z: number;
@@ -195,7 +222,14 @@ export function parkingLot(g: GenCtx, x0: number, x1: number, z0: number, z1: nu
       const sx = rx0 + (i + 0.5) * sw, sz = (r.za + r.zb) / 2;
       const yaw = r.aisleSide > 0 ? Math.PI : 0;
       stalls.push({ x: sx, z: sz, yaw });
-      if (rng.chance(occ)) car(g, sx + (rng.float() - 0.5) * 0.3, sz + r.aisleSide * 0.2, yaw + (rng.float() - 0.5) * 0.08);
+      // (traffic pass: with the stalls exported, live cars park here instead of baked
+      // ones; see liveSpot)
+      const live = liveSpot(g, { x: sx, z: sz + r.aisleSide * 0.2, yaw, kind: 'stall' });
+      if (rng.chance(occ)) {
+        const bake = () => car(g, sx + (rng.float() - 0.5) * 0.3, sz + r.aisleSide * 0.2, yaw + (rng.float() - 0.5) * 0.08);
+        if (live) withoutGeometry(g, bake);
+        else bake();
+      }
     }
     if (endPad) {
       for (const ex of [x0 + endPad / 2, x1 - endPad / 2]) {

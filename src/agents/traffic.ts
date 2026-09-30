@@ -10,6 +10,7 @@ import type { RNode, RoadNetwork, RSeg } from '../roads/network';
 import { carriageHalf, laneOffset, ROAD_TYPES } from '../roads/roadTypes';
 import type { Bld, Buildings } from '../sim/buildings';
 import { FIXED_PAINT, randomVehicleKind, VEHICLE_SPECS, VehicleRenderer } from './vehicles';
+import type { Parking, WorldSpot } from './parking';
 import { ARCHETYPES } from './people';
 import { HALF } from '../config';
 
@@ -24,6 +25,16 @@ interface Step {
 export interface Car {
   id: number;
   h: number;
+  /** live parking (drawn only): the stall it pulls into, the one it backs out of, and whether parking kept its handle */
+  toSpot?: WorldSpot | null;
+  fromSpot?: WorldSpot | null;
+  parked?: boolean;
+  /** the building it's going to */
+  destB?: Bld | null;
+  /** going through the drive-thru at its destination; `thru` once in the lane, `thruWait` while stopped on the road for room in it */
+  thruB?: Bld | null;
+  thru?: { L: ThruLane; serve: number; out: number; x: number; z: number; yaw: number } | null;
+  thruWait?: number;
   /** the junction it last slowed for someone on foot at (counts each stop once) */
   pedNode?: number;
   kind: VehicleKind;
@@ -149,6 +160,13 @@ const COURTESY_CYCLE = 30;
 const STOP_LINE = 3;
 /** cars that can wait in one lot to pull out before its building starts no more trips */
 const LOT_QUEUE_MAX = 3;
+/** drive-thru: seconds at the window per car (plus up to THRU_SERVE_VAR more), and the pace up the lane */
+const THRU_SERVE = 14;
+const THRU_SERVE_VAR = 12;
+const THRU_SPEED = 4;
+/** a grand opening at a drive-thru: this long (sim seconds) of the town lining up, and the share of trips that go */
+const OPENING_T = 240;
+const OPENING_SHARE = 0.35;
 /**
  * Crash rates (owner, 2026-09-30: "agree with lower"). Drunk drivers by day and
  * after 9 pm, reckless ones, and the random-crash hazard per second (scaled by
@@ -167,6 +185,14 @@ function cubicTan(p0: V2, p1: V2, p2: V2, p3: V2, u: number): V2 {
     x: 3 * v * v * (p1.x - p0.x) + 6 * v * u * (p2.x - p1.x) + 3 * u * u * (p3.x - p2.x),
     z: 3 * v * v * (p1.z - p0.z) + 6 * v * u * (p2.z - p1.z) + 3 * u * u * (p3.z - p2.z),
   };
+}
+
+/** A drive-thru lane on a lot: places in queue order from the window back, the way out, and who is in it. */
+interface ThruLane {
+  b: Bld;
+  slots: { x: number; z: number; yaw: number }[];
+  out: { x: number; z: number; yaw: number }[];
+  q: Car[];
 }
 
 interface Signal {
@@ -261,6 +287,72 @@ export class Traffic {
   // codex:policies end
   /** terrain height sampler (set by the game) for cars in lots */
   groundAt?: (x: number, z: number) => number;
+  /** game wiring: live parking (drawn only; see parking.ts) */
+  parking?: Parking;
+  /** drive-thru lanes by building (null: none), built from the building model's spots */
+  private thruLanes = new Map<Bld, { model: Bld['model']; lanes: ThruLane[] } | null>();
+  /** drive-thrus in their grand opening: sim seconds left */
+  private openings = new Map<Bld, number>();
+  /** when each drive-thru last spilled onto the road (sim clock), so the feed says so once */
+  private spilledAt = new Map<Bld, number>();
+  private clock = 0;
+  /** game wiring: a drive-thru line has backed out onto the road and is blocking a lane */
+  onDriveThruSpill?: (b: Bld, seg: RSeg | undefined) => void;
+
+  /** The drive-thru lanes at a building (from its model's spots), or null. */
+  thruAt(b: Bld): ThruLane[] | null {
+    const hit = this.thruLanes.get(b);
+    if (hit !== undefined && (!hit || hit.model === b.model)) return hit ? hit.lanes : null;
+    const sp = b.model.spots?.filter((p) => p.kind === 'thru' || p.kind === 'out');
+    if (!sp || !sp.some((p) => p.kind === 'thru') || b.state !== 'active') { this.thruLanes.set(b, null); return null; }
+    const c = Math.cos(b.yaw), sn = Math.sin(b.yaw);
+    const w = (p: { x: number; z: number; yaw: number }) => ({ x: b.x + p.x * c + p.z * sn, z: b.z - p.x * sn + p.z * c, yaw: b.yaw + p.yaw });
+    const lanes: ThruLane[] = [];
+    for (const n of [...new Set(sp.map((p) => p.lane ?? 0))]) {
+      const slots = sp.filter((p) => p.kind === 'thru' && (p.lane ?? 0) === n).sort((a, b2) => (a.q ?? 0) - (b2.q ?? 0)).map(w);
+      if (slots.length) lanes.push({ b, slots, out: sp.filter((p) => p.kind === 'out' && (p.lane ?? 0) === n).map(w), q: [] });
+    }
+    // (a rebuilt lot: whoever was in the old lanes carries on in the new first one)
+    const old = hit?.lanes.flatMap((L) => L.q) ?? [];
+    for (const car of old) if (lanes[0] && lanes[0].q.length < lanes[0].slots.length && car.thru) { car.thru.L = lanes[0]; lanes[0].q.push(car); } else if (car.thru) { car.arrived = true; car.crashed = -1; }
+    this.thruLanes.set(b, lanes.length ? { model: b.model, lanes } : null);
+    return lanes.length ? lanes : null;
+  }
+
+  /** Is there room at the back of a drive-thru line here? */
+  private thruRoom(b: Bld): boolean {
+    return !!this.thruAt(b)?.some((L) => L.q.length < L.slots.length);
+  }
+
+  /** Move a car in a drive-thru lane toward a place at walking-the-line pace; true once it's there. */
+  private thruMove(c: Car, p: { x: number; z: number; yaw: number }, dt: number): boolean {
+    const T = c.thru!, dx = p.x - T.x, dz = p.z - T.z, d = Math.hypot(dx, dz);
+    if (d < 0.05) { c.v = 0; T.yaw = angLerp(T.yaw, p.yaw, Math.min(1, dt * 3)); return true; }
+    const k = Math.min(1, (THRU_SPEED * dt) / d);
+    T.x += dx * k; T.z += dz * k;
+    if (d > 0.4) T.yaw = angLerp(T.yaw, Math.atan2(dx, dz), Math.min(1, dt * 5));
+    c.v = THRU_SPEED;
+    return k >= 1;
+  }
+
+  /** A drive-thru just opened: the town lines up for a while (the line spills onto the stroad). */
+  grandOpening(b: Bld) {
+    if (this.thruAt(b)) this.openings.set(b, OPENING_T);
+  }
+
+  /** Cars in each drive-thru line, and cars stopped on the road waiting for room in one (tests, inspector). */
+  thruStats() {
+    const lines: { b: Bld; inLane: number; places: number; onRoad: number }[] = [];
+    for (const [b, v] of this.thruLanes) {
+      if (!v) continue;
+      lines.push({ b, inLane: v.lanes.reduce((n, L) => n + L.q.length, 0), places: v.lanes.reduce((n, L) => n + L.slots.length, 0), onRoad: this.cars.filter((c) => c.thruB === b && !c.thru && (c.thruWait ?? 0) > 0).length });
+    }
+    return lines;
+  }
+  /** A paint for a car of this kind (the parked cars use the traffic's mix). */
+  static paint(kind: VehicleKind, rnd: () => number): number {
+    return FIXED_PAINT[kind] ?? PAINT[Math.floor(rnd() * PAINT.length)];
+  }
   /** game wiring: the people walking over this arm of this junction: where they are and which way they're going */
   crosswalkWalkers?: (node: number, seg: number) => { x: number; z: number; dx: number; dz: number }[] | undefined;
   /** crosswalk stops (a car slowing for someone on foot at a junction, once each), for tests */
@@ -579,6 +671,14 @@ export class Traffic {
       kind = Math.random() < 0.5 ? 'boxTruck' : 'semi';
       purpose = 'delivering goods';
       dest = dB.label;
+    } else if (res.length && this.openings.size && Math.random() < OPENING_SHARE) {
+      // a drive-thru's grand opening: half the town goes
+      const [open] = [...this.openings.keys()];
+      oB = pick(res); dB = open;
+      o = this.anchor(oB);
+      d = this.anchor(dB);
+      purpose = 'getting drive-thru';
+      dest = dB.label;
     } else if (res.length && jobs.length) {
       const home = pick(res);
       const other = morning || evening ? pick(jobs) : shops.length && Math.random() < 0.7 ? pick(shops) : pick(jobs);
@@ -669,7 +769,15 @@ export class Traffic {
       car.lotLeft = this.lotSide(firstSeg, st0.dir, rt.startS, car.lotO) > 0;
       car.lane = car.lotLeft ? 0 : ROAD_TYPES[firstSeg.type].lanesPerDir - 1;
     }
+    // a car parked at the building backs out of its stall (drawn only: the trip is the same)
+    if (oB && this.parking) {
+      const p = this.parking.take(oB, kind);
+      if (p) { if (car.h >= 0) this.renderer.remove(car.h); car.h = p.h; car.fromSpot = p.spot; }
+    }
     if (dB) {
+      car.destB = dB;
+      // a drive-thru run (or any visit to a drive-thru-only kiosk) goes through the lane
+      if (spec.length <= 6.05 && this.thruAt(dB) && (purpose === 'getting drive-thru' || !(dB.model.spots ?? []).some((p) => p.kind === 'stall')) && !/deliver|import|export|work/.test(purpose)) car.thruB = dB;
       const stN = rt.steps[rt.steps.length - 1];
       const lastSeg = this.net.segs.get(stN.seg)!;
       car.lotD = this.lotPoint(dB, lastSeg, lastSeg.id === d.seg.id ? d.s : stN.dir > 0 ? rt.endS : lastSeg.length - rt.endS);
@@ -735,7 +843,7 @@ export class Traffic {
     this.boxByExit.clear();
     for (const c of this.cars) {
       if (c.crashed === -1) continue;
-      if (c.dep > 0 || c.arr >= 0) continue; // in a lot: not on the road
+      if (c.dep > 0 || c.arr >= 0 || c.thru) continue; // in a lot (or its drive-thru lane): not on the road
       if (c.junction) {
         let arr = this.junctionCars.get(c.junction.node);
         if (!arr) this.junctionCars.set(c.junction.node, (arr = []));
@@ -849,6 +957,16 @@ export class Traffic {
               const g = exitS - c.s + this.pastLine(o) - o.len;
               if (g < gap) { gap = g; dv = c.v - o.v; }
             }
+          }
+        }
+        // going through a drive-thru with its lane full: wait at the driveway, on the road
+        // (the line spills onto the stroad and blocks this lane until there's room)
+        if (last && c.thruB && !this.thruRoom(c.thruB)) {
+          const g8 = exitS - 1 - c.s;
+          if (g8 < gap) { gap = g8; dv = c.v; }
+          if (exitS - c.s < 15 && c.v < 0.5) {
+            c.thruWait = (c.thruWait ?? 0) + dt;
+            if (c.thruWait > 8 && this.clock - (this.spilledAt.get(c.thruB) ?? -1e9) > 300) { this.spilledAt.set(c.thruB, this.clock); this.onDriveThruSpill?.(c.thruB, seg); }
           }
         }
         // someone on the crosswalk over my lanes, or over the lanes I'm turning into: stop at the line
@@ -973,7 +1091,17 @@ export class Traffic {
         }
         if (c.s >= exitS) {
           if (last) {
-            if (c.lotD) { c.arr = 0; c.v = 0; } // pull into the lot, then park
+            const lane = c.thruB ? this.thruAt(c.thruB)?.filter((L) => L.q.length < L.slots.length).sort((a, b) => a.q.length - b.q.length)[0] : undefined;
+            if (lane) {
+              // into the drive-thru lane, to the back of the line
+              lane.q.push(c);
+              c.thru = { L: lane, serve: THRU_SERVE + Math.random() * THRU_SERVE_VAR, out: -1, x: c.x, z: c.z, yaw: Number.isFinite(c.ryaw) ? c.ryaw : c.yaw };
+              c.v = 0; c.thruWait = 0;
+            } else if (c.lotD) {
+              // pull into the lot, then park (in a free stall or the driveway, where there is one)
+              c.arr = 0; c.v = 0;
+              if (this.parking && c.destB && !c.toSpot) c.toSpot = this.parking.claim(c.destB, c.kind);
+            }
             else { c.arrived = true; c.crashed = -1; } // off the map via the highway
             continue;
           }
@@ -1038,12 +1166,37 @@ export class Traffic {
     }
     this.flowEma = lerp(this.flowEma, flowN ? flowSum / flowN : 1, Math.min(1, dt * 0.05));
 
+    // drive-thrus: the line moves up, the window serves the car at it, served cars drive out
+    this.clock += dt;
+    for (const [b, t] of this.openings) { if (t - dt <= 0) this.openings.delete(b); else this.openings.set(b, t - dt); }
+    for (const v of this.thruLanes.values()) {
+      if (!v) continue;
+      for (const L of v.lanes) {
+        L.q = L.q.filter((c) => c.crashed === 0 && c.thru);
+        const head = L.q[0];
+        if (head && Math.hypot(head.thru!.x - L.slots[0].x, head.thru!.z - L.slots[0].z) < 0.3) {
+          head.thru!.serve -= dt;
+          if (head.thru!.serve <= 0) { head.thru!.out = 0; L.q.shift(); }
+        }
+        L.q.forEach((c, i) => this.thruMove(c, L.slots[Math.min(i, L.slots.length - 1)], dt));
+      }
+    }
+    for (const c of this.cars) {
+      const T = c.thru;
+      if (!T || T.out < 0 || c.crashed !== 0) continue;
+      if (T.out >= T.L.out.length) { c.arrived = true; c.crashed = -1; continue; } // served: out of the lot and gone
+      if (this.thruMove(c, T.L.out[T.out], dt)) T.out++;
+    }
+
     // cars pulling out of / into lots
     for (const c of this.cars) {
       if (c.crashed !== 0) continue;
       if (c.arr >= 0) {
         c.arr += dt;
-        if (c.arr >= ARR_T) { c.arrived = true; c.crashed = -1; } // parked: off the road
+        if (c.arr >= ARR_T) {
+          c.arrived = true; c.crashed = -1; // parked: off the road
+          if (c.toSpot && this.parking) { c.parked = this.parking.park(c.toSpot, c.h, c.kind); c.toSpot = null; }
+        }
       } else if (c.dep > 0) {
         // pull up to the kerb, wait there for a real gap (stopped cars count), then
         // commit: the lane brakes for a committed car, so it never merges into anyone
@@ -1068,7 +1221,9 @@ export class Traffic {
     for (let i = this.cars.length - 1; i >= 0; i--) {
       const c = this.cars[i];
       if (c.crashed === -1 || (c.crashed > 0 && c.crashed <= 0.0001)) {
-        this.renderer.remove(c.h);
+        if (c.toSpot) this.parking?.release(c.toSpot);
+        if (!c.parked) this.renderer.remove(c.h);
+        else (this.renderer as { setReversing?: (h: number, on: boolean) => void }).setReversing?.(c.h, false);
         c.onDone?.(c, !!c.arrived);
         this.cars[i] = this.cars[this.cars.length - 1];
         this.cars.pop();
@@ -1445,6 +1600,15 @@ export class Traffic {
     const ease = 1 - Math.exp(-this.lastDt * 14);
     for (const c of this.cars) {
       if (c.crashed === -1) continue;
+      if (c.thru) {
+        // in a drive-thru lane: where the line has it, on the lot
+        const T = c.thru, gy = this.groundAt ? this.groundAt(T.x, T.z) + 0.1 : T.L.b.y;
+        c.x = T.x; c.y = gy; c.z = T.z; c.ryaw = T.yaw; c.yaw = T.yaw;
+        R.set(c.h, T.x, gy, T.z, T.yaw);
+        R.setBraking(c.h, c.v < 0.5);
+        R.setTurn(c.h, 0);
+        continue;
+      }
       c.wob += dtReal * (c.drunk ? 1.6 : 0);
       let x: number, y: number, z: number, yaw: number, pitch = 0;
       let signal = 0;
@@ -1486,22 +1650,46 @@ export class Traffic {
         if (c.prevJ && c.s - (c.prevEntryS ?? 0) > len) c.prevJ = null; // the rear has cleared the junction
       }
       // driveway: an arc between the lot and the lane, nose first both ways
-      const lot = c.dep > 0 ? c.lotO : c.arr >= 0 ? c.lotD : null;
+      // (live parking: from a stall the car backs out first, then drives off; into
+      // one it drives in nose first and ends square in it)
+      const spot = c.dep > 0 ? c.fromSpot : c.arr >= 0 ? c.toSpot : null;
+      const lot = spot ?? (c.dep > 0 ? c.lotO : c.arr >= 0 ? c.lotD : null);
+      let reversing = false;
       if (lot && !c.junction) {
         const m = c.dep > 0 ? 1 - c.dep / DEP_T : 1 - c.arr / ARR_T; // 0 = in the lot, 1 = on the lane
-        const e = m * m * (3 - 2 * m);
         const laneY = y, lanePitch = pitch;
         const tx = Math.sin(yaw), tz = Math.cos(yaw);
-        const d = Math.max(2, Math.hypot(x - lot.x, z - lot.z));
         const out = c.dep > 0;
-        const toRoad = { x: (x - lot.x) / d, z: (z - lot.z) / d };
-        const P0 = lot, P3 = { x, z };
-        const P1 = { x: lot.x + toRoad.x * d * 0.45, z: lot.z + toRoad.z * d * 0.45 };
-        const P2 = { x: x - (out ? 1 : -1) * tx * d * 0.55, z: z - (out ? 1 : -1) * tz * d * 0.55 };
-        const q = cubicAt(P0, P1, P2, P3, e), dq = cubicTan(P0, P1, P2, P3, e);
-        x = q.x;
-        z = q.z;
-        if (Math.hypot(dq.x, dq.z) > 1e-4) yaw = out ? Math.atan2(dq.x, dq.z) : Math.atan2(-dq.x, -dq.z);
+        // backing out of a stall: the first part of the pull-out, swinging the nose round
+        const hx = spot ? Math.sin(spot.yaw) : 0, hz = spot ? Math.cos(spot.yaw) : 0;
+        const back = spot && out ? { x: spot.x - hx * 4.5, z: spot.z - hz * 4.5 } : null;
+        const BACK = 0.4;
+        let e: number;
+        if (back && m < BACK) {
+          const u = smooth01(m / BACK);
+          const toLane = Math.atan2(x - back.x, z - back.z);
+          // reversing on an arc: straight back out of the stall, the tail swinging away from the way out
+          const side = Math.sin(toLane - spot!.yaw) > 0 ? -1 : 1;
+          x = lerp(spot!.x, back.x, u) + Math.cos(spot!.yaw) * side * 1.2 * u * u;
+          z = lerp(spot!.z, back.z, u) - Math.sin(spot!.yaw) * side * 1.2 * u * u;
+          yaw = angLerp(spot!.yaw, toLane, u * u);
+          e = 0;
+          reversing = true;
+        } else {
+          const mm = back ? (m - BACK) / (1 - BACK) : m;
+          e = mm * mm * (3 - 2 * mm);
+          const P0 = back ?? lot;
+          const d = Math.max(2, Math.hypot(x - P0.x, z - P0.z));
+          const toRoad = { x: (x - P0.x) / d, z: (z - P0.z) / d };
+          const P3 = { x, z };
+          // into a stall: arrive facing the way it faces
+          const P1 = spot && !out ? { x: spot.x - hx * d * 0.45, z: spot.z - hz * d * 0.45 } : { x: P0.x + toRoad.x * d * 0.45, z: P0.z + toRoad.z * d * 0.45 };
+          const P2 = { x: x - (out ? 1 : -1) * tx * d * 0.55, z: z - (out ? 1 : -1) * tz * d * 0.55 };
+          const q = cubicAt(P0, P1, P2, P3, e), dq = cubicTan(P0, P1, P2, P3, e);
+          x = q.x;
+          z = q.z;
+          if (Math.hypot(dq.x, dq.z) > 1e-4) yaw = out ? Math.atan2(dq.x, dq.z) : Math.atan2(-dq.x, -dq.z);
+        }
         if (out && (c.committed || c.dep <= KERB_T + 0.05)) {
           // pulling out (at the kerb or going): blink toward the way the lane runs;
           // cars queued behind in the lot haven't reached the road yet
@@ -1536,6 +1724,7 @@ export class Traffic {
       if (signal) this.sigWhy[c.junction ? 'box' : lot ? 'lot' : Math.abs(c.latV) > 0.2 ? 'lane' : c.v < 1 ? 'queue' : 'approach']++;
       else this.sigWhy.off++;
       R.setDamaged(c.h, c.crashed > 0); // AA vehicle shader darkens crumpled cars until cleanup.
+      if (c.fromSpot) (R as { setReversing?: (h: number, on: boolean) => void }).setReversing?.(c.h, reversing);
     }
     R.flush();
   }

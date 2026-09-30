@@ -40,7 +40,8 @@ const r = await page.evaluate((SECONDS) => {
     const ids = new Map(tr.cars.map((c) => [c.id, c.crashed]));
     for (const [id, crashed] of prevIds) if (!ids.has(id) && crashed <= 0) finished++;
     prevIds = ids;
-    const cars = tr.cars.filter((c) => c.crashed <= 0 && c.dep <= 0 && c.arr < 0);
+    // (on the road: not in a lot or a drive-thru lane)
+    const cars = tr.cars.filter((c) => c.crashed <= 0 && c.dep <= 0 && c.arr < 0 && !c.thru);
     for (const c of cars) {
       const y = c.ryaw ?? c.yaw, p = prevYaw.get(c.id);
       if (p !== undefined) { let d = Math.abs(y - p) % (Math.PI * 2); if (d > Math.PI) d = Math.PI * 2 - d; if (d > 0.35) snaps++; }
@@ -48,7 +49,8 @@ const r = await page.evaluate((SECONDS) => {
       // waiting, away from a red light (a queue behind a red is fine)
       const st = c.path[c.pi], seg = st && net.segs.get(st.seg);
       const atRed = seg && c.pi < c.path.length - 1 && !tr.isGreen(st.dir > 0 ? seg.b : seg.a, seg.id);
-      const w = c.v < 0.3 && !atRed ? (still.get(c.id) ?? 0) + 1 / 20 : 0;
+      // (a car waiting for room in a drive-thru line is meant to wait)
+      const w = c.v < 0.3 && !atRed && !(c.thruWait > 0) ? (still.get(c.id) ?? 0) + 1 / 20 : 0;
       still.set(c.id, w);
       if (w > longest.s) longest = { s: w, car: where(c) };
     }

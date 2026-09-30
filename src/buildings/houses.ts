@@ -8,6 +8,7 @@ import { M, S, Mat, rgb, WHITE, mulRGB, type RGB } from './mesh';
 import {
   GenCtx, lotPad, patch, car, tree, shrub, fence, poolInground, poolAbove, trampoline, burnBarrel, smoker, flagpole, dish,
   hoop, mailbox, porchSteps, acUnit, mats, picnicTable, emit, type CarKind,
+  liveSpot, withoutGeometry,
 } from './props';
 import { decorate, occupy, isFree, type Area } from './satire';
 
@@ -318,7 +319,12 @@ function drive(g: GenCtx, x: number, w: number, zFrom: number, mat: Mat = mats.c
   patch(g, x0, x1, zFrom, z1, mat, 0.1);
   const room = z1 - zFrom;
   let done = room >= 3 && rng.chance(0.4) && decorate(g, 'driveway', { x0: x0 - 0.2, x1: x1 + 0.2, z0: zFrom + 0.2, z1: z1 - 0.2 }, 1) > 0;
-  if (!done && room >= 5.2 && rng.chance(0.75)) car(g, x, z1 - 2.9, Math.PI, rng.pick(kinds));
+  // (traffic pass: a driveway with room for a car is a live parking spot; the baked car it replaces is left out)
+  const live = !done && room >= 5.2 && liveSpot(g, { x, z: z1 - 2.9, yaw: Math.PI, kind: 'drive' });
+  if (!done && room >= 5.2 && rng.chance(0.75)) {
+    if (live) withoutGeometry(g, () => car(g, x, z1 - 2.9, Math.PI, rng.pick(kinds)));
+    else car(g, x, z1 - 2.9, Math.PI, rng.pick(kinds));
+  }
   occupy(g, x0, x1, zFrom, z1);
 }
 

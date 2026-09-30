@@ -103,14 +103,15 @@ function cachePut(key: string, m: BuildingModel) {
 
 /** Callers may transform/merge the returned geometry freely: it's a copy. */
 function copy(m: BuildingModel): BuildingModel {
-  return { geometry: m.geometry.clone(), height: m.height, label: m.label, brand: m.brand, emitters: m.emitters.map((e) => ({ kind: e.kind, pos: [...e.pos] as [number, number, number] })) };
+  return { geometry: m.geometry.clone(), height: m.height, label: m.label, brand: m.brand, emitters: m.emitters.map((e) => ({ kind: e.kind, pos: [...e.pos] as [number, number, number] })), ...(m.spots ? { spots: m.spots.map((p) => ({ ...p })) } : {}) };
 }
 
-function run(key: string, seed: number, spec: LotSpec, W: number, D: number, fn: (g: GenCtx) => void): BuildingModel {
+function run(key: string, seed: number, spec: LotSpec, W: number, D: number, fn: (g: GenCtx) => void, live = false): BuildingModel {
   const mb = new MB();
-  const g: GenCtx = { mb, rng: new Rng(seed), spec, W, D, em: [], label: '', brand: spec.brand };
+  // (traffic pass: `live` zoned buildings collect parking spots; see props.liveSpot)
+  const g: GenCtx = { mb, rng: new Rng(seed), spec, W, D, em: [], label: '', brand: spec.brand, ...(live ? { spots: [] } : {}) };
   fn(g);
-  const model: BuildingModel = { geometry: mb.build(), height: Math.max(0.5, mb.maxY()), label: g.label || key, brand: g.brand, emitters: g.em };
+  const model: BuildingModel = { geometry: mb.build(), height: Math.max(0.5, mb.maxY()), label: g.label || key, brand: g.brand, emitters: g.em, ...(g.spots?.length ? { spots: g.spots } : {}) };
   cachePut(key, model);
   return model;
 }
@@ -142,7 +143,7 @@ export function generateBuilding(spec: LotSpec): BuildingModel {
   const hit = cacheGet(key);
   if (hit) return copy(hit);
   const norm: LotSpec = { ...spec, zone, level, widthCells: w, depthCells: d, brand };
-  return copy(run(key, mix(zone, level, w, d, variant, brand ?? ''), norm, w * CELL, d * CELL, GEN[zone]));
+  return copy(run(key, mix(zone, level, w, d, variant, brand ?? ''), norm, w * CELL, d * CELL, GEN[zone], true));
 }
 
 /**

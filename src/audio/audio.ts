@@ -6,7 +6,8 @@ import type { SfxKind, SoundMix } from '../contracts';
 import type { MapId } from '../world/maps';
 import { Synth } from './synth';
 import { SFX } from './sfx';
-import { Ambience } from './ambience';
+import { Ambience, RAIN } from './ambience';
+import { StreetAudio, type StreetCar, type StreetEnv, type StreetView } from './streetAudio';
 import { AmbientPiano } from './piano';
 
 export class AudioEngine {
@@ -20,6 +21,13 @@ export class AudioEngine {
   private ambBus?: GainNode;
   private revIn?: GainNode;
   private amb?: Ambience;
+  private streetVoices?: StreetAudio;
+  private streetView: StreetView = { x: 0, y: 0, z: 0, rx: 1, rz: 0, dist: 60 };
+  private streetEnv: StreetEnv = { rain: 0, wet: 0, hush: 0, speed: 1 };
+  private rainNow = 0;
+  private hushNow = 0;
+  /** Graphics preset name; the street voice pool is sized from it (Low = phone = fewer voices). */
+  quality = 'high';
   private piano?: AmbientPiano;
   /** Settings → Music (remembered): ambient piano on/off and its volume */
   musicOn = true;
@@ -68,6 +76,7 @@ export class AudioEngine {
     revOut.gain.value = 0.55;
     this.revIn.connect(conv).connect(revOut).connect(this.master);
     this.amb = new Ambience(s, this.ambBus, this.revIn);
+    this.streetVoices = new StreetAudio(s, this.ambBus, StreetAudio.poolFor(this.quality));
     this.piano = new AmbientPiano(s, this.master, this.revIn);
     this.piano.enabled = this.musicOn;
     this.piano.volume = this.musicVolume;
@@ -92,11 +101,31 @@ export class AudioEngine {
     if (this.muted || this.ctx.state !== 'running') return;
     this.amb.mapId = this.mapId;
     this.amb.update(Math.min(dt, 0.1), mix);
+    this.rainNow = (RAIN[mix.weather] ?? 0) * mix.weatherIntensity;
+    this.hushNow = mix.weather === 'snow' || mix.weather === 'blizzard' ? 0.5 * mix.weatherIntensity : 0;
     if (this.piano) {
       this.piano.enabled = this.musicOn;
       this.piano.volume = this.musicVolume;
       this.piano.update(mix.night);
     }
+  }
+
+  /**
+   * Street sound from the real cars (streetAudio.ts). Call once a frame with the traffic model's cars and the
+   * camera; it re-picks voices a few times a second. Silent while muted, paused or before the first gesture.
+   * `cam`: the RTS camera (target point, distance, yaw); `wet`: how wet the roads are (0..1); `speed`: game speed.
+   */
+  street(dt: number, cars: readonly StreetCar[], cam: { target: { x: number; y: number; z: number }; distance: number; yaw: number }, wet: number, speed: number) {
+    const st = this.streetVoices;
+    if (!st || !this.ctx || !this.amb) return;
+    if (this.muted || this.ctx.state !== 'running') { if (st.awake) st.sleep(); return; }
+    this.amb.randomTraffic = false; // real cars now: no random honks or pass-bys
+    st.limit(this.quality);
+    const V = this.streetView, E = this.streetEnv;
+    V.x = cam.target.x; V.z = cam.target.z; V.y = cam.target.y + Math.min(55, Math.max(3, cam.distance * 0.3));
+    V.rx = Math.cos(cam.yaw); V.rz = -Math.sin(cam.yaw); V.dist = cam.distance;
+    E.rain = this.rainNow; E.wet = wet; E.hush = this.hushNow; E.speed = speed;
+    st.update(Math.min(dt, 0.1), cars, V, E);
   }
 
   play(kind: SfxKind, volume = 1) {

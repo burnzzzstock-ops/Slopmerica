@@ -253,6 +253,7 @@ export class Game {
     this.particles = new Particles(this.scene, this.q);
     this.particles.pxH = this.renderer.getDrawingBufferSize(new THREE.Vector2()).y;
     this.audio.mapId = opts.map;
+    this.audio.quality = this.q.name; // sizes the street-sound voice pool (Low = phone = fewer voices)
 
     // city
     this.net = new RoadNetwork(this.terrain, this.trees);
@@ -1177,6 +1178,8 @@ export class Game {
       construction: Math.min(1, this.buildings.counts().building / 20), people: Math.min(1, this.peds.peds.length / 150), night: n,
       weather: this.weather.kind, weatherIntensity: this.weather.intensity, season: this.weather.season,
     });
+    // street sound follows the real cars near the camera (src/audio/streetAudio.ts); re-picks its voices 4x a second
+    this.audio.street(dt, this.traffic.cars, this.rts, this.weather.wet, spd);
     P.lap('lighting+audio');
     if (render) {
       this.applyPendingRatio();

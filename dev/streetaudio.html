@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SLOPMERICA · Street Sound Lab</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; padding: 16px; background: #14171d; color: #e8e6df; font: 14px/1.4 system-ui, sans-serif; }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      p { margin: 4px 0 12px; color: #a9b0bf; max-width: 60em; }
+      .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; align-items: center; }
+      button { font: inherit; padding: 8px 12px; border-radius: 8px; border: 1px solid #3a4050; background: #222833; color: inherit; cursor: pointer; }
+      button:hover { border-color: #7e8aa3; }
+      label { display: flex; gap: 6px; align-items: center; color: #a9b0bf; }
+      pre { background: #0d0f14; padding: 10px; border-radius: 8px; min-height: 8em; overflow: auto; }
+    </style>
+  </head>
+  <body>
+    <h1>Street Sound Lab</h1>
+    <p>
+      Auditions src/audio/streetAudio.ts without the game: each button drives scripted cars past the listener (the
+      listener stands at the origin, 2 m up, facing +z, right ear = +x). Everything is procedural WebAudio. Use headphones for the
+      panning; pass-bys show the Doppler shift.
+    </p>
+    <div class="row">
+      <button id="start">Start audio</button>
+      <label>Rain <input id="rain" type="range" min="0" max="1" step="0.05" value="0" /></label>
+      <label>Wet roads <input id="wet" type="range" min="0" max="1" step="0.05" value="0" /></label>
+      <label>Preset <select id="q"><option>high</option><option>medium</option><option>low</option></select></label>
+    </div>
+    <div class="row" id="scenes"></div>
+    <pre id="out">press Start audio, then a scene</pre>
+    <script type="module">
+      import { Synth } from '/src/audio/synth.ts';
+      import { StreetAudio } from '/src/audio/streetAudio.ts';
+      const $ = (id) => document.getElementById(id);
+      const LEN = { semi: 16, cityBus: 12, firetruck: 10, garbageTruck: 9, boxTruck: 8, towTruck: 7, ambulance: 6.5, liftedTruck: 6, pickup: 5.8, cyberslop: 5.7, sedan: 4.6, suv: 4.9, hatchback: 4, golfCart: 2.4, motorcycle: 2.2, police: 5, vwBus: 4.5, minivan: 5.1, slopVan: 5.4 };
+      let ctx, street, cars = [], last = 0, raf = 0, t = 0, script = [];
+      const view = { x: 0, y: 2, z: 0, rx: 1, rz: 0, dist: 60 };
+      const env = { rain: 0, wet: 0, hush: 0, speed: 1 };
+      const car = (id, kind, x, z, yaw, v, extra = {}) => ({ id, kind, x, y: 0, z, v, yaw, crashed: 0, acc: 0, len: LEN[kind] ?? 5, ...extra });
+      const scenes = {
+        'Sedan pass-by': () => [car(1, 'sedan', 8, -120, 0, 14)],
+        'Semi pass-by (brakes at the end)': () => [car(2, 'semi', 8, -140, 0, 16, { brakeAt: 8 })],
+        'Motorcycle': () => [car(3, 'motorcycle', -8, 140, Math.PI, 28)],
+        'Lifted truck': () => [car(4, 'liftedTruck', 8, -120, 0, 15)],
+        'Cyberslop (whine)': () => [car(5, 'cyberslop', 8, -160, 0, 30)],
+        'Golf cart': () => [car(6, 'golfCart', 6, -40, 0, 7)],
+        'Garbage truck stopped, then leaving': () => [car(7, 'garbageTruck', 8, 0, 0, 0, { goAt: 10 })],
+        'Traffic (mixed)': () => Array.from({ length: 14 }, (_, i) => car(10 + i, ['sedan', 'suv', 'pickup', 'semi', 'motorcycle', 'hatchback', 'cyberslop', 'liftedTruck'][i % 8], i % 2 ? 9 : -9, -180 + i * 26, i % 2 ? 0 : Math.PI, 11 + (i % 5) * 2, { wrap: true })),
+        'Ambulance pass (hi-lo)': () => [car(20, 'ambulance', -150, 14, Math.PI / 2, 26)],
+        'Police pass (wail, yelp)': () => [car(21, 'police', 150, -14, -Math.PI / 2, 26)],
+        'Fire truck pass (air horn)': () => [car(22, 'firetruck', -150, 14, Math.PI / 2, 20)],
+        'Tow truck (no siren)': () => [car(23, 'towTruck', -100, 12, Math.PI / 2, 14)],
+        'Jam: 12 cars waiting (honks start after ~6 s)': () => { const a = []; let z = -30; for (let i = 0; i < 12; i++) { const kind = ['sedan', 'suv', 'pickup', 'semi', 'minivan', 'liftedTruck', 'hatchback', 'cityBus'][i % 8]; if (i) z += 0.5 * (LEN[a[i - 1].kind] + LEN[kind]) + 2; a.push(car(100 + i, kind, 8, z, 0, 0)); } return a; },
+        'Free flow (never honks)': () => Array.from({ length: 10 }, (_, i) => car(200 + i, 'sedan', i % 2 ? 9 : -9, -150 + i * 30, i % 2 ? 0 : Math.PI, 13, { wrap: true })),
+      };
+      for (const [name, fn] of Object.entries(scenes)) {
+        const b = document.createElement('button'); b.textContent = name; b.onclick = () => run(fn); $('scenes').appendChild(b);
+      }
+      $('start').onclick = async () => {
+        if (ctx) return;
+        ctx = new AudioContext();
+        const synth = new Synth(ctx);
+        const master = ctx.createGain(); master.gain.value = 0.8; master.connect(ctx.destination);
+        street = new StreetAudio(synth, master, StreetAudio.poolFor($('q').value));
+        $('out').textContent = 'audio running; pick a scene';
+        await ctx.resume();
+      };
+      $('q').onchange = () => street?.limit($('q').value);
+      function run(fn) {
+        if (!ctx) { $('out').textContent = 'press Start audio first'; return; }
+        cars = fn(); t = 0; last = performance.now();
+        cancelAnimationFrame(raf);
+        const loop = () => {
+          const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000); last = now; t += dt;
+          for (const c of cars) {
+            if (c.brakeAt !== undefined && t > c.brakeAt) { c.acc = -3; c.v = Math.max(0, c.v - 3 * dt); } else if (c.goAt !== undefined) { c.acc = t > c.goAt ? 1.5 : 0; if (t > c.goAt) c.v += 1.5 * dt; }
+            c.x += Math.sin(c.yaw) * c.v * dt; c.z += Math.cos(c.yaw) * c.v * dt;
+            if (c.wrap) { if (c.z > 190) c.z -= 380; if (c.z < -190) c.z += 380; }
+          }
+          env.rain = +$('rain').value; env.wet = +$('wet').value;
+          street.update(dt, cars, view, env);
+          const s = street.stats;
+          $('out').textContent = `t ${t.toFixed(1)} s   car voices ${s.voices}/${s.cap}   sirens ${s.sirens}/${s.sirenCap}   horns ${s.horns}/${s.hornCap}   honks so far ${s.honks}   waiting in jams ${s.jamCars}\n` +
+            street.debug().map((d) => `${d.type.padEnd(5)} ${String(d.kind).padEnd(12)} ${d.dist.toFixed(0).padStart(4)} m   pitch x${d.ratio.toFixed(3)}   pan ${d.pan.toFixed(2)}   gain ${d.gain.toFixed(3)}`).join('\n');
+          raf = requestAnimationFrame(loop);
+        };
+        loop();
+      }
+    </script>
+  </body>
+</html>

@@ -35,6 +35,8 @@ export interface Car {
   thruB?: Bld | null;
   thru?: { L: ThruLane; serve: number; out: number; x: number; z: number; yaw: number } | null;
   thruWait?: number;
+  /** what place() last drew it from (where it was on its path), and how many frames running it was the same */
+  drawn?: { s: number; pi: number; lane: number; dep: number; arr: number; j: Car['junction']; turn: number; still: number; why: keyof Traffic['sigWhy'] };
   /** the junction it last slowed for someone on foot at (counts each stop once) */
   pedNode?: number;
   kind: VehicleKind;
@@ -129,7 +131,14 @@ export interface DispatchOpts {
 
 /** Direction of a road between samples i and i+1; repeated samples borrow their neighbours' (a zero-length step has no direction). */
 function sampleTangent(seg: RSeg, i: number): V2 {
-  const P = seg.samp.pts, n = P.length;
+  // (worked out once per sampled road: every car's pose asks for it twice a frame)
+  let T = tangents.get(seg.samp);
+  if (!T) tangents.set(seg.samp, (T = []));
+  return (T[i] ??= tangentAt(seg.samp.pts, i));
+}
+const tangents = new WeakMap<RSeg['samp'], V2[]>();
+function tangentAt(P: V2[], i: number): V2 {
+  const n = P.length;
   for (let k = 0; k < n; k++) {
     for (const j of k ? [i - k, i + k] : [i]) {
       if (j < 0 || j + 1 >= n) continue;
@@ -164,6 +173,12 @@ const LOT_QUEUE_MAX = 3;
 const THRU_SERVE = 14;
 const THRU_SERVE_VAR = 12;
 const THRU_SPEED = 4;
+/**
+ * A car drawn from the same place on its path this many frames running is
+ * standing still, its heading, lean and steering settled: place() leaves it
+ * as drawn (at 1,000 cars, two in three are queued).
+ */
+const STILL_FRAMES = 12;
 /**
  * Landmarks draw visitors (the traffic pass, playtest 6: "built the stadium,
  * nothing happens"; no trip ever went to one). Each open landmark's pull, as a
@@ -678,16 +693,20 @@ export class Traffic {
   /** (the lists once a step, not once a try: up to 12 tries a step, each over every building) */
   private lists() {
     if (this.tripLists?.step !== this.stepN) {
-      const list = [...this.b.list.values()].filter((b) => b.state === 'active' && b.zone !== 'landmark' && b.zone !== 'service');
-      this.tripLists = {
-        step: this.stepN, list,
+      // (one pass over the buildings, each list in the town's order)
+      const L: NonNullable<Traffic['tripLists']> = (this.tripLists = { step: this.stepN, list: [], landmarks: [], res: [], jobs: [], shops: [], ind: [] });
+      for (const b of this.b.list.values()) {
+        if (b.state !== 'active' || b.zone === 'service') continue;
         // open landmarks a road reaches (one no road reaches draws nobody)
-        landmarks: [...this.b.list.values()].filter((b) => b.zone === 'landmark' && b.state === 'active' && !b.offNet),
-        res: list.filter((b) => b.zone === 'resLow' || b.zone === 'resHigh'),
-        jobs: list.filter((b) => b.zone !== 'resLow' && b.zone !== 'resHigh'),
-        shops: list.filter((b) => b.zone === 'comLow' || b.zone === 'comHigh'),
-        ind: list.filter((b) => b.zone === 'industry'),
-      };
+        if (b.zone === 'landmark') { if (!b.offNet) L.landmarks.push(b); continue; }
+        L.list.push(b);
+        if (b.zone === 'resLow' || b.zone === 'resHigh') L.res.push(b);
+        else {
+          L.jobs.push(b);
+          if (b.zone === 'comLow' || b.zone === 'comHigh') L.shops.push(b);
+          else if (b.zone === 'industry') L.ind.push(b);
+        }
+      }
     }
     return this.tripLists;
   }
@@ -1750,6 +1769,11 @@ export class Traffic {
         continue;
       }
       c.wob += dtReal * (c.drunk ? 1.6 : 0);
+      const D = c.drawn;
+      if (D && D.s === c.s && D.pi === c.pi && D.lane === c.lane && D.dep === c.dep && D.arr === c.arr && D.j === c.junction && D.turn === c.turn && c.crashed === 0 && !c.drunk && c.latV === 0 && c.v === 0) {
+        if (++D.still >= STILL_FRAMES) { this.sigWhy[D.why]++; continue; }
+      } else if (D) { D.s = c.s; D.pi = c.pi; D.lane = c.lane; D.dep = c.dep; D.arr = c.arr; D.j = c.junction; D.turn = c.turn; D.still = 0; }
+      else c.drawn = { s: c.s, pi: c.pi, lane: c.lane, dep: c.dep, arr: c.arr, j: c.junction, turn: c.turn, still: 0, why: 'off' };
       let x: number, y: number, z: number, yaw: number, pitch = 0;
       let signal = 0;
       // the sim's s is the front bumper: draw the body from where its front and
@@ -1861,8 +1885,9 @@ export class Traffic {
       else R.set(c.h, x, y, z, c.ryaw, pitch + c.dive, c.roll);
       R.setBraking(c.h, c.v < 3 || (c.crashed === 0 && c.v > 3 && c.brakeT > 0));
       R.setTurn(c.h, c.crashed > 0 ? 0 : signal);
-      if (signal) this.sigWhy[c.junction ? 'box' : lot ? 'lot' : Math.abs(c.latV) > 0.2 ? 'lane' : c.v < 1 ? 'queue' : 'approach']++;
-      else this.sigWhy.off++;
+      const why = signal ? (c.junction ? 'box' : lot ? 'lot' : Math.abs(c.latV) > 0.2 ? 'lane' : c.v < 1 ? 'queue' : 'approach') : 'off';
+      this.sigWhy[why]++;
+      c.drawn!.why = why;
       R.setDamaged(c.h, c.crashed > 0); // AA vehicle shader darkens crumpled cars until cleanup.
       if (c.fromSpot) (R as { setReversing?: (h: number, on: boolean) => void }).setReversing?.(c.h, reversing);
     }

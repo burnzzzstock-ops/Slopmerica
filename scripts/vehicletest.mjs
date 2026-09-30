@@ -115,13 +115,19 @@ const drawsFor = async (mod, THREE3) => {
   const sc = new THREE3.Scene(), r = new mod.VehicleRenderer(sc, 400);
   while (r.pending?.length) r.warm();
   const hs = scene100().map(({ kind, d, x }) => { const h = r.add(kind, 0xf2f2f2); r.set(h, x, 0, d, 0); return h; });
-  r.updateLod(cam); r.flush(); r.updateLod(cam); r.flush();
+  for (let k = 0; k < 24; k++) { r.updateLod(cam); r.flush(); } // (the close level of a model is built the first time a car comes into range, one a frame)
   const drawn = r.object.children.filter((o) => (o.isInstancedMesh ? o.count > 0 && !o.name.endsWith('-pick') : o.isMesh && o.geometry?.instanceCount > 0 && o.visible !== false));
   const tris = drawn.reduce((a, o) => a + (o.isInstancedMesh ? ((o.geometry.index?.count ?? o.geometry.getAttribute('position').count) / 3) * o.count : 0), 0);
   const out = { calls: drawn.length, tris: Math.round(tris), close: drawn.filter((o) => o.name.endsWith('-close')).length, fx: drawn.filter((o) => o.name === 'vehicle-fx').length };
   for (const h of hs) r.remove(h);
   return out;
 };
+// start-up: the renderer builds only near and far geometry for the 19 kinds (everything else on demand)
+{
+  const t0 = performance.now(); const tmp = new V.VehicleRenderer(new THREE.Scene(), 400); const ms = performance.now() - t0; tmp.dispose();
+  console.log(`     start-up (build the 19 kinds' meshes): ${ms.toFixed(0)} ms in Node`);
+  globalThis.__startMs = ms;
+}
 const now = await drawsFor(V, THREE);
 console.log(`     100-car town, new renderer: ${now.calls} draw calls (${now.close} for close-range models, ${now.fx} effects), ${now.tris} triangles drawn`);
 try {
@@ -131,6 +137,8 @@ try {
   const OT = await oldServer.ssrLoadModule('three');
   const before = await drawsFor(OV, OT);
   console.log(`     the same town, frozen old renderer: ${before.calls} draw calls, ${before.tris} triangles drawn`);
+  const t1 = performance.now(); const oldR = new OV.VehicleRenderer(new OT.Scene(), 400); const oldMs = performance.now() - t1; oldR.dispose();
+  console.log(`     start-up of the old renderer: ${oldMs.toFixed(0)} ms in Node (new ${globalThis.__startMs.toFixed(0)} ms)`);
   check('the same town costs no more draw calls than before, even with the close level and the effects', now.calls <= before.calls, { now: now.calls, before: before.calls });
   await oldServer.close();
 } catch (e) { console.log('     (no frozen old renderer to compare with:', String(e.message).split('\n')[0], ')'); }
@@ -150,6 +158,18 @@ check('the effects (halos, road pools, siren tint, exhaust, dust, spray) are one
   R.setParked(h, false);
   R.remove(h);
 }
+// suspension: a 6 cm step in the road under a car kicks the body, which then settles within a second and stays within a few centimetres (purely a drawing effect)
+{
+  const h = R.add('sedan', 0xffffff, { exact: true }), b = R.batches.get('sedan'), i = R.slots[h].instance;
+  R.set(h, 0, 0, 20, 0); R.flush(1 / 60);
+  let peak = 0, y = 0;
+  for (let f = 0; f < 240; f++) { if (f === 10) y = 0.06; R.set(h, 0, y, 20 + f * 0.3, 0); R.flush(1 / 60); peak = Math.max(peak, Math.abs(b.heave[i])); }
+  check(`a 6 cm step in the road moves the body (peak ${(peak * 100).toFixed(1)} cm) and it settles (${(Math.abs(b.heave[i]) * 1000).toFixed(1)} mm after 4 s)`, peak > 0.004 && peak < 0.06 && Math.abs(b.heave[i]) < 0.004, { peak, end: b.heave[i] });
+  R.setParked(h, true);
+  for (let f = 0; f < 90; f++) R.flush(1 / 60);
+  check('a parked car sits still on its springs', Math.abs(b.heave[i]) < 1e-3 && Math.abs(b.pitch[i]) < 1e-3 && Math.abs(b.roll[i]) < 1e-3);
+  R.remove(h);
+}
 // the shader's turn, written twice (GLSL and JS): rolling and steering follow the conventions in vehicleWheel.ts
 {
   const r = 0.33, spin = 0.2;
@@ -160,6 +180,11 @@ check('the effects (halos, road pools, siren tint, exhaust, dust, spray) are one
   })());
   const nose = Wh.steerXZ(0, 1, 0.3);
   check('steer: a left turn (positive) moves the front of the wheel toward the car\'s left (+x)', nose[0] > 0 && nose[1] > 0, { nose });
+  // the same two rotations as the OLD shader wrote them (mat2(wc, -ws, ws, wc) for the spin, mat2(sc, ss, -ss, sc) for the steer): the checks above fail on them
+  const oldSpin = (y, z, a) => [Math.cos(a) * y + Math.sin(a) * z, -Math.sin(a) * y + Math.cos(a) * z];
+  const oldSteer = (x, z, a) => [Math.cos(a) * x - Math.sin(a) * z, Math.sin(a) * x + Math.cos(a) * z];
+  check('(the old shader\'s spin turned the top of a rolling tyre toward the BACK of the car)', oldSpin(r, 0, spin)[1] < 0, { top: oldSpin(r, 0, spin) });
+  check('(the old shader\'s steer turned the front of a wheel toward the RIGHT for a left turn)', oldSteer(0, 1, 0.3)[0] < 0, { nose: oldSteer(0, 1, 0.3) });
   const glsl = Wh.WHEEL_GLSL;
   check('the shader uses those same two rotations', glsl.includes('mat2(wc, ws, -ws, wc)') && glsl.includes('mat2(sc, -ss, ss, sc)'));
 }

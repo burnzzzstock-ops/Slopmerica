@@ -267,7 +267,7 @@ export function buildCar(mb: ModelBuilder, plan: CarPlan): CarBuild {
   const bumpF = plan.bumperF ?? 'body', bumpR = plan.bumperR ?? 'body';
   const yLow = under(nz) + 0.02;
   const lf = plan.lampF ?? { y: noseTop - 0.1, w: 0.36, h: 0.1, x: widthAt(nz) - 0.3 };
-  const lr = plan.lampR ?? { y: tailTop - 0.09, w: 0.34, h: 0.09, x: widthAt(tz) - 0.28 };
+  const lr = plan.lampR ?? { y: tailTop - 0.14, w: 0.5, h: 0.12, x: widthAt(tz) - 0.36 };
   mb.lamps.head.push([lf.x, lf.y, nz], [-lf.x, lf.y, nz]);
   mb.lamps.tail.push([lr.x, lr.y, tz], [-lr.x, lr.y, tz]);
   mb.lamps.reverse.push([lr.x - lr.w * 0.3, lr.y - 0.03, tz], [-(lr.x - lr.w * 0.3), lr.y - 0.03, tz]);

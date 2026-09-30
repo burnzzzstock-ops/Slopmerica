@@ -24,11 +24,16 @@ const ids = idsArg === 'all' ? all.map((m) => m.id) : idsArg.split(',');
 const dists = distsArg.split(',').map(Number), times = timesArg.split(',');
 const shots = [];
 const azs = (process.env.AZS || process.env.AZ || '35').split(',').map(Number);
-for (const time of times) for (const dist of dists) for (const id of ids) for (const azi of azs) {
+const seeds = process.env.SEEDS ? process.env.SEEDS.split(',').map(Number) : [null];   // SEEDS=1,2,3 with AUTO=1: the random paint, finish, age and dirt each seed gives
+for (const time of times) for (const dist of dists) for (const id of ids) for (const azi of azs) for (const seed of seeds) {
   const m = all.find((x) => x.id === id);
   if (!m) { console.log('unknown id', id); continue; }
-  const r = await page.evaluate((a) => window.__lineup.show(a.id, { dist: a.dist, night: a.time === 'night' ? 1 : 0, wet: a.wet, az: a.az, el: a.el, scale: false }),
-    { id, dist, time, wet: Number(process.env.WET || 0), az: azi, el: Number(process.env.EL || 18), fov: Number(process.env.FOV || 50) });
+  const opts = {
+    dist, night: time === 'night' ? 1 : 0, wet: Number(process.env.WET || 0), az: azi, el: Number(process.env.EL || 18), fov: Number(process.env.FOV || 50),
+    auto: !!process.env.AUTO, seed: seed ?? undefined, braking: !!process.env.BRAKE, turn: Number(process.env.TURN || 0), reverse: !!process.env.REV, parked: !!process.env.PARKED,
+    drive: process.env.DRIVE ? { n: 24, turn: Number(process.env.DRIVE), step: 0.45 } : undefined,
+  };
+  const r = await page.evaluate(({ id, opts }) => window.__lineup.show(id, opts), { id, opts });
   // crop to the car: its projected box, padded
   let clip = { x: 0, y: 0, width: W, height: H };
   if (process.env.CROP !== '0') {
@@ -45,7 +50,7 @@ for (const time of times) for (const dist of dists) for (const id of ids) for (c
       return { x: Math.max(0, Math.min(innerWidth - cw, cx - cw / 2)), y: Math.max(0, Math.min(innerHeight - ch, cy - ch / 2)), width: cw, height: ch };
     }, { L: m.length, Hh: m.height, Wd: m.width });
   }
-  const file = azs.length > 1 ? `${id}-${dist}-${time}-a${azi}.jpg` : `${id}-${dist}-${time}.jpg`;
+  const file = `${id}-${dist}-${time}${azs.length > 1 ? '-a' + azi : ''}${seed !== null ? '-s' + seed : ''}.jpg`;
   await page.screenshot({ path: `${out}/${file}`, type: 'jpeg', quality: 86, clip, timeout: 180000 });
   shots.push({ id, dist, time, az: azi, file, calls: r.calls, tris: r.tris });
   console.log('shot', file, `${r.calls} calls ${r.tris} tris`);

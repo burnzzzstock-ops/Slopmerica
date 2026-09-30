@@ -45,6 +45,16 @@ function fit(g: THREE.BufferGeometry, s: VehicleDimensions): void {
   void s;
 }
 
+export interface ModelLod { geometry: THREE.BufferGeometry; lamps: LampSet; wheelRadius: number; triangles: number }
+/** Build one level of detail of one model: 0 close, 1 near, 2 far. The renderer builds close on demand and far once per kind. */
+export function buildModelLod(kind: VehicleKind, s: VehicleDimensions, id: string | undefined, lod: 0 | 1 | 2): ModelLod {
+  const d = (id ? modelDef(id) : undefined) ?? variantsOf(kind)[0];
+  const mb = new ModelBuilder(lod, s.length, s.width, s.height);
+  const wheelRadius = d.build(mb);
+  const geometry = mb.finish();
+  return { geometry, lamps: mb.lamps, wheelRadius, triangles: triCount(geometry) };
+}
+
 /** Build one model at the three levels of detail. `id` defaults to the kind's own (first) model. */
 export function buildVehicleModel(kind: VehicleKind, s: VehicleDimensions, id?: string): VehicleModelGeometry {
   const d = (id ? modelDef(id) : undefined) ?? variantsOf(kind)[0];

@@ -80,7 +80,7 @@ const modelList: Array<{ id: string; kind: VehicleKind }> = (Models as any).vehi
 const PAINT_GREY = 0xb9bcbf;
 let handles: number[] = [];
 
-type ShowOpts = { dist?: number; az?: number; el?: number; night?: number; wet?: number; lod?: number; color?: number; auto?: boolean; gap?: number; look?: [number, number, number]; braking?: boolean; turn?: number; reverse?: boolean; parked?: boolean; speed?: number; seed?: number; scale?: boolean; fov?: number };
+type ShowOpts = { dist?: number; az?: number; el?: number; night?: number; wet?: number; lod?: number; color?: number; auto?: boolean; gap?: number; look?: [number, number, number]; braking?: boolean; turn?: number; reverse?: boolean; parked?: boolean; speed?: number; seed?: number; scale?: boolean; fov?: number; drive?: { n: number; turn: number; step: number } };
 
 function setNight(night: number) {
   vr.setNight(night);
@@ -112,7 +112,7 @@ function show(ids: string | string[], o: ShowOpts = {}) {
   list.forEach((id, i) => {
     const info = modelList.find((m) => m.id === id) ?? { id, kind: id as VehicleKind };
     const s = VEHICLE_SPECS[info.kind];
-    const h = (vr as any).add(info.kind, o.color ?? PAINT_GREY, { variant: info.id, exact: !o.auto, seed: o.seed ?? i + 1 });
+    const h = (vr as any).add(info.kind, o.color ?? (o.auto ? 0xf2f2f2 : PAINT_GREY), { variant: info.id, exact: !o.auto, seed: o.seed ?? i + 1 });
     z += s.length / 2;
     vr.set(h, 0, 0, z, 0);
     if (o.braking) vr.setBraking(h, true);
@@ -123,10 +123,20 @@ function show(ids: string | string[], o: ShowOpts = {}) {
     hMax = Math.max(hMax, s.height);
     handles.push(h);
   });
+  // drive: move the first car through a bend (n steps, `turn` radians of yaw and `step` metres each), calling set() every step like the traffic model does
+  let follow: THREE.Vector3 | undefined;
+  if (o.drive && handles.length) {
+    const info = modelList.find((m) => m.id === list[0]) ?? { kind: list[0] as VehicleKind };
+    let x = 0, z = -o.drive.n * o.drive.step * 0.5, yaw = 0;
+    for (let k = 0; k < o.drive.n; k++) { yaw += o.drive.turn; x += Math.sin(yaw) * o.drive.step; z += Math.cos(yaw) * o.drive.step; vr.set(handles[0], x, 0, z, yaw); vr.flush(); }
+    follow = new THREE.Vector3(x, 0, z);
+    void info;
+  }
   bar.visible = !!o.scale;
   if (camera.fov !== (o.fov ?? 50)) { camera.fov = o.fov ?? 50; camera.updateProjectionMatrix(); }
   const dist = o.dist ?? 12, az = ((o.az ?? 35) * Math.PI) / 180, el = ((o.el ?? 18) * Math.PI) / 180;
   const look = new THREE.Vector3(...(o.look ?? [0, hMax * 0.42, 0]));
+  if (follow) look.add(follow);
   camera.position.set(look.x + Math.sin(az) * Math.cos(el) * dist, look.y + Math.sin(el) * dist, look.z + Math.cos(az) * Math.cos(el) * dist);
   camera.lookAt(look);
   camera.updateMatrixWorld(true);

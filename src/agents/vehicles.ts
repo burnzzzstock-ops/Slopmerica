@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLOW } from '../config';
 import type { VehicleKind } from '../contracts';
 import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from '../world/atmos';
-import { buildVehicleModel, modelDef, vehicleDecalAtlas, vehicleModelList, variantsOf, type VehicleModelGeometry } from './models/vehicleModels';
+import { buildModelLod, modelDef, vehicleDecalAtlas, vehicleModelList, variantsOf, type ModelLod } from './models/vehicleModels';
 import type { LampSet, V3 } from './models/vehicleKit';
 import { pickLook, type Look } from './models/vehiclePaint';
 import { WHEEL_GLSL } from './models/vehicleWheel';
@@ -124,6 +124,9 @@ float vehicleNoise(vec3 p) {
 float vRough = 0.34, vMetal = 0.2, vGloss = 1.0;
 vec3 lampEmit = vec3(0.0);
 float zn = vZone + 0.5;
+// how big one pixel is on the car, in metres: fine grain (flake, brushing, rust and dirt speckle) fades out as it gets smaller than a pixel, so it can't shimmer
+float pixM = length(fwidth(vLocal));
+#define GRAIN(freq) (1.0 - smoothstep(0.35 / (freq), 0.9 / (freq), pixM))
 {
   vec3 tint = vTint.rgb * vTint.rgb * (0.4 + 0.6 * vTint.rgb) ; // sRGB bytes to linear, cheap (close to pow 2.2)
   tint = pow(vTint.rgb, vec3(2.2));
@@ -136,9 +139,9 @@ float zn = vZone + 0.5;
   // ---- zones
   if (zn < 1.0) {                                    // 0 paint
     vRough = 0.3; vMetal = 0.08; vGloss = 1.0;
-    if (finish > 0.5 && finish < 1.5) { vMetal = 0.55; vRough = 0.26; float fl = vehicleHash(floor(vLocal * 380.0)); base *= 0.92 + fl * 0.2; }
+    if (finish > 0.5 && finish < 1.5) { vMetal = 0.55; vRough = 0.26; float fl = vehicleHash(floor(vLocal * 380.0)); base *= 1.0 + (fl - 0.5) * 0.2 * GRAIN(380.0); }
     else if (finish > 1.5 && finish < 2.5) { vMetal = 0.06; vRough = 0.66; vGloss = 0.0; }
-    else if (finish > 2.5) { vMetal = 0.3; vRough = 0.4; vGloss = 0.6; base *= 0.9 + 0.2 * vehicleHash(floor(vLocal * 260.0)); }
+    else if (finish > 2.5) { vMetal = 0.3; vRough = 0.4; vGloss = 0.6; base *= 1.0 + (vehicleHash(floor(vLocal * 260.0)) - 0.5) * 0.2 * GRAIN(260.0); }
     if (vTint.a > 0.4) {
       // age: a chalky faded roof, hood and deck; rust at the lower edges of a beater
       float faded = age * up * 0.75;
@@ -149,7 +152,7 @@ float zn = vZone + 0.5;
       float lowEdge = 1.0 - smoothstep(0.3, 0.75, vLocal.y);
       float rustN = vehicleNoise(vLocal * 9.0 + special);
       float rust = smoothstep(0.55, 0.95, age) * lowEdge * smoothstep(0.42, 0.7, rustN);
-      base = mix(base, vec3(0.32, 0.15, 0.07) * (0.7 + 0.6 * vehicleHash(floor(vLocal * 70.0))), rust * 0.92);
+      base = mix(base, vec3(0.32, 0.15, 0.07) * (1.0 + (vehicleHash(floor(vLocal * 70.0)) - 0.5) * 0.6 * GRAIN(70.0)), rust * 0.92);
       vRough = mix(vRough, 0.8, rust); vGloss *= 1.0 - rust;
       // a primer panel or a mismatched door
       float pt = floor(mod(special, 8.0) + 0.5);
@@ -220,8 +223,8 @@ float zn = vZone + 0.5;
     vRough = 0.7; vMetal = 0.1; vGloss = 0.0;
   } else if (zn < 16.0) {                              // 15 stainless steel (the Cyberslop)
     float brush = vehicleHash(vec3(floor(vLocal.z * 900.0), floor(vLocal.y * 40.0), 0.0));
-    vRough = 0.34 + brush * 0.08; vMetal = 0.95; vGloss = 0.0;
-    base *= 0.95 + brush * 0.1;
+    vRough = 0.34 + brush * 0.08 * GRAIN(900.0); vMetal = 0.95; vGloss = 0.0;
+    base *= 1.0 + (brush - 0.5) * 0.1 * GRAIN(900.0);
   } else if (zn < 17.0) {                              // 16 marker lamp (steady amber, at night)
     lampEmit = vec3(1.0, 0.5, 0.05) * (0.05 + smoothstep(0.25, 0.6, uVehicleNight) * 0.9);
   } else {                                             // 17 work light
@@ -230,12 +233,12 @@ float zn = vZone + 0.5;
   // ---- dirt and mud (paint, glass and trim alike, lower body first)
   float lowerGrime = 1.0 - smoothstep(0.2, 1.3, vLocal.y);
   bool mud = special >= 8.0;
-  if (zn >= 12.0 && zn < 15.0 || zn < 4.0 || zn > 15.0 && zn < 16.0) {
+  if (zn >= 12.0 && zn < 15.0 || zn < 1.0 || zn > 2.0 && zn < 4.0 || zn > 15.0 && zn < 16.0) {   // (glass gets only a film of dust, below)
     float n = vehicleNoise(vLocal * 6.0);
     float grimeAmt = dirt * lowerGrime * (0.35 + 0.6 * n);
     vec3 dirtCol = mud ? vec3(0.17, 0.11, 0.06) : vec3(0.28, 0.25, 0.21);
     if (mud) grimeAmt = clamp(dirt * (1.3 - smoothstep(0.1, 1.5, vLocal.y)) * (0.4 + 0.9 * vehicleNoise(vLocal * 11.0 + 3.0)), 0.0, 0.92);
-    base = mix(base, dirtCol * (0.7 + 0.5 * vehicleHash(floor(vLocal * 50.0))), clamp(grimeAmt, 0.0, 0.9));
+    base = mix(base, dirtCol * (1.0 + (vehicleHash(floor(vLocal * 50.0)) - 0.5) * 0.5 * GRAIN(50.0)), clamp(grimeAmt, 0.0, 0.9));
     vRough = mix(vRough, 0.85, clamp(grimeAmt * 1.3, 0.0, 1.0)); vGloss *= 1.0 - clamp(grimeAmt * 1.6, 0.0, 1.0);
     // a film of road dust on everything horizontal
     base = mix(base, vec3(0.34, 0.31, 0.27), dirt * up * 0.22);
@@ -261,7 +264,7 @@ metalnessFactor = vMetal;`)
 totalEmissiveRadiance += lampEmit * uGlow;`)
       .replace('#include <lights_fragment_end>', cloudShadowChunk('vVehWorld'));
   };
-  material.customProgramCacheKey = () => 'aa-vehicle-unified-v1';
+  material.customProgramCacheKey = () => 'aa-vehicle-unified-v2';
   return material;
 }
 
@@ -280,7 +283,7 @@ interface LodBatch {
   sourceByRender: Int32Array; revisionByRender: Uint32Array;
   staticStart: number; staticEnd: number;
 }
-interface VariantBatch { id: string; model: VehicleModelGeometry; close: LodBatch; near: LodBatch }
+interface VariantBatch { id: string; kind: VehicleKind; lamps: LampSet; wheelRadius: number; nearTriangles: number; closeTriangles: number; close?: LodBatch; near: LodBatch }
 interface KindBatch {
   kind: VehicleKind; used: number; free: number[];
   far: LodBatch; variants: Map<string, VariantBatch>;
@@ -363,6 +366,7 @@ export class VehicleRenderer {
   private lastFlush = 0; private dt = 1 / 60;
   private rngState = 0x9e3779b1; private addCount = 0;
   private pending: string[] = [];
+  private readonly closeQueue: VariantBatch[] = [];
   private readonly fx: VehicleFx;
   /** Optional: the game tells the renderer what the road under a point is (dust off gravel). Called at most twice a second per near car. */
   surfaceAt?: (x: number, z: number) => 'gravel' | 'paved';
@@ -390,8 +394,10 @@ export class VehicleRenderer {
   private buildKind(kind: VehicleKind): void {
     const spec = VEHICLE_SPECS[kind];
     const base = variantsOf(kind)[0];
-    const model = buildVehicleModel(kind, spec, base.id);
-    const far = makeLod(`vehicle-${kind}-far`, model.far, this.perKind, false);
+    // start-up builds only the near and far levels of each kind's base model (the close level, and the other variants, come in on demand)
+    const nearModel = buildModelLod(kind, spec, base.id, 1);
+    const farModel = buildModelLod(kind, spec, base.id, 2);
+    const far = makeLod(`vehicle-${kind}-far`, farModel.geometry, this.perKind, false);
     far.mesh.onBeforeRender = this.captureCamera;
     this.object.add(far.mesh);
     const pickGeometry = new THREE.BoxGeometry(spec.width, spec.height, spec.length);
@@ -401,7 +407,7 @@ export class VehicleRenderer {
     pickMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.object.add(pickMesh);
     const n = this.perKind;
     const kb: KindBatch = {
-      kind, used: 0, free: [], far, variants: new Map(), pickMesh, wheelRadius: model.wheelRadius, farTriangles: model.farTriangles,
+      kind, used: 0, free: [], far, variants: new Map(), pickMesh, wheelRadius: nearModel.wheelRadius, farTriangles: farModel.triangles,
       active: new Uint8Array(n), initialized: new Uint8Array(n), handleByInstance: new Int32Array(n).fill(-1), variantOf: new Uint8Array(n),
       matrices: new Float32Array(n * 16), paint: new Float32Array(n * 3), look: new Float32Array(n * 4), seed: new Float32Array(n),
       previousX: new Float32Array(n), previousY: new Float32Array(n), previousZ: new Float32Array(n), previousYaw: new Float32Array(n),
@@ -412,21 +418,29 @@ export class VehicleRenderer {
       speed: new Float32Array(n), accel: new Float32Array(n), fxTimer: new Float32Array(n), fxTimer2: new Float32Array(n), surfaceTimer: new Float32Array(n), onGravel: new Uint8Array(n),
     };
     this.batches.set(kind, kb);
-    this.attachVariant(kb, base.id, model);
+    this.attachVariant(kb, base.id, nearModel);
   }
 
-  private attachVariant(kb: KindBatch, id: string, model?: VehicleModelGeometry): VariantBatch {
+  /** Make (or find) a model's near batch. The close batch is built later, by buildClose, when a car of the model first comes within range. */
+  private attachVariant(kb: KindBatch, id: string, near?: ModelLod): VariantBatch {
     const have = kb.variants.get(id);
     if (have) return have;
-    const spec = VEHICLE_SPECS[kb.kind];
-    const m = model ?? buildVehicleModel(kb.kind, spec, id);
-    const close = makeLod(`vehicle-${id}-close`, m.close, Math.min(this.perKind, 48), true);
-    const near = makeLod(`vehicle-${id}-near`, m.near, this.perKind, true);
-    close.mesh.onBeforeRender = this.captureCamera; near.mesh.onBeforeRender = this.captureCamera;
-    this.object.add(close.mesh, near.mesh);
-    const vb: VariantBatch = { id, model: m, close, near };
+    const m = near ?? buildModelLod(kb.kind, VEHICLE_SPECS[kb.kind], id, 1);
+    const nearLod = makeLod(`vehicle-${id}-near`, m.geometry, this.perKind, true);
+    nearLod.mesh.onBeforeRender = this.captureCamera;
+    this.object.add(nearLod.mesh);
+    const vb: VariantBatch = { id, kind: kb.kind, lamps: m.lamps, wheelRadius: m.wheelRadius, nearTriangles: m.triangles, closeTriangles: 0, near: nearLod };
     kb.variants.set(id, vb);
     return vb;
+  }
+
+  /** Build a model's close-range level of detail (its own mesh): one per frame at most, so a first close-up doesn't stall a frame. */
+  private buildClose(vb: VariantBatch): void {
+    const m = buildModelLod(vb.kind, VEHICLE_SPECS[vb.kind], vb.id, 0);
+    const close = makeLod(`vehicle-${vb.id}-close`, m.geometry, Math.min(this.perKind, 48), true);
+    close.mesh.onBeforeRender = this.captureCamera;
+    this.object.add(close.mesh);
+    vb.close = close; vb.closeTriangles = m.triangles; vb.lamps = m.lamps;
   }
 
   /** Build one queued model (called from flush, so the load is spread over the first frames). */
@@ -583,7 +597,7 @@ export class VehicleRenderer {
     const k = 120, c = 15; // ~1.7 Hz, damping ratio ~0.7
     const kick = clamp(b.vy[i], -3, 3);
     b.vy[i] *= 0.5;
-    b.heaveV[i] += (-k * b.heave[i] - c * b.heaveV[i] - kick * 6) * dt;
+    b.heaveV[i] += (-k * b.heave[i] - c * b.heaveV[i] - kick * 10) * dt;
     b.heave[i] = clamp(b.heave[i] + b.heaveV[i] * dt, -0.06, 0.06);
     b.pitchV[i] += (-k * 1.4 * b.pitch[i] - c * b.pitchV[i] - kick * 0.9) * dt;
     b.pitch[i] = clamp(b.pitch[i] + b.pitchV[i] * dt, -0.02, 0.02);
@@ -615,7 +629,7 @@ export class VehicleRenderer {
    * exhaust, dust and spray puffs. Only for cars in the close and near levels of detail.
    */
   private emit(b: KindBatch, i: number, variant: VariantBatch, dist: number): void {
-    const fx = this.fx, lamps = variant.model.lamps, night = nightUniform.value, t = timeUniform.value, dt = this.dt;
+    const fx = this.fx, lamps = variant.lamps, night = nightUniform.value, t = timeUniform.value, dt = this.dt;
     const M = this.matrix.fromArray(b.matrices, i * 16), e = M.elements;
     const parked = b.parked[i] === 1;
     const mode = parked ? 1 : b.headlights[i];
@@ -637,7 +651,7 @@ export class VehicleRenderer {
     }
     const tailA = brake * (0.4 + 0.6 * night) + headOn * 0.28 * night;
     if (tailA > 0.02) {
-      for (const p of lamps.tail) world(p, brake ? 0.5 : 0.36, 1.0, 0.08, 0.05, tailA * (brake ? 1.3 : 1));
+      for (const p of lamps.tail) world(p, brake ? 0.72 : 0.42, 1.0, 0.08, 0.05, tailA * (brake ? 1.3 : 1));
       if (brake && night > 0.3 && dist < 90) { const v = w([0, 0.05, lamps.tailZ - 0.7]); fx.disc(v.x, v.y, v.z, 1.5, 1.0, 0.1, 0.06, 0.26 * night); }
     }
     if (b.reversing[i] && !parked) for (const p of lamps.reverse) world(p, 0.42, 1.0, 0.98, 0.9, 0.8 * (0.5 + 0.5 * night));
@@ -659,7 +673,7 @@ export class VehicleRenderer {
       }
       if ((redOn || blueOn) && dist < 120) {
         const c = w([0, 0.06, 0]);
-        fx.disc(c.x, c.y, c.z, 7.5, redOn ? 1.0 : 0.1, redOn ? 0.06 : 0.3, redOn ? 0.08 : 1.0, (0.22 + 0.5 * night) * (redOn && blueOn ? 1 : 0.85));
+        fx.disc(c.x, c.y, c.z, 7.5, redOn ? 1.0 : 0.1, redOn ? 0.06 : 0.3, redOn ? 0.08 : 1.0, (0.1 + 0.6 * night) * (redOn && blueOn ? 1 : 0.85));
       }
     }
     if (lamps.beacon.length && !lamps.siren.length && !parked && b.speed[i] > 0.5) {
@@ -702,11 +716,13 @@ export class VehicleRenderer {
     }
   }
 
-  flush(): void {
+  /** Packs the frame. `dt` (optional, seconds) overrides the measured frame time: tests step the suspension with it. */
+  flush(dt?: number): void {
     const now = performance.now() * 0.001;
-    this.dt = clamp(now - this.lastFlush, 0.001, 0.1); this.lastFlush = now;
+    this.dt = dt ?? clamp(now - this.lastFlush, 0.001, 0.1); this.lastFlush = now;
     timeUniform.value = now;
-    if (this.pending.length) this.warm();
+    if (this.closeQueue.length) this.buildClose(this.closeQueue.shift()!);
+    else if (this.pending.length) this.warm();
     this.fx.begin();
     const close2 = this.lodClose * this.lodClose, near2 = this.lodNear * this.lodNear, far2 = this.lodCull * this.lodCull;
     // Keep one far vehicle as a camera-capture sentinel when every real instance
@@ -717,7 +733,7 @@ export class VehicleRenderer {
       const kindVariants = variantsOf(batch.kind);
       const length = VEHICLE_SPECS[batch.kind].length;
       let farCount = 0;
-      for (const vb of batch.variants.values()) { vb.close.count = 0; vb.near.count = 0; }
+      for (const vb of batch.variants.values()) { if (vb.close) vb.close.count = 0; vb.near.count = 0; }
       for (let i = 0; i < batch.used; i++) {
         if (!batch.active[i] || !batch.initialized[i]) continue;
         // 0 close, 1 near, 2 far, 3 beyond the cull radius (drawn only as the camera-capture sentinel)
@@ -738,14 +754,15 @@ export class VehicleRenderer {
           if (this.cameraValid) { const o = i * 16; this.emit(batch, i, variant, Math.hypot(batch.matrices[o + 12] - this.cameraX, batch.matrices[o + 13] - this.cameraY, batch.matrices[o + 14] - this.cameraZ)); }
           else this.emit(batch, i, variant, 30);
         }
-        if (nextLod === 0 && variant.close.count < variant.close.sourceByRender.length) this.pack(batch, i, variant.close, variant.close.count++, length);
+        if (nextLod === 0 && !variant.close && !this.closeQueue.includes(variant)) this.closeQueue.push(variant);
+        if (nextLod === 0 && variant.close && variant.close.count < variant.close.sourceByRender.length) this.pack(batch, i, variant.close, variant.close.count++, length);
         else if (nextLod <= 1) this.pack(batch, i, variant.near, variant.near.count++, length);
         else if (nextLod === 2 || !sentinelClaimed) {
           this.pack(batch, i, batch.far, farCount++, length);
           if (nextLod === 3) sentinelClaimed = true;
         }
       }
-      for (const vb of batch.variants.values()) { markLod(vb.close, vb.close.count); markLod(vb.near, vb.near.count); }
+      for (const vb of batch.variants.values()) { if (vb.close) markLod(vb.close, vb.close.count); markLod(vb.near, vb.near.count); }
       markLod(batch.far, farCount);
       markAttributeRange(batch.pickMesh.instanceMatrix, 0, batch.used, 16);
     }
@@ -768,7 +785,7 @@ export class VehicleRenderer {
     const slot = this.slots[handle]; if (!slot) return undefined;
     const b = this.batches.get(slot.kind)!;
     const id = variantsOf(slot.kind)[b.variantOf[slot.instance]]?.id;
-    return (id ? b.variants.get(id) : undefined)?.model.lamps;
+    return (id ? b.variants.get(id) : undefined)?.lamps;
   }
 
   /** Which model draws a car (dev pages, tests). */
@@ -783,8 +800,8 @@ export class VehicleRenderer {
     let built = 0;
     for (const [kind, batch] of this.batches) {
       const base = batch.variants.values().next().value as VariantBatch | undefined;
-      kinds[kind] = { nearTriangles: base?.model.nearTriangles ?? 0, farTriangles: batch.farTriangles };
-      for (const vb of batch.variants.values()) { models[vb.id] = { closeTriangles: vb.model.closeTriangles, nearTriangles: vb.model.nearTriangles, farTriangles: vb.model.farTriangles }; built++; }
+      kinds[kind] = { nearTriangles: base?.nearTriangles ?? 0, farTriangles: batch.farTriangles };
+      for (const vb of batch.variants.values()) { models[vb.id] = { closeTriangles: vb.closeTriangles, nearTriangles: vb.nearTriangles, farTriangles: batch.farTriangles }; built++; }
     }
     return { active: this.activeTotal, drawCallsPerNearKind: 1, drawCallsPerFarKind: 1, kinds, models, modelsBuilt: built, modelsTotal: vehicleModelList().length };
   }
@@ -794,7 +811,7 @@ export class VehicleRenderer {
     this.fx.mesh.geometry.dispose();
     for (const batch of this.batches.values()) {
       batch.far.mesh.geometry.dispose(); batch.pickMesh.geometry.dispose();
-      for (const vb of batch.variants.values()) { vb.close.mesh.geometry.dispose(); vb.near.mesh.geometry.dispose(); }
+      for (const vb of batch.variants.values()) { vb.close?.mesh.geometry.dispose(); vb.near.mesh.geometry.dispose(); }
     }
   }
 }

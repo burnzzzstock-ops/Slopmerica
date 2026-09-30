@@ -62,7 +62,7 @@ void main() {
     gl_FragColor = vec4(vCol.rgb * a * vCol.a * wetBoost * uGlow, 0.0);
   } else if (vType < 2.5) {                                         // puff: covers what is behind it
     float a = pow(smoothstep(1.0, 0.0, d), 1.7) * vCol.a;                 // dense in the middle, thin at the edge: a wisp, not a disc
-    gl_FragColor = vec4(vCol.rgb * a, a);
+    gl_FragColor = vec4(vCol.rgb * a * (1.0 - 0.6 * uNight), a);           // (smoke takes the light of the hour: it is not a lamp)
   } else {                                                          // ground disc (siren tint, brake glow)
     float a = pow(max(1.0 - d, 0.0), 1.8);
     gl_FragColor = vec4(vCol.rgb * a * vCol.a * uGlow, 0.0);
@@ -70,7 +70,7 @@ void main() {
   if (gl_FragColor.a <= 0.0 && dot(gl_FragColor.rgb, vec3(1.0)) < 0.002) discard;
 }`,
   });
-  m.customProgramCacheKey = () => 'aa-vehicle-fx-v3';
+  m.customProgramCacheKey = () => 'aa-vehicle-fx-v4';
   return m;
 }
 
@@ -139,7 +139,7 @@ export class VehicleFx {
   exhaust(x: number, y: number, z: number, vx: number, vz: number, heavy: boolean, cold: number): void {
     const soot = heavy && this.rnd() < 0.5;
     const shade = soot ? 0.16 : 0.78 + this.rnd() * 0.12;
-    this.spawn({ x, y, z, vx: vx * 0.2 + (this.rnd() - 0.5) * 0.3, vy: 0.5 + this.rnd() * 0.3, vz: vz * 0.2 + (this.rnd() - 0.5) * 0.3, age: 0, life: 0.9 + cold * 1.4 + this.rnd() * 0.4, s0: 0.1, s1: soot ? 0.7 : 0.5 + cold * 0.5, r: shade, g: shade, b: shade * 1.02, a: soot ? 0.5 : 0.22 + cold * 0.3 });
+    this.spawn({ x, y, z, vx: vx * 0.2 + (this.rnd() - 0.5) * 0.3, vy: 0.5 + this.rnd() * 0.3, vz: vz * 0.2 + (this.rnd() - 0.5) * 0.3, age: 0, life: 0.9 + cold * 1.4 + this.rnd() * 0.4, s0: 0.1, s1: soot ? 0.65 : 0.4 + cold * 0.4, r: shade, g: shade, b: shade * 1.02, a: soot ? 0.5 : 0.2 + cold * 0.25 });
   }
   /** Dust thrown off a gravel road by a wheel. */
   dust(x: number, y: number, z: number, vx: number, vz: number, speed: number): void {

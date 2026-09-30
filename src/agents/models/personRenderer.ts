@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import type { PersonAction } from '../../contracts';
-import type { Archetype, BodyType, FaceStyle, HairStyle, HatStyle, Outfit, PersonProp } from '../people';
+import type { Archetype, FaceStyle } from '../people';
 import {
   attachPersonInstanceAttributes, buildFaceAtlas, buildPersonGeometry, createPersonDepthMaterial, createPersonMaterial,
-  geometryTriangles, HAIR_ID, HAT_ID, OUTFIT_ID, PROP_ID,
+  geometryTriangles, PROP, writeLook,
   type PersonInstanceAttributes, type PersonMaterialControl,
 } from './personModel';
+import { resolveLook } from './personLooks';
 
 const ACTION_ID: Record<PersonAction, number> = {
   walk: 0, run: 1, idle: 2, smoke: 3, drink: 4, vape: 5, phone: 6,
@@ -15,22 +16,10 @@ const FACE_ID: Record<FaceStyle, number> = {
   plain: 0, smile: 1, scowl: 2, sleepy: 3, shades: 4, glasses: 5,
   mustache: 6, beard: 7, soyjak: 8, wojak: 9, blush: 10, npc: 11,
 };
-const BODY_SHAPE: Record<BodyType, readonly [number, number, number]> = {
-  slim: [0.84, 1, 0.86], average: [1, 1, 1], broad: [1.17, 1.02, 1.08],
-  stocky: [1.16, 0.92, 1.12], tall: [0.92, 1.09, 0.94],
-};
-const SKIN = [0xf3c9a4, 0xdba276, 0xb97850, 0x895638, 0x603b2a, 0xf0bfa0] as const;
-const HAIR = [0x2b1b15, 0x4a2c1b, 0x8a5a2b, 0xc9a45f, 0xd8d2c4, 0x161616, 0x9b3f2f] as const;
-const PANTS = [0x283447, 0x393735, 0x45513f, 0x31516a, 0x604f3f, 0x1d2026] as const;
-const SHIRT = [0x315b73, 0xb64a3c, 0x5d7047, 0xc8913c, 0x6d547d, 0xd7d0bf, 0x303338, 0x8d5b3e] as const;
-const TAU = Math.PI * 2;
+const propId = (p: string | undefined): number => (p && p in PROP ? PROP[p as keyof typeof PROP] : 0);
 
 type Batch = { mesh: THREE.InstancedMesh; attributes: PersonInstanceAttributes; material: PersonMaterialControl; depth?: THREE.MeshDepthMaterial };
 const REUSABLE_UPDATE_RANGES = new WeakMap<THREE.BufferAttribute, { start: number; count: number }>();
-
-function colorToAttribute(attribute: THREE.InstancedBufferAttribute, index: number, color: THREE.Color): void {
-  attribute.setXYZ(index, color.r, color.g, color.b);
-}
 
 function markRange(attribute: THREE.BufferAttribute, min: number, max: number): void {
   if (max < min) return;
@@ -62,10 +51,13 @@ export class PeopleRendererCore {
   readonly stats: Readonly<{ nearTriangles: number; farTriangles: number; drawCalls: number }>;
 
   private readonly near: Batch;
+  /** invisible stand-in the pointer is tested against: a column round each person (the drawn body is posed in the shader, so the rest-pose mesh is no guide) */
+  private readonly pickMesh: THREE.InstancedMesh;
   private readonly far: Batch;
   private readonly batches: readonly Batch[];
   private readonly alive: Uint8Array;
   private readonly archetypeIndex: Uint8Array;
+  private readonly cadence: Float32Array;
   private readonly free: number[] = [];
   private readonly hidden = new THREE.Matrix4().makeScale(0, 0, 0);
   private readonly matrix = new THREE.Matrix4();
@@ -83,6 +75,7 @@ export class PeopleRendererCore {
   constructor(scene: THREE.Scene, private readonly max: number, private readonly archetypes: readonly Archetype[]) {
     this.alive = new Uint8Array(max);
     this.archetypeIndex = new Uint8Array(max);
+    this.cadence = new Float32Array(max).fill(1);
     this.matrixDirtyMin = this.styleDirtyMin = this.motionDirtyMin = max;
     this.faceAtlas = buildFaceAtlas();
 
@@ -91,6 +84,11 @@ export class PeopleRendererCore {
     this.near = this.makeBatch(nearGeometry, false);
     this.far = this.makeBatch(farGeometry, true);
     this.batches = [this.near, this.far];
+    const column = new THREE.CylinderGeometry(0.28, 0.28, 1.85, 8, 1);
+    column.translate(0, 0.925, 0);
+    this.pickMesh = new THREE.InstancedMesh(column, new THREE.MeshBasicMaterial(), max);
+    this.pickMesh.instanceMatrix = this.near.mesh.instanceMatrix; // the same matrices: nothing extra to upload
+    this.pickMesh.count = 0;
     this.stats = Object.freeze({ nearTriangles: geometryTriangles(nearGeometry), farTriangles: geometryTriangles(farGeometry), drawCalls: 2 });
     this.object.name = 'people-aa';
     this.object.add(this.near.mesh, this.far.mesh);
@@ -124,37 +122,19 @@ export class PeopleRendererCore {
   private dirtyMotion(h: number): void { this.motionDirtyMin = Math.min(this.motionDirtyMin, h); this.motionDirtyMax = Math.max(this.motionDirtyMax, h); }
   private dirtyMatrix(h: number): void { this.matrixDirtyMin = Math.min(this.matrixDirtyMin, h); this.matrixDirtyMax = Math.max(this.matrixDirtyMax, h); }
 
-  private setColorForAll(key: 'skin' | 'shirt' | 'pants' | 'hair' | 'accent', h: number, hex: number): void {
-    this.color.setHex(hex);
-    for (let i = 0; i < this.batches.length; i++) colorToAttribute(this.batches[i].attributes[key], h, this.color);
-  }
-
   add(archetype: number, seed: number): number {
     const h = this.free.length ? this.free.pop()! : this.used < this.max ? this.used++ : -1;
     if (h < 0 || this.archetypes.length === 0) return -1;
-    if (this.near.mesh.count < this.used) this.near.mesh.count = this.far.mesh.count = this.used;
+    if (this.near.mesh.count < this.used) this.near.mesh.count = this.far.mesh.count = this.pickMesh.count = this.used;
     const ai = ((archetype % this.archetypes.length) + this.archetypes.length) % this.archetypes.length;
     const a = this.archetypes[ai];
-    const s = seed >>> 0;
     this.alive[h] = 1; this.archetypeIndex[h] = ai;
-    const skin = a.face === 'npc' ? 0x8b9093 : SKIN[(s >>> 3) % SKIN.length];
-    const hair = HAIR[(s >>> 7) % HAIR.length];
-    const pants = PANTS[(s >>> 11) % PANTS.length];
-    const shirt = a.merch ? 0x171717 : SHIRT[(s >>> 15) % SHIRT.length];
-    const accent = a.outfit === 'suit' ? 0x252b36 : a.outfit === 'raincoat' ? 0xd4a72c : a.outfit === 'workwear' ? 0xd48c25 : shirt;
-    this.setColorForAll('skin', h, skin); this.setColorForAll('hair', h, hair); this.setColorForAll('pants', h, pants);
-    this.setColorForAll('shirt', h, shirt); this.setColorForAll('accent', h, accent);
-    const shape = BODY_SHAPE[a.body ?? 'average'];
-    const outfit = OUTFIT_ID[a.outfit ?? 'tee'];
-    const hairStyle = HAIR_ID[a.hair ?? 'crop'];
-    const hat = HAT_ID[a.hat ?? 'none'];
-    const prop = PROP_ID[a.prop ?? 'none'];
-    const face = FACE_ID[a.face ?? 'plain'];
+    const look = resolveLook(a, seed, FACE_ID[a.face ?? 'plain'], propId);
+    this.cadence[h] = look.cadence;
     for (let i = 0; i < this.batches.length; i++) {
       const at = this.batches[i].attributes;
-      at.shape.setXYZ(h, shape[0], shape[1], shape[2]);
-      at.style.setXYZW(h, outfit, hairStyle, hat, prop);
-      at.motion.setXYZW(h, ACTION_ID.idle, 0, face, a.merch ? 1 : 0);
+      writeLook(at, h, look);
+      at.motion.setXYZW(h, ACTION_ID.idle, 0, 0, 0);
       this.batches[i].mesh.setMatrixAt(h, this.hidden);
     }
     this.dirtyStyle(h); this.dirtyMotion(h); this.dirtyMatrix(h);
@@ -169,14 +149,18 @@ export class PeopleRendererCore {
     this.free.push(h);
   }
 
+  /**
+   * Place and pose one person. `phase` is what pedestrians.ts advances: leg cycles (ground / STRIDE) while walking or running,
+   * seconds for everything else. A person with their own stride takes `cadence` cycles per unit of walking phase, so their feet
+   * still keep up with the ground (see personLooks.ts).
+   */
   set(h: number, x: number, y: number, z: number, yaw: number, action: PersonAction, phase: number): void {
     if (h < 0 || h >= this.max || this.alive[h] === 0) return;
     this.matrix.makeRotationY(yaw); this.matrix.setPosition(x, y, z);
-    const a = this.archetypes[this.archetypeIndex[h]];
-    const face = FACE_ID[a.face ?? 'plain'];
+    const t = action === 'walk' || action === 'run' ? phase * this.cadence[h] : phase;
     for (let i = 0; i < this.batches.length; i++) {
       this.batches[i].mesh.setMatrixAt(h, this.matrix);
-      this.batches[i].attributes.motion.setXYZW(h, ACTION_ID[action], phase * TAU, face, a.merch ? 1 : 0);
+      this.batches[i].attributes.motion.setXYZW(h, ACTION_ID[action], t, 0, 0);
     }
     this.dirtyMatrix(h); this.dirtyMotion(h);
   }
@@ -187,7 +171,7 @@ export class PeopleRendererCore {
 
   /** The shader reads cameraPosition directly; this method only chooses the switch range. */
   updateLod(_camera: THREE.Camera, quality: 'low' | 'medium' | 'high' | number = 'high'): void {
-    const distance = typeof quality === 'number' ? quality : quality === 'low' ? 55 : quality === 'medium' ? 65 : 78;
+    const distance = typeof quality === 'number' ? quality : quality === 'low' ? 48 : quality === 'medium' ? 58 : 66;
     this.near.material.setLodDistance(distance); this.far.material.setLodDistance(distance);
   }
 
@@ -198,8 +182,8 @@ export class PeopleRendererCore {
     }
     if (this.styleDirtyMax >= this.styleDirtyMin) {
       for (let b = 0; b < this.batches.length; b++) {
-        const all = this.batches[b].attributes.all;
-        for (let i = 0; i < all.length - 1; i++) markRange(all[i], this.styleDirtyMin, this.styleDirtyMax);
+        const all = this.batches[b].attributes.style;
+        for (let i = 0; i < all.length; i++) markRange(all[i], this.styleDirtyMin, this.styleDirtyMax);
       }
     }
     if (this.motionDirtyMax >= this.motionDirtyMin) {
@@ -212,7 +196,9 @@ export class PeopleRendererCore {
 
   pick(ray: THREE.Raycaster): number | null {
     this.hits.length = 0;
-    ray.intersectObject(this.near.mesh, false, this.hits);
+    // (an InstancedMesh caches the sphere round all its instances the first time it is tested: people walk, so start afresh)
+    this.pickMesh.boundingSphere = null;
+    ray.intersectObject(this.pickMesh, false, this.hits);
     for (let i = 0; i < this.hits.length; i++) {
       const id = this.hits[i].instanceId;
       if (id !== undefined && this.alive[id] !== 0) return id;
@@ -224,6 +210,7 @@ export class PeopleRendererCore {
     this.object.removeFromParent();
     this.near.mesh.geometry.dispose(); this.far.mesh.geometry.dispose();
     this.near.depth?.dispose();
+    this.pickMesh.geometry.dispose(); (this.pickMesh.material as THREE.Material).dispose();
     this.near.material.dispose(); this.far.material.dispose(); this.faceAtlas.dispose();
   }
 }

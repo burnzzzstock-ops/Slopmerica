@@ -3,6 +3,7 @@ import { lerp, locate, norm, sub, V2 } from '../core/math';
 import type { RoadNetwork, RSeg } from './network';
 import { carriageHalf, ROAD_TYPES } from './roadTypes';
 import { edgeLift, SURF_LIFT, WALK_TOP, ZEBRA_EDGE } from './roadSection';
+import { litByLamps } from '../world/nightLights';
 import { junctionShape, legPaint, visualTrim } from './roadJunction';
 
 interface Frame {
@@ -169,6 +170,9 @@ export class StreetDetails {
     ];
     this.shelterGeo = mergeSimple(shelterParts);
     this.adMat = new THREE.MeshBasicMaterial({ map: this.makeAdTexture(), side: THREE.DoubleSide, toneMapped: false });
+    // the crosswalk lines and stop bars are painted on the road, so they take the street lamps' pools like the zebra strip does
+    // (unlit they showed up blue in the moonlight beside it)
+    litByLamps(this.white);
   }
 
   setSignalStateProvider(provider?: SignalStateProvider) {

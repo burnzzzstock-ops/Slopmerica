@@ -177,6 +177,9 @@ node scripts/junctionmesh.mjs    # (no browser) the real road meshes: empty spot
 node scripts/junctionplan.mjs    # top-down PNG of a drawn junction from the real meshes
 node scripts/junctionshots.mjs   # before/after junction close-ups, day and night (reference block plus tee, skew and one-way junctions)
 node scripts/junctionedit.mjs    # rebuilds a junction every way the game does (build across, upgrade, flip, bulldoze arm by arm, the Freedom Circle) and checks meshes stay finite and trims stay the network's
+node scripts/towers.mjs low      # tower-facade luma on the reference block (mean, std-dev, share under luma 20/40, percentiles) at noon and night; PHONE=1, OUT=dir saves JPEGs; BASE_URL for old vs new
+node scripts/towerlab.mjs low    # the showcase lineup (every zone x level) beside the block, swept over glass / wall-fill settings (SETS=), class-masked luma per shot
+node scripts/lowperf.mjs low     # frame time of two builds side by side (A_URL old, B_URL new) on the reference block, plus draw calls and triangles
 node scripts/snapshot.mjs name 5176   # (tooling) serves a frozen copy of the tree with its own Vite cache, so editing src/ never reloads a running capture; scripts/withslot.sh <command> runs it in one of two shared browser slots (at most two headless Chromium jobs at once); scripts/worktree.sh <name> makes a scratch worktree for a parallel helper
 node scripts/civictest.mjs       # Civic Foundry pack streams in: street trees, furniture, bus shelters; instanced LODs; Low skips it
 node scripts/starttest.mjs       # new county: sensible site (random among good ones, saved), county road follows the land; trees: no detail disc, no gaps; far trees keep their shape (no rectangles)

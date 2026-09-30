@@ -110,7 +110,32 @@ under 20 38.2% -> 28.4%; sunlit side 92.8 -> 101.5. K 0.7 and 1.1 flatten the fo
 
 ## Cost
 
-PERF_PLACEHOLDER
+The glass term is one branch, a `reflect`, a `pow` and a few multiplies on glass texels only, and the wall fill is one multiply-add on
+presets without an environment map; the Low grade is two colour multiplies a frame on the CPU. No mesh, material, texture or
+draw call is added (the tile flag rides on existing UVs).
+
+Draw calls and triangles, Low, the four lookbook cameras at noon on the saved block (`scripts/drawcalls.mjs`, old build on 5175 against the final snapshot):
+
+| camera | calls old -> new | triangles old -> new |
+| --- | --- | --- |
+| overview | 177 -> 177 | 908,029 -> 908,005 |
+| street | 216 -> 222 | 847,209 -> 844,789 |
+| houses | 175 -> 175 | 846,331 -> 846,307 |
+| shore | 186 -> 186 | 783,006 -> 782,982 |
+
+The six extra calls on the street camera are all in `aa-vehicles` (52 -> 58): the traffic model runs on its own clock, so a car
+more or fewer is in shot. Geometries (317 / 369 / 404 / 437) and textures (39) are identical.
+
+Frame time, Low, same block (`scripts/lowperf.mjs`: the old and new build open side by side and their frames are timed alternately, so the
+box's load hits both alike; each frame includes a 1x1 readPixels, which waits for the software GPU). Median of 9 to 11 frames per camera:
+
+| context | overview | street | houses | geometric mean new/old |
+| --- | --- | --- | --- | --- |
+| Low desktop 1280x720 | 6.21 s -> 6.28 s (1.012) | 7.36 s -> 7.29 s (0.991) | 7.06 s -> 7.35 s (1.042) | 1.015 (+1.5%) |
+| Low phone 390x780 @3x | 3.48 s -> 3.37 s (0.966) | 4.50 s -> 4.70 s (1.043) | 4.16 s -> 4.35 s (1.047) | 1.018 (+1.8%) |
+
+These are seconds because the GPU here is a software rasteriser shared with other jobs; the ratio is what matters. Both ratios are
+inside the run-to-run noise (single frames vary by 15%) and inside the 5% bar.
 
 ## Tests
 
@@ -128,7 +153,7 @@ Run on a snapshot of the final code (port 5183, `scripts/snapshot.mjs`, frozen c
 | `reflecttest` | pass |
 | `starttest` | pass |
 | `tiptest`, `overlaptest` | pass |
-| `touchtest` | **fails, on the old build too** (`page.tap: #ta-build` is disabled after "Zoning toggled off, tap map"; the same step on the 5175 build). UI logic, not touched by this change |
+| `touchtest` | first run failed at `page.tap('#ta-build')` (the button was disabled), and so did the old build (5175) at the same step; a second run on the final snapshot passes end to end. Flaky UI logic, nothing to do with drawing |
 
 The phone UI checks were run because CSS might have moved; it did not (no CSS was edited).
 

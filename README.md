@@ -172,6 +172,11 @@ node scripts/streetaudio-game.mjs  # the same street sound wired into the runnin
 node scripts/streetaudio-figure.mjs   # draws the report's before/after spectrograms
 node scripts/yellowflash.mjs     # night flashing on Ultra: bright yellow pixels that pop on frame to frame (still and panning, moonless/full moon, clear/rain), GL errors, failed shader builds; the old prop-flame flash fails it
 node scripts/nightwarmth.mjs     # how warm the night lights are: colour temperature of the practical light on the lookbook cameras (OUT=dir saves JPEGs; MAX_CCT=K makes it a check)
+node scripts/junctionmouth.mjs   # (no browser) junction shapes: mouth areas per class pair and angle, the cars' clearance to the kerb, paint against stopped cars; --compare old.json proves the network (nodes, segments, trims, junction curves) did not move
+node scripts/junctionmesh.mjs    # (no browser) the real road meshes: empty spots, down-facing triangles, what the road renderer submits
+node scripts/junctionplan.mjs    # top-down PNG of a drawn junction from the real meshes
+node scripts/junctionshots.mjs   # before/after junction close-ups, day and night (reference block plus tee, skew and one-way junctions)
+node scripts/junctionedit.mjs    # rebuilds a junction every way the game does (build across, upgrade, flip, bulldoze arm by arm, the Freedom Circle) and checks meshes stay finite and trims stay the network's
 node scripts/snapshot.mjs name 5176   # (tooling) serves a frozen copy of the tree with its own Vite cache, so editing src/ never reloads a running capture; scripts/withslot.sh <command> runs it in one of two shared browser slots (at most two headless Chromium jobs at once); scripts/worktree.sh <name> makes a scratch worktree for a parallel helper
 node scripts/civictest.mjs       # Civic Foundry pack streams in: street trees, furniture, bus shelters; instanced LODs; Low skips it
 node scripts/starttest.mjs       # new county: sensible site (random among good ones, saved), county road follows the land; trees: no detail disc, no gaps; far trees keep their shape (no rectangles)

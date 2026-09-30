@@ -16,6 +16,7 @@ import type { PostLook } from '../render/post';
 import { HALF, WATER, WORLD, GLOW, nightLift } from '../config';
 import { ATMOS } from './atmos';
 import { CloudLayer } from './clouds';
+import { LAMPS, LAMP_PARS } from './nightLights';
 import { applySeasonUniforms, atmo, ATMOS_EXTRA, newSeasonLook, sampleSeason, seasonOf, temperatureC, YEAR } from './seasons';
 
 export { seasonOf } from './seasons';
@@ -211,10 +212,11 @@ const FLY_VERT = /* glsl */ `
 attribute vec2 corner;
 attribute vec4 aSeed;
 uniform vec3 uCenter;
-uniform float uTime, uAmount, uRadius, uSize;
+uniform float uTime, uAmount, uRadius, uSize, uPixel;
 uniform sampler2D uHeight;
 varying vec2 vUv;
 varying float vA;
+${LAMP_PARS}
 void main() {
   if (aSeed.w > uAmount) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vA = 0.0; vUv = vec2(0.0); return; }
   vec2 o = (aSeed.xy - 0.5) * 2.0 * uRadius;
@@ -225,22 +227,34 @@ void main() {
   wp.y = max(g, ${WATER.toFixed(1)}) + 0.8 + aSeed.z * 4.0 + sin(uTime * 0.7 + aSeed.x * 50.0) * 0.4;
   float blink = pow(max(0.0, sin(uTime * (0.9 + aSeed.y) + aSeed.x * 80.0)), 6.0);
   vA = blink * (1.0 - smoothstep(0.6, 1.0, length(o) / uRadius)) * step(${WATER.toFixed(1)} + 0.2, g);
-  vec3 toCam = normalize(cameraPosition - wp);
+  // (night look pass, scripts/yellowflash.mjs) fireflies keep to the dark: none where the street
+  // lamps, shops and porches light the ground (light pollution is what drives real ones out of
+  // town). Over the lit town they read as yellow flashing between the buildings.
+  vA *= 1.0 - smoothstep(0.02, 0.2, dot(lampPool(wp), vec3(0.3333)));
+  vec3 toCam = cameraPosition - wp;
+  float dist = length(toCam);
+  toCam /= max(dist, 1e-3);
   vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), toCam));
   vec3 up = cross(toCam, right);
-  vec3 pos = wp + (right * corner.x + up * (corner.y * 2.0 - 1.0)) * uSize;
+  // never smaller than ~2.5 px: a sub-pixel glow twinkles as it drifts across the pixel grid.
+  // Grown, it keeps its light (alpha by the area ratio).
+  float s = max(uSize, dist * uPixel * 2.5);
+  vA *= (uSize * uSize) / (s * s);
+  vec3 pos = wp + (right * corner.x + up * (corner.y * 2.0 - 1.0)) * s;
   vUv = corner;
   gl_Position = projectionMatrix * viewMatrix * vec4(pos, 1.0);
 }`;
 const FLY_FRAG = /* glsl */ `
+uniform float uGlow;
 varying vec2 vUv;
 varying float vA;
 void main() {
   float d = length(vec2(vUv.x, vUv.y * 2.0 - 1.0));
   float a = exp(-d * d * 9.0) * vA;
   if (a < 0.004) discard;
-  // warm and small: bright lime glows read as UI markers across the town
-  gl_FragColor = vec4(vec3(1.0, 0.92, 0.38) * a * 1.8, 1.0);
+  // warm and small: bright lime glows read as UI markers across the town. Divided by the night
+  // lift (GLOW) like every light: lifted 1.85x they bloomed into yellow flashes.
+  gl_FragColor = vec4(vec3(1.0, 0.92, 0.38) * a * 1.8 * uGlow, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
@@ -467,7 +481,10 @@ export class WeatherSystem {
     this.ash = this.addFx(new THREE.Mesh(snowGeo, ashMat), 6);
 
     const flyMat = new THREE.ShaderMaterial({
-      uniforms: { uCenter: { value: new THREE.Vector3() }, uTime: { value: 0 }, uAmount: { value: 0 }, uRadius: { value: 110 }, uSize: { value: 0.35 }, uHeight: { value: heightTex } },
+      uniforms: {
+        uCenter: { value: new THREE.Vector3() }, uTime: { value: 0 }, uAmount: { value: 0 }, uRadius: { value: 110 }, uSize: { value: 0.35 }, uHeight: { value: heightTex }, uPixel: { value: 0.001 },
+        uGlow: GLOW, uLampMap: LAMPS.uLampMap, uLampRect: LAMPS.uLampRect, uLampOn: LAMPS.uLampOn,
+      },
       vertexShader: FLY_VERT,
       fragmentShader: FLY_FRAG,
       transparent: true,
@@ -986,7 +1003,7 @@ export class WeatherSystem {
     const fov = (camera as THREE.PerspectiveCamera).isPerspectiveCamera ? (camera as THREE.PerspectiveCamera).fov : 50;
     this.ctx.renderer.getDrawingBufferSize(this.v2);
     const pixel = (2 * Math.tan((fov * Math.PI) / 360)) / Math.max(1, this.v2.y);
-    this.rainU.uPixel.value = this.snowU.uPixel.value = this.ashU.uPixel.value = pixel;
+    this.rainU.uPixel.value = this.snowU.uPixel.value = this.ashU.uPixel.value = this.flyU.uPixel.value = pixel;
     const time = this.realT % 1000;
     const light = THREE.MathUtils.clamp(env.lightLevel * 0.9 + this.flash * 1.5, 0.08, 2);
     // unlit particles take the scene's light, less the grade's night lift (bright

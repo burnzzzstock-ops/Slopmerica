@@ -13,7 +13,7 @@ const randPan = () => rnd(-0.8, 0.8);
 const randDist = () => rnd(0.35, 1);
 
 const SEASON_BIRDS: Record<Season, number> = { spring: 1, summer: 0.75, fall: 0.4, winter: 0.1 };
-const RAIN: Partial<Record<WeatherKind, number>> = { rain: 0.6, storm: 1, hurricane: 1 };
+export const RAIN: Partial<Record<WeatherKind, number>> = { rain: 0.6, storm: 1, hurricane: 1 };
 const WIND: Partial<Record<WeatherKind, number>> = { clear: 0.08, cloudy: 0.2, rain: 0.3, storm: 0.6, snow: 0.22, blizzard: 0.95, fog: 0.03, heatwave: 0.05, hurricane: 1, wildfireSmoke: 0.15 };
 
 type Voice = (t: number, gain: number, pan: number) => void;
@@ -31,6 +31,11 @@ export class Ambience {
   private crowd: GainNode;
   private tick = 0;
   private voices: Record<string, Voice>;
+  /**
+   * Random honks and pass-bys (the old stand-in for traffic). The street audio (streetAudio.ts) replaces
+   * them with sounds from the real cars, and switches this off the first time it is fed cars.
+   */
+  randomTraffic = true;
 
   constructor(private s: Synth, private out: AudioNode, private rev: AudioNode) {
     const c = (this.c = s.ctx);
@@ -265,8 +270,10 @@ export class Ambience {
       else V.chorusFrog(t, g, p());
     }
     if (map === 'appalachia' && this.chance(nature * m.night * 0.025 * near, dt)) V.owl(t, 0.03, p());
-    if (this.chance(m.traffic * 0.12 * (0.4 + near * 0.6) * (1 - hush * 0.5), dt)) honkVoice(this.s, this.out, 0.25 * far() * (0.4 + near * 0.6), rnd(0.85, 1.15), t, rnd(0.12, 0.4), p());
-    if (this.chance(m.traffic * near * 0.7, dt)) V.passby(t, 0.035 * far(), p());
+    if (this.randomTraffic) {
+      if (this.chance(m.traffic * 0.12 * (0.4 + near * 0.6) * (1 - hush * 0.5), dt)) honkVoice(this.s, this.out, 0.25 * far() * (0.4 + near * 0.6), rnd(0.85, 1.15), t, rnd(0.12, 0.4), p());
+      if (this.chance(m.traffic * near * 0.7, dt)) V.passby(t, 0.035 * far(), p());
+    }
     if (this.chance(m.construction * 0.8 * (0.4 + near * 0.6), dt)) V.clank(t, 0.05 * far(), p());
     if (this.chance(m.construction * 0.05, dt)) V.beeper(t, 0.05 * far(), p());
   }

@@ -18,8 +18,9 @@ const LOW_RES: Record<string, number> = {
   metalPanel: 0.5, tiltup: 0.5, aptSiding: 0.75, midrise: 0.75, towerResi: 0.75,
 };
 
-function wall(name: string, w: number, h: number, paint: P, emissive = false, res = LOW_RES[name] ?? 1) {
-  defTile(name, w, h, paint, { wrap: true, emissive, res });
+/** `glass` 1..4: a glass wall that mirrors the sky in the building shader (weak..strong; see GLASS_U in atlas.ts). */
+function wall(name: string, w: number, h: number, paint: P, emissive = false, res = LOW_RES[name] ?? 1, glass = 0) {
+  defTile(name, w, h, paint, { wrap: true, emissive, res, glass });
 }
 function decal(name: string, w: number, h: number, paint: P, emissive = false) {
   defTile(name, w, h, paint, { wrap: false, emissive, shrink: false });
@@ -556,7 +557,7 @@ export function registerFacades() {
     c.fillStyle = '#2a2e33';
     c.fillRect(0, 0, 3, h);
     c.fillRect(0, 0, w, 3);
-  });
+  }, false, undefined, 3);
   wall('solar', 256, 256, (c, w, h) => {
     fill(c, w, h, '#c8ccd0');
     for (let j = 0; j < 4; j++) for (let i = 0; i < 2; i++) {
@@ -991,7 +992,7 @@ export function registerFacades() {
         }
       }
     }
-  }, true);
+  }, true, undefined, 3);
   // megablock: 4 bays x 4 floors, 3m x 3m. Tokyo meets Delhi.
   wall('megablock', 512, 512, (c, w, h, L) => {
     const rw = rngFor('mega:w');
@@ -1061,7 +1062,7 @@ export function registerFacades() {
     if (L === 'a') grime(c, w, h, rngFor('mega:g'), 0.4, '40,34,26');
   }, true);
   // glass curtain walls: 4 bays x 4 floors, 3m x 3.8m
-  const curtain = (name: string, top: string, bot: string, mull: string, spandrel: string, litP: number, warm: boolean, res = 1) =>
+  const curtain = (name: string, top: string, bot: string, mull: string, spandrel: string, litP: number, warm: boolean, res = 1, glass = 4) =>
     wall(name, 512, 512, (c, w, h, L) => {
       const rw = rngFor(name + ':w');
       const rp = rngFor(name + ':p');
@@ -1112,9 +1113,11 @@ export function registerFacades() {
         c.lineTo(-w * 0.25, h);
         c.fill();
       }
-    }, true, res);
+    }, true, res, glass);
   curtain('glassA', '#9fbccc', '#3d5f73', '#c2ccd2', '#42596a', 0.55, false);
-  curtain('glassB', '#4a4f55', '#141619', '#2a2d31', '#1f2226', 0.5, true, 0.75);
+  // (glassB is the smoked-glass tower, the SLOP HQ's. It was near-black glass in near-black mullions: on Low, where there is no
+  // environment to mirror, a black monolith with no floor lines. The glass keeps its smoke but the frames are brushed aluminium.)
+  curtain('glassB', '#56616d', '#161b21', '#8b949b', '#2a3037', 0.5, true, 0.75);
   curtain('glassC', '#8fc0b0', '#2f5a52', '#b8c8c2', '#34564e', 0.5, false, 0.75);
   // officeBand: ribbon windows, 4 bays x 4 floors, 3m x 3.6m
   wall('officeBand', 512, 512, (c, w, h, L) => {
@@ -1140,19 +1143,20 @@ export function registerFacades() {
       }
     }
     if (L === 'a') grime(c, w, h, rngFor('officeBand:g'), 0.15);
-  }, true, 0.75);
+  }, true, 0.75, 2);
   // neonFacade: commercial high-rise, 4 bays x 4 floors, 3m x 3.5m, with little signs
   wall('neonFacade', 512, 512, (c, w, h, L) => {
     const rw = rngFor('neon:w');
     const words = ['KARAOKE', 'NOODLES', 'VAPE', 'PAWN', 'LOANS', 'BAR', 'HOTEL', 'SLOP', 'MASSAGE*', 'ARCADE', 'CRYPTO', 'SUSHI', 'NAILS', 'BOBA', 'TAX'];
     const cols = ['#ff2bd6', '#34f5ff', '#c6f432', '#ffb800', '#ff4b1f', '#8a5cff'];
     if (L === 'a') {
-      fill(c, w, h, '#3b3d44');
+      // (was #3b3d44, black under a noon sun: the neon tower is a painted panel wall, not a hole)
+      fill(c, w, h, '#7c818a');
       speckle(c, w, h, rngFor('neon'), 3000, 0.15, 0.05, 1.5);
     }
     for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) {
       const x = i * 128 + 14, y = j * 128 + 16;
-      win(c, L, x, y, 100, 80, { cols: 3, rows: 1, lit: rw.float() < 0.6, litCol: litColor(rw), frame: '#222', sill: null });
+      win(c, L, x, y, 100, 80, { cols: 3, rows: 1, lit: rw.float() < 0.6, litCol: litColor(rw), frame: '#2c2f36', sill: null, glassTop: '#8299ac', glassBot: '#33465b' });
       if (rw.float() < 0.45) {
         const word = words[Math.floor(rw.float() * words.length)];
         const col = cols[Math.floor(rw.float() * cols.length)];

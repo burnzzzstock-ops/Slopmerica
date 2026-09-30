@@ -13,6 +13,7 @@ import { Environment } from './world/sky';
 import { WeatherSystem } from './world/weather';
 import { PointerHandlers, RTSCamera } from './render/camera';
 import { PostFX } from './render/post';
+import { applyLowGrade, lowExposure } from './render/lowGrade';
 import { Particles } from './render/particles';
 import { AudioEngine } from './audio/audio';
 import { COUNTY_ROAD, RoadNetwork, RSeg, Plan } from './roads/network';
@@ -1192,8 +1193,12 @@ export class Game {
       this.applyPendingRatio();
       this.renderer.info.reset();
       wu.uReflOn.value = this.water.reflection?.shouldRender(this.camera) ? 1 : 0;
-      // Low quality renders straight to the canvas: same night exposure as the grade
-      this.renderer.toneMappingExposure = 0.95 * (this.post.active ? 1 : nightLift(n, this.env.moonLight));
+      // Low quality renders straight to the canvas: the grade's exposure (the weather's dimming or brightening, times the night lift)
+      // rides on the tone map, since there is no grade pass to apply it. (Low used to take only the night lift, so a storm or a
+      // heat wave exposed like a clear day.)
+      this.renderer.toneMappingExposure = 0.95 * (this.post.active ? 1 : lowExposure(this.env, this.post.look));
+      // ... and its tint rides on the two lights that carry the ambient and the key (render/lowGrade.ts)
+      if (!this.post.active) applyLowGrade(this.env, this.post.look);
       this.post.render(n);
       P.lap('render');
       if (this.blackChecks.length && performance.now() >= this.blackChecks[0] && !document.hidden) {

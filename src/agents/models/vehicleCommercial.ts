@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { buildCar, type CarBuild, type CarPlan } from './vehicleBody';
 import { def } from './vehicleRegistry';
-import { addWheel, boxG, cylG, endQuadG, loftG, ModelBuilder, planeG, quadG, sideQuadG, ZONE, type V3, type WheelSpec } from './vehicleKit';
+import { addWheel, boxG, cylG, endQuadG, extrudeG, loftG, ModelBuilder, planeG, quadG, sideQuadG, ZONE, type V3, type WheelSpec } from './vehicleKit';
 import { lightBar, roofRack, stacks } from './vehicleParts';
 import { endDecalG, sideDecalG } from './vehicleDecals';
 
@@ -390,6 +390,9 @@ const SEMI: CarPlan = {
   doors: [5.3, 4.5], bumperF: 'chrome', grille: 'tall', exhaust: 'none', mirror: { y: 2.5, z: 5.3, big: true }, lampF: { y: 1.3, w: 0.42, h: 0.18, x: 0.86 },
 };
 function semiTractor(mb: ModelBuilder): void {
+  // the roof fairing: an air deflector that rises over the sleeper to the height of the trailer (what makes a tractor look like one)
+  if (mb.lod < 2) mb.body(extrudeG([[5.15, 3.22], [4.0, 3.5], [2.65, 3.95], [2.55, 3.95], [2.55, 3.3], [3.6, 3.32]], 1.9, 'yz', [0, 0, 0]));
+  if (mb.lod < 2) for (const sx of [-1, 1]) mb.body(boxG(0.05, 0.8, 1.6, sx * 1.1, 2.7, 3.2)); // cab-side extenders
   if (mb.lod < 2) stacks(mb, 1.0, 1.9, 3.7, 3.85);
   mb.lamps.exhaust.push([1.0, 3.75, 3.85], [-1.0, 3.75, 3.85]);
   // fuel tanks and the frame between the cab and the trailer, the fifth wheel

@@ -295,7 +295,7 @@ interface KindBatch {
   parked: Uint8Array; reversing: Uint8Array; headlights: Uint8Array; siren: Uint8Array;
   heave: Float32Array; heaveV: Float32Array; pitch: Float32Array; pitchV: Float32Array; roll: Float32Array; rollV: Float32Array; vy: Float32Array;
   lod: Int8Array; revision: Uint32Array;
-  speed: Float32Array; accel: Float32Array; fxTimer: Float32Array; fxTimer2: Float32Array; surfaceTimer: Float32Array; onGravel: Uint8Array;
+  reverseTimer: Float32Array; speed: Float32Array; accel: Float32Array; fxTimer: Float32Array; fxTimer2: Float32Array; surfaceTimer: Float32Array; onGravel: Uint8Array;
 }
 interface Slot { kind: VehicleKind; instance: number }
 
@@ -415,7 +415,7 @@ export class VehicleRenderer {
       parked: new Uint8Array(n), reversing: new Uint8Array(n), headlights: new Uint8Array(n), siren: new Uint8Array(n),
       heave: new Float32Array(n), heaveV: new Float32Array(n), pitch: new Float32Array(n), pitchV: new Float32Array(n), roll: new Float32Array(n), rollV: new Float32Array(n), vy: new Float32Array(n),
       lod: new Int8Array(n), revision: new Uint32Array(n),
-      speed: new Float32Array(n), accel: new Float32Array(n), fxTimer: new Float32Array(n), fxTimer2: new Float32Array(n), surfaceTimer: new Float32Array(n), onGravel: new Uint8Array(n),
+      reverseTimer: new Float32Array(n), speed: new Float32Array(n), accel: new Float32Array(n), fxTimer: new Float32Array(n), fxTimer2: new Float32Array(n), surfaceTimer: new Float32Array(n), onGravel: new Uint8Array(n),
     };
     this.batches.set(kind, kb);
     this.attachVariant(kb, base.id, nearModel);
@@ -481,7 +481,7 @@ export class VehicleRenderer {
     batch.spin[instance] = 0; batch.steer[instance] = 0;
     batch.parked[instance] = 0; batch.reversing[instance] = 0; batch.headlights[instance] = 0;
     batch.heave[instance] = batch.heaveV[instance] = batch.pitch[instance] = batch.pitchV[instance] = batch.roll[instance] = batch.rollV[instance] = 0;
-    batch.speed[instance] = batch.accel[instance] = batch.fxTimer[instance] = batch.fxTimer2[instance] = batch.surfaceTimer[instance] = 0; batch.onGravel[instance] = 0;
+    batch.reverseTimer[instance] = 0; batch.speed[instance] = batch.accel[instance] = batch.fxTimer[instance] = batch.fxTimer2[instance] = batch.surfaceTimer[instance] = 0; batch.onGravel[instance] = 0;
     batch.revision[instance]++;
     if (options?.seed !== undefined) this.rngState = (Math.imul(options.seed | 0, 2654435761) ^ 0x9e3779b1) >>> 0 || 1;
     this.addCount++;
@@ -514,6 +514,7 @@ export class VehicleRenderer {
       if (distance < 30 && !batch.parked[i]) {
         // wheels turn with the ground they cover: forwards when the car moves along its nose, backwards when it backs up
         const along = dx * Math.sin(yaw) + dz * Math.cos(yaw);
+        if (along < -0.01) batch.reverseTimer[i] = 0.4; // moving backwards along its own nose: the reverse lamps come on by themselves
         batch.spin[i] = (batch.spin[i] + (along >= 0 ? distance : -distance) / Math.max(0.18, batch.wheelRadius)) % (Math.PI * 2);
       }
       let dyaw = yaw - batch.previousYaw[i]; dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
@@ -555,7 +556,10 @@ export class VehicleRenderer {
     const b = this.batches.get(slot.kind)!; const i = slot.instance, v = on ? 1 : 0;
     if (b.parked[i] !== v) { b.parked[i] = v; b.headlights[i] = on ? 1 : 0; if (on) { b.braking[i] = 0; b.turn[i] = 0; } b.revision[i]++; }
   }
-  /** Optional: reverse lamps on (backing out of a parking space); the wheels turn backwards by themselves from the motion. */
+  /**
+   * Optional: reverse lamps on (backing out of a parking space). The renderer also lights them by itself whenever a car moves backwards
+   * along its own nose, and the wheels turn backwards from the motion, so this only matters for a car that is stopped in reverse.
+   */
   setReversing(handle: number, on: boolean): void {
     const slot = this.slots[handle]; if (slot) this.batches.get(slot.kind)!.reversing[slot.instance] = on ? 1 : 0;
   }
@@ -585,7 +589,7 @@ export class VehicleRenderer {
   private lampCode(b: KindBatch, i: number): number {
     const kindSiren = b.kind === 'police' || b.kind === 'ambulance' || b.kind === 'firetruck' || b.kind === 'towTruck';
     const siren = b.siren[i] === 2 ? 1 : b.siren[i] === 1 ? 0 : kindSiren && !b.parked[i] ? 1 : 0;
-    return (b.braking[i] && !b.parked[i] ? 1 : 0) + (b.turn[i] + 1) * 2 + (b.parked[i] ? 1 : b.headlights[i]) * 6 + (b.reversing[i] ? 18 : 0) + siren * 36;
+    return (b.braking[i] && !b.parked[i] ? 1 : 0) + (b.turn[i] + 1) * 2 + (b.parked[i] ? 1 : b.headlights[i]) * 6 + (b.reversing[i] || b.reverseTimer[i] > 0 ? 18 : 0) + siren * 36;
   }
 
   /** Spring the body on its wheels: road-height changes kick it, gravity and damping settle it. Purely a drawing effect. */
@@ -636,6 +640,7 @@ export class VehicleRenderer {
     const autoHead = THREE.MathUtils.smoothstep(night, 0.25, 0.6);
     const headOn = mode === 2 ? 1 : mode === 1 ? 0 : autoHead;
     const brake = b.braking[i] && !parked ? 1 : 0;
+    if (b.reverseTimer[i] > 0) b.reverseTimer[i] -= dt;
     const sizeK = Math.min(3.4, 1 + dist * 0.012);
     const w = (p: readonly number[]) => this.v3.set(p[0], p[1], p[2]).applyMatrix4(M);
     const seed = b.seed[i];
@@ -654,7 +659,7 @@ export class VehicleRenderer {
       for (const p of lamps.tail) world(p, brake ? 0.72 : 0.42, 1.0, 0.08, 0.05, tailA * (brake ? 1.3 : 1));
       if (brake && night > 0.3 && dist < 90) { const v = w([0, 0.05, lamps.tailZ - 0.7]); fx.disc(v.x, v.y, v.z, 1.5, 1.0, 0.1, 0.06, 0.26 * night); }
     }
-    if (b.reversing[i] && !parked) for (const p of lamps.reverse) world(p, 0.42, 1.0, 0.98, 0.9, 0.8 * (0.5 + 0.5 * night));
+    if ((b.reversing[i] || b.reverseTimer[i] > 0) && !parked) for (const p of lamps.reverse) world(p, 0.42, 1.0, 0.98, 0.9, 0.8 * (0.5 + 0.5 * night));
     const turn = b.turn[i];
     if (turn !== 0 && !parked && Math.sin(t * 9.4 + seed * 6) >= 0) {
       for (const p of turn > 0 ? lamps.turnLeft : lamps.turnRight) world(p, 0.36, 1.0, 0.55, 0.06, 1.0 * (0.4 + 0.6 * night));

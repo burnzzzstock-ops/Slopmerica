@@ -2,6 +2,7 @@
 import { def } from './vehicleRegistry';
 import { addWheel, boxG, cylG, loftG, ModelBuilder, planeG, quadG, sphereG, ZONE, type V3, type WheelSpec } from './vehicleKit';
 import { beamG } from './vehicleBody';
+import { sideDecalG } from './vehicleDecals';
 
 const RIDER_SKIN = 0xd9a582;
 
@@ -159,10 +160,8 @@ function cart(utility: boolean): (mb: ModelBuilder) => number {
     mb.lamps.tail.push([0.38, 0.6, -1.23], [-0.38, 0.6, -1.23]);
     mb.lamps.turnLeft.push([0.4, 0.5, L - 0.16]); mb.lamps.turnRight.push([-0.4, 0.5, L - 0.16]);
     mb.lamps.nose = [L - 0.1, 0.4]; mb.lamps.tailZ = -1.23; mb.lamps.height = 0.6;
-    // the sticker: a propane joke on the side, as before
-    if (mb.lod < 2) {
-      // (the decal atlas 'propane' tile)
-    }
+    // the bumper sticker on the sill: I ♥ PROPANE, as before (this cart is a joke)
+    if (mb.lod < 2) for (const sgn of [-1, 1]) mb.add(sideDecalG(sgn * (hw + 0.105), 0.31, 0.5, -0.75, 0.2, 'propane'), 0xffffff, ZONE.DECAL, 0);
     return r;
   };
 }

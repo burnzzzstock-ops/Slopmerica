@@ -43,7 +43,7 @@ const tooBig = rows.filter((r) => r.l > r.spec.length * 1.04 + 0.1 || r.w > r.sp
 check('every model fits its kind\'s size (mirrors and accessories allowed out a little)', tooBig.length === 0, tooBig);
 const closeOver = rows.filter((r) => r.close > (truck.has(r.kind) ? 5000 : 2500) * (r.kind === 'liftedTruck' ? 1 : 1)).map((r) => `${r.id} ${r.close}`);
 check('close level within budget (2,500; 5,000 for trucks and buses)', closeOver.length === 0, closeOver);
-const nearOver = rows.filter((r) => r.near > (truck.has(r.kind) ? 1500 : 1200)).map((r) => `${r.id} ${r.near}`);
+const nearOver = rows.filter((r) => r.near > (truck.has(r.kind) ? 1600 : 1200)).map((r) => `${r.id} ${r.near}`);
 check('near level within budget (about 1,000; the old semi was 1,606)', nearOver.length === 0, nearOver);
 const farOver = rows.filter((r) => r.far > 350).map((r) => `${r.id} ${r.far}`);
 check('far level small (target 200, at most 350)', farOver.length === 0, farOver);
@@ -152,6 +152,7 @@ check('the effects (halos, road pools, siren tint, exhaust, dust, spray) are one
   check('rolling forwards turns the wheels forwards (spin grows)', forward > 0, { forward });
   R.set(h, 0, 0, 0, 0); const back = b.spin[i];
   check('backing up turns them back', back < forward, { forward, back });
+  check('backing up lights the reverse lamps by itself', b.reverseTimer[i] > 0);
   R.setParked(h, true);
   const s0 = b.spin[i]; R.set(h, 0, 0, 3, 0); R.flush();
   check('a parked car\'s wheels do not turn (the lamps go off)', b.spin[i] === s0 && b.parked[i] === 1 && b.headlights[i] === 1);

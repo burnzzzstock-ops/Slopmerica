@@ -26,7 +26,7 @@ await page.waitForFunction(() => window.__game && window.__dbg && window.__servi
 await page.evaluate(installLatePlayer, OPTS);
 
 const PROBES = (process.env.PROBE || '').split(',').filter(Boolean).map(Number), probed = [];
-const probe = () => page.evaluate(() => { const s = window.__game.sim, f = s.forecastWeek(); return { day: Math.round(s.day), pop: s.population, income: f.income, expense: f.expense, net: f.net, lines: f.lines.map((l) => `${l.label} ${l.amount}`), growth: Math.round(s.growthWeek()) }; });
+const probe = () => page.evaluate(() => { const s = window.__game.sim, f = s.forecastWeek(); return { day: Math.round(s.day), pop: s.population, income: f.income, expense: f.expense, net: f.net, lines: f.lines.map((l) => `${l.label} ${l.amount}`), growth: Math.round(s.growthWeek()), demand: Object.fromEntries(Object.entries(s.demandParts).map(([k, a]) => [k, a.map((p) => p.text)])) }; });
 const trace = [];
 let savedAt = 0;
 async function saveTown() {

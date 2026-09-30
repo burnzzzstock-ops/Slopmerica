@@ -7,6 +7,7 @@ import {
   type PersonInstanceAttributes, type PersonMaterialControl,
 } from './personModel';
 import { resolveLook } from './personLooks';
+import { PersonPosePass, poseSupported } from './personPose';
 
 const ACTION_ID: Record<PersonAction, number> = {
   walk: 0, run: 1, idle: 2, smoke: 3, drink: 4, vape: 5, phone: 6,
@@ -71,6 +72,11 @@ export class PeopleRendererCore {
   private motionDirtyMin: number;
   private motionDirtyMax = -1;
   private readonly faceAtlas: THREE.CanvasTexture;
+  private readonly pose: PersonPosePass;
+  /** the renderer the figure is drawn with (found the first time it draws, or given to bindRenderer) and whether it can run the pose pass */
+  private gl: THREE.WebGLRenderer | null = null;
+  private poseOn = false;
+  private poseStale = true;
 
   constructor(scene: THREE.Scene, private readonly max: number, private readonly archetypes: readonly Archetype[]) {
     this.alive = new Uint8Array(max);
@@ -78,11 +84,13 @@ export class PeopleRendererCore {
     this.cadence = new Float32Array(max).fill(1);
     this.matrixDirtyMin = this.styleDirtyMin = this.motionDirtyMin = max;
     this.faceAtlas = buildFaceAtlas();
+    this.pose = new PersonPosePass(max);
 
     const nearGeometry = buildPersonGeometry(false);
     const farGeometry = buildPersonGeometry(true);
     this.near = this.makeBatch(nearGeometry, false);
     this.far = this.makeBatch(farGeometry, true);
+    this.pose.connect(nearGeometry);
     this.batches = [this.near, this.far];
     const column = new THREE.CylinderGeometry(0.28, 0.28, 1.85, 8, 1);
     column.translate(0, 0.925, 0);
@@ -102,7 +110,7 @@ export class PeopleRendererCore {
 
   private makeBatch(geometry: THREE.BufferGeometry, far: boolean): Batch {
     const attributes = attachPersonInstanceAttributes(geometry, this.max);
-    const material = createPersonMaterial(this.faceAtlas, far);
+    const material = createPersonMaterial(this.faceAtlas, far, this.pose.uniforms);
     const mesh = new THREE.InstancedMesh(geometry, material.material, this.max);
     mesh.name = far ? 'people-far' : 'people-near';
     // draw only up to the highest handle in use: drawing every slot (hidden
@@ -112,9 +120,12 @@ export class PeopleRendererCore {
     mesh.frustumCulled = false;
     mesh.castShadow = !far;
     mesh.receiveShadow = true;
-    const depth = far ? undefined : createPersonDepthMaterial();
+    const depth = far ? undefined : createPersonDepthMaterial(this.pose.uniforms);
     if (depth) mesh.customDepthMaterial = depth;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    // the first draw tells us the renderer, which the pose pass needs (and it allocates the pose textures before they are sampled)
+    mesh.onBeforeRender = (r) => this.bindRenderer(r);
+    mesh.onBeforeShadow = (r) => this.bindRenderer(r);
     return { mesh, attributes, material, depth };
   }
 
@@ -144,8 +155,8 @@ export class PeopleRendererCore {
   remove(h: number): void {
     if (h < 0 || h >= this.max || this.alive[h] === 0) return;
     this.alive[h] = 0;
-    for (let i = 0; i < this.batches.length; i++) this.batches[i].mesh.setMatrixAt(h, this.hidden);
-    this.dirtyMatrix(h);
+    for (let i = 0; i < this.batches.length; i++) { this.batches[i].mesh.setMatrixAt(h, this.hidden); this.batches[i].attributes.motion.setXYZW(h, -1, 0, 0, 0); } // action -1: a free slot, skipped by both shaders
+    this.dirtyMatrix(h); this.dirtyMotion(h);
     this.free.push(h);
   }
 
@@ -165,6 +176,15 @@ export class PeopleRendererCore {
     this.dirtyMatrix(h); this.dirtyMotion(h);
   }
 
+  /** Optional: hand over the renderer before the first frame (the figure finds it itself when it first draws). */
+  bindRenderer(renderer: THREE.WebGLRenderer): void {
+    if (this.gl === renderer) return;
+    this.gl = renderer;
+    this.poseOn = poseSupported(renderer);
+    if (this.poseOn) this.pose.init(renderer);
+    this.poseStale = true;
+  }
+
   setNight(n: number): void {
     this.near.material.setNight(n); this.far.material.setNight(n);
   }
@@ -176,6 +196,7 @@ export class PeopleRendererCore {
   }
 
   flush(): void {
+    const changed = this.styleDirtyMax >= this.styleDirtyMin || this.motionDirtyMax >= this.motionDirtyMin;
     if (this.matrixDirtyMax >= this.matrixDirtyMin) {
       markRange(this.near.mesh.instanceMatrix, this.matrixDirtyMin, this.matrixDirtyMax);
       markRange(this.far.mesh.instanceMatrix, this.matrixDirtyMin, this.matrixDirtyMax);
@@ -192,6 +213,8 @@ export class PeopleRendererCore {
     }
     this.matrixDirtyMin = this.styleDirtyMin = this.motionDirtyMin = this.max;
     this.matrixDirtyMax = this.styleDirtyMax = this.motionDirtyMax = -1;
+    // the poses, for everybody who is in use, once per frame and only when something about a person changed
+    if (this.poseOn && this.gl && this.used > 0 && (changed || this.poseStale)) { this.pose.update(this.gl, this.used); this.poseStale = false; }
   }
 
   pick(ray: THREE.Raycaster): number | null {
@@ -211,6 +234,6 @@ export class PeopleRendererCore {
     this.near.mesh.geometry.dispose(); this.far.mesh.geometry.dispose();
     this.near.depth?.dispose();
     this.pickMesh.geometry.dispose(); (this.pickMesh.material as THREE.Material).dispose();
-    this.near.material.dispose(); this.far.material.dispose(); this.faceAtlas.dispose();
+    this.near.material.dispose(); this.far.material.dispose(); this.faceAtlas.dispose(); this.pose.dispose();
   }
 }

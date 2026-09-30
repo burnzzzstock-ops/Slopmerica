@@ -205,7 +205,9 @@ if (on('bench')) {
       const gl = document.querySelector('canvas').getContext('webgl2');
       const tiles = [{ x: 0, y: 0, w: W, h: H, eye: sc.eye, target: sc.target, fov: 40, poses, shadow: sc.shadow }];
       const med = (a) => a.slice().sort((p, q) => p - q)[a.length >> 1];
-      const runs = (show) => { api.setVisible(show); const a = []; for (let k = 0; k < frames; k++) { const t0 = performance.now(); api.render(tiles); gl.finish(); a.push(performance.now() - t0); } return { ms: med(a), ...api.info() }; };
+      const px = new Uint8Array(4);
+      // readPixels of one pixel is what really waits for the software GPU (finish() alone returned in 0.3 ms with 300 k triangles queued)
+      const runs = (show) => { api.setVisible(show); const a = []; for (let k = 0; k < frames; k++) { const t0 = performance.now(); api.render(tiles); gl.finish(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); a.push(performance.now() - t0); } return { ms: med(a), ...api.info() }; };
       runs(true); runs(false);
       const on = [], off = [], delta = [];
       let a, b;

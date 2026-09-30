@@ -3,8 +3,9 @@ import {
   buildPieces, mergePieces, bitNames, PROP, type LodName, type Piece,
 } from './personGeo';
 import {
-  FRAGMENT_BODY, FRAGMENT_DECLARATIONS, FRAGMENT_LIB, VERTEX_DECLARATIONS, VERTEX_LIB,
+  FRAGMENT_BODY, FRAGMENT_DECLARATIONS, FRAGMENT_LIB, POSE_SAMPLER_DECLARATIONS, VERTEX_DECLARATIONS, VERTEX_LIB,
 } from './personShader';
+import { poseSupported, type PoseUniforms } from './personPose';
 import type { PersonLook } from './personLooks';
 
 // One procedural citizen is instanced for the whole population (two draw calls: near and far). The geometry is a set of small
@@ -75,7 +76,9 @@ export interface PersonMaterialControl {
   dispose(): void;
 }
 
-const VERTEX_INJECT = `${VERTEX_DECLARATIONS}\n${VERTEX_LIB}`;
+const VERTEX_INJECT = `${VERTEX_DECLARATIONS}\n${POSE_SAMPLER_DECLARATIONS}\n${VERTEX_LIB}`;
+/** the poses come from the pose pass (personPose.ts) when the renderer can write float textures, else the vertex shader works them out */
+const poseDefine = (renderer: THREE.WebGLRenderer | undefined): string => (renderer && poseSupported(renderer) ? '#define CITIZEN_POSE_TEX\n' : '');
 const VARYINGS = /* glsl */`
   {
     int i1 = int(iLook.x + 0.5), i2 = int(iLook.y + 0.5);
@@ -88,13 +91,13 @@ const VARYINGS = /* glsl */`
   }
 `;
 
-export function createPersonMaterial(faceAtlas: THREE.Texture, far: boolean): PersonMaterialControl {
+export function createPersonMaterial(faceAtlas: THREE.Texture, far: boolean, pose: PoseUniforms): PersonMaterialControl {
   const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.78, metalness: 0.02 });
   const uniforms = { uFaceAtlas: { value: faceAtlas }, uNight: { value: 0 }, uLodDistance: { value: 64 }, uFarDistance: { value: 1500 }, uFarLod: { value: far ? 1 : 0 } };
-  material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, uniforms);
+  material.onBeforeCompile = (shader, renderer) => {
+    Object.assign(shader.uniforms, uniforms, pose);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>\n${VERTEX_INJECT}`)
+      .replace('#include <common>', `#include <common>\n${poseDefine(renderer)}${VERTEX_INJECT}`)
       .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\n  vec3 cPos = vec3(0.0);\n  citizenDeform(objectNormal, cPos);')
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n  transformed = cPos;\n${VARYINGS}`);
     shader.fragmentShader = shader.fragmentShader
@@ -106,7 +109,7 @@ export function createPersonMaterial(faceAtlas: THREE.Texture, far: boolean): Pe
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n  roughnessFactor = gRough;')
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n  metalnessFactor = gMetal;');
   };
-  material.customProgramCacheKey = () => 'slop-person-rig-1'; // near and far are the same program with different uniforms: compile it once
+  material.customProgramCacheKey = () => 'slop-person-rig-2'; // near and far are the same program with different uniforms: compile it once
   return {
     material,
     setNight(value: number) { uniforms.uNight.value = THREE.MathUtils.clamp(value, 0, 1); },
@@ -116,16 +119,16 @@ export function createPersonMaterial(faceAtlas: THREE.Texture, far: boolean): Pe
 }
 
 /** Shadow pass companion: the same pose and feature masks, without the view camera's level-of-detail test. */
-export function createPersonDepthMaterial(): THREE.MeshDepthMaterial {
+export function createPersonDepthMaterial(pose: PoseUniforms): THREE.MeshDepthMaterial {
   const material = new THREE.MeshDepthMaterial();
   const uniforms = { uLodDistance: { value: 1e7 }, uFarDistance: { value: 1e7 }, uFarLod: { value: 0 } };
-  material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, uniforms);
+  material.onBeforeCompile = (shader, renderer) => {
+    Object.assign(shader.uniforms, uniforms, pose);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>\n#define CITIZEN_DEPTH\n${VERTEX_INJECT}`)
+      .replace('#include <common>', `#include <common>\n#define CITIZEN_DEPTH\n${poseDefine(renderer)}${VERTEX_INJECT}`)
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vec3 cNormal = vec3(0.0, 1.0, 0.0);\n  vec3 cPos = vec3(0.0);\n  citizenDeform(cNormal, cPos);\n  transformed = cPos;');
   };
-  material.customProgramCacheKey = () => 'slop-person-rig-depth-1';
+  material.customProgramCacheKey = () => 'slop-person-rig-depth-2';
   return material;
 }
 

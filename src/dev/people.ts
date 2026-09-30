@@ -56,6 +56,7 @@ ground.receiveShadow = true;
 scene.add(ground);
 
 const people = new PeopleRenderer(scene, 700);
+people.bindRenderer(renderer);
 const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 2000);
 
 export interface Pose { h: number; x: number; y?: number; z: number; yaw?: number; action: PersonAction; phase: number }
@@ -163,7 +164,8 @@ function probe(opts: {
   g.setDrawRange(0, n);
   const shader = {
     uniforms: {} as Record<string, { value: unknown }>,
-    vertexShader: `mat4 instanceMatrix = mat4(1.0);
+    vertexShader: `#define CITIZEN_PROBE
+      mat4 instanceMatrix = mat4(1.0);
       #include <common>
       uniform vec2 uProbeSize;
       varying vec3 vProbe;
@@ -180,6 +182,7 @@ function probe(opts: {
   (near.material.material.onBeforeCompile as (s: unknown, r: unknown) => void)(shader, renderer);
   const W = 1024, Hh = Math.ceil(n / W);
   shader.uniforms.uProbeSize = { value: new THREE.Vector2(W, Hh) };
+  shader.uniforms.uProbeInstance = { value: opts.h }; // (the poses come from the pose pass: this person's row)
   for (const k of ['uLodDistance', 'uFarDistance']) if (shader.uniforms[k]) shader.uniforms[k].value = 1e9;
   const mat = new THREE.ShaderMaterial({
     uniforms: shader.uniforms as never, vertexShader: shader.vertexShader,
@@ -205,6 +208,7 @@ function probe(opts: {
   for (let s = 0; s < opts.samples; s++) {
     const Z = s * opts.step;
     people.set(opts.h, 0, 0, Z, 0, opts.action, Z / opts.stride);
+    people.flush();
     for (const q of inst) {
       const at = opts.h * q.size, a = q.dst.array as Float32Array, sa = q.src.array as Float32Array;
       for (let i = 0; i < n; i++) for (let c = 0; c < q.size; c++) a[i * q.size + c] = sa[at + c];

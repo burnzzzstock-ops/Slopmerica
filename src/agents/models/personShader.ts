@@ -328,7 +328,7 @@ void poseAction(int action, float ph, float seed, float sx, float sy, float sz, 
 // ---- the deformer ----------------------------------------------------------------------------------------------------------
 // Rest pose points -> posed points and normals. Vertices of the level of detail not drawn, of features the person does not wear,
 // and of props not in use collapse to the origin and are dropped as degenerate triangles.
-const DEFORM = /* glsl */`
+const PROPFOR = /* glsl */`
 int propFor(int action, int base) {
   if (action == 3) return 1;
   if (action == 4) return (base == 2 || base == 7 || base == 18) ? base : 2;
@@ -339,83 +339,23 @@ int propFor(int action, int base) {
   if (action == 8 || action == 10 || action == 12 || action == 13) return 0;   // dancing, yoga, lying, fighting: hands empty
   return base;
 }
+`;
 
-bool featureOn(float f, int prop, int scene) {
-  if (f < 0.5) return true;
-  int fi = int(f + 0.5);
-  if (fi >= 200) return fi - 200 == scene;
-  if (fi >= 100) return fi - 100 == prop;
-  int b = fi - 1;
-  float m = b < 24 ? iMaskA.x : (b < 48 ? iMaskA.y : iMaskA.z);
-  return ((int(m + 0.5) >> (b - (b / 24) * 24)) & 1) == 1;
-}
-
-void citizenDeform(inout vec3 nrm, out vec3 outPos) {
-  outPos = vec3(0.0);
-  vec3 center = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-  float dist = distance(cameraPosition, center);
-#ifdef CITIZEN_DEPTH
-  bool showLod = true;
-#else
-  bool showLod = uFarLod > 0.5 ? (dist > uLodDistance && dist < uFarDistance) : (dist <= uLodDistance);
-#endif
-  if (!showLod) return;
-
+// The skeleton. The whole pose is evaluated for ONE bone (part pt) and comes out as a rigid transform of that bone: q' = Rn * q + tr, with q
+// the vertex in the scaled space (position * iShape.xyz, after the per-vertex build changes). Every vertex of a part moves with the same
+// transform, so nothing here depends on the vertex: it runs once per person and bone in the pose pass (personPose.ts) and the vertices only
+// fetch the result. Without float render targets (no EXT_color_buffer_float) the vertex shader calls it itself, once per vertex.
+const BONE = /* glsl */`
+void citizenBone(int pt, out mat3 Rn, out vec3 tr) {
   int action = int(iMotion.x + 0.5);
-  int i1 = int(iLook.x + 0.5), i2 = int(iLook.y + 0.5);
+  int i2 = int(iLook.y + 0.5);
   int gaitStyle = i2 & 7, idleStyle = (i2 >> 3) & 7, stoopI = (i2 >> 6) & 15, baseProp = (i2 >> 10) & 63, danceStyle = (i2 >> 16) & 7;
   int prop = propFor(action, baseProp);
-  int scene = action == 11 ? 1 : 0;
-  if (!featureOn(aTag.z, prop, scene)) return;
-
-  vec3 p = position;
-  int pt = int(aTag.x + 0.5);
-  int zone = int(aTag.y + 0.5);
   float seed = iMaskA.w;
   vec3 sh = iShape.xyz;
   float sx = sh.x, sy = sh.y, sz = sh.z;
-  float belly = iBuild.x, shoulders = iBuild.y, limbs = iBuild.z, stride = iBuild.w;
-  int legwear = (i1 >> 7) & 7;
+  float shoulders = iBuild.y, stride = iBuild.w;
 
-  // ---- build: proportions of this person, in the rest pose
-  if (pt == 3) { vec3 hc = vec3(0.0, 1.50, 0.0); p = hc + (p - hc) * iShape.w; }
-  if (pt == 1 || pt == 2) {
-    float bw = smoothstep(0.82, 0.98, p.y) * (1.0 - smoothstep(1.18, 1.34, p.y));
-    float sw = 1.0 + (shoulders - 1.0) * smoothstep(1.06, 1.36, p.y);
-    p.x *= sw * (1.0 + 0.22 * belly * bw);
-    p.z *= p.z > 0.0 ? 1.0 + belly * bw : 1.0 + 0.25 * belly * bw;
-  }
-  float side = p.x < 0.0 ? -1.0 : 1.0;
-  if (pt >= 4 && pt <= 7) {                      // arms: out with the shoulders, thicker with the limbs
-    float cx = side * 0.215;
-    p.x = cx * shoulders + (p.x - cx) * limbs;
-    p.z *= limbs;
-  } else if (pt >= 8 && pt <= 11) {
-    float cx = side * 0.10;
-    float k = limbs;
-    if (zone == 20 && legwear > 0 && legwear < 4) {   // shorts, knee-length, capri: bare legs are thinner than the cloth
-      float hem = legwear == 1 ? 0.63 : (legwear == 2 ? 0.46 : 0.33);
-      if (p.y < hem - 0.01) k *= 0.86;
-    }
-    p.x = cx + (p.x - cx) * k;
-    p.z *= k;
-  }
-  vec3 rest = position;
-  if (aTag.w > 0.5) {                            // hair hanging behind the head and coat hems swing with the walk
-    float moving = action == 1 ? 1.7 : (action == 0 ? 1.0 : 0.12);
-    float tt = C_TAU * (action <= 1 ? iMotion.y : iMotion.y * 0.3) + seed * 6.28;
-    if (aTag.w < 1.5) {
-      float w = clamp((1.70 - p.y) / 0.34, 0.0, 1.0); w *= w;
-      p.x += 0.05 * w * moving * sin(tt);
-      p.z += 0.04 * w * moving * (0.5 + 0.5 * sin(2.0 * tt + 1.0));
-    } else {
-      float w = clamp((1.02 - p.y) / 0.5, 0.0, 1.0); w *= w;
-      p.x += 0.03 * w * moving * sin(tt);
-      p.z += 0.045 * w * moving * sin(2.0 * tt);
-    }
-  }
-
-  // ---- pose
   float ph = iMotion.y;
   float Lp = stride;
   gPOff = vec3(0.0); gPYaw = gPRoll = gPPitch = 0.0; gCYaw = gCRoll = gCPitch = 0.0; gHYaw = gHPitch = gHRoll = 0.0;
@@ -431,8 +371,8 @@ void citizenDeform(inout vec3 nrm, out vec3 outPos) {
     gHPitch -= 0.5 * lean;
   }
 
-  // ---- skeleton in scaled space
-  vec3 q = p * sh;
+  // ---- skeleton in scaled space (the bone's transform is what this does to the origin, and the rotation it accumulates)
+  vec3 q = vec3(0.0);
   vec3 pivP = vec3(0.0, 0.92 * sy, 0.0), waist = vec3(0.0, 1.04 * sy, 0.0), neck = vec3(0.0, 1.47 * sy, 0.0);
   float shX = 0.215 * shoulders * sx, shY = 1.37 * sy;
   float hipX = 0.10 * sx, hipY = 0.90 * sy;
@@ -456,7 +396,7 @@ void citizenDeform(inout vec3 nrm, out vec3 outPos) {
   vec3 tP = gPOff + vec3(0.0, Y, 0.0);
   hL1.y += Y; hR1.y += Y;
 
-  mat3 Rn = mat3(1.0);
+  Rn = mat3(1.0);
   bool upper = false;
   if (pt == 8 || pt == 9 || pt == 10 || pt == 11 || pt == 12 || pt == 13) {
     bool L = (pt == 8 || pt == 10 || pt == 12);
@@ -507,12 +447,158 @@ void citizenDeform(inout vec3 nrm, out vec3 outPos) {
     mat3 R = rotX(1.5707963 + 0.03 * sin(iMotion.y * 0.4));
     q = rotAt(R, q, vec3(0.0, 0.13, 0.0)); Rn = R * Rn;
   }
-  nrm = normalize(Rn * nrm);
-  outPos = q;
+  tr = q;
 }
 `;
 
-export const VERTEX_LIB = HELPERS + GAIT + POSE_GLOBALS + STAND + WALK + ACTIONS + DEFORM;
+// One vertex: the person's level of detail and the pieces they wear decide whether it is drawn at all (before anything is fetched or
+// computed), the build of this person reshapes it in the rest pose, and its bone's transform poses it.
+const SKIN = /* glsl */`
+bool featureOn(float f, int prop, int scene) {
+  if (f < 0.5) return true;
+  int fi = int(f + 0.5);
+  if (fi >= 200) return fi - 200 == scene;
+  if (fi >= 100) return fi - 100 == prop;
+  int b = fi - 1;
+  float m = b < 24 ? iMaskA.x : (b < 48 ? iMaskA.y : iMaskA.z);
+  return ((int(m + 0.5) >> (b - (b / 24) * 24)) & 1) == 1;
+}
+
+void citizenDeform(inout vec3 nrm, out vec3 outPos) {
+  outPos = vec3(0.0);
+  int action = int(iMotion.x + 0.5);
+  if (action < 0) return;                        // a free slot
+  vec3 center = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+  float dist = distance(cameraPosition, center);
+#ifdef CITIZEN_DEPTH
+  bool showLod = true;
+#else
+  bool showLod = uFarLod > 0.5 ? (dist > uLodDistance && dist < uFarDistance) : (dist <= uLodDistance);
+#endif
+  if (!showLod) return;
+
+  int i1 = int(iLook.x + 0.5), i2 = int(iLook.y + 0.5);
+  int baseProp = (i2 >> 10) & 63;
+  int prop = propFor(action, baseProp);
+  int scene = action == 11 ? 1 : 0;
+  if (!featureOn(aTag.z, prop, scene)) return;
+
+  vec3 p = position;
+  int pt = int(aTag.x + 0.5);
+  int zone = int(aTag.y + 0.5);
+  float seed = iMaskA.w;
+  vec3 sh = iShape.xyz;
+  float belly = iBuild.x, shoulders = iBuild.y, limbs = iBuild.z;
+  int legwear = (i1 >> 7) & 7;
+
+  // ---- build: proportions of this person, in the rest pose
+  if (pt == 3) { vec3 hc = vec3(0.0, 1.50, 0.0); p = hc + (p - hc) * iShape.w; }
+  if (pt == 1 || pt == 2) {
+    float bw = smoothstep(0.82, 0.98, p.y) * (1.0 - smoothstep(1.18, 1.34, p.y));
+    float sw = 1.0 + (shoulders - 1.0) * smoothstep(1.06, 1.36, p.y);
+    p.x *= sw * (1.0 + 0.22 * belly * bw);
+    p.z *= p.z > 0.0 ? 1.0 + belly * bw : 1.0 + 0.25 * belly * bw;
+  }
+  float side = p.x < 0.0 ? -1.0 : 1.0;
+  if (pt >= 4 && pt <= 7) {                      // arms: out with the shoulders, thicker with the limbs
+    float cx = side * 0.215;
+    p.x = cx * shoulders + (p.x - cx) * limbs;
+    p.z *= limbs;
+  } else if (pt >= 8 && pt <= 11) {
+    float cx = side * 0.10;
+    float k = limbs;
+    if (zone == 20 && legwear > 0 && legwear < 4) {   // shorts, knee-length, capri: bare legs are thinner than the cloth
+      float hem = legwear == 1 ? 0.63 : (legwear == 2 ? 0.46 : 0.33);
+      if (p.y < hem - 0.01) k *= 0.86;
+    }
+    p.x = cx + (p.x - cx) * k;
+    p.z *= k;
+  }
+  if (aTag.w > 0.5) {                            // hair hanging behind the head and coat hems swing with the walk
+    float moving = action == 1 ? 1.7 : (action == 0 ? 1.0 : 0.12);
+    float tt = C_TAU * (action <= 1 ? iMotion.y : iMotion.y * 0.3) + seed * 6.28;
+    if (aTag.w < 1.5) {
+      float w = clamp((1.70 - p.y) / 0.34, 0.0, 1.0); w *= w;
+      p.x += 0.05 * w * moving * sin(tt);
+      p.z += 0.04 * w * moving * (0.5 + 0.5 * sin(2.0 * tt + 1.0));
+    } else {
+      float w = clamp((1.02 - p.y) / 0.5, 0.0, 1.0); w *= w;
+      p.x += 0.03 * w * moving * sin(tt);
+      p.z += 0.045 * w * moving * sin(2.0 * tt);
+    }
+  }
+
+  // ---- pose: this part's bone
+  vec3 q = p * sh;
+  mat3 Rn;
+  vec3 tr;
+#ifdef CITIZEN_POSE_TEX
+#ifdef CITIZEN_PROBE
+  ivec2 bt = ivec2(pt, int(uProbeInstance + 0.5));
+#else
+  ivec2 bt = ivec2(pt, gl_InstanceID);
+#endif
+  vec4 b0 = texelFetch(uPoseA, bt, 0), b1 = texelFetch(uPoseB, bt, 0), b2 = texelFetch(uPoseC, bt, 0);
+  Rn = mat3(b0.xyz, b1.xyz, b2.xyz);
+  tr = vec3(b0.w, b1.w, b2.w);
+#else
+  citizenBone(pt, Rn, tr);
+#endif
+  nrm = normalize(Rn * nrm);
+  outPos = Rn * q + tr;
+}
+`;
+
+// what the pose pass (personPose.ts) runs: the whole pose once per person and bone, written to three float textures (one bone per pixel
+// along x, one person per row): texel k of a bone holds column k of Rn in xyz and component k of tr in w
+export const POSE_DECLARATIONS = /* glsl */`
+attribute float aBone;
+attribute vec4 iShape;
+attribute vec4 iBuild;
+attribute vec4 iMaskA;
+attribute vec4 iLook;
+attribute vec4 iMotion;
+uniform vec2 uPoseSize;
+varying vec4 vPoseA;
+varying vec4 vPoseB;
+varying vec4 vPoseC;
+`;
+export const POSE_LIB = HELPERS + GAIT + POSE_GLOBALS + STAND + WALK + ACTIONS + PROPFOR + BONE;
+export const POSE_MAIN = /* glsl */`
+void main() {
+  if (iMotion.x < -0.5 || iShape.y < 0.05) { gl_Position = vec4(3.0, 3.0, 3.0, 1.0); gl_PointSize = 1.0; return; }
+  mat3 Rn;
+  vec3 tr;
+  citizenBone(int(aBone + 0.5), Rn, tr);
+  vPoseA = vec4(Rn[0], tr.x);
+  vPoseB = vec4(Rn[1], tr.y);
+  vPoseC = vec4(Rn[2], tr.z);
+  gl_Position = vec4((aBone + 0.5) / uPoseSize.x * 2.0 - 1.0, (float(gl_InstanceID) + 0.5) / uPoseSize.y * 2.0 - 1.0, 0.0, 1.0);
+  gl_PointSize = 1.0;
+}
+`;
+export const POSE_FRAGMENT = /* glsl */`
+varying vec4 vPoseA;
+varying vec4 vPoseB;
+varying vec4 vPoseC;
+layout(location = 0) out highp vec4 outA;
+layout(location = 1) out highp vec4 outB;
+layout(location = 2) out highp vec4 outC;
+void main() { outA = vPoseA; outB = vPoseB; outC = vPoseC; }
+`;
+
+/** The vertex stage of the figure: the poses are fetched (CITIZEN_POSE_TEX) or, without float render targets, worked out per vertex. */
+export const VERTEX_LIB = HELPERS + PROPFOR + `\n#ifndef CITIZEN_POSE_TEX\n` + GAIT + POSE_GLOBALS + STAND + WALK + ACTIONS + BONE + `\n#endif\n` + SKIN;
+export const POSE_SAMPLER_DECLARATIONS = /* glsl */`
+#ifdef CITIZEN_POSE_TEX
+uniform highp sampler2D uPoseA;
+uniform highp sampler2D uPoseB;
+uniform highp sampler2D uPoseC;
+#ifdef CITIZEN_PROBE
+uniform float uProbeInstance;
+#endif
+#endif
+`;
 
 // ---- fragment ---------------------------------------------------------------------------------------------------------------
 export const FRAGMENT_DECLARATIONS = /* glsl */`

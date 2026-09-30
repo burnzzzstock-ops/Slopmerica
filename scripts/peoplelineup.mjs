@@ -149,11 +149,18 @@ if (on('feet')) {
       const cyc = 4, step = 0.02;
       const r = await page.evaluate(([a]) => window.__people.probe(a), [{ h, action, step, samples: Math.round((cyc * stride) / step), stride }]);
       rows.push({ who, action, ...r });
-      const b = r.band0.012, c = r['band0.03'];
+      const b = r['band0.012'], c = r['band0.03'];
       console.log(`${who.padEnd(14)} ${action.padEnd(4)} sole y ${String(r.sole).padStart(7)}  slide mean ${String(c.slideMeanPct).padStart(5)}% p95 ${String(c.slideP95Pct).padStart(5)}% max ${String(c.slideMaxPct).padStart(5)}% (3 cm band)   ${String(b.slideMeanPct).padStart(5)}% / ${String(b.slideP95Pct).padStart(5)}% (1.2 cm)   contact L ${c.contactFracL} R ${c.contactFracR} airborne ${c.airborneFrac}   top ${r.topRange}`);
     }
   }
   writeFileSync(`${out}/feet.json`, JSON.stringify(rows, null, 1));
+  // the check: on the ground the feet stay put (mean slide under 12% of the ground speed, the worst 5% under 25%) and touch it (the lowest shoe
+  // vertex within 1 cm of y = 0); the old model floated 3-6 cm up and skated at 130-160%
+  const worst = (f) => Math.max(...rows.map(f));
+  const slide = worst((r) => r['band0.03'].slideMeanPct), p95 = worst((r) => r['band0.03'].slideP95Pct), sole = worst((r) => Math.abs(r.sole));
+  const ok = (label, good, extra) => { console.log(good ? 'OK  ' : 'FAIL', label, extra); if (!good) errs.push('feet check: ' + label); };
+  ok('feet stay put while planted', slide < 12 && p95 < 25, `(worst mean slide ${slide}%, worst p95 ${p95}%)`);
+  ok('feet touch the ground', sole < 0.01, `(lowest shoe vertex ${sole} m from the pavement in the worst case)`);
 }
 
 const info = await page.evaluate(() => window.__people.info());

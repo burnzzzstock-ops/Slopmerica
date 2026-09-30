@@ -26,6 +26,8 @@ export interface Tile {
   /** logical size in px (aspect ratio source) */
   w: number;
   h: number;
+  /** glass reflection strength 1..4 (0: not glass); u0/u1 already carry the flag (see GLASS_U) */
+  glass: number;
 }
 
 interface TileDef {
@@ -37,6 +39,7 @@ interface TileDef {
   emissive: boolean;
   shrink: boolean; // may be scaled down if the atlas overflows
   sheet: Sheet;
+  glass: number;
   paint: Painter;
   // layout results (physical px in the albedo atlas)
   x: number;
@@ -50,6 +53,13 @@ export const ATLAS_SIZE = 4096;
 export const SAT_SIZE = 2048;
 /** a 'sat' sheet tile's u is offset by this (the shader picks the sheet by u > 1.5) */
 export const SAT_U = 2;
+/**
+ * A glass tile (curtain wall, ribbon windows, glazed lobbies) rides on the main sheet with its u shifted by GLASS_U plus a
+ * strength step 0..3 (u = 4..8, floor(u) = 4 + step). The building material reads the flag from u, subtracts the whole
+ * number for the texture lookup, and adds a sky reflection whose strength is (step + 1) / 4 (buildings/material.ts). It costs
+ * no extra vertex data or texture read, so Low can afford it. `Tile.glass` is that strength step + 1 (0 = not glass).
+ */
+export const GLASS_U = 4;
 const SIZE: Record<Sheet, number> = { main: ATLAS_SIZE, sat: SAT_SIZE };
 const EMI_SCALE = 0.5;
 const PAD = 6;
@@ -63,9 +73,9 @@ let painted = false;
 const usedHeight: Record<Sheet, number> = { main: 0, sat: 0 };
 
 /** Register a tile. Called by the art modules' register functions. */
-export function defTile(name: string, w: number, h: number, paint: Painter, o: { wrap?: boolean; emissive?: boolean; shrink?: boolean; res?: number; sheet?: Sheet } = {}) {
+export function defTile(name: string, w: number, h: number, paint: Painter, o: { wrap?: boolean; emissive?: boolean; shrink?: boolean; res?: number; sheet?: Sheet; glass?: number } = {}) {
   if (byName.has(name)) return;
-  const d: TileDef = { name, w, h, res: o.res ?? 1, wrap: !!o.wrap, emissive: !!o.emissive, shrink: o.shrink ?? !o.wrap, sheet: o.sheet ?? 'main', paint, x: 0, y: 0, pw: 0, ph: 0 };
+  const d: TileDef = { name, w, h, res: o.res ?? 1, wrap: !!o.wrap, emissive: !!o.emissive, shrink: o.shrink ?? !o.wrap, sheet: o.sheet ?? 'main', glass: o.sheet === 'sat' ? 0 : Math.max(0, Math.min(4, Math.round(o.glass ?? 0))), paint, x: 0, y: 0, pw: 0, ph: 0 };
   defs.push(d);
   byName.set(name, d);
 }
@@ -154,7 +164,7 @@ function ensureLayout() {
     if (scale < 1) console.warn(`[atlas] shrank ${sheet} signs/billboards to ${(scale * 100).toFixed(0)}% to fit`);
   }
   for (const d of defs) {
-    const S = SIZE[d.sheet], du = d.sheet === 'sat' ? SAT_U : 0;
+    const S = SIZE[d.sheet], du = d.sheet === 'sat' ? SAT_U : d.glass ? GLASS_U + d.glass - 1 : 0;
     tiles.set(d.name, {
       name: d.name,
       u0: du + (d.x + PAD) / S,
@@ -163,6 +173,7 @@ function ensureLayout() {
       v0: 1 - (d.y + PAD + d.ph) / S,
       w: d.w,
       h: d.h,
+      glass: d.glass,
     });
   }
 }

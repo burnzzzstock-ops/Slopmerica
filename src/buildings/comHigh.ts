@@ -266,7 +266,7 @@ function neonTower(g: GenCtx, b: Brand) {
   const x0 = -W / 2 + 0.6, x1 = W / 2 - 0.6, z0 = -D / 2 + 0.6, z1 = D / 2 - 1.2;
   const podH = 3 * FLOOR.shop;
   // podium wrapped in screens
-  mb.box(x0, x1, 0, podH, z0, z1, { f: FAC.storefront(rng), side: WALL.concrete(0x3a3a40), top: ROOF.flat(0x5a5a5a) });
+  mb.box(x0, x1, 0, podH, z0, z1, { f: FAC.storefront(rng), side: WALL.concrete(0x646470), top: ROOF.flat(0x5a5a5a) }); // (was 0x3a3a40: a black three-storey base)
   const nScr = Math.max(1, Math.floor((x1 - x0) / 7));
   const scrW = (x1 - x0) / nScr - 0.4;
   for (let i = 0; i < nScr; i++) {

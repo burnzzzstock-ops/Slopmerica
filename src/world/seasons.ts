@@ -209,6 +209,11 @@ export const atmo = {
   uRain: { value: 0 }, // current rainfall, for rings
   uSkyRefl: { value: new THREE.Color(0.55, 0.65, 0.78) }, // what wet ground and puddles reflect
   uFlowers: { value: 0 }, // wildflowers in the grass 0..1
+  // what a glass tower mirrors (buildings/material.ts): the sky overhead and at the horizon, and the key light's direction.
+  // Environment writes them each frame; they are lit values (the same units as the sky dome), so the tone map treats them alike.
+  uGlassTop: { value: new THREE.Color(0.2, 0.45, 0.9) },
+  uGlassHor: { value: new THREE.Color(0.7, 0.8, 0.9) },
+  uGlassSun: { value: new THREE.Vector3(0.3, 0.8, 0.2) },
 };
 export type AtmoUniforms = typeof atmo;
 
@@ -223,6 +228,9 @@ export const ATMOS_EXTRA = {
   uRainAmt: atmo.uRain,
   uAtmoTime: atmo.uTime,
   uSkyRefl: atmo.uSkyRefl,
+  uGlassTop: atmo.uGlassTop,
+  uGlassHor: atmo.uGlassHor,
+  uGlassSun: atmo.uGlassSun,
   uFlowerMap: { value: 0 }, // 0 Holler County, 1 Golden Coast, 2 Gator Gulch
 };
 Object.assign(ATMOS, ATMOS_EXTRA);

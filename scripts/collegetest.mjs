@@ -46,9 +46,6 @@ const r = await page.evaluate((center) => {
   const college = [...g.buildings.list.values()].find((b) => b.kind === 'college');
   if (!college) return { before, college: null };
   college.state = 'active'; college.progress = 1;
-  // (the block sets the calendar back to mid-summer, day 120, from the day it was saved on:
-  // count days from here, or no day ticks, and no coverage, until the old date comes round)
-  g.sim.lastWhole = Math.floor(g.sim.day);
   for (let k = 0; k < 6; k++) d.run(5);
   const natural = grads().slice(); // (a home may get there on its own in the month)
   const cov = (b) => SV.S.b.get(b.id)?.cov.college ?? 0, edu = (b) => SV.S.b.get(b.id)?.edu ?? 0;

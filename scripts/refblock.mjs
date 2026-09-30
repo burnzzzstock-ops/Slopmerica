@@ -43,7 +43,8 @@ async function grow(browser, base) {
 
 /**
  * Open the block at a quality preset. Returns { page, errs, center }; the game
- * loop is stopped (drive it with g.frame), the HUD hidden, the date mid-summer.
+ * loop is stopped (drive it with g.frame), the HUD hidden, the date mid-summer
+ * (and whole days tick from there).
  */
 export async function openBlock(browser, { base, quality = 'high', width = 1280, height = 720, phone = false, dpr = 1 }) {
   if (!existsSync(SAVE)) await grow(browser, base);
@@ -62,7 +63,10 @@ export async function openBlock(browser, { base, quality = 'high', width = 1280,
     const g = window.__game;
     cancelAnimationFrame(g.raf);
     for (const e of document.querySelectorAll('.hud, .xfeed, .toast, .next-bar, .side-cards')) e.style.display = 'none';
-    g.sim.day = 120; // mid-summer
+    // mid-summer: the block was saved later in the year, so count whole days from here too, or
+    // no day ticks (services, freight, demand, growth) until the old date comes round
+    g.sim.day = 120;
+    g.sim.lastWhole = Math.floor(g.sim.day);
     g.frame(0.016); g.frame(0.016);
   });
   return { page, errs, center };

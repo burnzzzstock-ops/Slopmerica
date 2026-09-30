@@ -26,7 +26,7 @@ const r = await page.evaluate((SECONDS) => {
   // trips that ended normally: cars that leave the list without having crashed
   let finished = 0, prevIds = new Map();
   let samples = 0, laneOverlaps = 0, boxOverlaps = 0, moving = 0, total = 0, snaps = 0;
-  const examples = [], still = new Map(), prevYaw = new Map();
+  const laneEx = [], boxEx = [], still = new Map(), prevYaw = new Map();
   let longest = { s: 0 };
   const where = (c) => { const st = c.path[c.pi]; const seg = st && net.segs.get(st.seg); return `${c.kind}#${c.id} ${seg?.type ?? '?'} seg ${st?.seg} lane ${c.lane} s ${c.s.toFixed(1)} v ${c.v.toFixed(1)}${c.junction ? ' (in junction)' : ''}${c.pi === 0 ? ' (first road)' : ''}`; };
   for (let f = 0; f < SECONDS * 20; f++) {
@@ -55,21 +55,22 @@ const r = await page.evaluate((SECONDS) => {
       const y = a.ryaw ?? a.yaw, hx = Math.sin(y), hz = Math.cos(y);
       const along = Math.abs(dx * hx + dz * hz), across = Math.abs(dx * hz - dz * hx);
       if (!(along < ((a.len + b.len) / 2) * 0.8 && across < 1.4)) continue; // bodies overlap by 20% or more
+      const ex = a.junction || b.junction ? boxEx : laneEx;
       if (a.junction || b.junction) boxOverlaps++; else laneOverlaps++;
-      if (examples.length < 6) examples.push(`${where(a)}  ×  ${where(b)}`);
+      if (ex.length < 4) ex.push(`${where(a)}  ×  ${where(b)}`);
     }
   }
   const cc = tr.crashCause;
   return {
     pop: g.sim.population, cars: tr.cars.length, samples,
-    lanePerSample: laneOverlaps / samples, boxPerSample: boxOverlaps / samples, examples,
+    lanePerSample: laneOverlaps / samples, boxPerSample: boxOverlaps / samples, laneEx, boxEx,
     longest: { s: +longest.s.toFixed(1), car: longest.car }, snaps, movingShare: moving / Math.max(1, total),
     crashes: tr.crashes - crashes0, byCause: { rear: cc.rear - cause0.rear, random: cc.random - cause0.random, junction: cc.junction - cause0.junction }, finished,
   };
 }, SECONDS);
 console.log(`${r.pop} residents, ${r.cars} cars, ${SECONDS} s of morning traffic: ${(r.movingShare * 100).toFixed(0)}% moving, ${r.finished} trips finished, ${r.crashes} crashes ${JSON.stringify(r.byCause)}`);
-check(`no two cars inside each other in a lane (${r.lanePerSample.toFixed(2)} pairs at any moment)`, r.lanePerSample === 0, r.examples);
-check(`no two cars inside each other in a junction (${r.boxPerSample.toFixed(2)} pairs at any moment)`, r.boxPerSample === 0, r.examples);
+check(`no two cars inside each other in a lane (${r.lanePerSample.toFixed(2)} pairs at any moment)`, r.lanePerSample === 0, r.laneEx);
+check(`no two cars inside each other in a junction (${r.boxPerSample.toFixed(2)} pairs at any moment)`, r.boxPerSample === 0, r.boxEx);
 check(`no car waits over 60 s away from a red light (longest ${r.longest.s} s)`, r.longest.s <= 60, r.longest);
 check(`no heading snaps over 0.35 rad in a frame (${r.snaps})`, r.snaps === 0);
 check(`traffic still flows (${(r.movingShare * 100).toFixed(0)}% of cars moving, target at least 50%)`, r.movingShare >= 0.5);

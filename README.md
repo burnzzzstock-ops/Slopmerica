@@ -161,6 +161,7 @@ node scripts/firststeps.mjs      # first-steps Next bar and its button; demand w
 node scripts/playtest5.mjs       # transit lines survive a street joining their road; bulldoze names the line; transit list refreshes; per-ride costs; green "Built" after placing; valid-site rings; save on page hide
 node scripts/housetown.mjs       # a dense town of every house style: variety, model cost, building batch budget (SHOTS=prefix)
 node scripts/motiontest.mjs      # cars: no heading snaps, brake for turns, change lanes, blink, never wrong-way on a one-way; walkers' stride, no teleports
+node scripts/carsolid.mjs        # (fails today; docs/AUDIT_ROUND7.md) cars never drawn inside each other in a lane or a junction at morning rush, no car stuck off a red, no heading snaps; steps the traffic model without rendering
 node scripts/civictest.mjs       # Civic Foundry pack streams in: street trees, furniture, bus shelters; instanced LODs; Low skips it
 node scripts/starttest.mjs       # new county: sensible site (random among good ones, saved), county road follows the land; trees: no detail disc, no gaps; far trees keep their shape (no rectangles)
 node scripts/gridtest.mjs        # Roads > Grid: three clicks lay a street grid (junctions, lots, price, red streets left out, one-ways alternate, one undo, touch)

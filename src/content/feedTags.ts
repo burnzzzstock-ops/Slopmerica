@@ -73,6 +73,7 @@ export const FEED_TAGS: Record<string, FeedTag> = {
   "pedestrianHit|{road} is closed after a pedestrian collision. Wishing them a full recovery.": {authors: ["FillErUpNews","MaxMobilityGov"]},
   "pedestrianHit|Paint is not protection. A person was hit in the crosswalk today.": {authors: ["urbanistSkyler"]},
   "pedestrianHit|Someone walking was injured. Replies arguing about reflective clothing will be muted.": {authors: ["mutualAidMod"]},
+  "driveThruLine|The {brand} drive-thru line is out onto {road} and blocking a lane.": {authors: ["FillErUpNews"]},
   "trafficJam|Traffic backed up past {brand}. Estimated travel time: yes.": {authors: ["doorDashDriver","FillErUpNews"]},
   "trafficJam|Gridlock in {city}. The traffic app is displaying a solid red cry for help.": {stage: [2,5],authors: ["FillErUpNews","doorDashDriver"]},
   "trafficJam|Reply guys explaining zipper merges from three miles back, assemble.": {stage: [3,5],authors: ["replyGuy","urbanistSkyler"]},

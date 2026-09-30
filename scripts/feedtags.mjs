@@ -45,7 +45,7 @@ const MEANING = {
   highwayBuilt: 'the player built a highway', bridgeBuilt: 'the player built a bridge over water', laneAdded: 'the player widened a road by adding a lane',
   roadBulldozed: 'the player bulldozed a road', zoned: 'the player zoned land for homes, shops or industry', buildingOpened: 'a new business or building opened',
   buildingLeveled: 'a building was upgraded to a bigger, fancier level', buildingDemolished: 'a building was demolished', crash: 'a car crash happened',
-  drunkCrash: 'a drunk driver crashed', pedestrianHit: 'a car hit a pedestrian', trafficJam: 'a traffic jam built up',
+  drunkCrash: 'a drunk driver crashed', pedestrianHit: 'a car hit a pedestrian', trafficJam: 'a traffic jam built up', driveThruLine: 'a drive-thru line spilled out onto the road and is blocking a lane',
   communeFound: 'the town found a hippie commune on land it wants', communeProtest: 'hippies from a commune protested development',
   communeBribed: 'the city paid a hippie commune to leave', communeSued: 'the city sued a hippie commune to take its land',
   communeLawsuitLost: "the hippie commune lost the county's lawsuit, so the county can clear the land", communeForever: 'a hippie commune won and stays forever',

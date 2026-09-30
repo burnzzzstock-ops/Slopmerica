@@ -26,7 +26,9 @@ const VIEWS = { street: [-40, -30, 110, 2.4, 0.38], overview: [0, 0, 320, 0.7, 0
 // CASES="move=static&w=clear&moon=0&hide=fireflies+particles&frames=60&dt=0.1;..." (defaults from the env vars)
 const DEF = { ...(process.env.FF ? { ff: process.env.FF } : {}), move: process.env.MOVE || 'pan', view: process.env.VIEW || 'street', hide: (process.env.HIDE || '').replace(/,/g, '+'), frames: FRAMES, dt: DT };
 const STILL = 'move=static&w=clear&moon=0&frames=40&dt=0.1';
-const CASES = (process.env.CASES || `${STILL};${STILL}&ff=1;w=clear&moon=0;w=clear&moon=0.5;w=rain&moon=0;w=rain&moon=0.5`).split(';').filter(Boolean)
+// (the last two: fireflies are still drawn where it's dark, the houses' back yards: yellow pixels with them and without)
+const FLIES = 'view=houses&move=static&w=clear&moon=0&frames=8&dt=0.25&ff=1&hide=fire';
+const CASES = (process.env.CASES || `${STILL};${STILL}&ff=1;w=clear&moon=0;w=clear&moon=0.5;w=rain&moon=0;w=rain&moon=0.5;${FLIES};${FLIES}+fireflies`).split(';').filter(Boolean)
   .map((c) => ({ ...DEF, ...Object.fromEntries(c.split('&').map((kv) => kv.split('='))) }));
 const OUT = process.env.OUT;
 const MAX_POPS = +(process.env.MAX_POPS || 40 * (W * H * DPR * DPR) / (640 * 360)), MEAN_POPS = +(process.env.MEAN_POPS || 4 * (W * H * DPR * DPR) / (640 * 360));
@@ -95,6 +97,8 @@ for (const C of CASES) {
       const v = at(Math.max(0, i));
       g.rts.setView(v[0], v[1], v[2], v[3], v[4], true);
       g.frame(DT);
+      const glErr = gl.getError(); // (a draw that raised a GL error, e.g. a bad sampler in the new shaders)
+      if (glErr) out.glErrors = (out.glErrors || 0) + 1;
       if (i === 0) {
         // where the flames are: every fire emitter the game ticks (buildings within 450 m of the view), on screen
         const V = new g.camera.position.constructor();
@@ -179,6 +183,7 @@ for (const C of CASES) {
       prev = { Y, L: Lm }; prevW = w;
     }
     out.state = { night: +g.env.night.toFixed(2), moon: +g.env.moonLight.toFixed(2), weather: g.weather.kind, rain: g.weather.cur.rain, ff: +(g.weather.fireflies || 0).toFixed(3), wet: +g.weather.wet.toFixed(2), speed: g.sim.speed, cars: g.traffic.count, flies: +g.weather.flyU.uAmount.value.toFixed(3), fliesOn: g.weather.flies.visible, fireAlive: (() => { const P = g.particles, A = P.additive; let n = 0; for (let i = 0; i < A.size; i++) if (P.time - A.p0[i * 4 + 3] < A.v[i * 4 + 3]) n++; return n; })() };
+    out.state.glErrors = out.glErrors || 0;
     return out;
   }, { center, weather, moon, VIEW, FRAMES, MOVE, save: OUT ? 6 : 0, DT, hide: C.hide.split('+').filter(Boolean), ff: C.ff === undefined ? null : +C.ff });
   const F = res.frames.slice(1);
@@ -196,7 +201,19 @@ for (const C of CASES) {
 }
 console.log('SUMMARY', JSON.stringify(all));
 let bad = 0;
+// a shader that failed to compile (three logs it and skips the draw): the new firefly and particle code must build
+const broken = await page.evaluate(() => window.__game.renderer.info.programs.filter((p) => p.diagnostics && !p.diagnostics.runnable).map((p) => p.name || p.cacheKey.slice(0, 60)));
+console.log(broken.length ? 'FAIL' : 'OK  ', `shader programs that failed to build: ${broken.length}`, broken.length ? JSON.stringify(broken) : '');
+if (broken.length) bad++;
+const ffOn = all.find((r) => r.cond.includes('houses') && r.cond.endsWith('ff 1') && !r.cond.includes('fireflies'));
+const ffOff = all.find((r) => r.cond.includes('houses') && r.cond.includes('fireflies'));
+if (ffOn && ffOff) console.log('info', `fireflies drawn in the dark yards: ${ffOn.yellowPx - ffOff.yellowPx} yellow px a frame (${ffOn.yellowPx} with, ${ffOff.yellowPx} without)`);
+const glErrors = all.reduce((n, r) => n + r.glErrors, 0);
+console.log(glErrors ? 'FAIL' : 'OK  ', `frames that raised a GL error: ${glErrors}`);
+if (glErrors) bad++;
 for (const r of all) {
+  // (the firefly visibility cases step 0.25 s, where a moving car's lights jump further than 5 px: no limit there)
+  if (!/dt 0\.(1|0)/.test(r.cond)) { console.log('info', `${r.cond}: flash pixels ${r.popsPerFrame}/frame (not checked at this dt)`); continue; }
   const ok = r.maxPops <= MAX_POPS && r.popsPerFrame <= MEAN_POPS;
   console.log(ok ? 'OK  ' : 'FAIL', `${r.cond}: flash pixels ${r.popsPerFrame}/frame, at most ${r.maxPops} in one frame (limits ${MEAN_POPS.toFixed(1)}, ${MAX_POPS.toFixed(0)})`);
   if (!ok) bad++;

@@ -446,6 +446,8 @@ export class Traffic {
   }
   /** game wiring: the people walking over this arm of this junction: where they are and which way they're going */
   crosswalkWalkers?: (node: number, seg: number) => { x: number; z: number; dx: number; dz: number }[] | undefined;
+  /** game wiring: how far past its trim people cross this arm at this node (pedestrians.ts walkSetback) */
+  crosswalkSetback?: (node: number, seg: number) => number;
   /** crosswalk stops (a car slowing for someone on foot at a junction, once each), for tests */
   pedYields = 0;
   private yieldedTo(c: Car, node: number) {
@@ -476,6 +478,19 @@ export class Traffic {
 
   /** extra metres cut off both roads at a bend with no junction box, per node (cleared when the network changes) */
   private bendCuts = new Map<number, number>();
+  private stopBacks = new Map<number, number>();
+  /**
+   * How far short of the end of its road a car waiting at the line holds its nose: STOP_LINE behind the crosswalk, wherever
+   * people cross that arm. (At a sharp corner the crossing sits up to a few metres further out than the trim; with the stop
+   * a fixed 3 m behind the trim, people there walked through the waiting cars: crosswalktest, 1 run in 3 to 6.)
+   */
+  private stopBack(nodeId: number, segId: number): number {
+    const k = nodeId * 1048576 + segId, hit = this.stopBacks.get(k);
+    if (hit !== undefined) return hit;
+    const back = STOP_LINE + clamp(this.crosswalkSetback?.(nodeId, segId) ?? 0, 0, 6);
+    this.stopBacks.set(k, back);
+    return back;
+  }
 
   /**
    * Two roads meeting at an angle with no junction box: cars start the turn a
@@ -512,6 +527,7 @@ export class Traffic {
   // ------------------------------------------------------------------ signals
   private rebuildSignals() {
     this.bendCuts.clear();
+    this.stopBacks.clear();
     this.edges = null;
     const old = this.signals;
     this.signals = new Map();
@@ -1119,7 +1135,7 @@ export class Traffic {
         if (!last && this.crosswalkWalkers && exitS - c.s < 20) {
           const nodeId = st.dir > 0 ? seg.b : seg.a, nx = c.path[c.pi + 1], ns = nx && this.net.segs.get(nx.seg);
           if (this.walkerOnLanes(nodeId, seg, st.dir, true) || (ns && this.walkerOnLanes(nodeId, ns, nx.dir, false))) {
-            const g7 = exitS - STOP_LINE - c.s;
+            const g7 = exitS - this.stopBack(nodeId, seg.id) - c.s;
             if (g7 < gap) { gap = g7; dv = c.v; this.yieldedTo(c, nodeId); }
           }
         }
@@ -1127,7 +1143,7 @@ export class Traffic {
         if (!last && c.turn > 0 && exitS - c.s < 25) {
           const nodeId = st.dir > 0 ? seg.b : seg.a;
           if (this.signals.has(nodeId) && !this.clearing(nodeId, seg.id) && this.oncoming(nodeId, seg.id)) {
-            const g6 = exitS - STOP_LINE - c.s;
+            const g6 = exitS - this.stopBack(nodeId, seg.id) - c.s;
             if (g6 < gap) { gap = g6; dv = c.v; }
           }
         }
@@ -1142,7 +1158,7 @@ export class Traffic {
           if (g < gap) { gap = g; dv = c.v; }
         }
         if (!last && exitS - c.s < 30 && !this.exitClear(c)) {
-          const g4 = exitS - STOP_LINE - c.s;
+          const g4 = exitS - this.stopBack(st.dir > 0 ? seg.b : seg.a, seg.id) - c.s;
           if (g4 < gap) { gap = g4; dv = c.v; }
         }
         if (!last) {
@@ -1153,7 +1169,7 @@ export class Traffic {
             const runIt = c.reckless && Math.random() < 0.004;
             if (runIt) c.redsRun++;
             if (!(c.reckless && c.redsRun > 0 && exitS - c.s < 12)) {
-              const g2 = exitS - STOP_LINE - c.s;
+              const g2 = exitS - this.stopBack(nodeId, seg.id) - c.s;
               if (g2 < gap) { gap = g2; dv = c.v; }
             }
           }
@@ -1180,7 +1196,7 @@ export class Traffic {
             const ta = this.endTangent(seg, st.dir, true), tb = ns ? this.endTangent(ns, nx.dir, false) : ta;
             const myBend = Math.abs(Math.atan2(ta.x * tb.z - ta.z * tb.x, ta.x * tb.x + ta.z * tb.z));
             if (mine && others.some((o) => this.crossesBox(mine!, o, o.junction!.fromSeg === seg.id || myBend < 0.5 ? 0 : c.len))) {
-              const g5 = exitS - STOP_LINE - c.s;
+              const g5 = exitS - this.stopBack(nodeId, seg.id) - c.s;
               if (g5 < gap) { gap = g5; dv = c.v; }
             }
           }
@@ -1627,11 +1643,12 @@ export class Traffic {
       const sg = this.net.segs.get(sid);
       if (!sg) continue;
       const dir: 1 | -1 = sg.b === nodeId ? 1 : -1; // travelling toward this node
-      const exitS = this.exitOf(sg, dir), entryS = this.entryOf(sg, -dir as 1 | -1);
-      // a car standing on the crosswalk (queued up to the box, or just out of it), whatever the light
+      const exitS = this.exitOf(sg, dir), entryS = this.entryOf(sg, -dir as 1 | -1), out = this.stopBack(nodeId, sid) - STOP_LINE;
+      // a car standing on the crosswalk (queued up to the box, or just out of it), whatever the light (`out`: how far past
+      // the trim the crossing is on this arm)
       for (let k = 0; k < ROAD_TYPES[sg.type].lanesPerDir; k++) {
-        for (const o of this.buckets.get(sid * 16 + (dir > 0 ? 0 : 8) + k) ?? []) if (o.s > exitS - 2 && o.s - o.len < exitS + 5) return false;
-        for (const o of this.buckets.get(sid * 16 + (dir > 0 ? 8 : 0) + k) ?? []) if (o.s - o.len < entryS + 4 && o.s > entryS - 5) return false;
+        for (const o of this.buckets.get(sid * 16 + (dir > 0 ? 0 : 8) + k) ?? []) if (o.s > exitS - out - 2 && o.s - o.len < exitS - out + 5) return false;
+        for (const o of this.buckets.get(sid * 16 + (dir > 0 ? 8 : 0) + k) ?? []) if (o.s - o.len < entryS + out + 4 && o.s > entryS + out - 5) return false;
       }
       if (!sig && !impatient) for (let k = 0; k < ROAD_TYPES[sg.type].lanesPerDir; k++) {
         for (const o of this.buckets.get(sid * 16 + (dir > 0 ? 0 : 8) + k) ?? []) {

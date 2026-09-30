@@ -148,11 +148,28 @@ export class Pedestrians {
   crosswalkWalkers(node: number, seg: number) {
     return this.onCrosswalk.get(`${node}:${seg}`);
   }
+  /**
+   * How far past its trim people cross this arm at this node (metres; 0 at most junctions). At a sharp corner the sidewalk
+   * on the acute side stops short of the other road (kerbs), so the crossing is further out: the traffic stops its cars
+   * behind it (on the reference block, 10 of 94 arms, by up to 5.5 m).
+   */
+  walkSetback(node: number, seg: number): number {
+    const s = this.net.segs.get(seg);
+    if (!s || (s.a !== node && s.b !== node)) return 0;
+    const atA = s.a === node, trim = Math.max(0, (atA ? s.trimA : s.trimB) ?? 0);
+    let back = 0;
+    for (const side of [1, -1] as const) {
+      const [a, b] = this.kerbs(s, side);
+      back = Math.max(back, (atA ? a : s.length - b) - trim);
+    }
+    return back;
+  }
   /** where each road's sidewalks end, by `seg:side` (with the junction layout it was worked out for) */
   private kerbCache = new Map<string, { key: string; ab: [number, number] }>();
   /**
    * Where a road's sidewalk on this side ends at each end: the kerb at the
-   * junction box's edge, where the crosswalk is (cars stop 3 m back from it;
+   * junction box's edge, where the crosswalk is (cars stop 3 m back from it,
+   * wherever it is: traffic.ts stopBack;
    * turning cars are still in their lanes there). At a sharp corner the box
    * edge is still on the other road, or where a turning truck swings, so the
    * sidewalk stops short of that road. A road with no box at that end runs on

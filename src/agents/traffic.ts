@@ -142,6 +142,13 @@ const KERB_T = DEP_T * 0.55;
 const COURTESY_T = 5;
 /** cars that can wait in one lot to pull out before its building starts no more trips */
 const LOT_QUEUE_MAX = 3;
+/**
+ * Crash rates (owner, 2026-09-30: "agree with lower"). Drunk drivers by day and
+ * after 9 pm, reckless ones, and the random-crash hazard per second (scaled by
+ * speed, by drunk x30 and reckless x5). Was 4% / 14% drunk and 6e-5: a crash
+ * every ~1.5 minutes at rush hour and every ~30 s at night in a 700-person town.
+ */
+const DRUNK_DAY = 0.01, DRUNK_NIGHT = 0.06, RECKLESS = 0.08, CRASH_HAZARD = 0.00002;
 
 function cubicAt(p0: V2, p1: V2, p2: V2, p3: V2, u: number): V2 {
   const v = 1 - u, a = v * v * v, b = 3 * v * v * u, c = 3 * v * u * u, d = u * u * u;
@@ -604,13 +611,13 @@ export class Traffic {
     // to draw it: -1 = simulated but not drawn (set/remove ignore it)
     const h = this.renderer.add(kind, FIXED_PAINT[kind] ?? PAINT[Math.floor(Math.random() * PAINT.length)]);
     const night = hour > 21 || hour < 4;
-    const drunk = !sober && Math.random() < (night ? 0.14 : 0.04);
+    const drunk = !sober && Math.random() < (night ? DRUNK_NIGHT : DRUNK_DAY);
     const firstSeg = this.net.segs.get(rt.steps[0].seg)!;
     const car: Car = {
       id: this.nextId++, h, kind, path: rt.steps, pi: 0, s: rt.startS, startS: rt.startS, endS: rt.endS,
       lane: Math.floor(Math.random() * ROAD_TYPES[firstSeg.type].lanesPerDir), v: 4, v0mul: (0.9 + Math.random() * 0.25) * (drunk ? 1.25 : 1),
       // codex:policies begin -- a smoke-free endpoint disables the visible in-car smoking effect
-      len: spec.length, drunk, reckless: drunk || (!sober && Math.random() < 0.08), smoker: !sober && (!oB || this.policySmokingAllowed?.(oB) !== false) && (!dB || this.policySmokingAllowed?.(dB) !== false) && Math.random() < 0.2, redsRun: 0, wob: Math.random() * 10,
+      len: spec.length, drunk, reckless: drunk || (!sober && Math.random() < RECKLESS), smoker: !sober && (!oB || this.policySmokingAllowed?.(oB) !== false) && (!dB || this.policySmokingAllowed?.(dB) !== false) && Math.random() < 0.2, redsRun: 0, wob: Math.random() * 10,
       // codex:policies end
       junction: null, crashed: 0, crashYaw: 0, crashRoll: 0, x: 0, y: 0, z: 0, yaw: 0, purpose, dest,
       lat: NaN, latV: 0, ryaw: NaN, turn: 0, turnV: Infinity, turnFor: -1, laneCd: 2 + Math.random() * 3, brakeT: 0, acc: 0, roll: 0, dive: 0,
@@ -874,7 +881,7 @@ export class Traffic {
         // rear-end + random crashes
         if (lead && gap < 0.2 && gap > -1 && dv > 6 && c.drunk && lead.crashed === 0) { this.crashCause.rear++; this.crash([c, lead], seg, c.drunk); }
         else {
-          const p = 0.00006 * this.crashMul * (c.drunk ? 30 : 1) * (c.reckless ? 5 : 1) * (T.centerTurn ? 1.5 : 1) * (0.3 + c.v / 25) * dt;
+          const p = CRASH_HAZARD * this.crashMul * (c.drunk ? 30 : 1) * (c.reckless ? 5 : 1) * (T.centerTurn ? 1.5 : 1) * (0.3 + c.v / 25) * dt;
           if (Math.random() < p) { this.crashCause.random++; this.crash(lead && lead.s - c.s < 12 ? [c, lead] : [c], seg, c.drunk); }
         }
         // smoking out the window

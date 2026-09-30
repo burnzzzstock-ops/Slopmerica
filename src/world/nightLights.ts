@@ -25,16 +25,25 @@ export interface Pool {
   kind: 'street' | 'shop' | 'cool' | 'porch';
 }
 
-/** colours of the fixtures (linear light, painted as 0..255) */
+/**
+ * colours of the fixtures, as LINEAR light (painted as 0..255; the texture isn't colour-converted).
+ * Owner, 2026-09-30: "make it cozy warm night lights": sodium, incandescent, amber. The old values
+ * (street 255,178,104; shop 255,226,180; cool 196,214,255; porch 255,196,130) looked right as sRGB
+ * but are used as linear, so on screen a sodium pool was a pale cream (255,218,171) and the yard
+ * floods were 6500 K blue. These are the on-screen colours in the comments, encoded to linear
+ * (scripts/nightwarmth.mjs).
+ */
 const TINT: Record<Pool['kind'], [number, number, number]> = {
-  street: [255, 178, 104], // high-pressure sodium
-  shop: [255, 226, 180], // warm white: shopfronts, entrances, civic
-  cool: [196, 214, 255], // LED floodlights: factory yards, big parking lots
-  porch: [255, 196, 130],
+  street: [255, 122, 40], // high-pressure sodium, ~2100 K: on screen 255,184,110
+  shop: [255, 170, 100], // incandescent warm white, ~2900 K: shopfronts, entrances, civic (255,213,169)
+  cool: [255, 196, 146], // floodlit yards and big lots, now warm-white LED ~3500 K (255,228,199)
+  porch: [255, 132, 50], // an amber porch bulb (255,191,122)
 };
 
 /** how bright a full pool is, on top of the surface's own colour (tuned with scripts/nighttest.mjs) */
-export const POOL_GAIN = 1.85;
+// (1.85 before the sodium tint above, which carries a quarter less luma: raised to keep the roads
+// as readable; scripts/nighttest.mjs)
+export const POOL_GAIN = 2.25;
 
 export const LAMPS = {
   uLampMap: { value: null as THREE.Texture | null },

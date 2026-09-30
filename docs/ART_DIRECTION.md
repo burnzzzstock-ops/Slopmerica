@@ -126,10 +126,18 @@ ground-level surface adds that light times its own colour: a pool on asphalt
 stays asphalt-dark, one on a pale sidewalk reads bright. Walls take it on
 their bottom 3.5 m. One texture read per pixel; nothing per lamp per frame.
 
-- Street lamps: high-pressure sodium, warm orange.
-- Shops, entrances, civic: warm white.
-- Factory yards and big lots: cool LED.
-- Porches: warm, small, not every house.
+Cozy and warm (owner, 2026-09-30: "make it cozy warm night lights"): sodium,
+incandescent, amber, against the cool moonlit night.
+
+- Street lamps: high-pressure sodium, warm orange (~2100 K).
+- Shops, entrances, civic: incandescent warm white (~2900 K).
+- Factory yards and big lots: warm-white LED (~3500 K; they were a cold 6500 K).
+- Porches: amber, small, not every house.
+- Lit rooms: mostly incandescent amber, some warm white, the odd blue TV.
+
+The pool colours in `nightLights.ts` are linear light: write the on-screen
+colour encoded to linear, or sodium reads as a pale cream.
+`scripts/nightwarmth.mjs` measures the colour temperature of the light.
 
 The night grade turns moonlit shadow blue and colourless, but where a lamp
 lights, colour comes back (the eye sees colour where it's bright), so sodium

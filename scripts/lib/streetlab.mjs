@@ -134,12 +134,13 @@ export async function installLab() {
     const max = { voices: 0, sirens: 0, horns: 0 }, honks = [], probes = [];
     let last = 0, seen = 0;
     const tick = (t) => {
+      for (const [at, patch] of spec.envAt || []) if (last < at && t >= at) Object.assign(env, patch); // e.g. pause the game at 4 s
       advance(cars, last, t);
       st.update(t - last || 0.3, cars, view, env);
       last = t;
       max.voices = Math.max(max.voices, st.stats.voices); max.sirens = Math.max(max.sirens, st.stats.sirens); max.horns = Math.max(max.horns, st.stats.horns);
       while (seen < st.stats.honks) { const s = st.honkLog[seen & 31]; honks.push({ t: +t.toFixed(2), id: s.id, kind: s.kind, size: s.size }); seen++; }
-      if (spec.probeAt && spec.probeAt.some((p) => last >= p && last - STEP < p)) probes.push({ t: +t.toFixed(2), dbg: st.debug(), cars: cars.map((c) => ({ id: c.id, x: c.x, z: c.z, v: c.v })) });
+      if (spec.probeAt && spec.probeAt.some((p) => last >= p && last - STEP < p)) probes.push({ t: +t.toFixed(2), dbg: st.debug(), awake: st.awake, stats: { ...st.stats }, cars: cars.map((c) => ({ id: c.id, x: c.x, z: c.z, v: c.v })) });
     };
     tick(0);
     for (let t = STEP; t < dur - 0.05; t += STEP) ctx.suspend(t).then(() => { tick(ctx.currentTime); ctx.resume(); });

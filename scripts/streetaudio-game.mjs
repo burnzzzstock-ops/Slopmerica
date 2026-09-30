@@ -49,7 +49,7 @@ const r = await page.evaluate(async () => {
   out.resumed = { voices: st().stats.voices, awake: st().awake };
   // mute
   au.setMuted(true);
-  await frames(10, 1 / 20, false);
+  await frames(45, 1 / 20, false); // the street sleeps 1.5 s after the last audible frame
   out.muted = { voices: st().stats.voices, awake: st().awake };
   au.setMuted(false);
   await frames(30, 1 / 20, false);

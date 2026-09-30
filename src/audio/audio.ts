@@ -118,13 +118,13 @@ export class AudioEngine {
   street(dt: number, cars: readonly StreetCar[], cam: { target: { x: number; y: number; z: number }; distance: number; yaw: number }, wet: number, speed: number) {
     const st = this.streetVoices;
     if (!st || !this.ctx || !this.amb) return;
-    if (this.muted || this.ctx.state !== 'running') { if (st.awake) st.sleep(); return; }
     this.amb.randomTraffic = false; // real cars now: no random honks or pass-bys
     st.limit(this.quality);
     const V = this.streetView, E = this.streetEnv;
     V.x = cam.target.x; V.z = cam.target.z; V.y = cam.target.y + Math.min(55, Math.max(3, cam.distance * 0.3));
     V.rx = Math.cos(cam.yaw); V.rz = -Math.sin(cam.yaw); V.dist = cam.distance;
-    E.rain = this.rainNow; E.wet = wet; E.hush = this.hushNow; E.speed = speed;
+    E.rain = this.rainNow; E.wet = wet; E.hush = this.hushNow;
+    E.speed = this.muted || this.ctx.state !== 'running' ? 0 : speed; // muted or suspended = paused: the voices are released, then disconnected
     st.update(Math.min(dt, 0.1), cars, V, E);
   }
 

@@ -278,6 +278,25 @@ if (mode === 'new') {
     check(`the crowd is audible but not deafening (rms ${num(crowd.raw.rms, 3)})`, crowd.raw.rms > 0.01 && crowd.raw.rms < 0.3, crowd.raw);
   }
 
+  // ------------------------------------------------------------------ 7b. paused / muted / zoomed out: asleep
+  {
+    const r = await evalIn(async () => {
+      const cars = Array.from({ length: 6 }, (_, i) => ({ id: 1 + i, kind: ['sedan', 'semi', 'pickup', 'police', 'suv', 'motorcycle'][i], x: 12, z: -30 + i * 9, yaw: 0, vs: [[0, 12]], wrap: [-40, 40] }));
+      const o = await __lab.render({ dur: 14, rate: 22050, seed: 3, cars, probeAt: [3, 7.5, 13], envAt: [[4, { speed: 0 }], [9, { speed: 1 }]] });
+      const A = __lab.A, sec = (t0, t1) => A.rms(A.seg('M', t0, t1));
+      const playing = sec(1, 3.8), paused = sec(6.5, 8.5), resumed = sec(11, 13.5);
+      // and zoomed out to the map (camera 1,800 m up)
+      const z = await __lab.render({ dur: 8, rate: 22050, seed: 3, cars, view: { dist: 1800 }, probeAt: [7] });
+      return { playing, paused, resumed, probes: o.probes.map((p) => ({ t: p.t, awake: p.awake, voices: p.stats.voices })), zoomedOut: { rms: A.rms(A.seg('M', 2, 8)), awake: z.probes[0].awake, voices: z.probes[0].stats.voices } };
+    });
+    R.sleep = r;
+    console.log('sleep', JSON.stringify(r));
+    const [p3, p75, p13] = r.probes;
+    check(`paused game: the street fades out (${num(20 * Math.log10(r.paused / r.playing + 1e-12), 0)} dB) and every voice is released and disconnected (awake ${p75.awake}, ${p75.voices} voices)`, r.paused < r.playing * 0.01 && !p75.awake && p75.voices === 0, r);
+    check(`unpaused: the voices come back (${p13.voices} voices, ${num(20 * Math.log10(r.resumed / r.playing), 1)} dB vs before)`, p13.awake && p13.voices > 0 && r.resumed > r.playing * 0.4, r);
+    check(`zoomed out to the map (1,800 m): the cars are gone, the street is asleep (${r.zoomedOut.voices} voices, rms ${num(r.zoomedOut.rms, 6)})`, r.zoomedOut.voices === 0 && !r.zoomedOut.awake && r.zoomedOut.rms < 1e-4, r.zoomedOut);
+  }
+
   // ------------------------------------------------------------------ 8. CPU
   {
     const perf = await evalIn(async () => {

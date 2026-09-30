@@ -763,7 +763,17 @@ export class Hud implements UiSink {
       return { text: `Build a street: builders want ${D.noun} (${why}) but every lot along your roads is zoned. Short streets off existing ones are cheapest.`, act: 'road', label: '🛣️ Roads' };
     }
     const locked = ranked.find((r) => r.v >= 5 && !r.zone);
-    if (locked) { const u = UNLOCKS.find((x) => x.zone === DEM[locked.k].zones[0]); return { text: `Grow: builders want ${DEM[locked.k].noun}, which unlock at ${u?.pop.toLocaleString() ?? 'a bigger'} people. Zone what's in demand meanwhile.` }; }
+    if (locked) {
+      // nothing that's unlocked wants building, so "zone what's in demand" led nowhere
+      // (playtest 6: a town sat at 1,181 people for 2,600 days waiting for offices
+      // at 1,800, with taxes at 15% holding homes back): say what's holding homes back
+      const u = UNLOCKS.find((x) => x.zone === DEM[locked.k].zones[0]);
+      const drag = s.demandParts.res.filter((p) => !p.base && p.v !== null && p.v < -3).sort((a, b) => a.v! - b.v!)[0];
+      return {
+        text: `Grow: ${DEM[locked.k].noun} unlock at ${u?.pop.toLocaleString() ?? 'a bigger'} people, and nothing else wants building (homes ${signed(Math.round(s.demand.res))}${drag ? `, held back by ${drag.text}` : ''}). Lower taxes or add jobs to bring people in.`,
+        act: 'budget', label: '💰 Budget',
+      };
+    }
     const worst = DEMAND_KEYS.flatMap((k) => s.demandParts[k].filter((p) => !p.base && p.v !== null && p.v < -3)).sort((a, b) => a.v! - b.v!)[0];
     return { text: `Wait: nothing wants building right now${worst ? ` (biggest drag: ${worst.text})` : ''}. Taxes, services and jobs move demand.`, act: 'budget', label: '💰 Budget' };
   }

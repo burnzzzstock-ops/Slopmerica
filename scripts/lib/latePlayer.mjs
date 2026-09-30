@@ -66,7 +66,9 @@ export function installLatePlayer(opts = {}) {
   const paintBlocks = () => {
     let painted = 0;
     for (const k of ['res', 'com', 'ind', 'off']) {
-      if (s.demand[k] < 12) continue;
+      // (a person zones what the guide says builders want, from its own threshold up: at
+      // R +7 with every home lot built on, waiting for 12 stalled a town for 2,000 days)
+      if (s.demand[k] < 5) continue;
       const zone = zoneFor(k);
       if (!zone) continue;
       if (openLots(k) >= 10 + s.population / 250) continue;
@@ -231,6 +233,8 @@ export function installLatePlayer(opts = {}) {
       const net = s.weeklyNet(), cap = O.maxTax || 0.15;
       if (net < 0 && s.money < 20000 && s.taxRate < cap - 0.001) { s.taxRate = Math.round((s.taxRate + 0.01) * 100) / 100; P.taxMoves = (P.taxMoves || 0) + 1; note(`taxes up to ${Math.round(s.taxRate * 100)}%`); }
       else if (net > 2500 && s.money > 40000 && s.taxRate > 0.0901) { s.taxRate = Math.round((s.taxRate - 0.01) * 100) / 100; P.taxMoves = (P.taxMoves || 0) + 1; note(`taxes down to ${Math.round(s.taxRate * 100)}%`); }
+      // and a person who reads the guide: taxes named as what holds homes back, and the money to spare -> a point less
+      else if (/held back by taxes/.test(g.ui.nextAction?.()?.text ?? '') && net > 0 && s.money > 15000 && s.taxRate > 0.0901) { s.taxRate = Math.round((s.taxRate - 0.01) * 100) / 100; P.taxMoves = (P.taxMoves || 0) + 1; note(`taxes down to ${Math.round(s.taxRate * 100)}% (the guide)`); }
     }
     // the bankruptcy card: a person reads it and takes the sandbox bailout
     for (const b of document.querySelectorAll('.ending.bankrupt #end-go')) { b.click(); P.bankruptcies = (P.bankruptcies || 0) + 1; note(`bailout taken at day ${Math.round(s.day)}, pop ${s.population}`); }

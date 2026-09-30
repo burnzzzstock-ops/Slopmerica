@@ -74,6 +74,20 @@ check('clicking the 🌲/🏙️ meters explains both, with live numbers', !!mp 
 await page.keyboard.press('Escape');
 const mClosed = await page.evaluate(() => document.querySelector('.meter-pop')?.hidden);
 check('Esc closes it', mClosed === true, mClosed);
+// playtest 6: a town sat at 1,181 people for 2,600 days: builders wanted offices (locked
+// until 1,800) and nothing else, and the guide said "zone what's in demand meanwhile"
+// while taxes at 15% were what held homes back. With only a locked zone wanted, the
+// guide names what holds homes back and points at the budget.
+const stuck = await page.evaluate(() => {
+  const g = window.__game, s = g.sim;
+  const keep = { demand: s.demand, parts: s.demandParts };
+  s.demand = { res: -2, com: -45, ind: -20, off: 70 };
+  s.demandParts = { ...s.demandParts, res: [{ text: 'new-town appetite', v: 30, base: true }, { text: 'taxes at 15%', v: -27 }, { text: '120 more workers than jobs', v: -5 }] };
+  const a = g.ui.nextAction();
+  s.demand = keep.demand; s.demandParts = keep.parts;
+  return { locked: !s.isUnlocked({ zone: 'office' }), text: a.text, act: a.act ?? null };
+});
+check(`only offices wanted and they're locked: the guide names what holds homes back ("${stuck.text}")`, stuck.locked && /taxes at 15%/.test(stuck.text) && /1,800/.test(stuck.text) && stuck.act === 'budget', stuck);
 check('no page errors', errs.length === 0, errs.slice(0, 3));
 await browser.close();
 process.exit(bad ? 1 : 0);

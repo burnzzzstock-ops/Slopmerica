@@ -1092,9 +1092,12 @@ export class Game {
           if (b.state !== 'active' || !b.model.emitters.length) continue;
           const c = Math.cos(b.yaw), s = Math.sin(b.yaw);
           for (const em of b.model.emitters) {
-            if (Math.random() > (em.kind === 'chimney' ? chimneyP : 0.5)) continue;
+            // (look pass, scripts/yellowflash.mjs) a prop's flame burns on every tick: skipping half of them
+            // left gaps, so barrels and torches blinked on and off at night
+            if (em.kind !== 'fire' && Math.random() > (em.kind === 'chimney' ? chimneyP : 0.5)) continue;
             const [lx, ly, lz] = em.pos;
-            this.particles.emit(em.kind === 'cigarette' ? 'cigarette' : em.kind === 'fire' ? 'fire' : em.kind === 'steam' ? 'steam' : em.kind === 'sparkle' ? 'confetti' : 'smoke', b.x + lx * c + lz * s, b.y + ly, b.z - lx * s + lz * c, { count: em.kind === 'cigarette' ? 1 : 2, spread: 0.6 });
+            // prop flames at 0.6 size: a default fire puff is 3 m across, over a 0.7 m barrel
+            this.particles.emit(em.kind === 'cigarette' ? 'cigarette' : em.kind === 'fire' ? 'fire' : em.kind === 'steam' ? 'steam' : em.kind === 'sparkle' ? 'confetti' : 'smoke', b.x + lx * c + lz * s, b.y + ly, b.z - lx * s + lz * c, { count: em.kind === 'cigarette' ? 1 : 2, spread: em.kind === 'fire' ? 0.3 : 0.6, size: em.kind === 'fire' ? 0.6 : 1 });
           }
         }
       }

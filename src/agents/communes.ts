@@ -1,7 +1,7 @@
 // Hippie communes: scattered opposition. Pay them off, sue them, or (rarely)
 // learn to live with them forever.
 import * as THREE from 'three';
-import { HALF, WATER } from '../config';
+import { GLOW, HALF, WATER } from '../config';
 import { clamp } from '../core/math';
 import { Rng } from '../core/rng';
 import type { MapId } from '../world/maps';
@@ -35,7 +35,8 @@ export interface Commune {
   protestSeg: number; // segment currently blocked by a protest (0 = none)
   protestUntil: number;
   group: THREE.Group;
-  fire: THREE.PointLight;
+  /** the campfire, in the commune's own frame (its light is the shared one: Communes.campfire) */
+  fire: THREE.Vector3;
   flameMesh: THREE.Mesh | null;
   bulbMesh: THREE.Mesh | null;
   remains: THREE.Mesh | null;
@@ -58,6 +59,14 @@ const DEMANDS = [
 export class Communes {
   list: Commune[] = [];
   readonly group = new THREE.Group();
+  /**
+   * One campfire light, lent to the nearest lit camp within 420 m of the camera. A light per camp switched on and off by
+   * distance changed how many lights the scene has, and three.js rebuilds every lit material's shader for each new count
+   * (a stall the first time the camera came near a camp at night, and again for two camps, three...). Distant fires still
+   * read through their flames' emissive geometry.
+   */
+  private readonly campfire = new THREE.PointLight(0xff8a3a, 0, 38, 2);
+  private readonly fireAt = new THREE.Vector3();
 
   constructor(private terrain: Terrain, private trees: Trees, mapId: MapId, count: number, seed: number, foreverChance: number, avoid: { x: number; z: number; r: number }[]) {
     const rng = new Rng(seed);
@@ -82,7 +91,7 @@ export class Communes {
       const c: Commune = {
         id: this.list.length + 1, name, x, z, r: 30 + members * 0.8, members, stubborn: rng.range(0.1, 0.7), forever: rng.chance(foreverChance),
         vibe: rng.pick(VIBES), demand: rng.pick(DEMANDS), founded: rng.int(1967, 2019), state: 'active', suitDays: 0, suitOdds: 0,
-        nextProtest: rng.range(20, 70), protestSeg: 0, protestUntil: 0, group: new THREE.Group(), fire: new THREE.PointLight(0xff8a3a, 0, 38, 2),
+        nextProtest: rng.range(20, 70), protestSeg: 0, protestUntil: 0, group: new THREE.Group(), fire: new THREE.Vector3(),
         flameMesh: null, bulbMesh: null, remains: null, baseY: 0, leaveT: 0, emitters: [],
       };
       if (c.forever) { c.founded = 1969; c.stubborn = 1; }
@@ -90,6 +99,7 @@ export class Communes {
       this.list.push(c);
       this.group.add(c.group);
     }
+    this.group.add(this.campfire);
   }
 
   private build(c: Commune, rng: Rng, mapId: MapId) {
@@ -127,8 +137,7 @@ export class Communes {
         (x, z) => Math.abs(x - f.x) <= f.r && Math.abs(z - f.z) <= f.r);
     }
     for (const d of L.dirt) this.terrain.paintCircle(c.x + d.x, c.z + d.z, d.r, Paint.Dirt);
-    c.fire.position.set(L.fire[0], L.fire[1] + 0.8, L.fire[2]);
-    c.group.add(c.fire);
+    c.fire.set(L.fire[0], L.fire[1] + 0.8, L.fire[2]);
     c.group.position.set(c.x, y0, c.z);
     c.remains = new THREE.Mesh(this.remainsGeometry(L.fire[1] - 1.2), kitMaterial());
     c.remains.position.set(c.x, y0, c.z);
@@ -193,13 +202,13 @@ export class Communes {
 
   /** Animate: flicker fires; leaving communes sink and fade. */
   update(dt: number, night: number, time: number, camera: THREE.Vector3) {
+    let lit: Commune | null = null, litD = Infinity;
     for (const c of this.list) {
       if (c.state === 'gone') continue;
       const flicker = 0.88 + Math.sin(time * 13 + c.id) * 0.09 + Math.sin(time * 23.7 + c.id * 4) * 0.035;
-      c.fire.intensity = night * 25 * flicker;
-      // Distant campfires remain visible through emissive geometry; their point
-      // lights need only shade the nearby ground and props.
-      c.fire.visible = night > 0.05 && Math.abs(c.x - camera.x) < 420 && Math.abs(c.z - camera.z) < 420;
+      // the campfire light goes to the nearest camp in range at night (it only shades the ground and props near the fire)
+      const dx = c.x - camera.x, dz = c.z - camera.z;
+      if (night > 0.05 && Math.abs(dx) < 420 && Math.abs(dz) < 420 && dx * dx + dz * dz < litD) { lit = c; litD = dx * dx + dz * dz; }
       if (c.flameMesh) {
         c.flameMesh.scale.set(1 + Math.sin(time * 9 + c.id) * 0.028, 0.94 + flicker * 0.07, 1 + Math.cos(time * 7.1 + c.id) * 0.025);
         c.flameMesh.rotation.y = Math.sin(time * 3.7 + c.id) * 0.045;
@@ -219,6 +228,12 @@ export class Communes {
         }
       }
     }
+    if (lit) {
+      const flicker = 0.88 + Math.sin(time * 13 + lit.id) * 0.09 + Math.sin(time * 23.7 + lit.id * 4) * 0.035;
+      this.campfire.position.copy(this.fireAt.copy(lit.fire).add(lit.group.position));
+      // (divided by the night lift, like every other light that glows at night: config.ts GLOW)
+      this.campfire.intensity = night * 25 * flicker * GLOW.value;
+    } else this.campfire.intensity = 0;
   }
 
   countActive() {

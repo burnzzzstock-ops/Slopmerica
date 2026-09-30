@@ -13,7 +13,7 @@
 // Everything random here uses its own generator, never Math.random: the
 // traffic simulation draws the same numbers whatever is parked, so graphics
 // presets (which cap the parked cars) can't change the simulation.
-import type { ParkSpot, VehicleKind } from '../contracts';
+import type { LandmarkId, ParkSpot, VehicleKind } from '../contracts';
 import { clamp } from '../core/math';
 import { brandById } from '../art/brands';
 import type { Bld, Buildings } from '../sim/buildings';
@@ -60,7 +60,32 @@ const CURVES: Record<string, number[]> = {
   food: [0.05, 0.03, 0.02, 0.02, 0.03, 0.08, 0.3, 0.45, 0.35, 0.25, 0.35, 0.7, 0.85, 0.6, 0.35, 0.3, 0.4, 0.6, 0.75, 0.6, 0.4, 0.25, 0.15, 0.08],
   gas: [0.15, 0.1, 0.1, 0.1, 0.12, 0.25, 0.45, 0.55, 0.45, 0.4, 0.4, 0.45, 0.5, 0.45, 0.4, 0.45, 0.55, 0.6, 0.5, 0.4, 0.3, 0.25, 0.2, 0.15],
   church: [0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.03, 0.05, 0.1, 0.2, 0.3, 0.3, 0.2, 0.1, 0.08, 0.08, 0.08, 0.1, 0.15, 0.1, 0.05, 0.03, 0.02, 0.02],
+  // a stadium on a day without a game: the grounds crew and a few people looking at it
+  field: [0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.03, 0.05, 0.08, 0.1, 0.12, 0.12, 0.12, 0.12, 0.12, 0.12, 0.15, 0.15, 0.12, 0.08, 0.05, 0.03, 0.02, 0.02],
 };
+/** a landmark's lot on an ordinary day */
+const LANDMARK_CURVE: Partial<Record<LandmarkId, string>> = {
+  slop69Field: 'field', megachurch: 'church', pigCabanaResort: 'bar', fillErUpMegaStation: 'gas', propaneParadise: 'gas', neuralFlyDatacenter: 'office', slopCannon: 'shop',
+};
+/**
+ * Landmark events (traffic pass, playtest 6: "built the stadium, nothing
+ * happens"): football at Slop 69 Field (design doc §5.3) and services at the
+ * megachurch, by the clock's hours. (A day on the clock is 144 of the
+ * calendar's days, some 20 weeks, so every evening has its Friday and every
+ * morning its Sunday.) `crowd` is the share of the town's people who drive
+ * there (the traffic sends them, and home afterwards); `lot`, how full its lot
+ * gets.
+ */
+export const LANDMARK_EVENTS: Partial<Record<LandmarkId, { from: number; to: number; crowd: number; lot: number; purpose: string; label: string; when: string }>> = {
+  slop69Field: { from: 17, to: 22, crowd: 0.03, lot: 0.95, purpose: 'going to the game', label: 'Game night', when: 'every evening' },
+  megachurch: { from: 8.5, to: 12.5, crowd: 0.02, lot: 0.9, purpose: 'going to church', label: 'Services', when: 'every morning' },
+};
+/** The event at this landmark at this hour, or null. */
+export function landmarkEvent(b: Bld, hour: number) {
+  const e = b.landmark && LANDMARK_EVENTS[b.landmark];
+  return e && hour >= e.from && hour < e.to ? e : null;
+}
+
 const KIND_CURVE: Partial<Record<string, string>> = {
   bar: 'bar', food: 'food', coffee: 'food', gas: 'gas', propane: 'gas', church: 'church', office: 'office', tech: 'office', bank: 'office', industry: 'industry', drink: 'industry', storage: 'industry', resort: 'bar',
 };
@@ -71,9 +96,12 @@ const TAGS: Record<string, number[]> = Object.values(tagFiles)[0]?.PARKING_CURVE
 
 /** The share of this building's spots taken at this hour. */
 export function occupancy(b: Bld, hour: number): number {
+  const ev = landmarkEvent(b, hour);
+  if (ev) return ev.lot;
   const brand = b.brand ? brandById(b.brand) : undefined;
   const curve = (b.brand && TAGS[b.brand]) || CURVES[
-    b.zone === 'resLow' || b.zone === 'resHigh' ? 'home'
+    b.zone === 'landmark' ? (b.landmark && LANDMARK_CURVE[b.landmark]) || 'shop'
+      : b.zone === 'resLow' || b.zone === 'resHigh' ? 'home'
       : b.zone === 'office' ? 'office'
       : b.zone === 'industry' ? 'industry'
       : (brand && KIND_CURVE[brand.kind]) || 'shop'

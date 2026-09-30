@@ -25,6 +25,17 @@ import type { ViewMode } from '../render/overlays';
 import { ARCHETYPES } from '../agents/people';
 import { saveGame } from '../sim/save';
 import { VEHICLE_SPECS } from '../agents/vehicles';
+import { LANDMARK_EVENTS } from '../agents/parking';
+
+
+/** 5 pm, 8:30 am */
+const clock12 = (h: number) => `${((Math.floor(h) + 11) % 12) + 1}${h % 1 ? `:${String(Math.round((h % 1) * 60)).padStart(2, '0')}` : ''} ${h % 24 < 12 ? 'am' : 'pm'}`;
+/** what a landmark does, for its inspector (the numbers are the sim's and the traffic's) */
+function landmarkEffects(id: LandmarkId | undefined): string {
+  const e = id && LANDMARK_EVENTS[id];
+  const when = e ? ` ${e.label}: ${e.when}, ${clock12(e.from)} to ${clock12(e.to)}; the town drives in and the lot fills.` : '';
+  return `Draws visitors by day and lifts land value around it (more within 140 m, a little out to 300 m).${when}`;
+}
 
 const esc = (s: string) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 const money = (n: number) => (n === Infinity ? '∞' : (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString());
@@ -1472,8 +1483,10 @@ export class Hud implements UiSink {
         <div class="in-stats">
           <div><span>Status</span><b class="${off ? 'in-warn' : ''}">${b.state === 'building' ? `🚧 ${Math.round(b.progress * 100)}%` : off ? '🚧 Not connected' : 'Open'}</b></div>
           <div><span>Road</span><b class="${off ? 'in-warn' : ''}">${off === 'noRoad' ? 'None' : off === 'noLink' ? 'No route to the highway' : 'Connected'}</b></div>
+          ${!svc && !off && b.state === 'active' ? `<div><span>Visitors today</span><b>${g.traffic.visitorsToday(b).toLocaleString()}</b></div>` : ''}
         </div>
         ${off ? `<p class="in-note in-warn" id="in-link">🚧 ${esc(g.roadLinkText?.(b) ?? '')}</p>` : ''}
+        ${!svc && !off ? `<p class="in-note">${landmarkEffects(b.landmark)}</p>` : ''}
         <div class="in-actions">${off ? '<button id="in-road">🛣️ Draw a road</button>' : ''}<button class="danger" id="in-bulldoze">💣 Bulldoze</button></div>`;
     } else if (sel.kind === 'building' && isZoned(sel.b)) {
       const b = sel.b;

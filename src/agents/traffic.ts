@@ -3,14 +3,14 @@
 // drunk / reckless / smoking drivers and crashes. Induced demand emerges:
 // free-flowing roads invite more trips.
 import * as THREE from 'three';
-import type { VehicleKind } from '../contracts';
+import type { LandmarkId, VehicleKind } from '../contracts';
 import { clamp, closestOnSampled, lerp, locate, norm, sub, V2 } from '../core/math';
 import { fx } from '../core/rng';
 import type { RNode, RoadNetwork, RSeg } from '../roads/network';
 import { carriageHalf, laneOffset, ROAD_TYPES } from '../roads/roadTypes';
 import type { Bld, Buildings } from '../sim/buildings';
 import { FIXED_PAINT, randomVehicleKind, VEHICLE_SPECS, VehicleRenderer } from './vehicles';
-import type { Parking, WorldSpot } from './parking';
+import { LANDMARK_EVENTS, type Parking, type WorldSpot } from './parking';
 import { ARCHETYPES } from './people';
 import { HALF } from '../config';
 
@@ -164,6 +164,27 @@ const LOT_QUEUE_MAX = 3;
 const THRU_SERVE = 14;
 const THRU_SERVE_VAR = 12;
 const THRU_SPEED = 4;
+/**
+ * Landmarks draw visitors (the traffic pass, playtest 6: "built the stadium,
+ * nothing happens"; no trip ever went to one). Each open landmark's pull, as a
+ * share of the town's local trips by day (9 am to 9 pm), summed and capped;
+ * half the sightseeing trips are people heading home from one. The game nights
+ * and services are LANDMARK_EVENTS (parking.ts): their crowd leaves home over
+ * the EVENT_ARRIVE hours before the start (a drive across town takes a couple
+ * of hours on the clock) and everyone who came drives home at the rate of
+ * EVENT_OUT hours for the whole crowd from the end (a lot lets out three cars
+ * at a time, so it can take longer), on top of the town's other trips, at most
+ * EVENT_MAX cars.
+ */
+const VISIT_PULL: Partial<Record<LandmarkId, number>> = { slopCannon: 0.025, slop69Field: 0.015, pigCabanaResort: 0.035, neuralFlyDatacenter: 0.01, propaneParadise: 0.02, fillErUpMegaStation: 0.035, megachurch: 0.015 };
+const VISIT_MAX = 0.12;
+const EVENT_ARRIVE = 1.5;
+const EVENT_OUT = 3;
+/** anyone still there this long after the end went home unseen */
+const EVENT_OUT_MAX = 8;
+const EVENT_MAX = 60;
+/** sim seconds in an hour on the clock (a day is 360 s at ▶) */
+const CLOCK_HOUR = 15;
 /** a grand opening at a drive-thru: this long (sim seconds) of the town lining up, and the share of trips that go */
 const OPENING_T = 240;
 const OPENING_SHARE = 0.35;
@@ -291,6 +312,61 @@ export class Traffic {
   parking?: Parking;
   /** drive-thru lanes by building (null: none), built from the building model's spots */
   private thruLanes = new Map<Bld, { model: Bld['model']; lanes: ThruLane[] } | null>();
+  /** when cars arrived at each landmark (sim clock), for the inspector's visitors today */
+  private visits = new Map<Bld, number[]>();
+  /** an event's crowd not yet sent (a fraction of a car), by landmark */
+  private crowdDue = new Map<Bld, number>();
+  /** the crowd that came to an event and hasn't left for home yet, by landmark */
+  private crowdIn = new Map<Bld, number>();
+  /** Cars that came to this building in the last game day (6 minutes of traffic at ▶). */
+  visitorsToday(b: Bld): number {
+    const v = this.visits.get(b);
+    return v ? v.filter((t) => this.clock - t < 360).length : 0;
+  }
+  /** A local trip to see a landmark now (or home from one), or null: sightseeing, by day. */
+  private visitTarget(hour: number, landmarks: Bld[]): { b: Bld; purpose: string; home: boolean } | null {
+    if (!landmarks.length || hour < 9 || hour >= 21) return null;
+    const pull = landmarks.map((b) => (b.landmark && VISIT_PULL[b.landmark]) || 0), total = pull.reduce((a, v) => a + v, 0);
+    const cap = Math.min(total, VISIT_MAX);
+    let r = Math.random() * Math.max(total, VISIT_MAX);
+    if (r >= cap) return null;
+    const home = r < cap / 2;
+    r *= total / cap;
+    for (let i = 0; i < landmarks.length; i++) if ((r -= pull[i]) < 0) return { b: landmarks[i], purpose: home ? 'heading home' : 'sightseeing', home };
+    return null;
+  }
+
+  /**
+   * A game night's or a service's crowd: people leave home for it before it
+   * starts, and everyone who came drives home after it ends (as fast as they
+   * came, however long the lot takes to let them out).
+   */
+  private eventCrowds(dt: number, hour: number) {
+    const { landmarks, res } = this.lists();
+    if (!res.length) return;
+    for (const b of landmarks) {
+      const e = b.landmark && LANDMARK_EVENTS[b.landmark];
+      if (!e) continue;
+      const until = (e.from - hour + 24) % 24, since = (hour - e.to + 24) % 24;
+      const arriving = until > 0 && until <= EVENT_ARRIVE, leaving = since < EVENT_OUT_MAX && (this.crowdIn.get(b) ?? 0) > 0;
+      // (from the first one leaving home to the last one home: anyone still there after it went home unseen)
+      if ((hour - e.from + EVENT_ARRIVE + 24) % 24 >= e.to - e.from + EVENT_ARRIVE + EVENT_OUT_MAX) this.crowdIn.delete(b);
+      if (!arriving && !leaving) { this.crowdDue.delete(b); continue; }
+      const crowd = Math.min(EVENT_MAX, this.pop * e.crowd);
+      let due = (this.crowdDue.get(b) ?? 0) + (crowd / ((arriving ? EVENT_ARRIVE : EVENT_OUT) * CLOCK_HOUR)) * dt;
+      for (let k = 0; due >= 1 && k < 4 && this.cars.length < SIM_MAX_CARS; k++) {
+        const home = res[Math.floor(Math.random() * res.length)];
+        const [oB, dB] = arriving ? [home, b] : [b, home];
+        const o = this.anchor(oB), d = this.anchor(dB);
+        // (the lot's exit busy, or its queue full: this one goes next step)
+        if (!o || !d || !this.launch(o, d, oB, dB, randomVehicleKind(Math.random), arriving ? e.purpose : 'heading home', dB.label, true, hour)) break;
+        due -= 1;
+        if (leaving) this.crowdIn.set(b, (this.crowdIn.get(b) ?? 1) - 1);
+      }
+      this.crowdDue.set(b, Math.min(due, arriving ? 8 : this.crowdIn.get(b) ?? 0));
+    }
+  }
+
   /** drive-thrus in their grand opening: sim seconds left */
   private openings = new Map<Bld, number>();
   /** when each drive-thru last spilled onto the road (sim clock), so the feed says so once */
@@ -575,7 +651,8 @@ export class Traffic {
   private anchor(bld: Bld): { seg: RSeg; s: number } | null {
     let seg = this.net.segs.get(bld.seg);
     if (!seg) {
-      const p = this.net.pickSeg(bld.x, bld.z, 50);
+      // (a landmark or service faces the road it was squared to: as far off as its lot is big)
+      const p = this.net.pickSeg(bld.x, bld.z, Math.max(50, Math.max(bld.hw, bld.hd) + 12));
       if (!p) return null;
       bld.seg = p.seg.id;
       seg = p.seg;
@@ -597,13 +674,15 @@ export class Traffic {
   }
 
   /** the buildings trips start and end at, gathered once a step */
-  private tripLists: { step: number; list: Bld[]; res: Bld[]; jobs: Bld[]; shops: Bld[]; ind: Bld[] } | null = null;
+  private tripLists: { step: number; list: Bld[]; landmarks: Bld[]; res: Bld[]; jobs: Bld[]; shops: Bld[]; ind: Bld[] } | null = null;
   /** (the lists once a step, not once a try: up to 12 tries a step, each over every building) */
   private lists() {
     if (this.tripLists?.step !== this.stepN) {
       const list = [...this.b.list.values()].filter((b) => b.state === 'active' && b.zone !== 'landmark' && b.zone !== 'service');
       this.tripLists = {
         step: this.stepN, list,
+        // open landmarks a road reaches (one no road reaches draws nobody)
+        landmarks: [...this.b.list.values()].filter((b) => b.zone === 'landmark' && b.state === 'active' && !b.offNet),
         res: list.filter((b) => b.zone === 'resLow' || b.zone === 'resHigh'),
         jobs: list.filter((b) => b.zone !== 'resLow' && b.zone !== 'resHigh'),
         shops: list.filter((b) => b.zone === 'comLow' || b.zone === 'comHigh'),
@@ -644,7 +723,7 @@ export class Traffic {
     // codex:freight begin - give the conserved-goods scheduler a spawn opportunity
     if (this.freightTrip?.()) return true;
     // codex:freight end
-    const { list, res, jobs, shops, ind } = this.lists();
+    const { list, landmarks, res, jobs, shops, ind } = this.lists();
     const edges = this.edgeAnchors();
     if (list.length < 2 && !edges.length) return false;
     const morning = hour > 6 && hour < 10, evening = hour > 15.5 && hour < 19.5;
@@ -652,6 +731,7 @@ export class Traffic {
     let oB: Bld | null = null, dB: Bld | null = null;
     let local = true;
     let purpose = 'cruising', dest = 'nowhere in particular', kind: VehicleKind = randomVehicleKind(Math.random);
+    let visit: { b: Bld; purpose: string; home: boolean } | null = null;
     const pick = <T>(a: T[]) => a[Math.floor(Math.random() * a.length)];
     // Out-of-towners arrive and leave by the highway (outside connections).
     // Their share grows with jobs the locals can't fill, plus tourists,
@@ -700,6 +780,14 @@ export class Traffic {
       d = this.anchor(dB);
       kind = Math.random() < 0.5 ? 'boxTruck' : 'semi';
       purpose = 'delivering goods';
+      dest = dB.label;
+    } else if (res.length && (visit = this.visitTarget(hour, landmarks))) {
+      // a landmark's visitors: a game, church, or a look at the Slop Cannon (and home after)
+      const home = pick(res);
+      [oB, dB] = visit.home ? [visit.b, home] : [home, visit.b];
+      o = this.anchor(oB);
+      d = this.anchor(dB);
+      purpose = visit.purpose;
       dest = dB.label;
     } else if (res.length && this.openings.size && Math.random() < OPENING_SHARE) {
       // a drive-thru's grand opening: half the town goes
@@ -866,6 +954,7 @@ export class Traffic {
         spawns++;
         this.spawnTrip(hour);
       }
+      this.eventCrowds(dt, hour);
     }
     // (the index holds only while nothing moves: a trip launched later this step, or
     // between steps, indexes the cars afresh)
@@ -1233,6 +1322,14 @@ export class Traffic {
         c.arr += dt;
         if (c.arr >= ARR_T) {
           c.arrived = true; c.crashed = -1; // parked: off the road
+          if (c.destB?.zone === 'landmark') {
+            const v = this.visits.get(c.destB) ?? [];
+            v.push(this.clock);
+            if (v.length > 400) v.splice(0, v.length - 400);
+            this.visits.set(c.destB, v);
+            // the event's crowd: each one drives home after it
+            if (c.destB.landmark && c.purpose === LANDMARK_EVENTS[c.destB.landmark]?.purpose) this.crowdIn.set(c.destB, (this.crowdIn.get(c.destB) ?? 0) + 1);
+          }
           if (c.toSpot && this.parking) { c.parked = this.parking.park(c.toSpot, c.h, c.kind); c.toSpot = null; }
         }
       } else if (c.dep > 0) {

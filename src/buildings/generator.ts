@@ -202,7 +202,8 @@ export function generateLandmark(id: LandmarkId, seed: number): BuildingModel {
   const hit = cacheGet(key);
   if (hit) return copy(hit);
   const spec: LotSpec = { zone: 'comHigh', level: 5, widthCells: fp.widthCells, depthCells: fp.depthCells, seed };
-  return copy(run(key, mix(id, seed), spec, fp.widthCells * CELL, fp.depthCells * CELL, (g) => buildLandmark(g, id)));
+  // (live: its lot's stalls are exported and left empty for the live parking: game-night crowds park there)
+  return copy(run(key, mix(id, seed), spec, fp.widthCells * CELL, fp.depthCells * CELL, (g) => buildLandmark(g, id), true));
 }
 
 /** Roadside billboard on a pole, facing +Z. merch=true shows an Imagine Supply Co. ad. */

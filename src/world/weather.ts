@@ -236,10 +236,10 @@ void main() {
   toCam /= max(dist, 1e-3);
   vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), toCam));
   vec3 up = cross(toCam, right);
-  // never smaller than ~2.5 px: a sub-pixel glow twinkles as it drifts across the pixel grid.
-  // Grown, it keeps its light (alpha by the area ratio).
-  float s = max(uSize, dist * uPixel * 2.5);
-  vA *= (uSize * uSize) / (s * s);
+  // never smaller than ~1.5 px: a sub-pixel glow twinkles as it drifts across the pixel grid.
+  // Grown, it dims by the size ratio (by the area it would all but vanish on a small screen).
+  float s = max(uSize, dist * uPixel * 1.5);
+  vA *= uSize / s;
   vec3 pos = wp + (right * corner.x + up * (corner.y * 2.0 - 1.0)) * s;
   vUv = corner;
   gl_Position = projectionMatrix * viewMatrix * vec4(pos, 1.0);
@@ -253,8 +253,9 @@ void main() {
   float a = exp(-d * d * 9.0) * vA;
   if (a < 0.004) discard;
   // warm and small: bright lime glows read as UI markers across the town. Divided by the night
-  // lift (GLOW) like every light: lifted 1.85x they bloomed into yellow flashes.
-  gl_FragColor = vec4(vec3(1.0, 0.92, 0.38) * a * 1.8 * uGlow, 1.0);
+  // lift (GLOW) like every light: at 1.8 and lifted 1.85x they bloomed. 2.4 x GLOW is 1.3 on a
+  // moonless night, so they still glow (scripts/yellowflash.mjs counts them in the dark yards).
+  gl_FragColor = vec4(vec3(1.0, 0.92, 0.38) * a * 2.4 * uGlow, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;

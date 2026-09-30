@@ -320,8 +320,16 @@ function markAttributeRange(attribute: THREE.BufferAttribute | THREE.InstancedBu
   if (!attribute || end <= start) return;
   let range = UPLOAD_RANGES.get(attribute);
   if (!range) { range = { start: 0, count: 0 }; UPLOAD_RANGES.set(attribute, range); }
-  range.start = start * itemSize; range.count = (end - start) * itemSize;
-  attribute.updateRanges.length = 0; attribute.updateRanges.push(range); attribute.needsUpdate = true;
+  const s = start * itemSize, c = (end - start) * itemSize;
+  if (attribute.updateRanges.length === 1 && attribute.updateRanges[0] === range) {
+    // a range from an earlier flush has not reached the GPU yet (two flushes before one render): keep both
+    const e = Math.max(range.start + range.count, s + c);
+    range.start = Math.min(range.start, s); range.count = e - range.start;
+  } else {
+    range.start = s; range.count = c;
+    attribute.updateRanges.length = 0; attribute.updateRanges.push(range);
+  }
+  attribute.needsUpdate = true;
 }
 function markLod(lod: LodBatch, count: number): void {
   lod.count = count; lod.mesh.count = count;
@@ -388,7 +396,11 @@ export class VehicleRenderer {
     scene.add(this.object);
   }
 
+  private cameraCaptured = false;
+  /** The player's camera, from the first pass that draws a vehicle after each flush (the water's mirrored camera renders after it and must not replace it). */
   private captureCamera = (_renderer: THREE.WebGLRenderer, _scene: THREE.Scene, camera: THREE.Camera) => {
+    if (this.cameraCaptured) return;
+    this.cameraCaptured = true;
     this.cameraX = camera.matrixWorld.elements[12]; this.cameraY = camera.matrixWorld.elements[13]; this.cameraZ = camera.matrixWorld.elements[14];
     this.cameraValid = true;
   };
@@ -483,7 +495,7 @@ export class VehicleRenderer {
     batch.spin[instance] = 0; batch.steer[instance] = 0;
     batch.parked[instance] = 0; batch.reversing[instance] = 0; batch.headlights[instance] = 0;
     batch.heave[instance] = batch.heaveV[instance] = batch.pitch[instance] = batch.pitchV[instance] = batch.roll[instance] = batch.rollV[instance] = 0;
-    batch.reverseTimer[instance] = 0; batch.speed[instance] = batch.accel[instance] = batch.fxTimer[instance] = batch.fxTimer2[instance] = batch.surfaceTimer[instance] = 0; batch.onGravel[instance] = 0;
+    batch.siren[instance] = 0; batch.vy[instance] = 0; batch.lod[instance] = 1; batch.reverseTimer[instance] = 0; batch.speed[instance] = batch.accel[instance] = batch.fxTimer[instance] = batch.fxTimer2[instance] = batch.surfaceTimer[instance] = 0; batch.onGravel[instance] = 0;
     batch.revision[instance]++;
     if (options?.seed !== undefined) this.rngState = (Math.imul(options.seed | 0, 2654435761) ^ 0x9e3779b1) >>> 0 || 1;
     this.addCount++;
@@ -510,6 +522,7 @@ export class VehicleRenderer {
 
   set(handle: number, x: number, y: number, z: number, yaw: number, pitch = 0, roll = 0): void {
     const slot = this.slots[handle]; if (!slot) return;
+    if (!Number.isFinite(x + y + z + yaw + pitch + roll)) return; // one bad number must not latch NaN into the spring and the steering
     const batch = this.batches.get(slot.kind)!; const i = slot.instance;
     if (batch.initialized[i]) {
       const dx = x - batch.previousX[i], dz = z - batch.previousZ[i], distance = Math.hypot(dx, dz);
@@ -591,7 +604,7 @@ export class VehicleRenderer {
   private lampCode(b: KindBatch, i: number): number {
     const kindSiren = b.kind === 'police' || b.kind === 'ambulance' || b.kind === 'firetruck' || b.kind === 'towTruck';
     const siren = b.siren[i] === 2 ? 1 : b.siren[i] === 1 ? 0 : kindSiren && !b.parked[i] ? 1 : 0;
-    return (b.braking[i] && !b.parked[i] ? 1 : 0) + (b.turn[i] + 1) * 2 + (b.parked[i] ? 1 : b.headlights[i]) * 6 + (b.reversing[i] || b.reverseTimer[i] > 0 ? 18 : 0) + siren * 36;
+    return (b.braking[i] && !b.parked[i] ? 1 : 0) + (b.turn[i] + 1) * 2 + (b.parked[i] ? 1 : b.headlights[i]) * 6 + (!b.parked[i] && (b.reversing[i] || b.reverseTimer[i] > 0) ? 18 : 0) + siren * 36;
   }
 
   /** Spring the body on its wheels: road-height changes kick it, gravity and damping settle it. Purely a drawing effect. */
@@ -630,6 +643,10 @@ export class VehicleRenderer {
   }
 
   private readonly v3 = new THREE.Vector3();
+  private emitSizeK = 1;
+  /** a body-space point of the car being emitted (this.matrix holds its transform), in world space; shared scratch vector */
+  private w(p: readonly number[]): THREE.Vector3 { return this.v3.set(p[0], p[1], p[2]).applyMatrix4(this.matrix); }
+  private world(p: readonly number[], size: number, r: number, g: number, bl: number, a: number): void { const v = this.w(p); this.fx.halo(v.x, v.y, v.z, size * this.emitSizeK, r, g, bl, a); }
   /**
    * The light and the air a car gives off: lamp halos, headlight pool, siren tint (all in the effects mesh, no draw call per car), and
    * exhaust, dust and spray puffs. Only for cars in the close and near levels of detail.
@@ -642,29 +659,26 @@ export class VehicleRenderer {
     const autoHead = THREE.MathUtils.smoothstep(night, 0.25, 0.6);
     const headOn = mode === 2 ? 1 : mode === 1 ? 0 : autoHead;
     const brake = b.braking[i] && !parked ? 1 : 0;
-    if (b.reverseTimer[i] > 0) b.reverseTimer[i] -= dt;
-    const sizeK = Math.min(3.4, 1 + dist * 0.012);
-    const w = (p: readonly number[]) => this.v3.set(p[0], p[1], p[2]).applyMatrix4(M);
+    this.emitSizeK = Math.min(3.4, 1 + dist * 0.012);
     const seed = b.seed[i];
-    const world = (p: readonly number[], size: number, r: number, g: number, bl: number, a: number) => { const v = w(p); fx.halo(v.x, v.y, v.z, size * sizeK, r, g, bl, a); };
     if (headOn > 0.02 && night > 0.02) {
-      for (const p of lamps.head) world(p, 0.55, 1.0, 0.9, 0.7, 0.95 * headOn * Math.max(night, 0.35));
+      for (const p of lamps.head) this.world(p, 0.55, 1.0, 0.9, 0.7, 0.95 * headOn * Math.max(night, 0.35));
       if (dist < 130) {
         // the road ahead: a pool from the nose along the car's heading, following the slope it stands on
-        const nose = w([0, 0.06, lamps.nose[0] - 0.05]);
+        const nose = this.w([0, 0.06, lamps.nose[0] - 0.05]);
         const yaw = Math.atan2(e[8], e[10]), pitch = -Math.asin(THREE.MathUtils.clamp(e[9], -0.5, 0.5));
         fx.pool(nose.x, nose.y, nose.z, yaw, pitch, 17, lamps.nose[1] * 5, 1.0, 0.87, 0.6, 0.42 * headOn * night);
       }
     }
     const tailA = brake * (0.4 + 0.6 * night) + headOn * 0.28 * night;
     if (tailA > 0.02) {
-      for (const p of lamps.tail) world(p, brake ? 0.72 : 0.42, 1.0, 0.08, 0.05, tailA * (brake ? 1.3 : 1));
-      if (brake && night > 0.3 && dist < 90) { const v = w([0, 0.05, lamps.tailZ - 0.7]); fx.disc(v.x, v.y, v.z, 1.5, 1.0, 0.1, 0.06, 0.26 * night); }
+      for (const p of lamps.tail) this.world(p, brake ? 0.72 : 0.42, 1.0, 0.08, 0.05, tailA * (brake ? 1.3 : 1));
+      if (brake && night > 0.3 && dist < 90) { const v = this.w([0, 0.05, lamps.tailZ - 0.7]); fx.disc(v.x, v.y, v.z, 1.5, 1.0, 0.1, 0.06, 0.26 * night); }
     }
-    if ((b.reversing[i] || b.reverseTimer[i] > 0) && !parked) for (const p of lamps.reverse) world(p, 0.42, 1.0, 0.98, 0.9, 0.8 * (0.5 + 0.5 * night));
+    if ((b.reversing[i] || b.reverseTimer[i] > 0) && !parked) for (const p of lamps.reverse) this.world(p, 0.42, 1.0, 0.98, 0.9, 0.8 * (0.5 + 0.5 * night));
     const turn = b.turn[i];
     if (turn !== 0 && !parked && Math.sin(t * 9.4 + seed * 6) >= 0) {
-      for (const p of turn > 0 ? lamps.turnLeft : lamps.turnRight) world(p, 0.36, 1.0, 0.55, 0.06, 1.0 * (0.4 + 0.6 * night));
+      for (const p of turn > 0 ? lamps.turnLeft : lamps.turnRight) this.world(p, 0.36, 1.0, 0.55, 0.06, 1.0 * (0.4 + 0.6 * night));
     }
     // emergency lights: red and blue flashes with a tint on the ground round the vehicle
     const kindSiren = b.kind === 'police' || b.kind === 'ambulance' || b.kind === 'firetruck';
@@ -676,16 +690,16 @@ export class VehicleRenderer {
         const flash = Math.sin(t * 19 + seed * 13 + (blue ? 3.14159 : 0)) > 0.15;
         if (!flash) continue;
         if (blue) blueOn = true; else redOn = true;
-        world(p, 1.05, blue ? 0.08 : 1.0, blue ? 0.35 : 0.05, blue ? 1.0 : 0.08, 1.2);
+        this.world(p, 1.05, blue ? 0.08 : 1.0, blue ? 0.35 : 0.05, blue ? 1.0 : 0.08, 1.2);
       }
       if ((redOn || blueOn) && dist < 120) {
-        const c = w([0, 0.06, 0]);
+        const c = this.w([0, 0.06, 0]);
         fx.disc(c.x, c.y, c.z, 7.5, redOn ? 1.0 : 0.1, redOn ? 0.06 : 0.3, redOn ? 0.08 : 1.0, (0.1 + 0.6 * night) * (redOn && blueOn ? 1 : 0.85));
       }
     }
     if (lamps.beacon.length && !lamps.siren.length && !parked && b.speed[i] > 0.5) {
       // an amber work beacon (tow truck, garbage truck) turning slowly
-      if (Math.sin(t * 8 + seed * 5) > 0.1) for (const p of lamps.beacon) world(p, 0.9, 1.0, 0.55, 0.05, 1.0);
+      if (Math.sin(t * 8 + seed * 5) > 0.1) for (const p of lamps.beacon) this.world(p, 0.9, 1.0, 0.55, 0.05, 1.0);
     }
     if (dist > 75 || parked) return;
     // ---- puffs
@@ -702,7 +716,7 @@ export class VehicleRenderer {
       const want = launching ? 0.11 : idle && cold > 0.25 ? 0.5 / (0.4 + cold) : cold > 0.4 && speed > 1 ? 0.35 : 0;
       if (want > 0 && b.fxTimer[i] > want && (cold > 0.15 || (heavy && launching))) {
         b.fxTimer[i] = 0;
-        const p = w(ex[(Math.floor(seed * 7) + Math.floor(t * 3)) % ex.length]);
+        const p = this.w(ex[(Math.floor(seed * 7) + Math.floor(t * 3)) % ex.length]);
         fx.exhaust(p.x, p.y, p.z, -fwdX * Math.max(speed * 0.3, 0.6), -fwdZ * Math.max(speed * 0.3, 0.6), heavy && launching, cold);
       }
     }
@@ -715,7 +729,7 @@ export class VehicleRenderer {
         b.fxTimer2[i] = 0;
         const half = Math.abs(lamps.tail[0]?.[0] ?? 0.8) * 0.9, zr = lamps.tailZ + Math.min(1.4, VEHICLE_SPECS[b.kind].length * 0.2);
         for (const sgn of [-1, 1]) {
-          const p = w([sgn * half, 0.12, zr]);
+          const p = this.w([sgn * half, 0.12, zr]);
           if (dusty) fx.dust(p.x, p.y, p.z, -fwdX * speed * 0.2, -fwdZ * speed * 0.2, speed);
           else fx.spray(p.x, p.y, p.z, -fwdX * speed * 0.12, -fwdZ * speed * 0.12, speed);
         }
@@ -728,6 +742,7 @@ export class VehicleRenderer {
     const now = performance.now() * 0.001;
     this.dt = dt ?? clamp(now - this.lastFlush, 0.001, 0.1); this.lastFlush = now;
     timeUniform.value = now;
+    this.cameraCaptured = false;
     if (this.closeQueue.length) this.buildClose(this.closeQueue.shift()!);
     else if (this.pending.length) this.warm();
     this.fx.begin();
@@ -743,6 +758,7 @@ export class VehicleRenderer {
       for (const vb of batch.variants.values()) { if (vb.close) vb.close.count = 0; vb.near.count = 0; }
       for (let i = 0; i < batch.used; i++) {
         if (!batch.active[i] || !batch.initialized[i]) continue;
+        if (batch.reverseTimer[i] > 0) batch.reverseTimer[i] -= this.dt; // (for every car, so a far one backing out does not flash its lamps when it comes near)
         // 0 close, 1 near, 2 far, 3 beyond the cull radius (drawn only as the camera-capture sentinel)
         let nextLod = 1;
         if (this.lodOverride >= 0) nextLod = Math.min(2, this.lodOverride);
@@ -779,6 +795,7 @@ export class VehicleRenderer {
   pick(ray: THREE.Raycaster): number | null {
     let nearestHandle: number | null = null, nearestDistance = Infinity;
     for (const batch of this.batches.values()) {
+      batch.pickMesh.boundingSphere = null; // three caches it from the first ray on: rebuild it, cars have moved and kinds have come and gone
       const hit = ray.intersectObject(batch.pickMesh, false)[0];
       if (!hit || hit.instanceId === undefined || hit.distance >= nearestDistance) continue;
       const handle = batch.handleByInstance[hit.instanceId];
@@ -815,10 +832,12 @@ export class VehicleRenderer {
 
   dispose(): void {
     this.object.removeFromParent();
-    this.fx.mesh.geometry.dispose();
+    this.closeQueue.length = 0; this.pending.length = 0;
+    this.fx.mesh.geometry.dispose(); (this.fx.mesh.material as THREE.Material).dispose();
     for (const batch of this.batches.values()) {
-      batch.far.mesh.geometry.dispose(); batch.pickMesh.geometry.dispose();
-      for (const vb of batch.variants.values()) { vb.close?.mesh.geometry.dispose(); vb.near.mesh.geometry.dispose(); }
+      // (an InstancedMesh owns its matrix buffer, which is not one of its geometry's attributes)
+      batch.far.mesh.geometry.dispose(); batch.far.mesh.dispose(); batch.pickMesh.geometry.dispose(); batch.pickMesh.dispose();
+      for (const vb of batch.variants.values()) { vb.close?.mesh.geometry.dispose(); vb.close?.mesh.dispose(); vb.near.mesh.geometry.dispose(); vb.near.mesh.dispose(); }
     }
   }
 }

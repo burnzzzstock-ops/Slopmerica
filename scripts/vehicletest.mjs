@@ -171,6 +171,42 @@ check('the effects (halos, road pools, siren tint, exhaust, dust, spray) are one
   check('a parked car sits still on its springs', Math.abs(b.heave[i]) < 1e-3 && Math.abs(b.pitch[i]) < 1e-3 && Math.abs(b.roll[i]) < 1e-3);
   R.remove(h);
 }
+// found by review: one bad number, a reused handle, a far car backing out, clicking a car of a kind that had none on the first click
+{
+  const h = R.add('sedan', 0xffffff, { exact: true }), b = R.batches.get('sedan'), i = R.slots[h].instance;
+  R.set(h, 0, 0, 0, 0); R.flush(1 / 60); R.set(h, 1, 0, 0.5, 0.1); R.flush(1 / 60);
+  R.set(h, NaN, 0, 0, 0); R.set(h, 0, NaN, 0, 0); R.set(h, 0, 0, 0, NaN);
+  for (let f = 0; f < 5; f++) { R.set(h, 1 + f * 0.1, 0, 0.5, 0.1); R.flush(1 / 60); }
+  check('a NaN position, height or heading is ignored: it cannot latch NaN into the spring or the steering', [b.heave[i], b.pitch[i], b.roll[i], b.steer[i], b.spin[i]].every(Number.isFinite));
+  R.setSiren(h, true); b.vy[i] = 2; b.lod[i] = 3;
+  R.remove(h);
+  const h2 = R.add('sedan', 0xffffff, { exact: true }); const i2 = R.slots[h2].instance;
+  check('a reused handle starts clean (siren, suspension kick and level of detail)', i2 === i && b.siren[i2] === 0 && b.vy[i2] === 0 && b.lod[i2] === 1, { i, i2, siren: b.siren[i2], vy: b.vy[i2], lod: b.lod[i2] });
+  // a far car backing out: its reverse lamps must time out even though nothing is emitted for it
+  R.updateLod({ matrixWorld: new THREE.Matrix4().makeTranslation(5000, 50, 5000) }); // (any object with a matrixWorld will do)
+  R.set(h2, 0, 0, 0, 0); R.flush(1 / 60); R.set(h2, 0, 0, -0.3, 0); R.flush(1 / 60);
+  const armed = b.reverseTimer[i2] > 0;
+  for (let f = 0; f < 60; f++) R.flush(1 / 60);
+  check('a far car that backed up loses its reverse lamps after a moment (the timer runs for every car)', armed && b.reverseTimer[i2] <= 0, { armed, timer: b.reverseTimer[i2] });
+  R.remove(h2);
+}
+{
+  // the water's mirrored camera renders after the player's; it must not replace the player's camera for the levels of detail
+  const far = R.batches.get('sedan').far.mesh, cam = (x) => ({ matrixWorld: new THREE.Matrix4().makeTranslation(x, 10, 0) });
+  R.flush(1 / 60);
+  far.onBeforeRender(null, null, cam(111)); far.onBeforeRender(null, null, cam(-999));
+  check('the camera for the levels of detail is the first pass after a flush (the mirrored water camera comes second and is ignored)', R.cameraX === 111, { x: R.cameraX });
+  R.flush(1 / 60); far.onBeforeRender(null, null, cam(222));
+  check('... and the next frame takes the new camera', R.cameraX === 222, { x: R.cameraX });
+}
+{
+  // picking: the pick mesh keeps a bounding sphere of its own; a kind with no cars at the first click must still be pickable later
+  const ray = new THREE.Raycaster(new THREE.Vector3(3000, 20, 0), new THREE.Vector3(0, -1, 0));
+  R.pick(ray);   // the first click of the game, with no tow truck anywhere
+  const h = R.add('towTruck', 0xffffff, { exact: true }); R.set(h, 3000, 0, 0, 0); R.flush(1 / 60);
+  check('a click finds a car of a kind that did not exist at the first click', R.pick(ray) === h);
+  R.remove(h);
+}
 // the shader's turn, written twice (GLSL and JS): rolling and steering follow the conventions in vehicleWheel.ts
 {
   const r = 0.33, spin = 0.2;

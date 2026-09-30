@@ -80,6 +80,8 @@ export class VehicleFx {
   private readonly a0: THREE.InstancedBufferAttribute; private readonly a1: THREE.InstancedBufferAttribute; private readonly a2: THREE.InstancedBufferAttribute;
   private readonly f0: Float32Array; private readonly f1: Float32Array; private readonly f2: Float32Array;
   private n = 0;
+  private readonly range = { start: 0, count: 0 };   // reused every frame (no allocation in the frame loop)
+  private readonly attrs: THREE.InstancedBufferAttribute[];
   private readonly parts: Particle[] = [];
   private readonly maxParticles: number;
   private seed = 12345;
@@ -94,6 +96,7 @@ export class VehicleFx {
     this.a0 = new THREE.InstancedBufferAttribute(this.f0, 4).setUsage(THREE.DynamicDrawUsage);
     this.a1 = new THREE.InstancedBufferAttribute(this.f1, 4).setUsage(THREE.DynamicDrawUsage);
     this.a2 = new THREE.InstancedBufferAttribute(this.f2, 4).setUsage(THREE.DynamicDrawUsage);
+    this.attrs = [this.a0, this.a1, this.a2];
     g.setAttribute('iFx0', this.a0); g.setAttribute('iFx1', this.a1); g.setAttribute('iFx2', this.a2);
     g.instanceCount = 0;
     // a plain Mesh on an InstancedBufferGeometry: Three draws geometry.instanceCount of it (an InstancedMesh would use its own count)
@@ -164,6 +167,7 @@ export class VehicleFx {
     const g = this.mesh.geometry as THREE.InstancedBufferGeometry;
     g.instanceCount = this.n;
     this.mesh.visible = this.n > 0;
-    for (const a of [this.a0, this.a1, this.a2]) { a.updateRanges.length = 0; if (this.n) { a.updateRanges.push({ start: 0, count: this.n * 4 }); a.needsUpdate = true; } }
+    this.range.count = this.n * 4;
+    for (let k = 0; k < 3; k++) { const a = this.attrs[k]; a.updateRanges.length = 0; if (this.n) { a.updateRanges.push(this.range); a.needsUpdate = true; } }
   }
 }

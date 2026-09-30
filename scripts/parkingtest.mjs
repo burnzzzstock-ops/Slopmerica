@@ -3,8 +3,9 @@
 // the drive-thru queue that spills onto the stroad doesn't exist"). On the
 // reference block, stepping cars without rendering:
 //  - lot occupancy by hour, for lots off screen (on screen only cars that drive
-//    in and out change a lot): offices fill mid-morning and empty at night,
-//    shops peak around noon and are near empty at 3 am;
+//    in and out change a lot): each lot as full as its curve says (the
+//    brand's, from scripts/parkingtags.mjs, or its kind's), offices full
+//    mid-morning and empty at night, shops full by day and near empty at 3 am;
 //  - arriving cars pull into stalls and stay; leaving ones back out of them;
 //  - a grand opening at a drive-thru fills its lane, the line spills onto the
 //    road and holds the cars behind it in their lane, and it all clears.
@@ -27,7 +28,8 @@ const pct = (x) => `${Math.round(x * 100)}%`;
 // ---- behaviour (once, on the first preset)
 {
   const { page, errs } = await openBlock(browser, { base, quality: presets[0] });
-  const r = await page.evaluate(() => {
+  const r = await page.evaluate(async () => {
+    const { occupancy } = await import('/src/agents/parking.ts');
     const g = window.__game, tr = g.traffic, P = g.parking, tgt = g.rts.target;
     tr.crosswalkWalkers = undefined; // cars only (people and cars: crosswalktest)
     P.inView = () => false; // every lot off screen: they follow the hour
@@ -45,14 +47,17 @@ const pct = (x) => `${Math.round(x * 100)}%`;
         }
       }
       const t = {};
+      let want = 0, all = 0;
       for (const b of g.buildings.list.values()) {
         const p = P.parkedAt(b);
         if (!p.spots) continue;
         const k = cls(b);
         t[k] ??= [0, 0];
         t[k][0] += p.cars; t[k][1] += p.spots;
+        want += Math.round(p.spots * occupancy(b, hour)); all += p.spots;
       }
       occ[hour] = Object.fromEntries(Object.entries(t).map(([k, [a, n]]) => [k, { share: a / n, spots: n }]));
+      occ[hour].all = { share: Object.values(t).reduce((n, [a]) => n + a, 0) / all, spots: all, want: want / all };
     }
     // a grand opening at a drive-thru: the line spills onto the road, then clears
     const thru = [...g.buildings.list.values()].filter((b) => tr.thruAt(b));
@@ -78,11 +83,14 @@ const pct = (x) => `${Math.round(x * 100)}%`;
     }
     return { occ, pulledIn, backedOut, spill, parked: P.count, cap: P.cap };
   });
-  const row = (h) => Object.entries(r.occ[h]).map(([k, v]) => `${k} ${pct(v.share)} of ${v.spots}`).join(', ');
+  const row = (h) => Object.entries(r.occ[h]).map(([k, v]) => `${k} ${pct(v.share)} of ${v.spots}${v.want !== undefined ? ` (its curves: ${pct(v.want)})` : ''}`).join(', ');
   for (const h of Object.keys(r.occ).sort((a, b) => a - b)) console.log(`  ${String(h).padStart(4)}:00  ${row(h)}`);
   const o = (h, k) => r.occ[h]?.[k]?.share ?? NaN;
   if (r.occ[3].office) check(`offices fill mid-morning and empty at night (3 am ${pct(o(3, 'office'))}, 9 am ${pct(o(9, 'office'))}, 11 pm ${pct(o(23, 'office'))})`, o(9, 'office') >= 0.6 && o(3, 'office') <= 0.15 && o(23, 'office') <= 0.15);
-  check(`shops peak around noon, near empty at 3 am (${pct(o(3, 'shop'))} at 3 am, ${pct(o(12.5, 'shop'))} at noon)`, o(12.5, 'shop') >= 0.4 && o(3, 'shop') <= 0.12);
+  const day = Math.max(...[9, 12.5, 16, 19].map((h) => o(h, 'shop')));
+  check(`shops fill by day and are near empty at 3 am (${pct(o(3, 'shop'))} at 3 am, up to ${pct(day)} by day)`, day >= 0.4 && o(3, 'shop') <= 0.12);
+  const off = Object.keys(r.occ).map((h) => Math.abs(r.occ[h].all.share - r.occ[h].all.want));
+  check(`every hour, lots are as full as their curves say (within ${pct(Math.max(...off))}; 12% allowed: cars that drove in stay)`, Math.max(...off) <= 0.12);
   if (r.occ[3].home) check(`homes are full at night, emptier by day (${pct(o(3, 'home'))} at 3 am, ${pct(o(12.5, 'home'))} at noon)`, o(3, 'home') > o(12.5, 'home'));
   check(`arriving cars pull into stalls and stay (${r.pulledIn} in 7 hours)`, r.pulledIn > 5);
   check(`leaving cars back out of their stalls (${r.backedOut})`, r.backedOut > 3);

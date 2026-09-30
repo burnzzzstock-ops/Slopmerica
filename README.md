@@ -177,6 +177,7 @@ node scripts/copyscan.mjs        # (no key) self-check of the copy scanner share
 node scripts/feedtags.mjs        # (Jev, $0.04 a full pass; --dry-run needs no key) tag every feed line: region, town size, weather, fits its event, likely authors
 node scripts/feedtest.mjs        # the feed picks lines that fit the map, town size and weather, never empties a pool, and posts exactly as before without the tags; shop openings post the brand's name
 node scripts/nametags.mjs        # (Jev, $0.01 a full pass; --dry-run needs no key) street, suffix and commune names tagged by the region they belong to
+node scripts/parkingtags.mjs     # (Jev, $0.003 a full pass; --dry-run needs no key) when each brand's lot is full: busiest hours, open late, how full when quiet; writes src/agents/parkingTags.ts (the live parking's curves off screen; drawn only, never the simulation) and docs/PARKING_TAGS.md
 node scripts/nametest.mjs        # no street names from another region on any map (4,000 generated per map, and roads built in game), every list still has names
 node scripts/learnability.mjs    # (Jev, <$0.01; --dry-run needs no key; --list shows what it reads) every toast, alert, refusal and tooltip: says what happened, says what to do next, jargon; report and hand-written fixes in docs/LEARNABILITY.md
 node scripts/brandcheck.mjs      # (Jev, $0.01; --dry-run needs no key) chain names in copy that aren't in the brand registry ("Burger Duke", "Waffle Bunker"), with a proposed canonical name; docs/BRAND_NAMES.md

@@ -24,6 +24,7 @@ import { Buildings, Bld, isZoned } from './sim/buildings';
 import { footprintHitsBuilding, footprintHitsRoad, frontageCandidates, rectCorners, type Frontage } from './sim/frontage';
 import { Sim, Mode, SPEEDS, DAY_SECONDS, usd } from './sim/sim';
 import { Traffic, Car } from './agents/traffic';
+import { Parking } from './agents/parking';
 import { Pedestrians, Ped } from './agents/pedestrians';
 import { Communes, Commune } from './agents/communes';
 import { EXT } from './ext/registry';
@@ -144,6 +145,12 @@ export class Game {
   readonly buildings: Buildings;
   readonly sim: Sim;
   readonly traffic: Traffic;
+  /** live parked cars (drawn only) */
+  readonly parking: Parking;
+  private parkView = new THREE.Frustum();
+  private parkMat = new THREE.Matrix4();
+  private parkPt = new THREE.Vector3();
+  private parkSphere = new THREE.Sphere();
   readonly peds: Pedestrians;
   readonly civic: CivicLayer;
   /** the Asset Vault's road furniture (gantries, overpasses, cell towers, the bus stop to nowhere) */
@@ -301,6 +308,12 @@ export class Game {
     this.traffic.groundAt = (x, z) => this.terrain.h(x, z);
     // look pass: the vehicle renderer throws dust off gravel roads (it asks what the road under a car is, twice a second at most)
     this.traffic.renderer.surfaceAt = (x, z) => (this.net.pickSeg(x, z, 3)?.seg.type === 'gravel' ? 'gravel' : 'paved');
+    // live parking: cars stay in lot stalls and driveways (drawn only; the traffic pass)
+    this.parking = new Parking(this.buildings, this.traffic.renderer, this.q.maxCars);
+    this.parking.groundAt = (x, z) => this.terrain.h(x, z);
+    this.parking.paint = (kind, rnd) => Traffic.paint(kind, rnd);
+    this.parking.inView = (x, z) => this.parkView.intersectsSphere(this.parkSphere.set(this.parkPt.set(x, this.terrain.h(x, z) + 1, z), 3));
+    this.traffic.parking = this.parking;
     this.roads.setSignalStateProvider((nodeId, segId) => {
       const s = this.traffic.signalState(nodeId);
       if (!s) return 'green';
@@ -311,6 +324,9 @@ export class Game {
       return t - phase * cycle > 11 ? 'yellow' : 'green';
     });
     this.peds = new Pedestrians(this.scene, this.net, this.buildings, this.terrain, this.communes, this.q.maxPeople);
+    // crosswalks: people wait for a gap (or the walk phase), cars stop for people on them
+    this.traffic.crosswalkWalkers = (node, seg) => this.peds.crosswalkWalkers(node, seg);
+    this.peds.canCross = (node, segs, secs, impatient) => this.traffic.canCross(node, segs, secs, impatient);
     // Civic Foundry street furniture, street trees and bus shelters (streamed in; low quality skips it)
     this.civic = new CivicLayer(this);
     if (this.q.name !== 'low') this.civic.load();
@@ -458,6 +474,7 @@ export class Game {
     this.buildings.onComplete = ((orig) => (b: Bld) => {
       orig?.(b);
       if (b.zone !== 'resLow' && b.zone !== 'resHigh' && Math.random() < 0.35) this.feed.push('buildingOpened', { building: b.label, brand: brandName(b.brand) });
+      this.traffic.grandOpening(b); // a new drive-thru: the town lines up (traffic pass)
       if (this.near(b.x, b.z, 500)) this.audio.play('build', 0.3);
     })(this.buildings.onComplete);
     this.buildings.onLevel = (b) => {
@@ -491,6 +508,7 @@ export class Game {
       }
     };
     this.traffic.onJam = (seg) => this.feed.push('trafficJam', { road: seg.name });
+    this.traffic.onDriveThruSpill = (b, seg) => this.feed.push('driveThruLine', { brand: brandName(b.brand) || b.label, road: seg?.name });
     this.traffic.onEmit = (kind, x, y, z, n) => this.particles.emit(kind, x, y, z, { count: n, spread: kind === 'cigarette' ? 0.2 : 1.5 });
     this.post.look && (this.weather.look = this.post.look);
     this.weather.onThunder = (delay, dist) => {
@@ -1076,6 +1094,8 @@ export class Game {
     P.lap('zones+roads');
     const jobs = this.sim.jobsFilled;
     this.traffic.update(dt, spd, this.hour, this.sim.population, jobs, this.rts.target);
+    this.parkView.setFromProjectionMatrix(this.parkMat.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
+    this.parking.update(dt, this.hour, this.rts.target.x, this.rts.target.z, this.rts.distance, () => this.traffic.renderer.stats().active);
     P.lap('traffic');
     this.peds.population = this.sim.population;
     this.peds.update(dt, spd, this.rts.target, this.rts.distance, this.time);

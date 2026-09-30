@@ -123,6 +123,10 @@ const templates: Record<FeedEventKind, readonly string[]> = {
     'Paint is not protection. A person was hit in the crosswalk today.',
     'Someone walking was injured. Replies arguing about reflective clothing will be muted.',
   ],
+  // traffic pass (audit round 7 #6): a plain placeholder for the owner to reword
+  driveThruLine: [
+    'The {brand} drive-thru line is out onto {road} and blocking a lane.',
+  ],
   trafficJam: [
     '{road} currently has the speed and emotional tone of a group project.',
     'Traffic backed up past {brand}. Estimated travel time: yes.',

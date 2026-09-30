@@ -79,6 +79,25 @@ export interface BuildingModel {
   label: string; // display name, e.g. "Possum Pete's Gas-N-Go" or "The Vue @ Creekside"
   brand?: string;
   emitters: Emitter[];
+  /**
+   * Where live cars park, in local space like the geometry (traffic pass,
+   * audit round 7 #6): lot stalls and driveways ('stall', 'drive'), and a
+   * drive-thru lane in queue order from the window back ('thru', `q` 0 = at the
+   * window), then the way out after it ('out', in order). The baked cars these
+   * replace are left out of the geometry. Missing: no live parking there.
+   */
+  spots?: ParkSpot[];
+}
+
+/** A place a car parks or queues on a lot: local x, z and the way the car faces (see BuildingModel.spots). */
+export interface ParkSpot {
+  x: number;
+  z: number;
+  yaw: number;
+  kind: 'stall' | 'drive' | 'thru' | 'out';
+  /** drive-thru lanes: which lane (a kiosk can have two), and the place in it */
+  lane?: number;
+  q?: number;
 }
 
 export type LandmarkId =
@@ -147,6 +166,7 @@ export type FeedEventKind =
   | 'buildingLeveled'
   | 'buildingDemolished'
   | 'crash'
+  | 'driveThruLine' // traffic pass: a drive-thru line spilled onto the road (plain line; the owner's to reword)
   | 'drunkCrash'
   | 'pedestrianHit'
   | 'trafficJam'

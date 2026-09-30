@@ -6,7 +6,7 @@ import { brandById, brandsFor, BRANDS, Brand, Archetype } from '../art/brands';
 import { hasTile } from '../art';
 import { M, S, Mat, rgb, WHITE, RGB, WallGaps } from './mesh';
 import {
-  GenCtx, lotPad, parkingLot, car, tree, shrub, poleSign, wallSign, sideSign, canopy, pumpIsland, dumpster, iceBox, propaneCage,
+  GenCtx, lotPad, parkingLot, car, liveSpot, withoutGeometry, tree, shrub, poleSign, wallSign, sideSign, canopy, pumpIsland, dumpster, iceBox, propaneCage,
   vending, flagpole, tubeMan, backBillboard, picnicTable, smoker, lampPost, patch, mats, monumentSign, hvac, fence,
 } from './props';
 import { FAC, WALL, ROOF } from './blocks';
@@ -150,11 +150,19 @@ function fastFood(g: GenCtx, b: Brand) {
   const mbrd = S('menuBoard');
   mb.box(lx + 1.8, lx + 2.0, 0.4, 2.2, bz0 + 1, bz0 + 3.6, { r: null, l: mbrd, side: M('plain', 2, 2, 0x222222), top: M('plain', 2, 2, 0x222222) });
   mb.decal('+x', (bz0 + bz1) / 2 + 1, 1.0, bx + bw / 2, 1.4, 1.2, S('winPictureLit'));
+  // (traffic pass: the lane is a live queue when spots are exported: places from the
+  // window back to the lane's mouth, then the way out round the back; the baked
+  // line it replaces is left out)
+  const winZ = (bz0 + bz1) / 2 + 1;
+  let live = false;
+  for (let q = 0, z = winZ; z <= D / 2 - 6; q++, z += 5.4) live = liveSpot(g, { x: lx, z, yaw: Math.PI, kind: 'thru', lane: 0, q }) || live;
+  if (live) for (const [x, z, yaw] of [[lx, bz0 - 1.7, -Math.PI / 2], [bx - bw / 2 - 1.5, bz0 - 1.7, 0], [bx - bw / 2 - 1.5, bz1 + 1.5, 0]] as const) liveSpot(g, { x, z, yaw, kind: 'out', lane: 0 });
   const queue = rng.int(2, 3 + spec.level);
   for (let i = 0; i < queue; i++) {
     const qz = bz0 + 2 + i * 5.4;
     if (qz > D / 2 - 6) break;
-    car(g, lx, qz, Math.PI);
+    if (live) withoutGeometry(g, () => car(g, lx, qz, Math.PI));
+    else car(g, lx, qz, Math.PI);
   }
   // pole sign + parking in front
   poleSign(g, W / 2 - 2.8, D / 2 - 1.2, 8 + spec.level * 2, 5.5, sign(b));
@@ -333,9 +341,19 @@ function coffee(g: GenCtx, b: Brand) {
   mb.shed(kx - kw / 2, kx + kw / 2, z0, z1, 3.4, 0.8, M('metal', 2, 2, hexNum(b.colors[0])), side, 0.5);
   wallSign(g, kx, 2.7, z1 + 0.4, Math.min(kw - 0.4, 5.5), sign(b), 1.1);
   // drive-thru lanes (two if there's room), always full
+  // (traffic pass: live queues when spots are exported: from the kiosk window back
+  // to the lane's mouth, and out past the back of the lot)
+  let lane = 0;
   for (const lx of oneLane ? [kx + kw / 2 + 1.9] : [-kw / 2 - 2, kw / 2 + 2]) {
     patch(g, lx - 1.5, lx + 1.5, -D / 2 + 0.5, D / 2 - 0.3, mats.asphalt(), 0.09);
-    for (let z = -D / 2 + 3; z < D / 2 - 3; z += 5.4) if (rng.chance(0.85)) car(g, lx, z, Math.PI);
+    let live = false;
+    for (let q = 0, z = (z0 + z1) / 2; z < D / 2 - 3; q++, z += 5.4) live = liveSpot(g, { x: lx, z, yaw: Math.PI, kind: 'thru', lane, q }) || live;
+    if (live) liveSpot(g, { x: lx, z: -D / 2 + 1.5, yaw: Math.PI, kind: 'out', lane });
+    for (let z = -D / 2 + 3; z < D / 2 - 3; z += 5.4) if (rng.chance(0.85)) {
+      if (live) withoutGeometry(g, () => car(g, lx, z, Math.PI));
+      else car(g, lx, z, Math.PI);
+    }
+    lane++;
   }
   poleSign(g, W / 2 - 1.8, D / 2 - 1, 6 + spec.level, 3.6, sign(b));
   g.label = `${b.name} (drive-thru only)`;

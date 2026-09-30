@@ -33,7 +33,9 @@ const setup = await page.evaluate(() => {
   let placed = false;
   for (const [dx, dz] of [[-10, 40], [-10, -40], [100, 40], [100, -40], [-100, 40], [200, 40]]) if (!placed && t.canPlaceDepot(cx + dx, cz + dz).ok) placed = t.placeDepot(cx + dx, cz + dz);
   const depot = [...g.buildings.list.values()].find((b) => b.kind === 'busDepot'); if (depot) { depot.state = 'active'; depot.progress = 1; }
-  d.zone(cx - 200, cz, 90, 'resHigh'); d.zone(cx + 200, cz, 90, 'comHigh');
+  // (and a factory between: with no goods the shops have no jobs, and nobody rides; the
+  // demand bars used to keep adding bare shops, which is where the riders came from)
+  d.zone(cx - 200, cz, 90, 'resHigh'); d.zone(cx + 200, cz, 90, 'comHigh'); d.zone(cx, cz, 45, 'industry');
   d.run(150);
   const ok = t.addDraftPoint(cx - 200, cz) && t.addDraftPoint(cx + 200, cz) && t.finishDraft();
   const line = [...t.lines.values()][0]; if (line) line.buses = 3;

@@ -3,13 +3,14 @@
 // drunk / reckless / smoking drivers and crashes. Induced demand emerges:
 // free-flowing roads invite more trips.
 import * as THREE from 'three';
-import type { VehicleKind } from '../contracts';
+import type { LandmarkId, VehicleKind } from '../contracts';
 import { clamp, closestOnSampled, lerp, locate, norm, sub, V2 } from '../core/math';
 import { fx } from '../core/rng';
 import type { RNode, RoadNetwork, RSeg } from '../roads/network';
-import { laneOffset, ROAD_TYPES } from '../roads/roadTypes';
+import { carriageHalf, laneOffset, ROAD_TYPES } from '../roads/roadTypes';
 import type { Bld, Buildings } from '../sim/buildings';
 import { FIXED_PAINT, randomVehicleKind, VEHICLE_SPECS, VehicleRenderer } from './vehicles';
+import { LANDMARK_EVENTS, type Parking, type WorldSpot } from './parking';
 import { ARCHETYPES } from './people';
 import { HALF } from '../config';
 
@@ -24,6 +25,20 @@ interface Step {
 export interface Car {
   id: number;
   h: number;
+  /** live parking (drawn only): the stall it pulls into, the one it backs out of, and whether parking kept its handle */
+  toSpot?: WorldSpot | null;
+  fromSpot?: WorldSpot | null;
+  parked?: boolean;
+  /** the building it's going to */
+  destB?: Bld | null;
+  /** going through the drive-thru at its destination; `thru` once in the lane, `thruWait` while stopped on the road for room in it */
+  thruB?: Bld | null;
+  thru?: { L: ThruLane; serve: number; out: number; x: number; z: number; yaw: number } | null;
+  thruWait?: number;
+  /** what place() last drew it from (where it was on its path), and how many frames running it was the same */
+  drawn?: { s: number; pi: number; lane: number; dep: number; arr: number; j: Car['junction']; turn: number; still: number; why: keyof Traffic['sigWhy'] };
+  /** the junction it last slowed for someone on foot at (counts each stop once) */
+  pedNode?: number;
   kind: VehicleKind;
   path: Step[];
   pi: number;
@@ -116,7 +131,14 @@ export interface DispatchOpts {
 
 /** Direction of a road between samples i and i+1; repeated samples borrow their neighbours' (a zero-length step has no direction). */
 function sampleTangent(seg: RSeg, i: number): V2 {
-  const P = seg.samp.pts, n = P.length;
+  // (worked out once per sampled road: every car's pose asks for it twice a frame)
+  let T = tangents.get(seg.samp);
+  if (!T) tangents.set(seg.samp, (T = []));
+  return (T[i] ??= tangentAt(seg.samp.pts, i));
+}
+const tangents = new WeakMap<RSeg['samp'], V2[]>();
+function tangentAt(P: V2[], i: number): V2 {
+  const n = P.length;
   for (let k = 0; k < n; k++) {
     for (const j of k ? [i - k, i + k] : [i]) {
       if (j < 0 || j + 1 >= n) continue;
@@ -140,8 +162,47 @@ const ARR_T = 2.2;
 const KERB_T = DEP_T * 0.55;
 /** a queue lets a waiting driver in after this long (seconds at the kerb) */
 const COURTESY_T = 5;
+/** and holds back for this long at a time, once every COURTESY_CYCLE seconds, until the driver is out */
+const COURTESY_HOLD = 12;
+const COURTESY_CYCLE = 30;
+/** where cars stop short of a junction (m before the box): behind the crosswalk at the box's edge */
+const STOP_LINE = 3;
 /** cars that can wait in one lot to pull out before its building starts no more trips */
 const LOT_QUEUE_MAX = 3;
+/** drive-thru: seconds at the window per car (plus up to THRU_SERVE_VAR more), and the pace up the lane */
+const THRU_SERVE = 14;
+const THRU_SERVE_VAR = 12;
+const THRU_SPEED = 4;
+/**
+ * A car drawn from the same place on its path this many frames running is
+ * standing still, its heading, lean and steering settled: place() leaves it
+ * as drawn (at 1,000 cars, two in three are queued).
+ */
+const STILL_FRAMES = 12;
+/**
+ * Landmarks draw visitors (the traffic pass, playtest 6: "built the stadium,
+ * nothing happens"; no trip ever went to one). Each open landmark's pull, as a
+ * share of the town's local trips by day (9 am to 9 pm), summed and capped;
+ * half the sightseeing trips are people heading home from one. The game nights
+ * and services are LANDMARK_EVENTS (parking.ts): their crowd leaves home over
+ * the EVENT_ARRIVE hours before the start (a drive across town takes a couple
+ * of hours on the clock) and everyone who came drives home at the rate of
+ * EVENT_OUT hours for the whole crowd from the end (a lot lets out three cars
+ * at a time, so it can take longer), on top of the town's other trips, at most
+ * EVENT_MAX cars.
+ */
+export const VISIT_PULL: Partial<Record<LandmarkId, number>> = { slopCannon: 0.025, slop69Field: 0.015, pigCabanaResort: 0.035, neuralFlyDatacenter: 0.01, propaneParadise: 0.02, fillErUpMegaStation: 0.035, megachurch: 0.015 };
+const VISIT_MAX = 0.12;
+const EVENT_ARRIVE = 1.5;
+const EVENT_OUT = 3;
+/** anyone still there this long after the end went home unseen */
+const EVENT_OUT_MAX = 8;
+const EVENT_MAX = 60;
+/** sim seconds in an hour on the clock (a day is 360 s at ▶) */
+const CLOCK_HOUR = 15;
+/** a grand opening at a drive-thru: this long (sim seconds) of the town lining up, and the share of trips that go */
+const OPENING_T = 240;
+const OPENING_SHARE = 0.35;
 /**
  * Crash rates (owner, 2026-09-30: "agree with lower"). Drunk drivers by day and
  * after 9 pm, reckless ones, and the random-crash hazard per second (scaled by
@@ -160,6 +221,14 @@ function cubicTan(p0: V2, p1: V2, p2: V2, p3: V2, u: number): V2 {
     x: 3 * v * v * (p1.x - p0.x) + 6 * v * u * (p2.x - p1.x) + 3 * u * u * (p3.x - p2.x),
     z: 3 * v * v * (p1.z - p0.z) + 6 * v * u * (p2.z - p1.z) + 3 * u * u * (p3.z - p2.z),
   };
+}
+
+/** A drive-thru lane on a lot: places in queue order from the window back, the way out, and who is in it. */
+interface ThruLane {
+  b: Bld;
+  slots: { x: number; z: number; yaw: number }[];
+  out: { x: number; z: number; yaw: number }[];
+  q: Car[];
 }
 
 interface Signal {
@@ -254,6 +323,134 @@ export class Traffic {
   // codex:policies end
   /** terrain height sampler (set by the game) for cars in lots */
   groundAt?: (x: number, z: number) => number;
+  /** game wiring: live parking (drawn only; see parking.ts) */
+  parking?: Parking;
+  /** drive-thru lanes by building (null: none), built from the building model's spots */
+  private thruLanes = new Map<Bld, { model: Bld['model']; lanes: ThruLane[] } | null>();
+  /** when cars arrived at each landmark (sim clock), for the inspector's visitors today */
+  private visits = new Map<Bld, number[]>();
+  /** an event's crowd not yet sent (a fraction of a car), by landmark */
+  private crowdDue = new Map<Bld, number>();
+  /** the crowd that came to an event and hasn't left for home yet, by landmark */
+  private crowdIn = new Map<Bld, number>();
+  /** Cars that came to this building in the last game day (6 minutes of traffic at ▶). */
+  visitorsToday(b: Bld): number {
+    const v = this.visits.get(b);
+    return v ? v.filter((t) => this.clock - t < 360).length : 0;
+  }
+  /** A local trip to see a landmark now (or home from one), or null: sightseeing, by day. */
+  private visitTarget(hour: number, landmarks: Bld[]): { b: Bld; purpose: string; home: boolean } | null {
+    if (!landmarks.length || hour < 9 || hour >= 21) return null;
+    const pull = landmarks.map((b) => (b.landmark && VISIT_PULL[b.landmark]) || 0), total = pull.reduce((a, v) => a + v, 0);
+    const cap = Math.min(total, VISIT_MAX);
+    let r = Math.random() * Math.max(total, VISIT_MAX);
+    if (r >= cap) return null;
+    const home = r < cap / 2;
+    r *= total / cap;
+    for (let i = 0; i < landmarks.length; i++) if ((r -= pull[i]) < 0) return { b: landmarks[i], purpose: home ? 'heading home' : 'sightseeing', home };
+    return null;
+  }
+
+  /**
+   * A game night's or a service's crowd: people leave home for it before it
+   * starts, and everyone who came drives home after it ends (as fast as they
+   * came, however long the lot takes to let them out).
+   */
+  private eventCrowds(dt: number, hour: number) {
+    const { landmarks, res } = this.lists();
+    if (!res.length) return;
+    for (const b of landmarks) {
+      const e = b.landmark && LANDMARK_EVENTS[b.landmark];
+      if (!e) continue;
+      const until = (e.from - hour + 24) % 24, since = (hour - e.to + 24) % 24;
+      const arriving = until > 0 && until <= EVENT_ARRIVE, leaving = since < EVENT_OUT_MAX && (this.crowdIn.get(b) ?? 0) > 0;
+      // (from the first one leaving home to the last one home: anyone still there after it went home unseen)
+      if ((hour - e.from + EVENT_ARRIVE + 24) % 24 >= e.to - e.from + EVENT_ARRIVE + EVENT_OUT_MAX) this.crowdIn.delete(b);
+      if (!arriving && !leaving) { this.crowdDue.delete(b); continue; }
+      const crowd = Math.min(EVENT_MAX, this.pop * e.crowd);
+      let due = (this.crowdDue.get(b) ?? 0) + (crowd / ((arriving ? EVENT_ARRIVE : EVENT_OUT) * CLOCK_HOUR)) * dt;
+      for (let k = 0; due >= 1 && k < 4 && this.cars.length < SIM_MAX_CARS; k++) {
+        const home = res[Math.floor(Math.random() * res.length)];
+        const [oB, dB] = arriving ? [home, b] : [b, home];
+        const o = this.anchor(oB), d = this.anchor(dB);
+        // (the lot's exit busy, or its queue full: this one goes next step)
+        if (!o || !d || !this.launch(o, d, oB, dB, randomVehicleKind(Math.random), arriving ? e.purpose : 'heading home', dB.label, true, hour)) break;
+        due -= 1;
+        if (leaving) this.crowdIn.set(b, (this.crowdIn.get(b) ?? 1) - 1);
+      }
+      this.crowdDue.set(b, Math.min(due, arriving ? 8 : this.crowdIn.get(b) ?? 0));
+    }
+  }
+
+  /** drive-thrus in their grand opening: sim seconds left */
+  private openings = new Map<Bld, number>();
+  /** when each drive-thru last spilled onto the road (sim clock), so the feed says so once */
+  private spilledAt = new Map<Bld, number>();
+  private clock = 0;
+  /** game wiring: a drive-thru line has backed out onto the road and is blocking a lane */
+  onDriveThruSpill?: (b: Bld, seg: RSeg | undefined) => void;
+
+  /** The drive-thru lanes at a building (from its model's spots), or null. */
+  thruAt(b: Bld): ThruLane[] | null {
+    const hit = this.thruLanes.get(b);
+    if (hit !== undefined && (!hit || hit.model === b.model)) return hit ? hit.lanes : null;
+    const sp = b.model.spots?.filter((p) => p.kind === 'thru' || p.kind === 'out');
+    if (!sp || !sp.some((p) => p.kind === 'thru') || b.state !== 'active') { this.thruLanes.set(b, null); return null; }
+    const c = Math.cos(b.yaw), sn = Math.sin(b.yaw);
+    const w = (p: { x: number; z: number; yaw: number }) => ({ x: b.x + p.x * c + p.z * sn, z: b.z - p.x * sn + p.z * c, yaw: b.yaw + p.yaw });
+    const lanes: ThruLane[] = [];
+    for (const n of [...new Set(sp.map((p) => p.lane ?? 0))]) {
+      const slots = sp.filter((p) => p.kind === 'thru' && (p.lane ?? 0) === n).sort((a, b2) => (a.q ?? 0) - (b2.q ?? 0)).map(w);
+      if (slots.length) lanes.push({ b, slots, out: sp.filter((p) => p.kind === 'out' && (p.lane ?? 0) === n).map(w), q: [] });
+    }
+    // (a rebuilt lot: whoever was in the old lanes carries on in the new first one)
+    const old = hit?.lanes.flatMap((L) => L.q) ?? [];
+    for (const car of old) if (lanes[0] && lanes[0].q.length < lanes[0].slots.length && car.thru) { car.thru.L = lanes[0]; lanes[0].q.push(car); } else if (car.thru) { car.arrived = true; car.crashed = -1; }
+    this.thruLanes.set(b, lanes.length ? { model: b.model, lanes } : null);
+    return lanes.length ? lanes : null;
+  }
+
+  /** Is there room at the back of a drive-thru line here? */
+  private thruRoom(b: Bld): boolean {
+    return !!this.thruAt(b)?.some((L) => L.q.length < L.slots.length);
+  }
+
+  /** Move a car in a drive-thru lane toward a place at walking-the-line pace; true once it's there. */
+  private thruMove(c: Car, p: { x: number; z: number; yaw: number }, dt: number): boolean {
+    const T = c.thru!, dx = p.x - T.x, dz = p.z - T.z, d = Math.hypot(dx, dz);
+    if (d < 0.05) { c.v = 0; T.yaw = angLerp(T.yaw, p.yaw, Math.min(1, dt * 3)); return true; }
+    const k = Math.min(1, (THRU_SPEED * dt) / d);
+    T.x += dx * k; T.z += dz * k;
+    if (d > 0.4) T.yaw = angLerp(T.yaw, Math.atan2(dx, dz), Math.min(1, dt * 5));
+    c.v = THRU_SPEED;
+    return k >= 1;
+  }
+
+  /** A drive-thru just opened: the town lines up for a while (the line spills onto the stroad). */
+  grandOpening(b: Bld) {
+    if (this.thruAt(b)) this.openings.set(b, OPENING_T);
+  }
+
+  /** Cars in each drive-thru line, and cars stopped on the road waiting for room in one (tests, inspector). */
+  thruStats() {
+    const lines: { b: Bld; inLane: number; places: number; onRoad: number }[] = [];
+    for (const [b, v] of this.thruLanes) {
+      if (!v) continue;
+      lines.push({ b, inLane: v.lanes.reduce((n, L) => n + L.q.length, 0), places: v.lanes.reduce((n, L) => n + L.slots.length, 0), onRoad: this.cars.filter((c) => c.thruB === b && !c.thru && (c.thruWait ?? 0) > 0).length });
+    }
+    return lines;
+  }
+  /** A paint for a car of this kind (the parked cars use the traffic's mix). */
+  static paint(kind: VehicleKind, rnd: () => number): number {
+    return FIXED_PAINT[kind] ?? PAINT[Math.floor(rnd() * PAINT.length)];
+  }
+  /** game wiring: the people walking over this arm of this junction: where they are and which way they're going */
+  crosswalkWalkers?: (node: number, seg: number) => { x: number; z: number; dx: number; dz: number }[] | undefined;
+  /** crosswalk stops (a car slowing for someone on foot at a junction, once each), for tests */
+  pedYields = 0;
+  private yieldedTo(c: Car, node: number) {
+    if (c.v > 1 && c.pedNode !== node) { c.pedNode = node; this.pedYields++; }
+  }
   private pop = 0;
   private jobsNow = 0;
   totalTrips = 0;
@@ -315,6 +512,7 @@ export class Traffic {
   // ------------------------------------------------------------------ signals
   private rebuildSignals() {
     this.bendCuts.clear();
+    this.edges = null;
     const old = this.signals;
     this.signals = new Map();
     for (const n of this.net.nodes.values()) {
@@ -326,10 +524,26 @@ export class Traffic {
         const p = atA ? s.samp.pts[Math.min(3, s.samp.pts.length - 1)] : s.samp.pts[Math.max(0, s.samp.pts.length - 4)];
         return { id: s.id, a: Math.atan2(p.z - n.z, p.x - n.x) };
       });
-      ang.sort((x, y) => x.a - y.a);
+      // Roads straight across from each other (at least 135 degrees apart) share a
+      // green, the most nearly opposite pair first; every other road gets its own.
+      // (Alternating round the junction put a T's stem in the same green as half
+      // its through road, so a left turn out of it crossed the through traffic.)
+      const pairs: { i: number; j: number; d: number }[] = [];
+      for (let i = 0; i < ang.length; i++) for (let j = i + 1; j < ang.length; j++) {
+        let d = Math.abs(ang[i].a - ang[j].a) % (Math.PI * 2);
+        if (d > Math.PI) d = Math.PI * 2 - d;
+        if (d >= (Math.PI * 3) / 4) pairs.push({ i, j, d });
+      }
+      pairs.sort((x, y) => y.d - x.d);
       const phaseOf = new Map<number, number>();
-      ang.forEach((e, i) => phaseOf.set(e.id, i % 2));
-      this.signals.set(n.id, { phaseOf, phases: 2, t: old.get(n.id)?.t ?? Math.random() * 20 });
+      let phases = 0;
+      for (const { i, j } of pairs) {
+        if (phaseOf.has(ang[i].id) || phaseOf.has(ang[j].id)) continue;
+        phaseOf.set(ang[i].id, phases);
+        phaseOf.set(ang[j].id, phases++);
+      }
+      for (const e of ang) if (!phaseOf.has(e.id)) phaseOf.set(e.id, phases++);
+      this.signals.set(n.id, { phaseOf, phases, t: old.get(n.id)?.t ?? Math.random() * 20 });
     }
   }
 
@@ -452,7 +666,8 @@ export class Traffic {
   private anchor(bld: Bld): { seg: RSeg; s: number } | null {
     let seg = this.net.segs.get(bld.seg);
     if (!seg) {
-      const p = this.net.pickSeg(bld.x, bld.z, 50);
+      // (a landmark or service faces the road it was squared to: as far off as its lot is big)
+      const p = this.net.pickSeg(bld.x, bld.z, Math.max(50, Math.max(bld.hw, bld.hd) + 12));
       if (!p) return null;
       bld.seg = p.seg.id;
       seg = p.seg;
@@ -473,8 +688,47 @@ export class Traffic {
     return { x: cx + n.x * side * off, z: cz + n.z * side * off };
   }
 
+  /** the buildings trips start and end at, gathered once a step */
+  private tripLists: { step: number; list: Bld[]; landmarks: Bld[]; res: Bld[]; jobs: Bld[]; shops: Bld[]; ind: Bld[] } | null = null;
+  /** (the lists once a step, not once a try: up to 12 tries a step, each over every building) */
+  private lists() {
+    if (this.tripLists?.step !== this.stepN) {
+      // (one pass over the buildings, each list in the town's order)
+      const L: NonNullable<Traffic['tripLists']> = (this.tripLists = { step: this.stepN, list: [], landmarks: [], res: [], jobs: [], shops: [], ind: [] });
+      for (const b of this.b.list.values()) {
+        if (b.state !== 'active' || b.zone === 'service') continue;
+        // open landmarks a road reaches (one no road reaches draws nobody)
+        if (b.zone === 'landmark') { if (!b.offNet) L.landmarks.push(b); continue; }
+        L.list.push(b);
+        if (b.zone === 'resLow' || b.zone === 'resHigh') L.res.push(b);
+        else {
+          L.jobs.push(b);
+          if (b.zone === 'comLow' || b.zone === 'comHigh') L.shops.push(b);
+          else if (b.zone === 'industry') L.ind.push(b);
+        }
+      }
+    }
+    return this.tripLists;
+  }
+  private stepN = 0;
+  /** every car by the road and way it's on (seg * 2 + (dir > 0 ? 0 : 1)), built once for the step's trip launches */
+  private segDirIndex: Map<number, Car[]> | null = null;
+  private onSegDir(): Map<number, Car[]> {
+    if (this.segDirIndex) return this.segDirIndex;
+    const m = new Map<number, Car[]>();
+    for (const c of this.cars) {
+      const st = c.path[c.pi], k = st.seg * 2 + (st.dir > 0 ? 0 : 1);
+      const a = m.get(k);
+      if (a) a.push(c); else m.set(k, [c]);
+    }
+    this.segDirIndex = m;
+    return m;
+  }
+  /** road ends at the map edge (cached until the network changes) */
+  private edges: { seg: RSeg; s: number }[] | null = null;
   private edgeAnchors(): { seg: RSeg; s: number }[] {
-    const out: { seg: RSeg; s: number }[] = [];
+    if (this.edges) return this.edges;
+    const out: { seg: RSeg; s: number }[] = (this.edges = []);
     for (const n of this.net.nodes.values()) {
       if (Math.abs(n.x) > HALF - 40 || Math.abs(n.z) > HALF - 40) {
         const seg = this.net.segs.get(n.segs[0]);
@@ -488,18 +742,15 @@ export class Traffic {
     // codex:freight begin - give the conserved-goods scheduler a spawn opportunity
     if (this.freightTrip?.()) return true;
     // codex:freight end
-    const list = [...this.b.list.values()].filter((b) => b.state === 'active' && b.zone !== 'landmark' && b.zone !== 'service');
+    const { list, landmarks, res, jobs, shops, ind } = this.lists();
     const edges = this.edgeAnchors();
     if (list.length < 2 && !edges.length) return false;
-    const res = list.filter((b) => b.zone === 'resLow' || b.zone === 'resHigh');
-    const jobs = list.filter((b) => b.zone !== 'resLow' && b.zone !== 'resHigh');
-    const shops = list.filter((b) => b.zone === 'comLow' || b.zone === 'comHigh');
-    const ind = list.filter((b) => b.zone === 'industry');
     const morning = hour > 6 && hour < 10, evening = hour > 15.5 && hour < 19.5;
     let o: { seg: RSeg; s: number } | null = null, d: { seg: RSeg; s: number } | null = null;
     let oB: Bld | null = null, dB: Bld | null = null;
     let local = true;
     let purpose = 'cruising', dest = 'nowhere in particular', kind: VehicleKind = randomVehicleKind(Math.random);
+    let visit: { b: Bld; purpose: string; home: boolean } | null = null;
     const pick = <T>(a: T[]) => a[Math.floor(Math.random() * a.length)];
     // Out-of-towners arrive and leave by the highway (outside connections).
     // Their share grows with jobs the locals can't fill, plus tourists,
@@ -549,6 +800,22 @@ export class Traffic {
       kind = Math.random() < 0.5 ? 'boxTruck' : 'semi';
       purpose = 'delivering goods';
       dest = dB.label;
+    } else if (res.length && (visit = this.visitTarget(hour, landmarks))) {
+      // a landmark's visitors: a game, church, or a look at the Slop Cannon (and home after)
+      const home = pick(res);
+      [oB, dB] = visit.home ? [visit.b, home] : [home, visit.b];
+      o = this.anchor(oB);
+      d = this.anchor(dB);
+      purpose = visit.purpose;
+      dest = dB.label;
+    } else if (res.length && this.openings.size && Math.random() < OPENING_SHARE) {
+      // a drive-thru's grand opening: half the town goes
+      const [open] = [...this.openings.keys()];
+      oB = pick(res); dB = open;
+      o = this.anchor(oB);
+      d = this.anchor(dB);
+      purpose = 'getting drive-thru';
+      dest = dB.label;
     } else if (res.length && jobs.length) {
       const home = pick(res);
       const other = morning || evening ? pick(jobs) : shops.length && Math.random() < 0.7 ? pick(shops) : pick(jobs);
@@ -597,7 +864,9 @@ export class Traffic {
     {
       const st0 = rt.steps[0];
       const seg0 = this.net.segs.get(st0.seg)!;
-      const busyAt = (s: number) => this.cars.some((c) => !c.junction && c.crashed !== -1 && c.path[c.pi].seg === st0.seg && c.path[c.pi].dir === st0.dir && Math.abs(c.s - s) < 9);
+      // (the cars on that road and way, indexed once a step: not a scan of every car per try)
+      const near = this.onSegDir().get(st0.seg * 2 + (st0.dir > 0 ? 0 : 1)) ?? [];
+      const busyAt = (s: number) => near.some((c) => !c.junction && c.crashed !== -1 && c.path[c.pi].seg === st0.seg && c.path[c.pi].dir === st0.dir && Math.abs(c.s - s) < 9);
       let ok = false;
       for (const off of [0, 12, -12, 24, -24]) {
         const s = rt.startS + off;
@@ -639,12 +908,21 @@ export class Traffic {
       car.lotLeft = this.lotSide(firstSeg, st0.dir, rt.startS, car.lotO) > 0;
       car.lane = car.lotLeft ? 0 : ROAD_TYPES[firstSeg.type].lanesPerDir - 1;
     }
+    // a car parked at the building backs out of its stall (drawn only: the trip is the same)
+    if (oB && this.parking) {
+      const p = this.parking.take(oB, kind);
+      if (p) { if (car.h >= 0) this.renderer.remove(car.h); car.h = p.h; car.fromSpot = p.spot; }
+    }
     if (dB) {
+      car.destB = dB;
+      // a drive-thru run (or any visit to a drive-thru-only kiosk) goes through the lane
+      if (spec.length <= 6.05 && this.thruAt(dB) && (purpose === 'getting drive-thru' || !(dB.model.spots ?? []).some((p) => p.kind === 'stall')) && !/deliver|import|export|work/.test(purpose)) car.thruB = dB;
       const stN = rt.steps[rt.steps.length - 1];
       const lastSeg = this.net.segs.get(stN.seg)!;
       car.lotD = this.lotPoint(dB, lastSeg, lastSeg.id === d.seg.id ? d.s : stN.dir > 0 ? rt.endS : lastSeg.length - rt.endS);
     }
     this.cars.push(car);
+    this.segDirIndex?.get(car.path[0].seg * 2 + (car.path[0].dir > 0 ? 0 : 1))?.push(car) ?? this.segDirIndex?.set(car.path[0].seg * 2 + (car.path[0].dir > 0 ? 0 : 1), [car]);
     this.totalTrips++;
     return car;
   }
@@ -672,6 +950,7 @@ export class Traffic {
   private step(dtReal: number, simSpeed: number, hour: number, population: number, jobs: number, camTarget: THREE.Vector3, last: boolean) {
     const dt = dtReal * Math.max(0.0001, simSpeed);
     this.lastDt = Math.max(dtReal, dt);
+    this.stepN++;
     if (simSpeed > 0) for (const s of this.signals.values()) s.t += dt;
 
     // demand for trips: population & jobs, time of day, induced demand
@@ -687,13 +966,18 @@ export class Traffic {
     // trips, freight and demand) doesn't depend on graphics settings
     this.targetCars = Math.min(SIM_MAX_CARS, Math.round((population * perPerson + jobs * 0.05 + edgeBoost) * tod * induced * this.policyTripMul));
     // codex:policies end
+    this.segDirIndex = null;
     if (simSpeed > 0) {
       let spawns = 0;
       while (this.cars.length < this.targetCars && spawns < 12) {
         spawns++;
         this.spawnTrip(hour);
       }
+      this.eventCrowds(dt, hour);
     }
+    // (the index holds only while nothing moves: a trip launched later this step, or
+    // between steps, indexes the cars afresh)
+    this.segDirIndex = null;
 
     // buckets per seg/dir/lane
     this.buckets.clear();
@@ -705,7 +989,7 @@ export class Traffic {
     this.boxByExit.clear();
     for (const c of this.cars) {
       if (c.crashed === -1) continue;
-      if (c.dep > 0 || c.arr >= 0) continue; // in a lot: not on the road
+      if (c.dep > 0 || c.arr >= 0 || c.thru) continue; // in a lot (or its drive-thru lane): not on the road
       if (c.junction) {
         let arr = this.junctionCars.get(c.junction.node);
         if (!arr) this.junctionCars.set(c.junction.node, (arr = []));
@@ -720,8 +1004,15 @@ export class Traffic {
           ex.push(c);
         }
         const J = c.junction, tk = J.fromSeg * 16 + (J.fromDir > 0 ? 0 : 8) + J.fromLane, tail = this.boxTail.get(tk);
-        if (!tail || J.t < tail.junction!.t) this.boxTail.set(tk, c);
+        if (!tail || this.pastLine(c) < this.pastLine(tail)) this.boxTail.set(tk, c);
         continue;
+      }
+      // out of the box, but a long vehicle's rear is still in it: the cars behind it
+      // follow its rear
+      const P = c.prevJ;
+      if (P && c.prevEntryS !== undefined && c.s - c.prevEntryS < c.len) {
+        const tk = P.fromSeg * 16 + (P.fromDir > 0 ? 0 : 8) + P.fromLane, tail = this.boxTail.get(tk);
+        if (!tail || this.pastLine(c) < this.pastLine(tail)) this.boxTail.set(tk, c);
       }
       const st = c.path[c.pi];
       const key = st.seg * 16 + (st.dir > 0 ? 0 : 8) + c.lane;
@@ -742,7 +1033,9 @@ export class Traffic {
         const k = lotKey(c.lotO), o = this.lotLead.get(k);
         if (!o || c.dep < o.dep - 1e-6 || (Math.abs(c.dep - o.dep) <= 1e-6 && c.id < o.id)) this.lotLead.set(k, c);
       }
-      const pulling = c.dep > 0 && (c.committed || (c.wait ?? 0) > COURTESY_T);
+      // (the courtesy comes and goes: a driver the queue lets in who still can't go,
+      // waiting on the far lanes, doesn't hold the queue for good)
+      const pulling = c.dep > 0 && (c.committed || ((c.wait ?? 0) > COURTESY_T && (c.wait ?? 0) % COURTESY_CYCLE < COURTESY_T + COURTESY_HOLD));
       const parking = c.arr >= 0 && c.arr < ARR_T * 0.5;
       if (!pulling && !parking) continue;
       this.addMergeBlock(c, pulling && !c.committed);
@@ -773,19 +1066,68 @@ export class Traffic {
           gap = lead.s - c.s - lead.len;
           dv = c.v - lead.v;
         }
-        // the last car into the box from this lane is still ahead, crossing
+        // a car still moving over between my lane and the next (it counts as in the
+        // lane it's going to, but half its body is in the one it left), or me
+        // moving over past one: follow it too
+        if (T.lanesPerDir > 1 && Number.isFinite(c.lat)) {
+          for (const k2 of [c.lane - 1, c.lane + 1]) {
+            if (k2 < 0 || k2 >= T.lanesPerDir) continue;
+            for (const o of this.buckets.get(st.seg * 16 + (st.dir > 0 ? 0 : 8) + k2) ?? []) {
+              if (o.s <= c.s || o.crashed !== 0 || o.dep > 0 || o.arr >= 0) continue;
+              const g = o.s - o.len - c.s;
+              if (g >= gap) break;
+              if (Math.abs(o.lat - c.lat) < 2) { gap = g; dv = c.v - o.v; break; }
+            }
+          }
+        }
+        // the last car into the box from this lane is still ahead, crossing (or just
+        // out of it, a long one's rear still in the box)
         if (!lead && !last) {
           const bt = this.boxTail.get(st.seg * 16 + (st.dir > 0 ? 0 : 8) + c.lane);
-          if (bt && bt.junction) {
-            const g = exitS - c.s + clamp(bt.junction.t, 0, 1) * bt.junction.len - bt.len;
+          if (bt) {
+            const g = exitS - c.s + this.pastLine(bt) - bt.len;
             if (g < gap) { gap = g; dv = c.v - bt.v; }
+          }
+        }
+        // someone from another lane already in the box on the way to the lane I'm
+        // turning into (two lanes turning into one): follow them in, not beside them
+        if (!last && exitS - c.s < 25) {
+          const nodeId = st.dir > 0 ? seg.b : seg.a, nx = c.path[c.pi + 1], ns = nx && this.net.segs.get(nx.seg);
+          const box = ns && this.junctionCars.get(nodeId);
+          if (box && box.length) {
+            const lanesN = ROAD_TYPES[ns.type].lanesPerDir;
+            const lane2 = c.turn < 0 ? lanesN - 1 : c.turn > 0 ? 0 : Math.min(c.lane, lanesN - 1);
+            for (const o of box) {
+              const J = o.junction;
+              if (!J || o.crashed !== 0 || J.lane2 !== lane2 || o.path[o.pi + 1]?.seg !== nx.seg || (J.fromSeg === seg.id && J.fromLane === c.lane)) continue;
+              const g = exitS - c.s + this.pastLine(o) - o.len;
+              if (g < gap) { gap = g; dv = c.v - o.v; }
+            }
+          }
+        }
+        // going through a drive-thru with its lane full: wait at the driveway, on the road
+        // (the line spills onto the stroad and blocks this lane until there's room)
+        if (last && c.thruB && !this.thruRoom(c.thruB)) {
+          const g8 = exitS - 1 - c.s;
+          if (g8 < gap) { gap = g8; dv = c.v; }
+          if (exitS - c.s < 15 && c.v < 0.5) {
+            c.thruWait = (c.thruWait ?? 0) + dt;
+            if (c.thruWait > 8 && this.clock - (this.spilledAt.get(c.thruB) ?? -1e9) > 300) { this.spilledAt.set(c.thruB, this.clock); this.onDriveThruSpill?.(c.thruB, seg); }
+          }
+        }
+        // someone on the crosswalk over my lanes, or over the lanes I'm turning into: stop at the line
+        if (!last && this.crosswalkWalkers && exitS - c.s < 20) {
+          const nodeId = st.dir > 0 ? seg.b : seg.a, nx = c.path[c.pi + 1], ns = nx && this.net.segs.get(nx.seg);
+          if (this.walkerOnLanes(nodeId, seg, st.dir, true) || (ns && this.walkerOnLanes(nodeId, ns, nx.dir, false))) {
+            const g7 = exitS - STOP_LINE - c.s;
+            if (g7 < gap) { gap = g7; dv = c.v; this.yieldedTo(c, nodeId); }
           }
         }
         // turning left across the oncoming lanes on a green: wait at the line for a gap
         if (!last && c.turn > 0 && exitS - c.s < 25) {
           const nodeId = st.dir > 0 ? seg.b : seg.a;
           if (this.signals.has(nodeId) && !this.clearing(nodeId, seg.id) && this.oncoming(nodeId, seg.id)) {
-            const g6 = exitS - 1.5 - c.s;
+            const g6 = exitS - STOP_LINE - c.s;
             if (g6 < gap) { gap = g6; dv = c.v; }
           }
         }
@@ -800,7 +1142,7 @@ export class Traffic {
           if (g < gap) { gap = g; dv = c.v; }
         }
         if (!last && exitS - c.s < 30 && !this.exitClear(c)) {
-          const g4 = exitS - 1.5 - c.s;
+          const g4 = exitS - STOP_LINE - c.s;
           if (g4 < gap) { gap = g4; dv = c.v; }
         }
         if (!last) {
@@ -811,7 +1153,7 @@ export class Traffic {
             const runIt = c.reckless && Math.random() < 0.004;
             if (runIt) c.redsRun++;
             if (!(c.reckless && c.redsRun > 0 && exitS - c.s < 12)) {
-              const g2 = exitS - 1.5 - c.s;
+              const g2 = exitS - STOP_LINE - c.s;
               if (g2 < gap) { gap = g2; dv = c.v; }
             }
           }
@@ -825,16 +1167,20 @@ export class Traffic {
           const nodeId = st.dir > 0 ? seg.b : seg.a;
           const inBox = !this.signals.has(nodeId) && this.junctionCars.get(nodeId);
           if (inBox && inBox.length) {
-            const e = this.frameAt(seg, st.dir, exitS);
-            const ex = e.x + e.r.x * c.lat, ez = e.z + e.r.z * c.lat;
-            // (an all-way stop: wait while anyone from another road is on a path that
-            // crosses or joins mine and hasn't cleared it; parallel paths go together)
-            const others = inBox.filter((o) => o.crashed === 0 && o.junction && o.junction.fromSeg !== seg.id);
+            // (an all-way stop: wait while anyone from another road, or another lane of
+            // mine turning across me, is on a path that crosses or joins mine and hasn't
+            // cleared it; parallel paths go together. Not for a rear still in the box
+            // once its car is out: two trucks on a short block each waited for the
+            // other's rear, for good)
+            const others = inBox.filter((o) => o.crashed === 0 && o.junction && (o.junction.fromSeg !== seg.id || o.junction.fromLane !== c.lane));
             const nx = c.path[c.pi + 1], ns = nx && this.net.segs.get(nx.seg);
             let mine: V2[] | null = null;
             if (others.length && ns) { const K = this.curveFor(c, seg, st, ns, nx); mine = Traffic.curvePts(K.p0, K.c1, K.c2, K.p2); }
-            if (mine && others.some((o) => this.crossesBox(mine!, o))) {
-              const g5 = exitS - 1.5 - c.s;
+            // (a straight run through the box sweeps no wider than its path)
+            const ta = this.endTangent(seg, st.dir, true), tb = ns ? this.endTangent(ns, nx.dir, false) : ta;
+            const myBend = Math.abs(Math.atan2(ta.x * tb.z - ta.z * tb.x, ta.x * tb.x + ta.z * tb.z));
+            if (mine && others.some((o) => this.crossesBox(mine!, o, o.junction!.fromSeg === seg.id || myBend < 0.5 ? 0 : c.len))) {
+              const g5 = exitS - STOP_LINE - c.s;
               if (g5 < gap) { gap = g5; dv = c.v; }
             }
           }
@@ -891,7 +1237,17 @@ export class Traffic {
         }
         if (c.s >= exitS) {
           if (last) {
-            if (c.lotD) { c.arr = 0; c.v = 0; } // pull into the lot, then park
+            const lane = c.thruB ? this.thruAt(c.thruB)?.filter((L) => L.q.length < L.slots.length).sort((a, b) => a.q.length - b.q.length)[0] : undefined;
+            if (lane) {
+              // into the drive-thru lane, to the back of the line
+              lane.q.push(c);
+              c.thru = { L: lane, serve: THRU_SERVE + Math.random() * THRU_SERVE_VAR, out: -1, x: c.x, z: c.z, yaw: Number.isFinite(c.ryaw) ? c.ryaw : c.yaw };
+              c.v = 0; c.thruWait = 0;
+            } else if (c.lotD) {
+              // pull into the lot, then park (in a free stall or the driveway, where there is one)
+              c.arr = 0; c.v = 0;
+              if (this.parking && c.destB && !c.toSpot) c.toSpot = this.parking.claim(c.destB, c.kind);
+            }
             else { c.arrived = true; c.crashed = -1; } // off the map via the highway
             continue;
           }
@@ -924,6 +1280,8 @@ export class Traffic {
           const remO = (1 - clamp(o.junction.t, 0, 1)) * o.junction.len;
           if (remO < rem - 1e-3 || (Math.abs(remO - rem) <= 1e-3 && o.id < c.id)) gap = Math.min(gap, rem - remO - o.len);
         }
+        // someone crossing the road I'm turning into: hold in the box short of their crosswalk
+        if (J.t < 0.85 && this.walkerOnLanes(J.node, nseg, next.dir, false)) { this.yieldedTo(c, J.node); gap = Math.min(gap, Math.max(0, rem - 4)); }
         const blocked = gap < 2;
         const vFree = Number.isFinite(c.turnV) ? c.turnV : Math.min(13, ROAD_TYPES[nseg.type].speed);
         const vt = blocked ? 0 : Math.min(vFree, Math.sqrt(2 * 3 * (gap - 2)));
@@ -954,12 +1312,45 @@ export class Traffic {
     }
     this.flowEma = lerp(this.flowEma, flowN ? flowSum / flowN : 1, Math.min(1, dt * 0.05));
 
+    // drive-thrus: the line moves up, the window serves the car at it, served cars drive out
+    this.clock += dt;
+    for (const [b, t] of this.openings) { if (t - dt <= 0) this.openings.delete(b); else this.openings.set(b, t - dt); }
+    for (const v of this.thruLanes.values()) {
+      if (!v) continue;
+      for (const L of v.lanes) {
+        L.q = L.q.filter((c) => c.crashed === 0 && c.thru);
+        const head = L.q[0];
+        if (head && Math.hypot(head.thru!.x - L.slots[0].x, head.thru!.z - L.slots[0].z) < 0.3) {
+          head.thru!.serve -= dt;
+          if (head.thru!.serve <= 0) { head.thru!.out = 0; L.q.shift(); }
+        }
+        L.q.forEach((c, i) => this.thruMove(c, L.slots[Math.min(i, L.slots.length - 1)], dt));
+      }
+    }
+    for (const c of this.cars) {
+      const T = c.thru;
+      if (!T || T.out < 0 || c.crashed !== 0) continue;
+      if (T.out >= T.L.out.length) { c.arrived = true; c.crashed = -1; continue; } // served: out of the lot and gone
+      if (this.thruMove(c, T.L.out[T.out], dt)) T.out++;
+    }
+
     // cars pulling out of / into lots
     for (const c of this.cars) {
       if (c.crashed !== 0) continue;
       if (c.arr >= 0) {
         c.arr += dt;
-        if (c.arr >= ARR_T) { c.arrived = true; c.crashed = -1; } // parked: off the road
+        if (c.arr >= ARR_T) {
+          c.arrived = true; c.crashed = -1; // parked: off the road
+          if (c.destB?.zone === 'landmark') {
+            const v = this.visits.get(c.destB) ?? [];
+            v.push(this.clock);
+            if (v.length > 400) v.splice(0, v.length - 400);
+            this.visits.set(c.destB, v);
+            // the event's crowd: each one drives home after it
+            if (c.destB.landmark && c.purpose === LANDMARK_EVENTS[c.destB.landmark]?.purpose) this.crowdIn.set(c.destB, (this.crowdIn.get(c.destB) ?? 0) + 1);
+          }
+          if (c.toSpot && this.parking) { c.parked = this.parking.park(c.toSpot, c.h, c.kind); c.toSpot = null; }
+        }
       } else if (c.dep > 0) {
         // pull up to the kerb, wait there for a real gap (stopped cars count), then
         // commit: the lane brakes for a committed car, so it never merges into anyone
@@ -984,7 +1375,9 @@ export class Traffic {
     for (let i = this.cars.length - 1; i >= 0; i--) {
       const c = this.cars[i];
       if (c.crashed === -1 || (c.crashed > 0 && c.crashed <= 0.0001)) {
-        this.renderer.remove(c.h);
+        if (c.toSpot) this.parking?.release(c.toSpot);
+        if (!c.parked) this.renderer.remove(c.h);
+        else (this.renderer as { setReversing?: (h: number, on: boolean) => void }).setReversing?.(c.h, false);
         c.onDone?.(c, !!c.arrived);
         this.cars[i] = this.cars[this.cars.length - 1];
         this.cars.pop();
@@ -1011,6 +1404,18 @@ export class Traffic {
     let arr = this.mergeBlocks.get(key);
     if (!arr) this.mergeBlocks.set(key, (arr = []));
     arr.push({ s: c.s, len: c.len, courtesy });
+    // out of a lot across the road: the car crosses the oncoming lanes first, so
+    // they brake for it (and let it out) too
+    const seg = c.lotLeft && c.dep > 0 && this.net.segs.get(st.seg);
+    if (seg) {
+      const sOpp = seg.length - (c.s - c.len) + 1.5;
+      for (let k = 0; k < ROAD_TYPES[seg.type].lanesPerDir; k++) {
+        const ko = st.seg * 16 + (st.dir > 0 ? 8 : 0) + k;
+        let o = this.mergeBlocks.get(ko);
+        if (!o) this.mergeBlocks.set(ko, (o = []));
+        o.push({ s: sOpp, len: c.len + 3, courtesy });
+      }
+    }
   }
 
   /**
@@ -1030,6 +1435,13 @@ export class Traffic {
     // cars about to leave the junction into this lane near the driveway
     const entryS = this.entryOf(seg, st.dir);
     if (tail < entryS + 10 && (this.junctionTargets.get(key) ?? 0) > 0) return false;
+    // a driveway right by the junction ahead: nobody crossing the box close by
+    // (a car turning out of the other lane sweeps over the end of this one)
+    const exitS = this.exitOf(seg, st.dir);
+    if (exitS - head < 8) {
+      const nodeId = st.dir > 0 ? seg.b : seg.a, at = this.lanePos(seg, st.dir, c.s - c.len / 2, c.lane).p;
+      for (const o of this.junctionCars.get(nodeId) ?? []) if (o.crashed === 0 && Math.hypot(o.x - at.x, o.z - at.z) < (o.len + c.len) / 2 + 1.5) return false;
+    }
     if (c.lotLeft) {
       const lanes = ROAD_TYPES[seg.type].lanesPerDir, sOpp = seg.length - c.s;
       for (let k = 0; k < lanes; k++) {
@@ -1101,14 +1513,31 @@ export class Traffic {
    * front); paths closer than a car's width conflict. Parallel paths (straight
    * on from opposite roads, right turns) don't.
    */
-  private crossesBox(mine: V2[], o: Car): boolean {
-    const J = o.junction!;
+  /** Does path `mine` come near car `o`'s path through the box, from its rear on? `myLen` 0: side by side from one road (no allowance for long bodies). */
+  private crossesBox(mine: V2[], o: Car, myLen = 5): boolean {
+    const J = o.junction ?? o.prevJ;
+    if (!J) return false;
     const pts = (J.pts ??= Traffic.curvePts(J.p0, J.c1, J.c2, J.p2));
-    const from = clamp(J.t - o.len / Math.max(1, J.len), 0, 1);
-    for (let j = Math.floor(from * (pts.length - 1)); j < pts.length; j++) {
-      for (const p of mine) if ((p.x - pts[j].x) ** 2 + (p.z - pts[j].z) ** 2 < 6.8) return true;
+    const from = clamp((this.pastLine(o) - o.len) / Math.max(1, J.len), 0, 1);
+    // (a long body cuts inside its path in the middle of a turn: a semi's by a metre
+    // or two; at the ends of the curves, where the bodies are straight, it doesn't)
+    const n = pts.length - 1, mid = (k: number) => k > n * 0.2 && k < n * 0.8;
+    const oBend = Math.abs(Math.atan2(J.t1.x * J.t2.z - J.t1.z * J.t2.x, J.t1.x * J.t2.x + J.t1.z * J.t2.z));
+    const extraO = o.junction && oBend > 0.5 ? 0.15 * Math.max(0, o.len - 5) : 0, extraMe = 0.15 * Math.max(0, myLen - 5);
+    for (let j = Math.floor(from * n); j <= n; j++) {
+      for (let i = 0; i < mine.length; i++) {
+        const reach = 2.6 + (mid(j) ? extraO : 0) + (mid(i) ? extraMe : 0);
+        if ((mine[i].x - pts[j].x) ** 2 + (mine[i].z - pts[j].z) ** 2 < reach * reach) return true;
+      }
     }
     return false;
+  }
+
+  /** How far a car in a junction box, or just out of it, has come past the line it crossed into the box at. */
+  private pastLine(o: Car): number {
+    if (o.junction) return clamp(o.junction.t, 0, 1) * o.junction.len;
+    if (o.prevJ) return o.prevJ.len + o.s - (o.prevEntryS ?? 0);
+    return 0;
   }
 
   /** Travel-direction tangent at the far end (exit) or near end (entry) of a step. */
@@ -1173,6 +1602,71 @@ export class Traffic {
           if (exitS - o.s < o.v * 2.5 + 6) return true;
         }
       }
+    }
+    return false;
+  }
+
+  /**
+   * May someone on foot start across these arms of a junction, taking `secs` to
+   * cross? At lights, only in the walk phase: while the arm is red, and early
+   * enough to be over before its green (or right as the walk starts, for a road
+   * too wide to cross in one red). Without lights, not while a car is coming up
+   * to the junction on the arm, unless they've waited long enough to step out
+   * anyway (`impatient`). Never while a car is in the box turning into or out
+   * of the arm.
+   */
+  canCross(nodeId: number, segs: number[], secs = 0, impatient = false): boolean {
+    const sig = this.signals.get(nodeId);
+    for (const sid of segs) {
+      if (sig) {
+        if (this.isGreen(nodeId, sid) || this.clearing(nodeId, sid)) return false;
+        const T = (GREEN + CLEAR) * sig.phases, t = sig.t % T, start = (sig.phaseOf.get(sid) ?? 0) * (GREEN + CLEAR);
+        const redLeft = (((start - t) % T) + T) % T, window = T - GREEN - CLEAR;
+        if (redLeft < Math.min(secs, window) - 1) return false;
+      }
+      const sg = this.net.segs.get(sid);
+      if (!sg) continue;
+      const dir: 1 | -1 = sg.b === nodeId ? 1 : -1; // travelling toward this node
+      const exitS = this.exitOf(sg, dir), entryS = this.entryOf(sg, -dir as 1 | -1);
+      // a car standing on the crosswalk (queued up to the box, or just out of it), whatever the light
+      for (let k = 0; k < ROAD_TYPES[sg.type].lanesPerDir; k++) {
+        for (const o of this.buckets.get(sid * 16 + (dir > 0 ? 0 : 8) + k) ?? []) if (o.s > exitS - 2 && o.s - o.len < exitS + 5) return false;
+        for (const o of this.buckets.get(sid * 16 + (dir > 0 ? 8 : 0) + k) ?? []) if (o.s - o.len < entryS + 4 && o.s > entryS - 5) return false;
+      }
+      if (!sig && !impatient) for (let k = 0; k < ROAD_TYPES[sg.type].lanesPerDir; k++) {
+        for (const o of this.buckets.get(sid * 16 + (dir > 0 ? 0 : 8) + k) ?? []) {
+          if (o.crashed === 0 && o.v > 1.5 && exitS - o.s < 25 && exitS - o.s > -2) return false;
+        }
+      }
+      for (const o of this.junctionCars.get(nodeId) ?? []) {
+        const J = o.junction;
+        if (!J || o.crashed !== 0) continue;
+        // coming out of that arm until its rear is clear of the crosswalk, or going into it at all
+        if ((J.fromSeg === sid && clamp(J.t, 0, 1) * J.len < o.len + 3) || o.path[o.pi + 1]?.seg === sid) return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Is someone on this arm's crosswalk on the lanes a car travelling `dir` along
+   * it uses (`toward` the junction: the lanes coming in; else the ones going
+   * out), or about to step onto them? Someone on the far half, or walking away
+   * from these lanes, doesn't hold the car.
+   */
+  private walkerOnLanes(nodeId: number, sg: RSeg, dir: 1 | -1, toward: boolean): boolean {
+    const ws = this.crosswalkWalkers?.(nodeId, sg.id);
+    if (!ws || !ws.length) return false;
+    const T = ROAD_TYPES[sg.type];
+    const L = this.lanePos(sg, dir, toward ? this.exitOf(sg, dir) : this.entryOf(sg, dir), 0);
+    const r = { x: -L.t.z, z: L.t.x }, off0 = laneOffset(T, 0);
+    const cx = L.p.x - r.x * off0, cz = L.p.z - r.z * off0;
+    // my lanes run from `lo` to `hi` metres right of the centreline (a one-way: all of it)
+    const hi = carriageHalf(T), lo = T.oneWay ? -hi : off0 - T.laneW / 2;
+    for (const w of ws) {
+      const lat = (w.x - cx) * r.x + (w.z - cz) * r.z, head = w.dx * r.x + w.dz * r.z;
+      if (lat > lo - 0.5 && lat < hi + 0.5) return true;
+      if ((lat <= lo - 0.5 && lat > lo - 4.5 && head > 0.2) || (lat >= hi + 0.5 && lat < hi + 4.5 && head < -0.2)) return true;
     }
     return false;
   }
@@ -1265,7 +1759,24 @@ export class Traffic {
     const ease = 1 - Math.exp(-this.lastDt * 14);
     for (const c of this.cars) {
       if (c.crashed === -1) continue;
+      if (c.thru) {
+        // in a drive-thru lane: where the line has it, on the lot
+        const T = c.thru, gy = this.groundAt ? this.groundAt(T.x, T.z) + 0.1 : T.L.b.y;
+        // (the heading eases round the lane's corners, as on the road: set outright, it
+        // snapped at each one; motiontest caught it)
+        c.ryaw = Number.isFinite(c.ryaw) ? angLerp(c.ryaw, T.yaw, ease) : T.yaw;
+        c.x = T.x; c.y = gy; c.z = T.z; c.yaw = c.ryaw;
+        R.set(c.h, T.x, gy, T.z, c.ryaw);
+        R.setBraking(c.h, c.v < 0.5);
+        R.setTurn(c.h, 0);
+        continue;
+      }
       c.wob += dtReal * (c.drunk ? 1.6 : 0);
+      const D = c.drawn;
+      if (D && D.s === c.s && D.pi === c.pi && D.lane === c.lane && D.dep === c.dep && D.arr === c.arr && D.j === c.junction && D.turn === c.turn && c.crashed === 0 && !c.drunk && c.latV === 0 && c.v === 0) {
+        if (++D.still >= STILL_FRAMES) { this.sigWhy[D.why]++; continue; }
+      } else if (D) { D.s = c.s; D.pi = c.pi; D.lane = c.lane; D.dep = c.dep; D.arr = c.arr; D.j = c.junction; D.turn = c.turn; D.still = 0; }
+      else c.drawn = { s: c.s, pi: c.pi, lane: c.lane, dep: c.dep, arr: c.arr, j: c.junction, turn: c.turn, still: 0, why: 'off' };
       let x: number, y: number, z: number, yaw: number, pitch = 0;
       let signal = 0;
       // the sim's s is the front bumper: draw the body from where its front and
@@ -1306,22 +1817,46 @@ export class Traffic {
         if (c.prevJ && c.s - (c.prevEntryS ?? 0) > len) c.prevJ = null; // the rear has cleared the junction
       }
       // driveway: an arc between the lot and the lane, nose first both ways
-      const lot = c.dep > 0 ? c.lotO : c.arr >= 0 ? c.lotD : null;
+      // (live parking: from a stall the car backs out first, then drives off; into
+      // one it drives in nose first and ends square in it)
+      const spot = c.dep > 0 ? c.fromSpot : c.arr >= 0 ? c.toSpot : null;
+      const lot = spot ?? (c.dep > 0 ? c.lotO : c.arr >= 0 ? c.lotD : null);
+      let reversing = false;
       if (lot && !c.junction) {
         const m = c.dep > 0 ? 1 - c.dep / DEP_T : 1 - c.arr / ARR_T; // 0 = in the lot, 1 = on the lane
-        const e = m * m * (3 - 2 * m);
         const laneY = y, lanePitch = pitch;
         const tx = Math.sin(yaw), tz = Math.cos(yaw);
-        const d = Math.max(2, Math.hypot(x - lot.x, z - lot.z));
         const out = c.dep > 0;
-        const toRoad = { x: (x - lot.x) / d, z: (z - lot.z) / d };
-        const P0 = lot, P3 = { x, z };
-        const P1 = { x: lot.x + toRoad.x * d * 0.45, z: lot.z + toRoad.z * d * 0.45 };
-        const P2 = { x: x - (out ? 1 : -1) * tx * d * 0.55, z: z - (out ? 1 : -1) * tz * d * 0.55 };
-        const q = cubicAt(P0, P1, P2, P3, e), dq = cubicTan(P0, P1, P2, P3, e);
-        x = q.x;
-        z = q.z;
-        if (Math.hypot(dq.x, dq.z) > 1e-4) yaw = out ? Math.atan2(dq.x, dq.z) : Math.atan2(-dq.x, -dq.z);
+        // backing out of a stall: the first part of the pull-out, swinging the nose round
+        const hx = spot ? Math.sin(spot.yaw) : 0, hz = spot ? Math.cos(spot.yaw) : 0;
+        const back = spot && out ? { x: spot.x - hx * 4.5, z: spot.z - hz * 4.5 } : null;
+        const BACK = 0.4;
+        let e: number;
+        if (back && m < BACK) {
+          const u = smooth01(m / BACK);
+          const toLane = Math.atan2(x - back.x, z - back.z);
+          // reversing on an arc: straight back out of the stall, the tail swinging away from the way out
+          const side = Math.sin(toLane - spot!.yaw) > 0 ? -1 : 1;
+          x = lerp(spot!.x, back.x, u) + Math.cos(spot!.yaw) * side * 1.2 * u * u;
+          z = lerp(spot!.z, back.z, u) - Math.sin(spot!.yaw) * side * 1.2 * u * u;
+          yaw = angLerp(spot!.yaw, toLane, u * u);
+          e = 0;
+          reversing = true;
+        } else {
+          const mm = back ? (m - BACK) / (1 - BACK) : m;
+          e = mm * mm * (3 - 2 * mm);
+          const P0 = back ?? lot;
+          const d = Math.max(2, Math.hypot(x - P0.x, z - P0.z));
+          const toRoad = { x: (x - P0.x) / d, z: (z - P0.z) / d };
+          const P3 = { x, z };
+          // into a stall: arrive facing the way it faces
+          const P1 = spot && !out ? { x: spot.x - hx * d * 0.45, z: spot.z - hz * d * 0.45 } : { x: P0.x + toRoad.x * d * 0.45, z: P0.z + toRoad.z * d * 0.45 };
+          const P2 = { x: x - (out ? 1 : -1) * tx * d * 0.55, z: z - (out ? 1 : -1) * tz * d * 0.55 };
+          const q = cubicAt(P0, P1, P2, P3, e), dq = cubicTan(P0, P1, P2, P3, e);
+          x = q.x;
+          z = q.z;
+          if (Math.hypot(dq.x, dq.z) > 1e-4) yaw = out ? Math.atan2(dq.x, dq.z) : Math.atan2(-dq.x, -dq.z);
+        }
         if (out && (c.committed || c.dep <= KERB_T + 0.05)) {
           // pulling out (at the kerb or going): blink toward the way the lane runs;
           // cars queued behind in the lot haven't reached the road yet
@@ -1353,9 +1888,11 @@ export class Traffic {
       else R.set(c.h, x, y, z, c.ryaw, pitch + c.dive, c.roll);
       R.setBraking(c.h, c.v < 3 || (c.crashed === 0 && c.v > 3 && c.brakeT > 0));
       R.setTurn(c.h, c.crashed > 0 ? 0 : signal);
-      if (signal) this.sigWhy[c.junction ? 'box' : lot ? 'lot' : Math.abs(c.latV) > 0.2 ? 'lane' : c.v < 1 ? 'queue' : 'approach']++;
-      else this.sigWhy.off++;
+      const why = signal ? (c.junction ? 'box' : lot ? 'lot' : Math.abs(c.latV) > 0.2 ? 'lane' : c.v < 1 ? 'queue' : 'approach') : 'off';
+      this.sigWhy[why]++;
+      c.drawn!.why = why;
       R.setDamaged(c.h, c.crashed > 0); // AA vehicle shader darkens crumpled cars until cleanup.
+      if (c.fromSpot) (R as { setReversing?: (h: number, on: boolean) => void }).setReversing?.(c.h, reversing);
     }
     R.flush();
   }

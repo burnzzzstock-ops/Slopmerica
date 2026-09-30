@@ -17,9 +17,12 @@ for (const m of list) {
   const t = performance.now();
   const model = M.vehicleModelList ? M.buildVehicleModel(m.kind, spec, m.id) : M.buildVehicleModel(m.kind, spec);
   const ms = performance.now() - t;
-  const lod = (l) => l ? tri(l.shell) + tri(l.detail) + tri(l.lights) : 0;
-  const box = new THREE.Box3();
-  for (const g of [model.close?.shell, model.close?.detail, model.near.shell, model.near.detail]) if (g) { g.computeBoundingBox(); box.union(g.boundingBox); }
+  // old code: { near: {shell, detail, lights}, far: {...} }; new code: { close, near, far } are single geometries
+  const lod = (l) => !l ? 0 : l.shell ? tri(l.shell) + tri(l.detail) + tri(l.lights) : tri(l);
+  const box = new THREE.Box3(), body = new THREE.Box3();
+  const nearG = model.near.shell ? [model.near.shell, model.near.detail] : [model.close ?? model.near];
+  for (const g of nearG) if (g) { g.computeBoundingBox(); box.union(g.boundingBox); }
+  if (model.near.shell) { model.near.shell.computeBoundingBox(); body.copy(model.near.shell.boundingBox); } else body.copy(box);
   const size = box.getSize(new THREE.Vector3());
   const row = { id: m.id, kind: m.kind, close: lod(model.close), near: lod(model.near), far: lod(model.far), ms: +ms.toFixed(1), w: +size.x.toFixed(2), h: +size.y.toFixed(2), l: +size.z.toFixed(2), specW: spec.width, specH: spec.height, specL: spec.length };
   rows.push(row);

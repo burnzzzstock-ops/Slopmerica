@@ -6,7 +6,7 @@ import type { FeedContext, FeedEventKind, LandmarkId } from './contracts';
 import { generateMap, MapData, MapId } from './world/maps';
 import { Terrain } from './world/terrain';
 import { Trees } from './world/trees';
-import { seasonOf } from './world/seasons';
+import { atmo, seasonOf } from './world/seasons';
 import { GroundDetail } from './world/groundDetail';
 import { createWater } from './world/water';
 import { Environment } from './world/sky';
@@ -297,6 +297,8 @@ export class Game {
 
     this.traffic = new Traffic(this.scene, this.net, this.buildings, this.q.maxCars);
     this.traffic.groundAt = (x, z) => this.terrain.h(x, z);
+    // look pass: the vehicle renderer throws dust off gravel roads (it asks what the road under a car is, twice a second at most)
+    this.traffic.renderer.surfaceAt = (x, z) => (this.net.pickSeg(x, z, 3)?.seg.type === 'gravel' ? 'gravel' : 'paved');
     this.roads.setSignalStateProvider((nodeId, segId) => {
       const s = this.traffic.signalState(nodeId);
       if (!s) return 'green';
@@ -1137,6 +1139,8 @@ export class Game {
     this.roads.setNight(n);
     this.zones.setNight(n);
     this.traffic.setNight(n);
+    // look pass: the weather the cars show (exhaust in the cold, spray in rain)
+    this.traffic.renderer.setEnvironment({ temperature: this.weather.temperature, wet: this.weather.wet, rain: atmo.uRain.value, snow: this.weather.snowCover });
     this.peds.setNight(n);
     if (n > 0.6 && !this.nightWas) { this.nightWas = true; if (Math.random() < 0.5) this.feed.push('nightfall'); }
     if (n < 0.3) this.nightWas = false;

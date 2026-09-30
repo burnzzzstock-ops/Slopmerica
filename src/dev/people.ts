@@ -193,6 +193,7 @@ function probe(opts: {
   for (let i = 0; i < n; i++) if (zones.has(Math.round(tag.getY(i)))) foot.push({ i, side: pos.getX(i) < 0 ? 0 : 1 });
 
   const frames: { top: number; x: Float32Array; y: Float32Array; z: Float32Array }[] = [];
+  const collapsed = new Uint8Array(foot.length);
   const oldRT = renderer.getRenderTarget();
   const keepClear = renderer.getClearColor(new THREE.Color()); const keepAlpha = renderer.getClearAlpha();
   const keepViewport = renderer.getViewport(new THREE.Vector4());
@@ -215,6 +216,9 @@ function probe(opts: {
     let top = -1e9;
     for (let k = 0; k < foot.length; k++) { const o = foot[k].i * 4; x[k] = out[o]; y[k] = out[o + 1]; z[k] = out[o + 2] + Z; }
     for (let i = 0; i < n; i++) top = Math.max(top, out[i * 4 + 1]);
+    // shoe pieces the person does not wear collapse to the instance origin (the shader drops them as degenerate triangles):
+    // they are not feet, and left in they would count as soles that slide at exactly the ground speed
+    if (s === 0) for (let k = 0; k < foot.length; k++) { const o = foot[k].i * 4; if (out[o] === 0 && out[o + 1] === 0 && out[o + 2] === 0) collapsed[k] = 1; }
     frames.push({ top, x, y, z });
   }
   renderer.setRenderTarget(oldRT); renderer.setClearColor(keepClear, keepAlpha); renderer.setViewport(keepViewport);
@@ -223,8 +227,8 @@ function probe(opts: {
 
   // the sole is the lowest a foot vertex ever gets; a vertex is "on the ground" within `band` of it
   let sole = 1e9, tops = [1e9, -1e9];
-  for (const f of frames) { for (let k = 0; k < foot.length; k++) sole = Math.min(sole, f.y[k]); tops = [Math.min(tops[0], f.top), Math.max(tops[1], f.top)]; }
-  const result: Record<string, unknown> = { vertices: n, footVertices: foot.length, sole: +sole.toFixed(4), topRange: tops.map((v) => +v.toFixed(3)) };
+  for (const f of frames) { for (let k = 0; k < foot.length; k++) if (!collapsed[k]) sole = Math.min(sole, f.y[k]); tops = [Math.min(tops[0], f.top), Math.max(tops[1], f.top)]; }
+  const result: Record<string, unknown> = { vertices: n, footVertices: foot.length - collapsed.reduce((p, q) => p + q, 0), sole: +sole.toFixed(4), topRange: tops.map((v) => +v.toFixed(3)) };
   for (const band of [0.012, 0.03]) {
     const ratios: number[] = [];
     const contactFrames = [0, 0];
@@ -233,7 +237,7 @@ function probe(opts: {
       const a = frames[s - 1], b = frames[s];
       const on = [false, false];
       for (let k = 0; k < foot.length; k++) {
-        if (a.y[k] < sole + band && b.y[k] < sole + band) {
+        if (!collapsed[k] && a.y[k] < sole + band && b.y[k] < sole + band) {
           on[foot[k].side] = true;
           ratios.push(Math.hypot(b.z[k] - a.z[k], b.x[k] - a.x[k]) / opts.step);
         }

@@ -34,6 +34,62 @@ export const DRIVE_LIP = 0.012;
 export const DRIVE_FLAT = 1.2;
 export const DRIVE_FLARE = 1.2;
 
+// ---------------------------------------------------------------- junction corners and markings
+//
+// Everything below is drawing only. The cars run on the network's own numbers (seg.trimA / trimB, laneOffset, the curves
+// traffic.ts builds between them) and nothing here may move those: roadJunction.ts reads them, it never writes them.
+//
+// Curb returns. Real kerb-return radii at a right-angle corner (NACTO's Urban Street Design Guide, and the municipal design
+// manuals found by search; the numbers and their sources are in docs/cars-look/junction.md): 10 to 15 ft (3 to 4.6 m) is the
+// standard, many cities go as small as 2 ft, and the manuals ask 4.6 m between local streets, 6 to 7.6 m for collectors and 9 to
+// 10.7 m between arterials. A US local street is 8 to 9 m wide with a parked lane each side, so its curb radius is not the radius
+// a car turns on; these roads have no parked lane, so the curb carries the whole turn. What sets the radius here is the game's own
+// turning curve (the cubic each car follows from one leg's stop line to the next leg's entry, traffic.ts): roadJunction.ts keeps
+// CAR_CLEAR of asphalt between that curve and the kerb at every angle, growing the arc where the formula below leaves less
+// (scripts/junctionmouth.mjs --sweep shows the clearance per radius and angle).
+/** kerb radius of a right-angle corner between two roads: bounds of the value curbReturnRadius starts from */
+export const CORNER_R_MIN = 2.4;
+export const CORNER_R_MAX = 3.6;
+/** the smallest arc worth drawing: a corner that would need less stays a plain chamfer between the two kerbs */
+export const FILLET_MIN = 1.5;
+/** the biggest a kerb return may get, as a multiple of its right-angle radius (a very obtuse corner's arc is nearly straight) */
+export const CORNER_R_STRETCH = 2.4;
+/** how much asphalt (m) must lie between the cars' turning curves and the kerb: half a 1.9 m car plus 0.35 m; a corner whose
+ * formula radius leaves less is rounded wider, up to CORNER_R_GROW, where the room and the walk's corner allow */
+export const CAR_CLEAR = 1.3;
+export const CORNER_R_GROW = 7;
+
+/**
+ * Curb-return radius for the corner between two legs whose curb lines are `ei` and `ej` from their centrelines, with the
+ * corner spanning `phi` radians (90 degrees = square).
+ *
+ * At a right angle it is 3 m between two-lane streets (was 5), 3.6 m where a two-lane street meets a stroad and 3.6 m
+ * between stroads, so a big road does not get a big flare: the smaller of the two roads counts three times as much as the
+ * bigger, because the wide road's extra lanes give a turning car room to swing.
+ *
+ * Across the angle the flare keeps one length, the tangent distance T = r / tan(phi/2) = the right-angle radius: an acute
+ * corner gets a small radius (its tip is far from the cars' curves), an obtuse corner a bigger one (the game's turning
+ * curves cut close to an obtuse corner's apex, so it needs the asphalt), and the area of the flare stays about the same.
+ */
+export function curbReturnRadius(ei: number, ej: number, phi: number): number {
+  const lo = Math.min(ei, ej), hi = Math.max(ei, ej);
+  const r90 = Math.min(CORNER_R_MAX, Math.max(CORNER_R_MIN, 0.35 + 0.7 * (0.75 * lo + 0.25 * hi)));
+  return Math.min(r90 * CORNER_R_STRETCH, r90 * Math.tan(phi / 2));
+}
+
+/** Zebra crossing and stop bar (metres). The crosswalk sits this far past the crossing road's kerb line ... */
+export const ZEBRA_SETBACK = 0.45;
+/** ... is this wide (the MUTCD's minimum for a crosswalk is 1.8 m; 2.4 is the usual ladder)... */
+export const ZEBRA_MIN = 1.8, ZEBRA_MAX = 2.4;
+/** ... and ends this far short of a stopped car's nose. The network stops a car's centre 1.5 m short of its trim, so a
+ * 4.5 m car's nose is about NOSE_BACK short of the trim: that is where the stop bar goes. */
+export const NOSE_BACK = 0.75;
+export const ZEBRA_CLEAR = 0.85;
+/** the transverse line at each end of a crosswalk is this deep; the textured strip between them stops short of it */
+export const ZEBRA_EDGE = 0.26;
+/** the stop bar's depth is 0.37 m; it sits STOP_GAP behind the zebra's far edge */
+export const STOP_GAP = 0.6;
+
 /** lateral position of the curb face (the road's edge for a road without sidewalks) */
 export function curbOffset(t: RoadType): number {
   return t.sidewalk > 0 ? carriageHalf(t) + GUTTER : t.width / 2;

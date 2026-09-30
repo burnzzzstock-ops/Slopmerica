@@ -122,7 +122,7 @@ const m = await page.evaluate(async () => {
   };
 });
 console.log(JSON.stringify(m));
-check(`corner radius: median ${m.radius.median.toFixed(2)} m over ${m.corners} corners (range ${m.radius.min.toFixed(2)} to ${m.radius.max.toFixed(2)}; target median >= 3.2, min >= 2)`, m.corners >= 6 && m.radius.median >= 3.2 && m.radius.min >= 2, m.radius);
+check(`corner radius: median ${m.radius.median.toFixed(2)} m over ${m.corners} corners (range ${m.radius.min.toFixed(2)} to ${m.radius.max.toFixed(2)}; target median >= 2.6, min >= 2; the kerb returns of docs/cars-look/junction.md are 3 m between two-lane streets, the old ones 5)`, m.corners >= 6 && m.radius.median >= 2.6 && m.radius.min >= 2, m.radius);
 check(`no notches at the corners: ${m.holes.n} of ${m.holes.of} grid points in the roads' full-width strips have no road surface (${m.junctions} junctions; target 0)`, m.holes.n === 0, m.holes);
 check(`zebra strips face up: ${m.crosswalk.down} of ${m.crosswalk.of} triangles face down (target 0)`, m.crosswalk.of > 0 && m.crosswalk.down === 0, m.crosswalk);
 check(`junction asphalt faces up: ${m.junction.down} of ${m.junction.of} triangles face down (target 0)`, m.junction.of > 0 && m.junction.down === 0, m.junction);

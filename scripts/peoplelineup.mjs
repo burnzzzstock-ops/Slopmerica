@@ -106,6 +106,18 @@ if (on('actions')) {
   await shot('actions', tiles);
 }
 
+// the switch between the near and the far figure: 13 people every 2.5 m from 50 to 80 m ahead of the camera, side by side across the picture;
+// every one of them must be drawn (the near figure up to 64 m, the far one beyond) - nobody may vanish between the two
+if (on('lod')) {
+  const poses = [], labels = [];
+  for (let k = 0; k < 13; k++) {
+    const dist = 50 + 2.5 * k, x = (k - 6) * 3.4;
+    poses.push({ h: hands[(k * 5) % N], x, z: -dist, yaw: 0.3, action: 'idle', phase: 2 + k });
+    labels.push({ text: `${dist} m`, x, y: 2.2, z: -dist });
+  }
+  await shot('lod', [{ x: 0, y: 0, w: W, h: H, eye: [0, 1.7, 0], target: [0, 1.0, -65], fov: 26, poses, night: false, labels, labelPx: 11, shadow: 60 }]);
+}
+
 // gait cycles, frame by frame: the person walks, the camera and the pavement grid go with them, so a planted foot stays on its joint
 async function cycle(name, action, stride, arch, frames = 12, sideYaw = Math.PI / 2, cycles = 1) {
   const [h] = await spare(arch, 1);

@@ -7,7 +7,8 @@
 // milestone is never reached, the page throws, or a number goes NaN.
 //
 //   BASE_URL=http://127.0.0.1:5175 MAP=appalachia DAYS=3000 node scripts/playtest6-late.mjs
-//   OPTS='{"upgrades":true,"loans":true}'  bot options; OUT=file.json dumps the trace
+//   OPTS='{"upgrades":true,"loans":true}'  bot options; OUT=file.json dumps the trace; SAVE=file.json the grown town
+//   (at the end, or with SAVEAT=6000 the first time it has that many people)
 import { chromium } from 'playwright-core';
 import { writeFileSync } from 'node:fs';
 import { installLatePlayer } from './lib/latePlayer.mjs';
@@ -27,6 +28,11 @@ await page.evaluate(installLatePlayer, OPTS);
 const PROBES = (process.env.PROBE || '').split(',').filter(Boolean).map(Number), probed = [];
 const probe = () => page.evaluate(() => { const s = window.__game.sim, f = s.forecastWeek(); return { day: Math.round(s.day), pop: s.population, income: f.income, expense: f.expense, net: f.net, lines: f.lines.map((l) => `${l.label} ${l.amount}`), growth: Math.round(s.growthWeek()) }; });
 const trace = [];
+let savedAt = 0;
+async function saveTown() {
+  const json = await page.evaluate(() => { window.__dbg.save(); return localStorage.getItem('slopmerica.save.v1'); });
+  if (json) { writeFileSync(process.env.SAVE, json); console.log(`saved the town to ${process.env.SAVE} (${json.length.toLocaleString()} characters)`); }
+}
 let bad = 0, best = 0, sinceBest = 0;
 for (let day = 0; day < MAXDAYS; day += STEP) {
   const r = await page.evaluate((n) => window.__player.step(n), STEP);
@@ -35,6 +41,7 @@ for (let day = 0; day < MAXDAYS; day += STEP) {
   if (r.pop > best) { best = r.pop; sinceBest = 0; } else sinceBest += STEP;
   if (trace.length % Math.max(1, Math.round(100 / STEP)) === 0) console.log(`d${r.day} pop ${r.pop} $${r.money} net ${r.net} dem ${r.dem} bld ${r.bld} em ${r.em} ring ${r.ring} | ${r.next ?? ''}`);
   for (const p of PROBES) if (!probed.includes(p) && r.pop >= p) { probed.push(p); const q = await probe(); console.log(`\nPROBE pop>=${p}:`, JSON.stringify(q)); }
+  if (process.env.SAVE && process.env.SAVEAT && !savedAt && r.pop >= Number(process.env.SAVEAT)) { savedAt = r.day; await saveTown(); }
   if (best >= TARGET && sinceBest >= 60) break;
   if (errs.length > 20) break;
 }
@@ -49,6 +56,8 @@ const top = Object.entries(P.blockers).sort((a, b) => b[1] - a[1]).slice(0, 12);
 console.log('what got in the way (times seen):'); for (const [k, v] of top) console.log(' ', String(v).padStart(4), k);
 console.log('page errors', JSON.stringify(errs.slice(0, 5)));
 if (process.env.OUT) writeFileSync(process.env.OUT, JSON.stringify({ trace, P, errs }, null, 1));
+// SAVE=file.json: write the grown town's save, to reopen it elsewhere (traffic at scale, screenshots)
+if (process.env.SAVE && !savedAt) await saveTown();
 // SAVETEST=1: save the grown city, reload the page, Continue, and compare; then keep playing
 const saves = [];
 if (process.env.SAVETEST) {

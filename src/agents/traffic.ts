@@ -1762,8 +1762,11 @@ export class Traffic {
       if (c.thru) {
         // in a drive-thru lane: where the line has it, on the lot
         const T = c.thru, gy = this.groundAt ? this.groundAt(T.x, T.z) + 0.1 : T.L.b.y;
-        c.x = T.x; c.y = gy; c.z = T.z; c.ryaw = T.yaw; c.yaw = T.yaw;
-        R.set(c.h, T.x, gy, T.z, T.yaw);
+        // (the heading eases round the lane's corners, as on the road: set outright, it
+        // snapped at each one; motiontest caught it)
+        c.ryaw = Number.isFinite(c.ryaw) ? angLerp(c.ryaw, T.yaw, ease) : T.yaw;
+        c.x = T.x; c.y = gy; c.z = T.z; c.yaw = c.ryaw;
+        R.set(c.h, T.x, gy, T.z, c.ryaw);
         R.setBraking(c.h, c.v < 0.5);
         R.setTurn(c.h, 0);
         continue;

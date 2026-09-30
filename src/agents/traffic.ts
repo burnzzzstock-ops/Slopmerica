@@ -8,6 +8,8 @@ import { clamp, closestOnSampled, lerp, locate, norm, sub, V2 } from '../core/ma
 import { fx } from '../core/rng';
 import type { RNode, RoadNetwork, RSeg } from '../roads/network';
 import { carriageHalf, laneOffset, ROAD_TYPES } from '../roads/roadTypes';
+// where cars stop short of a junction (m before the box): behind the crosswalk at the box's edge, and the paint's too
+import { STOP_LINE } from '../roads/roadSection';
 import type { Bld, Buildings } from '../sim/buildings';
 import { FIXED_PAINT, randomVehicleKind, VEHICLE_SPECS, VehicleRenderer } from './vehicles';
 import { LANDMARK_EVENTS, type Parking, type WorldSpot } from './parking';
@@ -165,8 +167,6 @@ const COURTESY_T = 5;
 /** and holds back for this long at a time, once every COURTESY_CYCLE seconds, until the driver is out */
 const COURTESY_HOLD = 12;
 const COURTESY_CYCLE = 30;
-/** where cars stop short of a junction (m before the box): behind the crosswalk at the box's edge */
-const STOP_LINE = 3;
 /** cars that can wait in one lot to pull out before its building starts no more trips */
 const LOT_QUEUE_MAX = 3;
 /** drive-thru: seconds at the window per car (plus up to THRU_SERVE_VAR more), and the pace up the lane */

@@ -12,7 +12,7 @@
 import { clamp, lerp, locate, norm, sub, V2 } from '../core/math';
 import type { RoadNetwork, RSeg } from './network';
 import { carriageHalf, laneOffset, ROAD_TYPES } from './roadTypes';
-import { CAR_CLEAR, CORNER_R_GROW, curbOffset, curbReturnRadius, FILLET_MIN, NOSE_BACK, STOP_GAP, ZEBRA_CLEAR, ZEBRA_MAX, ZEBRA_MIN, ZEBRA_SETBACK } from './roadSection';
+import { CAR_CLEAR, CORNER_R_GROW, curbOffset, curbReturnRadius, BAR_DEPTH, FILLET_MIN, NOSE_CLEAR, STOP_GAP, STOP_LINE, ZEBRA_MAX, ZEBRA_MIN, ZEBRA_SETBACK } from './roadSection';
 
 export interface Leg {
   seg: RSeg;
@@ -335,11 +335,12 @@ function carClearance(Li: Leg, Lj: Leg, O: V2, r: number, Ti: V2, Tj: V2): numbe
 /**
  * Where the zebra crossing and the stop bar go across one leg of a junction, so the paint sits where the cars stand.
  *
- * The network stops a car's centre 1.5 m short of the leg's trim (traffic.ts), which puts a 4.5 m car's nose about NOSE_BACK
- * short of the trim. The crossing goes ZEBRA_SETBACK past the kerb line of the road it crosses (measured at the zebra's two
- * ends, so a skewed junction is cleared on its acute side too), is 1.8 to 2.4 m wide and ends ZEBRA_CLEAR short of that nose;
- * the stop bar follows STOP_GAP behind it. Where the network's stop is too close to the crossing road for that, the zebra keeps
- * its 1.8 m and the bar slides back behind the nose (the bar is under the car's bumper rather than the crossing under its wheels).
+ * People cross at the leg's trim, where its sidewalk ends (pedestrians.ts), and a car waiting at the line holds its nose
+ * STOP_LINE behind the trim (traffic.ts). The crossing is centred on the walk line, but never nearer the node than
+ * ZEBRA_SETBACK past the kerb line of the road it crosses (measured at the zebra's two ends, so a skewed junction is cleared on
+ * its acute side too); it is 1.8 to 2.4 m wide, and the stop bar follows STOP_GAP behind it, NOSE_CLEAR short of the waiting
+ * nose. Where the crossing road's kerb pushes the zebra out that far, it keeps its 1.8 m and the bar slides back under the
+ * car's bumper rather than the crossing under its wheels.
  */
 function legMarks(legs: Leg[], corners: Corner[], k: number): LegMarks {
   const n = legs.length, L = legs[k];
@@ -350,11 +351,11 @@ function legMarks(legs: Leg[], corners: Corner[], k: number): LegMarks {
     const s = (other.e + half * Math.cos(c.phi)) / Math.sin(c.phi);
     if (Number.isFinite(s) && s > 0) clear = Math.max(clear, Math.min(s, 25));
   }
-  const z0 = clear > 0 ? clear + ZEBRA_SETBACK : L.trim + 0.7;
   const net = L.atA ? L.seg.trimA : L.seg.trimB;
-  const nose = (net > 0.01 ? net : L.trim) - NOSE_BACK;
-  const z1 = Math.max(z0 + ZEBRA_MIN, Math.min(z0 + ZEBRA_MAX, nose - ZEBRA_CLEAR));
-  return { z0, z1, half, bar: z1 + STOP_GAP + 0.19 };
+  const walk = net > 0.01 ? net : L.trim, nose = walk + STOP_LINE;
+  const z0 = Math.max(clear > 0 ? clear + ZEBRA_SETBACK : 0, walk - ZEBRA_MAX / 2);
+  const z1 = Math.max(z0 + ZEBRA_MIN, Math.min(z0 + ZEBRA_MAX, nose - NOSE_CLEAR - BAR_DEPTH - STOP_GAP));
+  return { z0, z1, half, bar: z1 + STOP_GAP + BAR_DEPTH / 2 };
 }
 
 /** The paint for a leg of a node that gets no drawn junction shape (the plain hull): the old fixed offsets from the ribbon's start. */

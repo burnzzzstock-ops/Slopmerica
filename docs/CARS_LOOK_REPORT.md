@@ -336,6 +336,8 @@ I edited none of the traffic pass's files (`traffic.ts`, `parking.ts`, `pedestri
   `junctionShape(net, id).legs[i].marks` has the kerb-line distances (`z0`, `z1`, `bar`). `c.s` is the car centre and the stop is
   `exitS - 1.5` for every car, so the nose of a 16 m semi ends 8 m inside the box. The kerb-return solver mirrors `enterJunction`'s 0.42
   cubic: if that curve changes, run `node scripts/junctionmouth.mjs --min-clear 1.25`.
+  *(Traffic pass review: `c.s` is the car's nose, and a waiting car stops 3 m behind the trim, so the semi's nose is not in the box and
+  the paint was placed 3.75 m too near the node; fixed, see the correction in docs/cars-look/junction.md.)*
 - **Parked cars** (audio helper): the street sound reads `kind, id, x, y, z, v, yaw, crashed` and optionally `acc, len, dep, arr, parked`.
   If parked cars ever sit in `traffic.cars` with `v = 0` they must carry `parked: true`, or a full car park will read as a jam and honk.
   `parking.ts` already calls the renderer's `setParked(handle, true/false)`, which is what gives parked cars dark lamps and still wheels.

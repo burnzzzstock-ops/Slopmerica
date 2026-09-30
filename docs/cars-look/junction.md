@@ -16,6 +16,15 @@ Measured on the old code, the wide look had four causes, and the corner radius w
    the stop bar 4.45 m past it. The network stops a car's centre 1.5 m short of its trim (`traffic.ts`: `exitS - 1.5`), which puts
    a 4.5 m car's nose 7.2 m from the node: in 158 of 162 legs I measured (all class pairs and angles) the nose of a stopped car
    was on the zebra, and the stop bar was up to 11.8 m behind the nose.
+
+   > **Correction (traffic pass review, 2026-09-30).** A car's position in the traffic (`c.s`) is its *nose*, and a car waiting
+   > at a red light or for people on the crosswalk holds it `STOP_LINE` = 3 m behind the trim (`exitS - STOP_LINE`), not 0.75 m
+   > inside it. People cross at the trim itself, where the sidewalk ends (`pedestrians.ts kerbs`). Measured on the reference block:
+   > people crossing at +0.0 m from the trim (median), the first waiting car's nose at +3 m. The paint below was placed for a nose
+   > 3.75 m nearer the node than the cars really stop, which put the zebra 1.6 to 3.6 m inside the trim, in front of the people,
+   > and the stop bar about 3 m ahead of the waiting car. `legMarks` now centres the zebra on the walk line and puts the bar 0.85 m
+   > ahead of the waiting nose, with `STOP_LINE` shared by `roadSection.ts` and `traffic.ts`: over the 162 synthetic legs, people
+   > walk on the zebra on 146 (was 32), and the waiting nose is a median 0.85 m behind the bar (was 2.9 m, up to 7.5 m).
 3. **Skewed junctions.** Below 90 degrees the two neighbouring walks overlap, so the leg's ribbon can only start where the walks'
    outer edges cross (11.1 m from the node at 60 degrees for two-lane streets). The acute corner was refused a kerb return
    (needed radius under the 2.2 m floor once the sim's trim limit applied), so it was a straight chamfer.
@@ -214,6 +223,8 @@ afterwards touches what they measure (the Freedom Circle's ring is in `junctionm
   1.1 m, worst 5.5 m at a 60 degree stroad6 crossing; none at a right angle beyond 0.1 m). `junctionShape(net, nodeId).legs[i].marks`
   has the crosswalk (`z0`, `z1`) and stop-bar (`bar`) distances from the node along each leg, computed from the kerb lines; stopping the
   car's nose 0.3 m short of `bar` would put the sim where the paint is.
+- (Not so: see the correction under item 2. `c.s` is the nose and a waiting car stops 3 m behind the trim, so no car's nose is in the
+  box, whatever its length. The original note follows.)
 - `src/agents/traffic.ts`: `c.s` is the car's centre and the stop point is `exitS - 1.5` for every car, so a 16 m semi's nose stops
   8 m beyond the line, inside the junction box. Stopping the nose (`c.s + len / 2`) at the line would fix that.
 - `traffic.ts enterJunction` builds the cars' turning curve from the lane at the stop line to the lane at the next leg's entry with

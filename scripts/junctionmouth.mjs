@@ -166,7 +166,7 @@ function cornerClearance(net, node, J) {
 
 /**
  * The paint, leg by leg (roadJunction.ts legMarks, or null on the old code, which had fixed offsets from the ribbon's start):
- * zebra span and stop bar, the nose of a stopped 4.5 m car (the network stops a car's centre 1.5 m short of the leg's trim),
+ * zebra span and stop bar, the nose of a car waiting at the line (the traffic holds its nose STOP_LINE behind the leg's trim),
  * and how near a kerb comes to the zebra's rectangle (must stay clear of it).
  */
 function markCheck(net, node, D) {
@@ -174,7 +174,7 @@ function markCheck(net, node, D) {
   for (const L of D.J.legs) {
     const m = L.marks ?? { z0: L.trim + 0.7, z1: L.trim + 3.5, half: carriageHalf(ROAD_TYPES[L.seg.type]) - 0.5, bar: L.trim + 4.45 };
     const nt = L.atA ? L.seg.trimA : L.seg.trimB;
-    const nose = nt - 0.75;
+    const nose = nt + (SEC?.STOP_LINE ?? 3);
     // the zebra's rectangle in world metres, and the kerb polylines (corners only: the legs' own kerbs are clear by construction)
     const at = (s, lat) => ({ x: node.x + L.u.x * s + L.r.x * lat, z: node.z + L.u.z * s + L.r.z * lat });
     const rect = [at(m.z0, -m.half), at(m.z0, m.half), at(m.z1, m.half), at(m.z1, -m.half)];

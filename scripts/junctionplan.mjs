@@ -92,10 +92,10 @@ function plan(net, rr, node, name) {
     }
   }
   for (const L of rr.lampSpots) if (Math.abs(L.x - node.x) < SIZE / 2 && Math.abs(L.z - node.z) < SIZE / 2) for (let dj = -2; dj <= 2; dj++) for (let di = -2; di <= 2; di++) put(Math.round(wx(L.x)) + di, Math.round(wz(L.z)) + dj, [255, 200, 40]);
-  // the sim's noses: a 4.5 m car stopped at the network's stop line (its centre 1.5 m short of the trim) has its nose trim - 0.75 from the node
+  // the sim's noses: a car waiting at the line holds its nose STOP_LINE (3 m) behind the leg's trim (traffic.ts; a car's position is its nose)
   for (const id of node.segs) {
     const s = net.segs.get(id), atA = s.a === node.id, trim = atA ? s.trimA : s.trimB;
-    const F = MESH.RoadRenderer.frame(s, MATH.clamp(atA ? trim - 0.75 : s.length - trim + 0.75, 0, s.length));
+    const F = MESH.RoadRenderer.frame(s, MATH.clamp(atA ? trim + 3 : s.length - trim - 3, 0, s.length));
     const t = { x: atA ? -F.t.x : F.t.x, z: atA ? -F.t.z : F.t.z }, r = { x: -t.z, z: t.x }, lane = net.type ? 0 : 0;
     void lane;
     const off = ROAD_TYPES[s.type].lanesPerDir === 1 ? 1.75 : 1.75 + 3.5 * (ROAD_TYPES[s.type].lanesPerDir - 1) + (ROAD_TYPES[s.type].centerTurn ? 1.75 : 0) * 0;

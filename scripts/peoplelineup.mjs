@@ -177,6 +177,50 @@ if (on('feet')) {
   ok('feet touch the ground', sole < 0.01, `(lowest shoe vertex ${sole} m from the pavement in the worst case)`);
 }
 
+
+// what a crowd costs: the same frame with the people group shown and hidden (setVisible), alternated so the drift of a shared machine
+// cancels, the GL queue drained after every frame (the software GPU's time is in it). The scene is only the pavement, the sun's shadow map and
+// the people, so the difference is the people group alone: 2 draw calls plus the shadow pass, every allocated instance included. Three crowds,
+// each built and removed in turn so the instance count is 120 in all of them: 120 people on the near figure, 120 on the far one, and a street
+// of 40 near + 80 far. Run it on the old code and on the new one (BASE_URL=.../old, .../new; W=640 H=360 is enough).
+if (on('bench')) {
+  const mk = (n, seed) => Array.from({ length: n }, (_, i) => ({ arch: (i * 7 + seed) % N, action: i % 3 === 2 ? 'idle' : 'walk', phase: (i * 0.173) % 1 }));
+  const place = (hs, list, xr, zr) => hs.map((h, i) => ({ h, x: xr[0] + ((i * 0.618) % 1) * (xr[1] - xr[0]), z: zr[0] + ((i * 0.381 + 0.13) % 1) * (zr[1] - zr[0]), yaw: 0.4 + i * 0.37, action: list[i].action, phase: list[i].phase }));
+  const scenes = [
+    { name: 'near crowd (120 people, 30-55 m)', parts: [[120, 0, [-16, 16], [-6, 14]]], eye: [0, 8, 42], target: [0, 1, 0], shadow: 30 },
+    { name: 'far crowd (120 people, 150-200 m)', parts: [[120, 3, [-45, 45], [-150, -100]]], eye: [0, 14, 60], target: [0, 1, -125], shadow: 80 },
+    { name: 'street (40 near + 80 far)', parts: [[40, 5, [-12, 12], [-8, 8]], [80, 9, [-40, 40], [-150, -100]]], eye: [0, 10, 45], target: [0, 1, -40], shadow: 60 },
+  ];
+  const rows = [];
+  await page.evaluate((hs) => hs.forEach((h) => window.__people.remove(h)), hands); // the lineup's own 69 would be drawn too: 120 instances in every crowd
+  for (const sc of scenes) {
+    const poses = [];
+    for (const [n, seed, xr, zr] of sc.parts) {
+      const list = mk(n, seed);
+      const hs = await page.evaluate((l) => l.map((r) => window.__people.spawn(r.arch, r.arch * 3761 + 17)), list);
+      poses.push(...place(hs, list, xr, zr));
+    }
+    const res = await page.evaluate(({ sc, poses, W, H, rounds, frames }) => {
+      const api = window.__people;
+      const gl = document.querySelector('canvas').getContext('webgl2');
+      const tiles = [{ x: 0, y: 0, w: W, h: H, eye: sc.eye, target: sc.target, fov: 40, poses, shadow: sc.shadow }];
+      const med = (a) => a.slice().sort((p, q) => p - q)[a.length >> 1];
+      const runs = (show) => { api.setVisible(show); const a = []; for (let k = 0; k < frames; k++) { const t0 = performance.now(); api.render(tiles); gl.finish(); a.push(performance.now() - t0); } return { ms: med(a), ...api.info() }; };
+      runs(true); runs(false);
+      const on = [], off = [], delta = [];
+      let a, b;
+      for (let r = 0; r < rounds; r++) { a = runs(false); b = runs(true); off.push(a.ms); on.push(b.ms); delta.push(b.ms - a.ms); }
+      api.setVisible(true);
+      const d = delta.slice().sort((p, q) => p - q);
+      return { on: med(on), off: med(off), delta: med(delta), lo: d[0], hi: d[d.length - 1], calls: b.calls - a.calls, tris: b.triangles - a.triangles };
+    }, { sc, poses, W, H, rounds: +(process.env.ROUNDS || 9), frames: +(process.env.FRAMES || 3) });
+    await page.evaluate((hs) => hs.forEach((h) => window.__people.remove(h)), poses.map((p) => p.h));
+    rows.push({ scene: sc.name, people: poses.length, ...res });
+    console.log(`${sc.name.padEnd(36)} people group: ${res.delta.toFixed(1)} ms per frame (range ${res.lo.toFixed(1)} .. ${res.hi.toFixed(1)}; ${res.on.toFixed(1)} with, ${res.off.toFixed(1)} without) = ${(1000 * res.delta / poses.length).toFixed(0)} us per person, ${res.calls} draw calls, ${res.tris} triangles`);
+  }
+  writeFileSync(`${out}/bench.json`, JSON.stringify(rows, null, 1));
+}
+
 const info = await page.evaluate(() => window.__people.info());
 console.log('renderer', JSON.stringify(info), 'errors', JSON.stringify(errs.slice(0, 5)));
 await browser.close();

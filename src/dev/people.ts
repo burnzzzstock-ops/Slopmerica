@@ -267,6 +267,8 @@ function probe(opts: {
   probe,
   size: () => ({ w: window.innerWidth, h: window.innerHeight }),
   info: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles }),
+  /** hide / show the whole people group (for cost runs: hidden, the instances are not even drawn) */
+  setVisible: (v: boolean) => { people.object.visible = v; },
   api: { renderer: 'PeopleRenderer' },
 };
 if (hud) hud.textContent = `people lineup: ${ARCHETYPES.length} archetypes ready (window.__people)`;

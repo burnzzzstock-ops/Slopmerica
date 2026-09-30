@@ -1069,6 +1069,9 @@ export class Traffic {
         const T = ROAD_TYPES[seg.type];
         const last = c.pi === c.path.length - 1;
         const exitS = last ? c.endS : this.exitOf(seg, st.dir);
+        // how much further back than STOP_LINE this arm's line is, where people cross it further out (0 on most arms):
+        // the distances below that were measured for a line STOP_LINE short of the end move back with it
+        const extra = last ? 0 : this.stopBack(st.dir > 0 ? seg.b : seg.a, seg.id) - STOP_LINE;
         let v0 = T.speed * this.speedMul * c.v0mul * (c.drunk ? 0.9 + Math.sin(c.wob * 0.7) * 0.3 : 1);
         // ease off for the turn ahead: brake early and smoothly, not in the box
         if (!last) {
@@ -1132,7 +1135,7 @@ export class Traffic {
           }
         }
         // someone on the crosswalk over my lanes, or over the lanes I'm turning into: stop at the line
-        if (!last && this.crosswalkWalkers && exitS - c.s < 20) {
+        if (!last && this.crosswalkWalkers && exitS - c.s < 20 + extra) {
           const nodeId = st.dir > 0 ? seg.b : seg.a, nx = c.path[c.pi + 1], ns = nx && this.net.segs.get(nx.seg);
           if (this.walkerOnLanes(nodeId, seg, st.dir, true) || (ns && this.walkerOnLanes(nodeId, ns, nx.dir, false))) {
             const g7 = exitS - this.stopBack(nodeId, seg.id) - c.s;
@@ -1140,7 +1143,7 @@ export class Traffic {
           }
         }
         // turning left across the oncoming lanes on a green: wait at the line for a gap
-        if (!last && c.turn > 0 && exitS - c.s < 25) {
+        if (!last && c.turn > 0 && exitS - c.s < 25 + extra) {
           const nodeId = st.dir > 0 ? seg.b : seg.a;
           if (this.signals.has(nodeId) && !this.clearing(nodeId, seg.id) && this.oncoming(nodeId, seg.id)) {
             const g6 = exitS - this.stopBack(nodeId, seg.id) - c.s;
@@ -1164,7 +1167,7 @@ export class Traffic {
         if (!last) {
           const nodeId = st.dir > 0 ? seg.b : seg.a;
           // (a left-turner that waited at the line for oncoming traffic goes as the light changes)
-          const sneak = c.turn > 0 && exitS - c.s < 4 && !lead && this.clearing(nodeId, seg.id);
+          const sneak = c.turn > 0 && exitS - c.s < 4 + extra && !lead && this.clearing(nodeId, seg.id);
           if (!sneak && !this.isGreen(nodeId, seg.id)) {
             const runIt = c.reckless && Math.random() < 0.004;
             if (runIt) c.redsRun++;
@@ -1179,7 +1182,7 @@ export class Traffic {
           if (c.s < mid) { const g3 = mid - c.s; if (g3 < gap) { gap = g3; dv = c.v; } }
         }
         // no lights here: wait at the line while someone from another road is crossing near your entry
-        if (!last && exitS - c.s < 22) {
+        if (!last && exitS - c.s < 22 + extra) {
           const nodeId = st.dir > 0 ? seg.b : seg.a;
           const inBox = !this.signals.has(nodeId) && this.junctionCars.get(nodeId);
           if (inBox && inBox.length) {

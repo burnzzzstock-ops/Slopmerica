@@ -500,7 +500,9 @@ export class Sim {
     // ---- demand: the real-ish urban economics (jobs-housing balance, retail per capita, goods chain)
     const P = this.population, W = this.workers;
     const boom = P < 200 ? 25 : P < 800 ? 10 : 0;
-    const taxHit = (this.taxRate - 0.09) * 450;
+    // 3 points of every bar per point of tax off 9% (owner, 2026-09-30: was 4.5; at 15% a
+    // squeezed town lost 27 on every bar, raised taxes to stay afloat, and stalled)
+    const taxHit = (this.taxRate - 0.09) * 300;
     const gap = jobs * 0.95 - W;
     const jobsTerm = (70 * gap) / Math.max(60, W);
     // (shops out of goods count as shops: playtest 6, Florida sat at 1,214 people for

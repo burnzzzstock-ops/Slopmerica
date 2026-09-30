@@ -93,8 +93,12 @@ function place(t: Tile): void {
   people.setNight(night ? 1 : 0);
 }
 
+// everyone a tile does not list goes underground, or the people of the earlier tiles stand around in the later ones
+const placed = new Set<number>();
 function draw(t: Tile): void {
-  for (const p of t.poses ?? []) people.set(p.h, p.x, p.y ?? 0, p.z, p.yaw ?? 0, p.action, p.phase);
+  for (const h of placed) people.set(h, 0, -1e4, 0, 0, 'idle', 0);
+  placed.clear();
+  for (const p of t.poses ?? []) { people.set(p.h, p.x, p.y ?? 0, p.z, p.yaw ?? 0, p.action, p.phase); placed.add(p.h); }
   people.flush();
   place(t);
   camera.aspect = t.w / t.h;

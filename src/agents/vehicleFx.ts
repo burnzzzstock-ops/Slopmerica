@@ -57,7 +57,7 @@ void main() {
     gl_FragColor = vec4(col, 0.0);
   } else if (vType < 1.5) {                                         // headlight pool
     float along = vUv.y, across = abs(q.x) * 2.0;
-    float a = pow(max(1.0 - along, 0.0), 1.5) * (1.0 - smoothstep(0.55, 1.0, across)) * smoothstep(0.0, 0.05, along);
+    float a = pow(max(1.0 - along, 0.0), 1.5) * exp(-across * across * 2.6) * (1.0 - smoothstep(0.75, 1.0, across)) * smoothstep(0.0, 0.08, along);   // soft-edged, fading with distance
     float wetBoost = 1.0 + uWet * 0.6;
     gl_FragColor = vec4(vCol.rgb * a * vCol.a * wetBoost * uGlow, 0.0);
   } else if (vType < 2.5) {                                         // puff: covers what is behind it
@@ -70,7 +70,7 @@ void main() {
   if (gl_FragColor.a <= 0.0 && dot(gl_FragColor.rgb, vec3(1.0)) < 0.002) discard;
 }`,
   });
-  m.customProgramCacheKey = () => 'aa-vehicle-fx-v2';
+  m.customProgramCacheKey = () => 'aa-vehicle-fx-v3';
   return m;
 }
 

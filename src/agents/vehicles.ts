@@ -261,10 +261,12 @@ metalnessFactor = vMetal;`)
   material.clearcoat *= vGloss;
 #endif`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-totalEmissiveRadiance += lampEmit * uGlow;`)
+totalEmissiveRadiance += lampEmit * uGlow;
+// a dark car at night still reads: at grazing angles the clearcoat mirrors the town's glow on the horizon (a thin bluish rim, not a lamp)
+if (zn < 3.5) totalEmissiveRadiance += vec3(0.30, 0.36, 0.50) * pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 3.0) * uVehicleNight * 0.12 * uGlow;`)
       .replace('#include <lights_fragment_end>', cloudShadowChunk('vVehWorld'));
   };
-  material.customProgramCacheKey = () => 'aa-vehicle-unified-v2';
+  material.customProgramCacheKey = () => 'aa-vehicle-unified-v3';
   return material;
 }
 
@@ -651,7 +653,7 @@ export class VehicleRenderer {
         // the road ahead: a pool from the nose along the car's heading, following the slope it stands on
         const nose = w([0, 0.06, lamps.nose[0] - 0.05]);
         const yaw = Math.atan2(e[8], e[10]), pitch = -Math.asin(THREE.MathUtils.clamp(e[9], -0.5, 0.5));
-        fx.pool(nose.x, nose.y, nose.z, yaw, pitch, 17, lamps.nose[1] * 2.6, 1.0, 0.87, 0.6, 0.55 * headOn * night);
+        fx.pool(nose.x, nose.y, nose.z, yaw, pitch, 17, lamps.nose[1] * 5, 1.0, 0.87, 0.6, 0.42 * headOn * night);
       }
     }
     const tailA = brake * (0.4 + 0.6 * night) + headOn * 0.28 * night;

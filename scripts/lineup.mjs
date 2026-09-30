@@ -3,7 +3,7 @@
 // which is the point: run it against the frozen "before" server and against your build, then compare the contact sheets.
 // usage: BASE_URL=http://127.0.0.1:5175 node scripts/lineup.mjs <tag> [ids, comma list or 'all'] [dists, default 8,40,150] [times, default day,night]
 //   OUT=shots/lineup (default)   writes <OUT>/<tag>/<id>-<dist>-<time>.jpg, sheet-<dist>-<time>.jpg contact sheets and index.html
-//   AZ=35 EL=18 (camera)   W=960 H=540 (frame)   CROP=1 (crop each shot to the car, default on)   WET=1 (rain wet)
+//   COLORS=f2f2f2,1a1a1a (one shot per flat colour)   AZ=35 EL=18 (camera)   W=960 H=540 (frame)   CROP=1 (crop each shot to the car, default on)   WET=1 (rain wet)
 import { chromium } from 'playwright-core';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { ARGS, EXE } from './refblock.mjs';
@@ -24,13 +24,14 @@ const ids = idsArg === 'all' ? all.map((m) => m.id) : idsArg.split(',');
 const dists = distsArg.split(',').map(Number), times = timesArg.split(',');
 const shots = [];
 const azs = (process.env.AZS || process.env.AZ || '35').split(',').map(Number);
-const seeds = process.env.SEEDS ? process.env.SEEDS.split(',').map(Number) : [null];   // SEEDS=1,2,3 with AUTO=1: the random paint, finish, age and dirt each seed gives
+const colors = process.env.COLORS ? process.env.COLORS.split(',').map((h) => parseInt(h, 16)) : null;   // COLORS=f2f2f2,1a1a1a: one shot per flat paint colour (the old renderer's palette)
+const seeds = colors ? colors.map((_, i) => i) : process.env.SEEDS ? process.env.SEEDS.split(',').map(Number) : [null];   // SEEDS=1,2,3 with AUTO=1: the random paint, finish, age and dirt each seed gives   // SEEDS=1,2,3 with AUTO=1: the random paint, finish, age and dirt each seed gives
 for (const time of times) for (const dist of dists) for (const id of ids) for (const azi of azs) for (const seed of seeds) {
   const m = all.find((x) => x.id === id);
   if (!m) { console.log('unknown id', id); continue; }
   const opts = {
     dist, night: time === 'night' ? 1 : 0, wet: Number(process.env.WET || 0), az: azi, el: Number(process.env.EL || 18), fov: Number(process.env.FOV || 50),
-    auto: !!process.env.AUTO, seed: seed ?? undefined, braking: !!process.env.BRAKE, turn: Number(process.env.TURN || 0), reverse: !!process.env.REV, parked: !!process.env.PARKED,
+    auto: !!process.env.AUTO, seed: colors ? undefined : seed ?? undefined, color: colors ? colors[seed] : undefined, braking: !!process.env.BRAKE, turn: Number(process.env.TURN || 0), reverse: !!process.env.REV, parked: !!process.env.PARKED,
     drive: process.env.DRIVE ? { n: 24, turn: Number(process.env.DRIVE), step: 0.45 } : undefined,
   };
   const r = await page.evaluate(({ id, opts }) => window.__lineup.show(id, opts), { id, opts });

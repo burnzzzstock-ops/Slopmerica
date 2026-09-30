@@ -55,12 +55,14 @@ export const MILESTONES: Milestone[] = [
   {
     pop: 1100, name: 'Boomburb', reward: 20000,
     blurb: 'Luxury apartments. The luxury is the word "luxury".',
-    zones: ['resHigh'], roads: ['stroad6'], services: ['solarFarm'], attractions: [1], landmarks: ['slopCannon'],
+    // offices here, not at the Exurb (owner, 2026-09-30): towns stalled just short of
+    // 1,800 with offices the only thing wanted (docs/PLAYTEST_6.md)
+    zones: ['resHigh', 'office'], roads: ['stroad6'], services: ['solarFarm'], attractions: [1], landmarks: ['slopCannon'],
   },
   {
     pop: 1800, name: 'Exurb', reward: 30000,
     blurb: 'Close enough to the city to complain about it.',
-    zones: ['office'], services: ['treatmentPlant', 'incinerator'], landmarks: ['megachurch'],
+    services: ['treatmentPlant', 'incinerator'], landmarks: ['megachurch'],
   },
   {
     pop: 2800, name: 'Edge City', reward: 45000,

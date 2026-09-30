@@ -25,8 +25,8 @@ As in Cities: Skylines, the town earns its tools by growing (src/sim/milestones.
 | Wide Spot in the Road | 150 | $5,000 | landfill, urgent care; Freedom Stroad, one-way couplet |
 | Census-Designated Place | 350 | $10,000 | fire station, sheriff; small roadside attractions; Propane Paradise |
 | Speed Trap Town | 650 | $15,000 | big-box commercial; school, coal plant; buses; Fill Er Up Mega Station |
-| Boomburb | 1,100 | $20,000 | high-density homes; MEGA Stroad; solar farm; bigger attractions; the Slop Cannon |
-| Exurb | 1,800 | $30,000 | offices; treatment plant, incinerator; Megachurch |
+| Boomburb | 1,100 | $20,000 | high-density homes, offices; MEGA Stroad; solar farm; bigger attractions; the Slop Cannon |
+| Exurb | 1,800 | $30,000 | treatment plant, incinerator; Megachurch |
 | Edge City | 2,800 | $45,000 | the Slopway and diamond interchanges; hospital; the biggest attractions; Pig Cabana Resort |
 | Metroplex | 4,200 | $60,000 | Katy Stroad; university; Slop 69 Field |
 | Megalopolis | 6,500 | $90,000 | nuclear plant; Neural Fly Datacenter |

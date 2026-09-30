@@ -196,8 +196,8 @@ Unlocks come with population, as milestones in the manner of Cities: Skylines, a
 | 150 | **Wide Spot in the Road** | Landfill, urgent care, the Freedom Stroad |
 | 350 | **Census-Designated Place** | Fire station, sheriff, roadside attractions |
 | 650 | **Speed Trap Town** | Big-box stores, schools, buses, the coal plant |
-| 1,100 | **Boomburb** | Luxury Slop apartments, 6 lanes, the Slop Cannon |
-| 1,800 | **Exurb** | Offices, treatment plant, incinerator, megachurch |
+| 1,100 | **Boomburb** | Luxury Slop apartments, offices, 6 lanes, the Slop Cannon |
+| 1,800 | **Exurb** | Treatment plant, incinerator, megachurch |
 | 2,800 | **Edge City** | The Slopway and interchanges, the hospital |
 | 4,200 | **Metroplex** | 8 lanes, the university, the stadium |
 | 6,500 | **Megalopolis** | Nuclear power, the data center |

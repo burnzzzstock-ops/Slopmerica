@@ -72,7 +72,7 @@ for (const phone of [false, true]) {
   await page.click('.dp-tab[data-k="off"]');
   await page.waitForTimeout(100);
   const off = await page.evaluate(() => ({ status: document.querySelector('.dp-status')?.textContent, name: document.querySelector('.dp-name')?.textContent, on: document.querySelector('[data-dem="off"]').classList.contains('on') }));
-  check(`${tag}: office tab explains its lock ("${off.status}")`, off.name === 'Office' && /unlock at 1,800 people \(the Exurb milestone\)/.test(off.status ?? '') && off.on, off);
+  check(`${tag}: office tab explains its lock ("${off.status}")`, off.name === 'Office' && /unlock at 1,100 people \(the Boomburb milestone\)/.test(off.status ?? '') && off.on, off);
 
   // a positive bar's action starts zoning it
   const target = await page.evaluate(() => {

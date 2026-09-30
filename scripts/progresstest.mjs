@@ -80,14 +80,20 @@ check('Esc closes it', mClosed === true, mClosed);
 // guide names what holds homes back and points at the budget.
 const stuck = await page.evaluate(() => {
   const g = window.__game, s = g.sim;
+  // (a town short of the office milestone: offices unlock at 1,100 now, and this one is past
+  // it, so its office unlock is taken away for the question and given back after)
   const keep = { demand: s.demand, parts: s.demandParts };
+  const taken = [...s.unlocked].find((w) => { s.unlocked.delete(w); const gone = !s.isUnlocked({ zone: 'office' }); s.unlocked.add(w); return gone; });
+  if (taken) s.unlocked.delete(taken);
   s.demand = { res: -2, com: -45, ind: -20, off: 70 };
   s.demandParts = { ...s.demandParts, res: [{ text: 'new-town appetite', v: 30, base: true }, { text: 'taxes at 15%', v: -27 }, { text: '120 more workers than jobs', v: -5 }] };
   const a = g.ui.nextAction();
+  const locked = !s.isUnlocked({ zone: 'office' });
   s.demand = keep.demand; s.demandParts = keep.parts;
-  return { locked: !s.isUnlocked({ zone: 'office' }), text: a.text, act: a.act ?? null };
+  if (taken) s.unlocked.add(taken);
+  return { locked, text: a.text, act: a.act ?? null };
 });
-check(`only offices wanted and they're locked: the guide names what holds homes back ("${stuck.text}")`, stuck.locked && /taxes at 15%/.test(stuck.text) && /1,800/.test(stuck.text) && stuck.act === 'budget', stuck);
+check(`only offices wanted and they're locked: the guide names what holds homes back ("${stuck.text}")`, stuck.locked && /taxes at 15%/.test(stuck.text) && /1,100/.test(stuck.text) && stuck.act === 'budget', stuck);
 check('no page errors', errs.length === 0, errs.slice(0, 3));
 await browser.close();
 process.exit(bad ? 1 : 0);

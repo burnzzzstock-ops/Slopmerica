@@ -13,7 +13,9 @@ import { ARGS, EXE, openBlock, shoot } from './refblock.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const presets = (process.argv[2] || 'high,medium,low').split(',');
 const TOL = +(process.env.TOL ?? 0.03);
-const TIMES = [['noon', 12.5, 0.5], ['dusk', 19.9, 0.5], ['moonless', 23, 0]];
+const ALL_TIMES = [['noon', 12.5, 0.5], ['dusk', 19.9, 0.5], ['moonless', 23, 0]];
+// ONLY=noon,moonless / VIEWS=overview,street keep just those times / cameras; EVAL='js' runs in each page after it opens (to flip a look switch)
+const TIMES = process.env.ONLY ? ALL_TIMES.filter(([n]) => process.env.ONLY.split(',').includes(n)) : ALL_TIMES;
 const VIEWS = { overview: [0, 0, 320, 0.7, 0.6], street: [-40, -30, 110, 2.4, 0.38], houses: [-170, -130, 120, 4.0, 0.42], shore: null };
 const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
 const measure = (page) => page.evaluate(() => {
@@ -41,7 +43,9 @@ for (const q of presets) {
     }
     return [0, 0, 320, 0.7, 0.6];
   }, center);
+  if (process.env.EVAL) await page.evaluate(process.env.EVAL);
   for (const [t, hour, moon] of TIMES) for (const [v, view] of Object.entries(VIEWS)) {
+    if (process.env.VIEWS && !process.env.VIEWS.split(',').includes(v)) continue;
     await shoot(page, center, { hour, moon, view });
     results[`${q} ${t} ${v}`] = await measure(page);
     console.log('measured', q, t, v, JSON.stringify(results[`${q} ${t} ${v}`]));

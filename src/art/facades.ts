@@ -26,11 +26,17 @@ function decal(name: string, w: number, h: number, paint: P, emissive = false) {
 }
 
 // ------------------------------------------------------------------ window helpers
-const LIT = ['#ffcf7a', '#ffd89a', '#ffe7b8', '#ffc46b', '#cfe3ff', '#f4f0ff', '#8fb4ff'];
+// Lit rooms after dark (owner, 2026-09-30: "make it cozy warm night lights"): incandescent amber
+// and warm white, with the odd blue TV. It was 55% pale warm, 30% cool white (#cfe3ff, #f4f0ff) and
+// 15% TV blue. The emissive is bright enough that the tone curve washes a pale colour out to white
+// (#ffc670 showed as cream 243,226,181), so these are deeper than they look here: #ffa94d shows as
+// an amber 248,209,127 (scripts/nightwarmth.mjs). The draws from the generator are unchanged (the
+// same windows are lit, with the same blinds and curtains): only the colours move.
+const LIT = ['#ffa94d', '#ffb862', '#ffc47a', '#ff9d42', '#ffcf94', '#ffdcb0', '#8fb4ff', '#ffa550'];
 
 function litColor(r: Rng) {
   const x = r.float();
-  return x < 0.55 ? LIT[Math.floor(r.float() * 4)] : x < 0.85 ? LIT[4 + Math.floor(r.float() * 2)] : LIT[6];
+  return x < 0.55 ? LIT[Math.floor(r.float() * 4)] : x < 0.85 ? LIT[4 + Math.floor(r.float() * 2)] : x < 0.94 ? LIT[7] : LIT[6];
 }
 
 interface WinOpts {
@@ -909,7 +915,7 @@ export function registerFacades() {
       const x = i * 128 + 10;
       const lit = rw.float() < 0.5;
       if (L === 'e') {
-        if (lit) litPane(c, x + 4, 44, 100, 190, '#ffe6b0');
+        if (lit) litPane(c, x + 4, 44, 100, 190, '#ffc882');
         continue;
       }
       c.fillStyle = '#7d8084';
@@ -1075,7 +1081,7 @@ export function registerFacades() {
           const x = i * 128;
           if (L === 'e') {
             if (lit) {
-              litPane(c, x + 3, y + 3, 125 * (part < 0.3 ? 0.5 : 1), 96, warmLit ? '#ffe2a8' : '#dfe9ff');
+              litPane(c, x + 3, y + 3, 125 * (part < 0.3 ? 0.5 : 1), 96, warmLit ? '#ffc680' : '#ffd9aa'); // (was #ffe2a8 and a cool #dfe9ff: warm offices)
               c.fillStyle = 'rgba(0,0,0,0.5)';
               for (let k = 0; k < 3; k++) c.fillRect(x + 12 + k * 40, y + 60, 26, 30);
             }
@@ -1126,7 +1132,7 @@ export function registerFacades() {
       for (let i = 0; i < 8; i++) {
         const lit = rw.float() < 0.5;
         if (L === 'e' && lit) {
-          litPane(c, i * 64 + 2, y + 46, 60, 56, '#e4ecff');
+          litPane(c, i * 64 + 2, y + 46, 60, 56, '#ffd8a8'); // (was cool #e4ecff)
         } else if (L === 'a' && lit) {
           c.fillStyle = 'rgba(230,230,210,0.35)';
           c.fillRect(i * 64 + 2, y + 44, 60, 18);
@@ -1237,7 +1243,7 @@ export function registerFacades() {
     for (let i = 0; i < 4; i++) {
       const x = i * 128 + 14, y = 56;
       const lit = rw.float() < 0.7, ring = rw.float() < 0.5;
-      win(c, L, x, y, 100, 150, { cols: 2, rows: 1, lit, litCol: '#eef2ff', frame: '#3a3c40', blinds: !ring, sill: null });
+      win(c, L, x, y, 100, 150, { cols: 2, rows: 1, lit, litCol: '#ffdcb4', frame: '#3a3c40', blinds: !ring, sill: null }); // (was cool #eef2ff)
       if (ring) {
         c.strokeStyle = L === 'e' ? '#ffffff' : '#fff6f0';
         c.lineWidth = 5;
@@ -1342,14 +1348,15 @@ export function registerFacades() {
       }
       win(c, L, sh, 0, W - sh * 2, H * 0.94, { ...o, sill: o.sill === undefined ? undefined : o.sill });
     }, o.lit);
+  // (lit colours deepened for the night look pass: pale warm glass washed out to cream under the tone curve)
   for (const lit of [false, true]) {
     const s = lit ? 'Lit' : '';
-    houseWin('winHouse' + s, 128, 176, { cols: 2, rows: 2, lit, litCol: '#ffcf7a', curtain: lit ? '#e8d9b8' : null, blinds: !lit });
-    houseWin('winShutter' + s, 192, 176, { cols: 2, rows: 2, lit, litCol: '#ffd89a', shutters: '#2f3b33', blinds: !lit });
-    houseWin('winPicture' + s, 256, 160, { cols: 3, rows: 1, lit, litCol: '#ffcf7a', curtain: '#d9c9a8' });
-    houseWin('winTall' + s, 128, 288, { cols: 2, rows: 4, lit, litCol: '#ffe2a8', arch: true, frameW: 7 });
-    houseWin('winModern' + s, 160, 208, { cols: 2, rows: 2, lit, litCol: '#ffe7b8', frame: '#151515', frameW: 8 });
-    houseWin('winTrailer' + s, 176, 96, { cols: 2, rows: 1, lit, litCol: '#fff2c8', frame: '#c9ccd0', curtain: '#b36a4a' });
+    houseWin('winHouse' + s, 128, 176, { cols: 2, rows: 2, lit, litCol: '#ffae50', curtain: lit ? '#e8d9b8' : null, blinds: !lit });
+    houseWin('winShutter' + s, 192, 176, { cols: 2, rows: 2, lit, litCol: '#ffb862', shutters: '#2f3b33', blinds: !lit });
+    houseWin('winPicture' + s, 256, 160, { cols: 3, rows: 1, lit, litCol: '#ffae50', curtain: '#d9c9a8' });
+    houseWin('winTall' + s, 128, 288, { cols: 2, rows: 4, lit, litCol: '#ffc47a', arch: true, frameW: 7 });
+    houseWin('winModern' + s, 160, 208, { cols: 2, rows: 2, lit, litCol: '#ffcf94', frame: '#151515', frameW: 8 });
+    houseWin('winTrailer' + s, 176, 96, { cols: 2, rows: 1, lit, litCol: '#ffd49c', frame: '#c9ccd0', curtain: '#b36a4a' });
   }
   decal('winBoard', 128, 176, (c, w, h) => {
     const r = rngFor('winBoard');
@@ -1364,9 +1371,9 @@ export function registerFacades() {
     }
   });
   decal('winPalladian', 256, 208, (c, w, h, L) => {
-    win(c, L, 0, 60, 70, 140, { cols: 1, rows: 3, lit: true, litCol: '#ffe2a8' });
-    win(c, L, 80, 0, 96, 200, { cols: 2, rows: 4, arch: true, lit: true, litCol: '#ffe2a8' });
-    win(c, L, 186, 60, 70, 140, { cols: 1, rows: 3, lit: true, litCol: '#ffe2a8' });
+    win(c, L, 0, 60, 70, 140, { cols: 1, rows: 3, lit: true, litCol: '#ffc47a' });
+    win(c, L, 80, 0, 96, 200, { cols: 2, rows: 4, arch: true, lit: true, litCol: '#ffc47a' });
+    win(c, L, 186, 60, 70, 140, { cols: 1, rows: 3, lit: true, litCol: '#ffc47a' });
   }, true);
   const door = (name: string, w: number, h: number, col: string, o: { glass?: boolean; side?: boolean; double?: boolean; arch?: boolean } = {}) =>
     decal(name, w, h, (c, W, H, L) => {
@@ -1533,8 +1540,8 @@ export function registerFacades() {
   }, true);
   const glow = (name: string, col: string, day: string) =>
     decal(name, 32, 32, (c, w, h, L) => fill(c, w, h, L === 'e' ? col : day), true);
-  glow('lampWarm', '#ffb45a', '#f6e7c8');
-  glow('lampWhite', '#f4f6ff', '#f4f4f0');
+  glow('lampWarm', '#ff9c40', '#f6e7c8'); // porch and wall lamps: amber (was #ffb45a)
+  glow('lampWhite', '#ffe2bc', '#f4f4f0'); // billboard and stadium floods: warm white (was #f4f6ff)
   glow('neonPink', '#ff2bd6', '#ff5ad9');
   glow('neonCyan', '#34f5ff', '#6ef0f7');
   glow('neonLime', '#c6f432', '#c6f432');

@@ -90,11 +90,13 @@ roughnessFactor = mix(roughnessFactor, 0.35, uWet * 0.6 * (1.0 - gGlass));`,
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
 {
-  // lit windows: each ~3 m cell decides on its own; warm homes, cool offices
+  // lit windows: each ~3 m cell decides on its own; warm rooms, and a few warm-white ones (linear
+  // light: on screen amber 255,188,124 and 255,220,178; was a pale 1, 0.72, 0.42 and a cool
+  // 0.78, 0.88, 1.0; owner, "cozy warm night lights")
   vec3 cell = floor(vBW / 3.1);
   float h = bh(cell);
   float lit = step(h, 0.42);
-  vec3 wc = mix(vec3(1.0, 0.72, 0.42), vec3(0.78, 0.88, 1.0), step(0.7, bh(cell + 17.0)));
+  vec3 wc = mix(vec3(1.0, 0.5, 0.2), vec3(1.0, 0.72, 0.46), step(0.7, bh(cell + 17.0)));
   totalEmissiveRadiance += wc * gGlow * lit * uNightB * 0.85;
   // lightbox signs: faintly self-lit by day, blazing at night
   float boost = 1.0;

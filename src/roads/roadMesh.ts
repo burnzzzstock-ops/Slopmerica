@@ -579,7 +579,8 @@ export class RoadRenderer {
     this.lampPoles = new THREE.InstancedMesh(poleGeo, new THREE.MeshStandardMaterial({ color: 0x55585c, roughness: 0.6, metalness: 0.4 }), 4000);
     const head = new THREE.BoxGeometry(0.5, 0.18, 0.9);
     head.translate(0, 7.8, -2.0);
-    this.lampMat = new THREE.MeshStandardMaterial({ color: 0x333333, emissive: 0xffc27a, emissiveIntensity: 0 });
+    // the lamp head: sodium amber (was 0xffc27a, which the tone curve showed as a pale yellow; owner: "cozy warm night lights")
+    this.lampMat = new THREE.MeshStandardMaterial({ color: 0x333333, emissive: 0xff9c44, emissiveIntensity: 0 });
     this.lampHeads = new THREE.InstancedMesh(head, this.lampMat, 4000);
     this.lampPoles.count = this.lampHeads.count = 0;
     this.lampPoles.castShadow = true;

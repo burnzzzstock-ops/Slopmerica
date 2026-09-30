@@ -135,6 +135,9 @@ if (mode === 'new') {
     check(`a 10-car queue honks (${wait.n} honks in 60 s, first at ${wait.honks[0]?.t ?? '-'} s)`, wait.n >= 4 && wait.rms > 0.001, { n: wait.n, rms: wait.rms });
     check('every honk comes from a waiting car in the queue, none from the 6 free-flowing ones', wait.honks.length > 0 && wait.honks.every((h) => h.id >= 100 && h.id < 110 && h.size >= 3), wait.honks.filter((h) => h.id < 100 || h.id >= 110).slice(0, 4));
     check('nobody honks in the first 6 s of waiting', wait.honks.every((h) => h.t >= 6), wait.honks.filter((h) => h.t < 6));
+    // the same ten cars waiting in a drive-thru lane (off the road, in line for the window) are not a jam
+    const line = await run(jam(10).map((c) => ({ ...c, thru: 1 })), 7);
+    check(`a 10-car drive-thru line never honks (${line.n} honks in 60 s, ${line.jamCars} cars counted as jammed)`, line.n === 0 && line.jamCars === 0, { n: line.n, jamCars: line.jamCars });
     // rate rises with the jam: 2 (a light), 4, 8, 14 cars; three seeds each, 60 s
     const by = {};
     for (const n of [2, 4, 8, 14]) { by[n] = 0; for (const seed of [11, 12, 13]) by[n] += (await run(jam(n), seed, 60)).n; by[n] /= 3; }

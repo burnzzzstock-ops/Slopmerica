@@ -101,7 +101,7 @@ export async function installLab() {
 
   // ---- rendering
   const vAt = (vs, t) => { if (t <= vs[0][0]) return vs[0][1]; for (let i = 1; i < vs.length; i++) if (t <= vs[i][0]) { const f = (t - vs[i - 1][0]) / (vs[i][0] - vs[i - 1][0]); return vs[i - 1][1] + f * (vs[i][1] - vs[i - 1][1]); } return vs[vs.length - 1][1]; };
-  const mkCar = (s) => ({ id: s.id, kind: s.kind, x: s.x, y: 0, z: s.z, v: vAt(s.vs, 0), yaw: s.yaw ?? 0, crashed: 0, acc: 0, len: s.len ?? LEN[s.kind] ?? 5, _s: s });
+  const mkCar = (s) => ({ id: s.id, kind: s.kind, x: s.x, y: 0, z: s.z, v: vAt(s.vs, 0), yaw: s.yaw ?? 0, crashed: 0, acc: 0, len: s.len ?? LEN[s.kind] ?? 5, ...(s.thru ? { thru: s.thru } : {}), _s: s });
   const advance = (cars, t0, t1) => {
     const dt = t1 - t0;
     for (const c of cars) {

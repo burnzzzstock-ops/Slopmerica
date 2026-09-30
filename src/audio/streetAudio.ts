@@ -42,6 +42,8 @@ export interface StreetCar {
   /** pulling out of / into a lot: not part of a queue on the road */
   dep?: number;
   arr?: number;
+  /** in a drive-thru lane (off the road, waiting for the window): not a jam either */
+  thru?: unknown;
   parked?: boolean;
 }
 /** The ears: a point (the camera's focus, lifted a little), the camera's right vector on the ground, and its distance. */
@@ -760,7 +762,7 @@ export class StreetAudio {
         }
       }
       // jams: cars waiting on the road within earshot of a horn
-      if (c.v < SLOW_V && nSlow < MAX_SLOW && d2 < HORN_REACH * HORN_REACH && !(c.dep !== undefined && c.dep > 0) && !(c.arr !== undefined && c.arr >= 0)) {
+      if (c.v < SLOW_V && nSlow < MAX_SLOW && d2 < HORN_REACH * HORN_REACH && !(c.dep !== undefined && c.dep > 0) && !(c.arr !== undefined && c.arr >= 0) && !c.thru) {
         this.slowCar[nSlow++] = c;
       }
     }

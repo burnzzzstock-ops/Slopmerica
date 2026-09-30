@@ -425,7 +425,7 @@ function farPieces(): Piece[] {
     add('leg' + s, loft([{ y: 0.925, rx: 0.09, cx: s * HX }, { y: 0.09, rx: 0.045, cx: s * HX }], 4, { top: true }), s < 0 ? PART.thighL : PART.thighR, ZONE.leg);
     add('shoe' + s, box(0.09, 0.075, 0.27, { t: [s * HX, 0.038, 0.06] }), s < 0 ? PART.footL : PART.footR, ZONE.shoe);
   }
-  add('hairCap', loft([{ y: 1.70, rx: 0.135, rz: 0.14, cz: -0.004 }, { y: 1.75, rx: 0.10, rz: 0.11, cz: -0.008 }, { y: 1.80, rx: 0.02, rz: 0.03, cz: -0.012 }], 6, { top: true }), PART.head, ZONE.hair, 'hairCap');
+  add('hairCap', loft([{ y: 1.70, rx: 0.135, rz: 0.14, cz: -0.004 }, { y: 1.79, rx: 0.06, rz: 0.07, cz: -0.010 }], 5, { top: true }), PART.head, ZONE.hair, 'hairCap');
   add('hairLong', box(0.24, 0.32, 0.07, { t: [0, 1.50, -0.11] }), PART.head, ZONE.hair, 'hairLong', 1);
   add('hairTail', box(0.06, 0.28, 0.06, { t: [0, 1.52, -0.19] }), PART.head, ZONE.hair, 'hairTail', 1);
   add('hairMullet', box(0.2, 0.2, 0.06, { t: [0, 1.56, -0.11] }), PART.head, ZONE.hair, 'hairMullet', 1);
@@ -433,28 +433,21 @@ function farPieces(): Piece[] {
   add('hairFin', box(0.04, 0.12, 0.26, { t: [0, 1.80, 0.0] }), PART.head, ZONE.hair, 'hairFin');
   add('hairBob', box(0.29, 0.22, 0.24, { t: [0, 1.58, -0.03] }), PART.head, ZONE.hair, 'hairBob', 1);
   add('hairCurls', ellipsoid(0.185, 0.14, 0.18, 6, 2, [0, 1.80, -0.03]), PART.head, ZONE.hair, 'hairCurls');
-  const capF = loft([{ y: 1.685, rx: 0.15, rz: 0.15 }, { y: 1.74, rx: 0.13, rz: 0.13 }, { y: 1.80, rx: 0.03, rz: 0.03 }], 6, { top: true });
-  add('capCrown', capF, PART.head, ZONE.hat, 'capCrown');
-  add('capBrim', box(0.17, 0.02, 0.15, { t: [0, 1.71, 0.19] }), PART.head, ZONE.hat, 'capBrim');
-  add('beanie', capF.clone(), PART.head, ZONE.hat, 'beanie');
-  add('hardCrown', capF.clone(), PART.head, ZONE.hat, 'hardCrown');
-  add('hardBrim', box(0.2, 0.02, 0.15, { t: [0, 1.70, 0.18] }), PART.head, ZONE.hat, 'hardBrim');
+  // hats: one crown, one peaked brim and one wide brim serve every hat of the near figure ('hatCrown', 'hatBrim', 'wideBrim' are set by
+  // resolveLook when a person wears any of them): at this distance nobody tells a beanie from a hard hat by its shape
+  add('hatCrown', loft([{ y: 1.685, rx: 0.15, rz: 0.15 }, { y: 1.78, rx: 0.10, rz: 0.10 }], 5, { top: true }), PART.head, ZONE.hat, 'hatCrown');
+  add('hatBrim', box(0.18, 0.02, 0.15, { t: [0, 1.71, 0.19] }), PART.head, ZONE.hat, 'hatBrim');
   add('foilCone', xform(bare(new THREE.ConeGeometry(0.15, 0.36, 4)), { t: [0, 1.93, 0] }), PART.head, ZONE.metal, 'foilCone');
-  add('sunCrown', capF.clone(), PART.head, ZONE.hat, 'sunCrown');
-  add('sunBrim', loft([{ y: 1.70, rx: 0.34, rz: 0.34 }, { y: 1.715, rx: 0.15, rz: 0.15 }], 6), PART.head, ZONE.hat, 'sunBrim');
-  add('cowboyBrim', loft([{ y: 1.695, rx: 0.30, rz: 0.26 }, { y: 1.715, rx: 0.14, rz: 0.14 }], 6), PART.head, ZONE.hat, 'cowboyBrim');
-  add('cowboyCrown', capF.clone(), PART.head, ZONE.hat, 'cowboyCrown');
-  add('flatCrown', capF.clone(), PART.head, ZONE.hat, 'flatcap');
-  add('visorBrim', box(0.2, 0.02, 0.17, { t: [0, 1.715, 0.19] }), PART.head, ZONE.hat, 'visor');
-  add('helmet', capF.clone(), PART.head, ZONE.hat, 'helmet');
-  const jf = (bot: number, w = 1): Ring[] => [{ y: bot, rx: 0.22 * w, rz: 0.155 * w }, { y: 1.20, rx: 0.213 * w, rz: 0.137 * w }, { y: 1.40, rx: 0.16 * w, rz: 0.10 * w }];
-  add('jacket', loft(jf(0.84), 6), PART.chest, ZONE.outer, 'jacket');
-  add('jacketShort', loft(jf(0.94), 6), PART.chest, ZONE.outer, 'jacketShort');
-  add('vestOver', loft(jf(0.96, 1.06), 6), PART.chest, ZONE.outer, 'vestOver');
-  add('hivisVest', loft(jf(0.98, 1.06), 6), PART.chest, ZONE.hivis, 'hivisVest');
-  add('coat', loft([{ y: 0.62, rx: 0.27, rz: 0.19 }, { y: 1.10, rx: 0.22, rz: 0.15 }, { y: 1.40, rx: 0.16, rz: 0.10 }], 6), PART.chest, ZONE.outer, 'coat', 2);
-  add('robe', loft([{ y: 0.22, rx: 0.32, rz: 0.27 }, { y: 0.90, rx: 0.20, rz: 0.15 }, { y: 1.02, rx: 0.17, rz: 0.11 }], 6), PART.pelvis, ZONE.shirt, 'robe', 2);
-  add('skirtLong', loft([{ y: 0.40, rx: 0.29, rz: 0.25 }, { y: 0.93, rx: 0.205, rz: 0.14 }, { y: 1.04, rx: 0.168, rz: 0.11 }], 6), PART.pelvis, ZONE.shirt, 'dress');
+  add('wideBrim', loft([{ y: 1.70, rx: 0.32, rz: 0.30 }, { y: 1.715, rx: 0.15, rz: 0.15 }], 6), PART.head, ZONE.hat, 'wideBrim');
+  // clothes over the body: two rings, five sides
+  const jf = (bot: number, w = 1): Ring[] => [{ y: bot, rx: 0.22 * w, rz: 0.155 * w }, { y: 1.40, rx: 0.17 * w, rz: 0.11 * w }];
+  add('jacket', loft(jf(0.84), 5), PART.chest, ZONE.outer, 'jacket');
+  add('jacketShort', loft(jf(0.94), 5), PART.chest, ZONE.outer, 'jacketShort');
+  add('vestOver', loft(jf(0.96, 1.06), 5), PART.chest, ZONE.outer, 'vestOver');
+  add('hivisVest', loft(jf(0.98, 1.06), 5), PART.chest, ZONE.hivis, 'hivisVest');
+  add('coat', loft([{ y: 0.62, rx: 0.27, rz: 0.19 }, { y: 1.40, rx: 0.17, rz: 0.11 }], 5), PART.chest, ZONE.outer, 'coat', 2);
+  add('robe', loft([{ y: 0.22, rx: 0.32, rz: 0.27 }, { y: 1.02, rx: 0.17, rz: 0.11 }], 5), PART.pelvis, ZONE.shirt, 'robe', 2);
+  add('skirtLong', loft([{ y: 0.40, rx: 0.29, rz: 0.25 }, { y: 1.04, rx: 0.168, rz: 0.11 }], 5), PART.pelvis, ZONE.shirt, 'dress');
   add('hoodShirt', box(0.24, 0.16, 0.10, { t: [0, 1.42, -0.09] }), PART.chest, ZONE.shirt, 'hoodShirt');
   add('hoodOuter', box(0.24, 0.16, 0.10, { t: [0, 1.42, -0.09] }), PART.chest, ZONE.outer, 'hoodOuter');
   add('backpack', box(0.30, 0.38, 0.15, { t: [0, 1.20, -0.185] }), PART.chest, ZONE.bag, 'backpack');
@@ -463,7 +456,7 @@ function farPieces(): Piece[] {
   add('chairBag', cylinder(0.055, 0.055, 0.95, 4, { t: [0, 1.15, -0.13], r: [0, 0, 0.55] }), PART.chest, ZONE.bag, 'chairbag');
   add('signPole', box(0.03, 0.86, 0.03, { t: [HAND.x, HAND.y - 0.40, 0.0] }), PART.foreR, ZONE.wood, propFeature('sign'));
   add('signBoard', box(0.56, 0.38, 0.03, { t: [HAND.x, HAND.y - 0.82, 0.0] }), PART.foreR, ZONE.card, propFeature('sign'));
-  add('drum', cylinder(0.17, 0.17, 0.32, 6, { t: [0, 1.0, 0.3], r: [Math.PI / 2, 0, 0] }), PART.pelvis, ZONE.prop, propFeature('drum'));
+  add('drum', cylinder(0.17, 0.17, 0.32, 5, { t: [0, 1.0, 0.3], r: [Math.PI / 2, 0, 0] }), PART.pelvis, ZONE.prop, propFeature('drum'));
   add('crate', box(0.34, 0.36, 0.34, { t: [0, 0.18, 0.02] }), PART.root, ZONE.wood, 201);
   return P;
 }

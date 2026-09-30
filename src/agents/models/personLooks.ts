@@ -52,6 +52,9 @@ const HAIRS: Record<string, string[]> = {
   bald: [], crop: ['hairCap'], long: ['hairCap', 'hairLong'], ponytail: ['hairCap', 'hairTail'], mohawk: ['hairFin'],
   mullet: ['hairCap', 'hairMullet'], bun: ['hairCap', 'hairBun'], bob: ['hairCap', 'hairBob'], curls: ['hairCurls'], balding: ['hairBald'],
 };
+const FAR_CROWN = ['capCrown', 'beanie', 'hardCrown', 'sunCrown', 'cowboyCrown', 'flatcap', 'helmet'];
+const FAR_BRIM = ['capBrim', 'hardBrim', 'visor', 'flatcap'];
+const FAR_WIDE = ['sunBrim', 'cowboyBrim'];
 const HATS_BY: Record<string, string[]> = {
   none: [], ballcap: ['capCrown', 'capBrim'], beanie: ['beanie'], cowboy: ['cowboyCrown', 'cowboyBrim'], hardhat: ['hardCrown', 'hardBrim'],
   tinfoil: ['foilCone'], sunhat: ['sunCrown', 'sunBrim'],
@@ -129,6 +132,10 @@ export function resolveLook(a: Archetype, seed: number, faceId: number, propOf: 
     if (d.pantsPat !== undefined) pantsPat = d.pantsPat;
     if (d.flags) flags |= d.flags;
   }
+  // the far figure has one crown, one peaked brim and one wide brim for all the hats (personGeo.ts, farPieces)
+  if (bits.some((b) => FAR_CROWN.includes(b))) bits.push('hatCrown');
+  if (bits.some((b) => FAR_BRIM.includes(b))) bits.push('hatBrim');
+  if (bits.some((b) => FAR_WIDE.includes(b))) bits.push('wideBrim');
   const body = BODY[a.body ?? 'average'] ?? BODY.average;
   const j = (k: number) => 0.97 + 0.06 * h32(s + k);
   const bd = a.build ?? {};

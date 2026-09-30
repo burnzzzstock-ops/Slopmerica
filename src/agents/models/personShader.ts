@@ -20,14 +20,14 @@ uniform highp sampler2D uStyle;
 uniform float uProbeInstance;
 #define CITIZEN_INSTANCE int(uProbeInstance + 0.5)
 #else
-#define CITIZEN_INSTANCE gl_InstanceID
+#define CITIZEN_INSTANCE int(iMotion.z + 0.5)
 #endif
 vec4 styleAt(int k) { return texelFetch(uStyle, ivec2(k, CITIZEN_INSTANCE), 0); }
 `;
 
 export const VERTEX_DECLARATIONS = /* glsl */`
 attribute vec4 aTag;      // part, zone, feature, cell
-attribute vec4 iMotion;   // action (-1: a free slot), time (cycles when walking, seconds when standing), spare, spare
+attribute vec4 iMotion;   // action (-1: a free slot), time (cycles when walking, seconds when standing), handle (the row of the style and pose textures), spare
 flat varying vec4 vZP;    // zone, part, feature, cell
 flat varying vec2 vInst;  // the person (a row of the style texture)
 varying vec3 vRest;

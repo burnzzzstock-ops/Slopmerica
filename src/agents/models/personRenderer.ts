@@ -59,6 +59,8 @@ export class PeopleRendererCore {
   private readonly alive: Uint8Array;
   private readonly archetypeIndex: Uint8Array;
   private readonly cadence: Float32Array;
+  /** set once a person has been placed (before that the slot is hidden) */
+  private readonly placed: Uint8Array;
   private readonly free: number[] = [];
   private readonly hidden = new THREE.Matrix4().makeScale(0, 0, 0);
   private readonly matrix = new THREE.Matrix4();
@@ -78,11 +80,17 @@ export class PeopleRendererCore {
   private gl: THREE.WebGLRenderer | null = null;
   private poseOn = false;
   private poseStale = true;
+  /** where the figure was drawn from since the last flush (the main camera, the water's mirror camera ...): whoever is near any of them is on the near figure */
+  private viewers: THREE.Vector3[] = [];
+  private viewerCount = 0;
+  private collecting = false;
+  private lodDistance = 64;
 
   constructor(scene: THREE.Scene, private readonly max: number, private readonly archetypes: readonly Archetype[]) {
     this.alive = new Uint8Array(max);
     this.archetypeIndex = new Uint8Array(max);
     this.cadence = new Float32Array(max).fill(1);
+    this.placed = new Uint8Array(max);
     this.matrixDirtyMin = this.styleDirtyMin = this.motionDirtyMin = max;
     this.faceAtlas = buildFaceAtlas();
     this.style = new PersonStyle(max);
@@ -92,12 +100,12 @@ export class PeopleRendererCore {
     const farGeometry = buildPersonGeometry(true);
     this.near = this.makeBatch(nearGeometry, false);
     this.far = this.makeBatch(farGeometry, true);
-    this.pose.connect(nearGeometry);
+    this.pose.connect(farGeometry);
     this.batches = [this.near, this.far];
     const column = new THREE.CylinderGeometry(0.28, 0.28, 1.85, 8, 1);
     column.translate(0, 0.925, 0);
     this.pickMesh = new THREE.InstancedMesh(column, new THREE.MeshBasicMaterial(), max);
-    this.pickMesh.instanceMatrix = this.near.mesh.instanceMatrix; // the same matrices: nothing extra to upload
+    this.pickMesh.instanceMatrix = this.far.mesh.instanceMatrix; // the same matrices (the far batch keeps one slot per handle): nothing extra to upload
     this.pickMesh.count = 0;
     this.stats = Object.freeze({ nearTriangles: geometryTriangles(nearGeometry), farTriangles: geometryTriangles(farGeometry), drawCalls: 2 });
     this.object.name = 'people-aa';
@@ -128,7 +136,7 @@ export class PeopleRendererCore {
     if (depth) mesh.customDepthMaterial = depth;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     // the first draw tells us the renderer, which the pose pass needs (and it allocates the pose textures before they are sampled)
-    mesh.onBeforeRender = (r) => this.bindRenderer(r);
+    mesh.onBeforeRender = (r, _scene, camera) => { this.bindRenderer(r); this.seenFrom(camera); };
     mesh.onBeforeShadow = (r) => this.bindRenderer(r);
     return { mesh, attributes, material, depth };
   }
@@ -140,18 +148,18 @@ export class PeopleRendererCore {
   add(archetype: number, seed: number): number {
     const h = this.free.length ? this.free.pop()! : this.used < this.max ? this.used++ : -1;
     if (h < 0 || this.archetypes.length === 0) return -1;
-    if (this.near.mesh.count < this.used) this.near.mesh.count = this.far.mesh.count = this.pickMesh.count = this.used;
+    if (this.far.mesh.count < this.used) this.far.mesh.count = this.pickMesh.count = this.used;
     const ai = ((archetype % this.archetypes.length) + this.archetypes.length) % this.archetypes.length;
     const a = this.archetypes[ai];
     this.alive[h] = 1; this.archetypeIndex[h] = ai;
     const look = resolveLook(a, seed, FACE_ID[a.face ?? 'plain'], propId);
     this.cadence[h] = look.cadence;
     this.style.write(h, look);
-    for (let i = 0; i < this.batches.length; i++) {
-      const at = this.batches[i].attributes;
-      at.motion.setXYZW(h, ACTION_ID.idle, 0, 0, 0);
-      this.batches[i].mesh.setMatrixAt(h, this.hidden);
-    }
+    // the far batch keeps one slot per handle (the row of the style and pose textures, and of the pointer's stand-ins); the near batch is
+    // made from it every flush, with only the people who are near
+    this.far.attributes.motion.setXYZW(h, ACTION_ID.idle, 0, h, 0);
+    this.far.mesh.setMatrixAt(h, this.hidden);
+    this.placed[h] = 0;
     this.dirtyStyle(h); this.dirtyMotion(h); this.dirtyMatrix(h);
     return h;
   }
@@ -159,7 +167,8 @@ export class PeopleRendererCore {
   remove(h: number): void {
     if (h < 0 || h >= this.max || this.alive[h] === 0) return;
     this.alive[h] = 0;
-    for (let i = 0; i < this.batches.length; i++) { this.batches[i].mesh.setMatrixAt(h, this.hidden); this.batches[i].attributes.motion.setXYZW(h, -1, 0, 0, 0); } // action -1: a free slot, skipped by both shaders
+    this.far.mesh.setMatrixAt(h, this.hidden); this.far.attributes.motion.setXYZW(h, -1, 0, h, 0); // action -1: a free slot, skipped by both shaders
+    this.placed[h] = 0;
     this.dirtyMatrix(h); this.dirtyMotion(h);
     this.free.push(h);
   }
@@ -173,10 +182,9 @@ export class PeopleRendererCore {
     if (h < 0 || h >= this.max || this.alive[h] === 0) return;
     this.matrix.makeRotationY(yaw); this.matrix.setPosition(x, y, z);
     const t = action === 'walk' || action === 'run' ? phase * this.cadence[h] : phase;
-    for (let i = 0; i < this.batches.length; i++) {
-      this.batches[i].mesh.setMatrixAt(h, this.matrix);
-      this.batches[i].attributes.motion.setXYZW(h, ACTION_ID[action], t, 0, 0);
-    }
+    this.far.mesh.setMatrixAt(h, this.matrix);
+    this.far.attributes.motion.setXYZW(h, ACTION_ID[action], t, h, 0);
+    this.placed[h] = 1;
     this.dirtyMatrix(h); this.dirtyMotion(h);
   }
 
@@ -196,20 +204,61 @@ export class PeopleRendererCore {
   /** The shader reads cameraPosition directly; this method only chooses the switch range. */
   updateLod(_camera: THREE.Camera, quality: 'low' | 'medium' | 'high' | number = 'high'): void {
     const distance = typeof quality === 'number' ? quality : quality === 'low' ? 48 : quality === 'medium' ? 58 : 66;
+    this.lodDistance = distance;
     this.near.material.setLodDistance(distance); this.far.material.setLodDistance(distance);
   }
 
-  flush(): void {
+  /** remember a camera the figure is being drawn from (see flush) */
+  private seenFrom(camera: THREE.Camera): void {
+    if (!this.collecting) { this.viewerCount = 0; this.collecting = true; } // the first draw since the last flush: forget last frame's cameras
+    let v = this.viewers[this.viewerCount];
+    if (!v) v = this.viewers[this.viewerCount] = new THREE.Vector3();
+    v.setFromMatrixPosition(camera.matrixWorld);
+    for (let i = 0; i < this.viewerCount; i++) if (this.viewers[i].distanceToSquared(v) < 0.25) return; // the same place again (a second pass of the same camera)
+    if (this.viewerCount < 6) this.viewerCount++;
+  }
+
+  /** the state of one person as the shaders read it: action (-1 free), phase, handle (the row of the style and pose textures) */
+  motionOf(h: number): [number, number, number, number] {
+    const a = this.far.attributes.motion;
+    return [a.getX(h), a.getY(h), a.getZ(h), a.getW(h)];
+  }
+
+  /**
+   * The near figure has 3.7 times the far one's triangles and every instance of a batch goes through the vertex stage, drawn or not, so
+   * it is given only the people who are near: those within the switch range (plus a tenth, so a person the shader still draws far
+   * cannot fall between the two) of a camera the figure was drawn from since the last flush, or of `viewers` when the caller knows
+   * better. Before anything has been drawn everybody is on it (the shader still picks by distance).
+   */
+  private fillNear(viewers?: readonly THREE.Vector3[]): void {
+    const src = this.far.mesh.instanceMatrix.array as Float32Array, dst = this.near.mesh.instanceMatrix.array as Float32Array;
+    const ms = this.far.attributes.motion.array as Float32Array, md = this.near.attributes.motion.array as Float32Array;
+    const list = viewers ?? this.viewers, n = viewers ? viewers.length : this.viewerCount;
+    const r2 = (this.lodDistance * 1.1) * (this.lodDistance * 1.1);
+    let k = 0;
+    for (let h = 0; h < this.used; h++) {
+      if (this.placed[h] === 0 || this.alive[h] === 0) continue;
+      let near = n === 0;
+      for (let i = 0; i < n && !near; i++) {
+        const v = list[i], dx = src[h * 16 + 12] - v.x, dy = src[h * 16 + 13] - v.y, dz = src[h * 16 + 14] - v.z;
+        near = dx * dx + dy * dy + dz * dz <= r2;
+      }
+      if (!near) continue;
+      for (let c = 0; c < 16; c++) dst[k * 16 + c] = src[h * 16 + c];
+      md[k * 4] = ms[h * 4]; md[k * 4 + 1] = ms[h * 4 + 1]; md[k * 4 + 2] = ms[h * 4 + 2]; md[k * 4 + 3] = ms[h * 4 + 3];
+      k++;
+    }
+    this.near.mesh.count = k;
+    if (k > 0) { markRange(this.near.mesh.instanceMatrix, 0, k - 1); markRange(this.near.attributes.motion, 0, k - 1); }
+    if (viewers === undefined) this.collecting = false; // (the cameras stay until the next draw brings new ones, so a second flush in a frame sees them too)
+  }
+
+  flush(viewers?: readonly THREE.Vector3[]): void {
     const changed = this.styleDirtyMax >= this.styleDirtyMin || this.motionDirtyMax >= this.motionDirtyMin;
-    if (this.matrixDirtyMax >= this.matrixDirtyMin) {
-      markRange(this.near.mesh.instanceMatrix, this.matrixDirtyMin, this.matrixDirtyMax);
-      markRange(this.far.mesh.instanceMatrix, this.matrixDirtyMin, this.matrixDirtyMax);
-    }
+    if (this.matrixDirtyMax >= this.matrixDirtyMin) markRange(this.far.mesh.instanceMatrix, this.matrixDirtyMin, this.matrixDirtyMax);
     if (this.styleDirtyMax >= this.styleDirtyMin) this.style.upload();
-    if (this.motionDirtyMax >= this.motionDirtyMin) {
-      markRange(this.near.attributes.motion, this.motionDirtyMin, this.motionDirtyMax);
-      markRange(this.far.attributes.motion, this.motionDirtyMin, this.motionDirtyMax);
-    }
+    if (this.motionDirtyMax >= this.motionDirtyMin) markRange(this.far.attributes.motion, this.motionDirtyMin, this.motionDirtyMax);
+    this.fillNear(viewers);
     this.matrixDirtyMin = this.styleDirtyMin = this.motionDirtyMin = this.max;
     this.matrixDirtyMax = this.styleDirtyMax = this.motionDirtyMax = -1;
     // the poses, for everybody who is in use, once per frame and only when something about a person changed

@@ -100,12 +100,12 @@ function draw(t: Tile): void {
   for (const h of placed) people.set(h, 0, -1e4, 0, 0, 'idle', 0);
   placed.clear();
   for (const p of t.poses ?? []) { people.set(p.h, p.x, p.y ?? 0, p.z, p.yaw ?? 0, p.action, p.phase); placed.add(p.h); }
-  people.flush();
   place(t);
   camera.aspect = t.w / t.h;
   camera.fov = t.fov ?? 40;
   camera.position.set(...t.eye);
   camera.lookAt(...t.target);
+  people.flush([camera.position]); // (each tile has its own camera: the near figure is chosen from it)
   camera.near = Math.max(0.05, Math.min(t.eye[1], 3) * 0.05);
   camera.far = 3000;
   camera.updateProjectionMatrix();
@@ -153,12 +153,12 @@ function probe(opts: {
   const n = pos.count;
   // a point per vertex; per-instance attributes expanded to constants (the model's own attribute names, so it runs on old and new code)
   const g = new THREE.BufferGeometry();
-  const inst: { src: THREE.BufferAttribute; dst: THREE.BufferAttribute; size: number }[] = [];
+  const inst: { name: string; src: THREE.BufferAttribute; dst: THREE.BufferAttribute; size: number }[] = [];
   for (const name of Object.keys(geo.attributes)) {
     const a = geo.getAttribute(name) as THREE.BufferAttribute & { isInstancedBufferAttribute?: boolean };
     if (a.isInstancedBufferAttribute) {
       const dst = new THREE.BufferAttribute(new Float32Array(n * a.itemSize), a.itemSize);
-      g.setAttribute(name, dst); inst.push({ src: a, dst, size: a.itemSize });
+      g.setAttribute(name, dst); inst.push({ name, src: a, dst, size: a.itemSize });
     } else g.setAttribute(name, a);
   }
   g.setDrawRange(0, n);
@@ -211,7 +211,9 @@ function probe(opts: {
     people.flush();
     for (const q of inst) {
       const at = opts.h * q.size, a = q.dst.array as Float32Array, sa = q.src.array as Float32Array;
-      for (let i = 0; i < n; i++) for (let c = 0; c < q.size; c++) a[i * q.size + c] = sa[at + c];
+      // (the near figure's own arrays hold only the people who are near, in another order: the motion comes from the renderer by handle)
+      const mo = q.name === 'iMotion' ? (people as unknown as { motionOf?: (h: number) => number[] }).motionOf?.(opts.h) : undefined;
+      for (let i = 0; i < n; i++) for (let c = 0; c < q.size; c++) a[i * q.size + c] = mo ? mo[c] : sa[at + c];
       q.dst.needsUpdate = true;
     }
     renderer.setRenderTarget(rt);

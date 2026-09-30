@@ -14,6 +14,21 @@ presets, draw calls), so `docs/GRAPHICS_HANDOFF.md` and
 (`docs/HANDOFF_TRAFFIC.md`). Read "Working alongside the traffic pass"
 before you touch anything.
 
+## The owner's decisions (2026-09-30), on top of the list below
+
+- **Night: "make it cozy warm night lights."** Street lamps, windows, signs
+  and headlights should feel warm and inviting: sodium, incandescent, amber.
+  Keep `nighttest`'s readability targets. This settles the open "night reads
+  as night" question: warm and readable beats dark.
+- **"Work on the yellow flashing again on Ultra."** Something yellow flashes
+  at night on Ultra. Earlier versions of this were:
+  - "night looks like rapid glowing snowfall" (G4);
+  - the yellow land-for-sale border glowing at night.
+
+  Reproduce it on Ultra first (moving camera, night, rain and clear), find
+  the cause, and add a check that fails before and passes after. Do this
+  before the car bodies.
+
 ## Start here
 
 1. Repo `burnzzzstock-ops/Slopmerica`. Base your work on the tip of

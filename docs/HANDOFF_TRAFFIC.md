@@ -161,16 +161,19 @@ the check, then commit.
    - throughput through the block's main junction (cars a minute, measured
      before and after) doesn't drop;
    - a 30-minute soak at ▶▶▶ has no gridlock.
-3. **Crash rate (audit #4).** Measure crashes per 1,000 car-minutes by hour
-   and cause. Put the owner's options in your report, with numbers. Change
-   the rate only on a yes.
+3. **Crash rate (audit #4).** The owner said yes to lowering it (2026-09-30).
+   Measure crashes per 1,000 car-minutes by hour and cause, then apply the
+   proposal behind named constants: 1% drunk by day, 6% at night, and a
+   random-crash rate a third of today's. Report the numbers before and
+   after.
 4. **People and cars (audit #5).**
    - Cars stop for people on the crosswalks at junction arms.
    - People wait at the kerb for a gap, or for a walk phase at signals.
 
    Done when a new check passes: no walker is ever inside a car's footprint,
    and a car facing someone on a crosswalk stops.
-5. **Real parking and drive-thru queues (audit #6).**
+5. **Real parking and drive-thru queues (audit #6).** The owner said yes:
+   "the more detail the better".
    - An arriving car takes a spot in its destination's lot or driveway and
      stays there as a parked instance until its next trip. Parked cars cost
      no simulation time. Cap them per preset.

@@ -57,6 +57,16 @@ which of its lines should pass.
 
 ## Decisions for the owner
 
+**Answered 2026-09-30:**
+- **Crash rate:** lower, as proposed.
+- **Parking:** yes, real parked cars and drive-thru lines, "the more detail the
+  better".
+- **Night:** "make it cozy warm night lights and work on the yellow flashing
+  again on Ultra".
+
+The traffic pass does the first two, the look pass the third. The proposals
+as first written:
+
 1. **Crash rate (item 4).** Proposal: 1% drunk by day and 6% at night, with a
    random-crash rate a third of today's. That's about one crash every few
    minutes at ▶ in a 700-person town instead of one every 30 s. Crashes still

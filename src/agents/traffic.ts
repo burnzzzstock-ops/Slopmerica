@@ -421,6 +421,7 @@ export class Traffic {
   // ------------------------------------------------------------------ signals
   private rebuildSignals() {
     this.bendCuts.clear();
+    this.edges = null;
     const old = this.signals;
     this.signals = new Map();
     for (const n of this.net.nodes.values()) {
@@ -595,8 +596,41 @@ export class Traffic {
     return { x: cx + n.x * side * off, z: cz + n.z * side * off };
   }
 
+  /** the buildings trips start and end at, gathered once a step */
+  private tripLists: { step: number; list: Bld[]; res: Bld[]; jobs: Bld[]; shops: Bld[]; ind: Bld[] } | null = null;
+  /** (the lists once a step, not once a try: up to 12 tries a step, each over every building) */
+  private lists() {
+    if (this.tripLists?.step !== this.stepN) {
+      const list = [...this.b.list.values()].filter((b) => b.state === 'active' && b.zone !== 'landmark' && b.zone !== 'service');
+      this.tripLists = {
+        step: this.stepN, list,
+        res: list.filter((b) => b.zone === 'resLow' || b.zone === 'resHigh'),
+        jobs: list.filter((b) => b.zone !== 'resLow' && b.zone !== 'resHigh'),
+        shops: list.filter((b) => b.zone === 'comLow' || b.zone === 'comHigh'),
+        ind: list.filter((b) => b.zone === 'industry'),
+      };
+    }
+    return this.tripLists;
+  }
+  private stepN = 0;
+  /** every car by the road and way it's on (seg * 2 + (dir > 0 ? 0 : 1)), built once for the step's trip launches */
+  private segDirIndex: Map<number, Car[]> | null = null;
+  private onSegDir(): Map<number, Car[]> {
+    if (this.segDirIndex) return this.segDirIndex;
+    const m = new Map<number, Car[]>();
+    for (const c of this.cars) {
+      const st = c.path[c.pi], k = st.seg * 2 + (st.dir > 0 ? 0 : 1);
+      const a = m.get(k);
+      if (a) a.push(c); else m.set(k, [c]);
+    }
+    this.segDirIndex = m;
+    return m;
+  }
+  /** road ends at the map edge (cached until the network changes) */
+  private edges: { seg: RSeg; s: number }[] | null = null;
   private edgeAnchors(): { seg: RSeg; s: number }[] {
-    const out: { seg: RSeg; s: number }[] = [];
+    if (this.edges) return this.edges;
+    const out: { seg: RSeg; s: number }[] = (this.edges = []);
     for (const n of this.net.nodes.values()) {
       if (Math.abs(n.x) > HALF - 40 || Math.abs(n.z) > HALF - 40) {
         const seg = this.net.segs.get(n.segs[0]);
@@ -610,13 +644,9 @@ export class Traffic {
     // codex:freight begin - give the conserved-goods scheduler a spawn opportunity
     if (this.freightTrip?.()) return true;
     // codex:freight end
-    const list = [...this.b.list.values()].filter((b) => b.state === 'active' && b.zone !== 'landmark' && b.zone !== 'service');
+    const { list, res, jobs, shops, ind } = this.lists();
     const edges = this.edgeAnchors();
     if (list.length < 2 && !edges.length) return false;
-    const res = list.filter((b) => b.zone === 'resLow' || b.zone === 'resHigh');
-    const jobs = list.filter((b) => b.zone !== 'resLow' && b.zone !== 'resHigh');
-    const shops = list.filter((b) => b.zone === 'comLow' || b.zone === 'comHigh');
-    const ind = list.filter((b) => b.zone === 'industry');
     const morning = hour > 6 && hour < 10, evening = hour > 15.5 && hour < 19.5;
     let o: { seg: RSeg; s: number } | null = null, d: { seg: RSeg; s: number } | null = null;
     let oB: Bld | null = null, dB: Bld | null = null;
@@ -727,7 +757,9 @@ export class Traffic {
     {
       const st0 = rt.steps[0];
       const seg0 = this.net.segs.get(st0.seg)!;
-      const busyAt = (s: number) => this.cars.some((c) => !c.junction && c.crashed !== -1 && c.path[c.pi].seg === st0.seg && c.path[c.pi].dir === st0.dir && Math.abs(c.s - s) < 9);
+      // (the cars on that road and way, indexed once a step: not a scan of every car per try)
+      const near = this.onSegDir().get(st0.seg * 2 + (st0.dir > 0 ? 0 : 1)) ?? [];
+      const busyAt = (s: number) => near.some((c) => !c.junction && c.crashed !== -1 && c.path[c.pi].seg === st0.seg && c.path[c.pi].dir === st0.dir && Math.abs(c.s - s) < 9);
       let ok = false;
       for (const off of [0, 12, -12, 24, -24]) {
         const s = rt.startS + off;
@@ -783,6 +815,7 @@ export class Traffic {
       car.lotD = this.lotPoint(dB, lastSeg, lastSeg.id === d.seg.id ? d.s : stN.dir > 0 ? rt.endS : lastSeg.length - rt.endS);
     }
     this.cars.push(car);
+    this.segDirIndex?.get(car.path[0].seg * 2 + (car.path[0].dir > 0 ? 0 : 1))?.push(car) ?? this.segDirIndex?.set(car.path[0].seg * 2 + (car.path[0].dir > 0 ? 0 : 1), [car]);
     this.totalTrips++;
     return car;
   }
@@ -810,6 +843,7 @@ export class Traffic {
   private step(dtReal: number, simSpeed: number, hour: number, population: number, jobs: number, camTarget: THREE.Vector3, last: boolean) {
     const dt = dtReal * Math.max(0.0001, simSpeed);
     this.lastDt = Math.max(dtReal, dt);
+    this.stepN++;
     if (simSpeed > 0) for (const s of this.signals.values()) s.t += dt;
 
     // demand for trips: population & jobs, time of day, induced demand
@@ -825,6 +859,7 @@ export class Traffic {
     // trips, freight and demand) doesn't depend on graphics settings
     this.targetCars = Math.min(SIM_MAX_CARS, Math.round((population * perPerson + jobs * 0.05 + edgeBoost) * tod * induced * this.policyTripMul));
     // codex:policies end
+    this.segDirIndex = null;
     if (simSpeed > 0) {
       let spawns = 0;
       while (this.cars.length < this.targetCars && spawns < 12) {
@@ -832,6 +867,9 @@ export class Traffic {
         this.spawnTrip(hour);
       }
     }
+    // (the index holds only while nothing moves: a trip launched later this step, or
+    // between steps, indexes the cars afresh)
+    this.segDirIndex = null;
 
     // buckets per seg/dir/lane
     this.buckets.clear();

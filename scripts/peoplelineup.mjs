@@ -1,0 +1,162 @@
+// Shoot the pedestrian models on the no-game lineup page (dev/people.html): the whole cast at true 8 / 30 / 100 m, by day and
+// by night, plus close-up sheets of every action and the walk / run / idle cycles frame by frame. The page needs no town, so a
+// capture takes seconds, not the minute a game load costs. Same camera on the old and the new code: run once against the frozen
+// old server and once against a snapshot of your work, then compare the two folders.
+//
+// usage: scripts/withslot.sh env BASE_URL=http://127.0.0.1:5181 OUT=shots/people/after node scripts/peoplelineup.mjs [sheet ...]
+//   sheets (default: all): row8 row8n grid30 grid30n grid100 grid100n actions walk run idle idle2 near1..near6
+//   env: JPEG=1 to write JPEG (quality 85, what docs/screenshots wants), else PNG; W, H = viewport (default 1280x720)
+import { chromium } from 'playwright-core';
+import { mkdirSync, writeFileSync } from 'node:fs';
+const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
+const out = process.env.OUT || 'shots/people/out';
+const W = +(process.env.W || 1280), H = +(process.env.H || 720);
+const jpeg = !!process.env.JPEG;
+mkdirSync(out, { recursive: true });
+const want = new Set(process.argv.slice(2));
+const on = (n) => want.size === 0 || want.has(n);
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
+const errs = [];
+page.on('pageerror', (e) => errs.push(e.message));
+page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
+await page.goto(`${base}/dev/people.html`, { waitUntil: 'load', timeout: 180000 });
+await page.waitForFunction(() => window.__people?.ready, null, { timeout: 180000 });
+const roster = await page.evaluate(() => window.__people.archetypes);
+const N = roster.length;
+// one person per archetype (colours come from the seed, the same on every run), plus spares for the sheets that repeat one
+const hands = await page.evaluate((n) => Array.from({ length: n }, (_, i) => window.__people.spawn(i, i * 3761 + 17)), N);
+const spare = async (arch, count) => page.evaluate(([a, c]) => Array.from({ length: c }, () => window.__people.spawn(a, a * 3761 + 17)), [arch, count]);
+const byId = Object.fromEntries(roster.map((r) => [r.id, r.i]));
+const KNOWN = new Set(['walk', 'run', 'idle', 'smoke', 'drink', 'vape', 'phone', 'protest', 'dance', 'drum', 'yoga', 'sit', 'lie', 'fight']);
+const naturalAction = (i) => (roster[i].vices.find((v) => KNOWN.has(v) && v !== 'lie' && v !== 'run') ?? 'idle');
+
+async function shot(name, tiles) {
+  await page.evaluate((t) => window.__people.render(t), tiles);
+  const file = `${out}/${name}.${jpeg ? 'jpg' : 'png'}`;
+  await page.screenshot(jpeg ? { path: file, type: 'jpeg', quality: 85, timeout: 180000 } : { path: file, timeout: 180000 });
+  console.log('wrote', file);
+}
+const eyeAt = (x, y, z) => [x, y, z];
+
+// true-distance rows and grids ------------------------------------------------------------------------------------------
+function rowSheet(ids, dist, night, t = 3.1) {
+  const sp = 1.3, poses = [], labels = [];
+  ids.forEach((id, k) => {
+    const x = (k - (ids.length - 1) / 2) * sp;
+    poses.push({ h: hands[id], x, z: 0, yaw: 0, action: naturalAction(id) === 'walk' ? 'idle' : naturalAction(id), phase: t + k * 0.37 });
+    labels.push({ text: roster[id].name, x, y: 2.05, z: 0 });
+  });
+  return [{ x: 0, y: 0, w: W, h: H, eye: eyeAt(0, 1.55, dist), target: [0, 0.95, 0], fov: 38, poses, night, labels, labelPx: 11, shadow: 9 }];
+}
+function gridSheet(dist, night, cols = 14, t = 2.2) {
+  const rows = Math.ceil(N / cols), sx = 2.5, sz = 3.2, poses = [], labels = [];
+  for (let i = 0; i < N; i++) {
+    const c = i % cols, r = Math.floor(i / cols);
+    const x = (c - (cols - 1) / 2) * sx, z = -r * sz;
+    const a = naturalAction(i);
+    poses.push({ h: hands[i], x, z, yaw: 0, action: a, phase: t + i * 0.29 });
+    if (dist <= 40) labels.push({ text: roster[i].name.split(' ').slice(0, 2).join(' '), x, y: 2.0, z });
+  }
+  const zMid = -((rows - 1) * sz) / 2;
+  const hCam = dist * 0.32;
+  return [{ x: 0, y: 0, w: W, h: H, eye: eyeAt(0, hCam, dist + 0), target: [0, 0.9, zMid], fov: 40, poses, night, labels, labelPx: 8, shadow: dist > 60 ? 45 : 26 }];
+}
+
+if (on('row8')) await shot('row8', rowSheet(['floridaMan', 'communeHippie', 'hoaPresident', 'developerChad', 'trucker', 'gymBro', 'egirl', 'streetPreacher'].map((k) => byId[k]), 8, false));
+if (on('row8n')) await shot('row8n', rowSheet(['fireworksNeighbor', 'sovereignCitizen', 'karen', 'techBro', 'lineman', 'doorDashDriver', 'goth', 'roadsidePhilosopher'].map((k) => byId[k]), 8, true));
+if (on('grid30')) await shot('grid30', gridSheet(30, false));
+if (on('grid30n')) await shot('grid30n', gridSheet(30, true));
+if (on('grid100')) await shot('grid100', gridSheet(100, false));
+if (on('grid100n')) await shot('grid100n', gridSheet(100, true));
+
+// magnified sheets: 12 people a sheet, six a row, each in its own tile, close enough to judge the near model --------------------
+for (let s = 1; s <= 6; s++) {
+  if (!on('near' + s)) continue;
+  const tiles = [], ids = Array.from({ length: 12 }, (_, k) => (s - 1) * 12 + k).filter((i) => i < N);
+  ids.forEach((id, k) => {
+    const c = k % 6, r = Math.floor(k / 6), tw = Math.floor(W / 6), th = Math.floor(H / 2);
+    const x = 20 * k, z = 0;
+    tiles.push({ x: c * tw, y: r * th, w: tw, h: th, eye: eyeAt(x, 1.15, 5.6), target: [x, 0.9, 0], fov: 30, poses: [{ h: hands[id], x, z, yaw: 0, action: naturalAction(id) === 'walk' ? 'idle' : naturalAction(id), phase: 2.3 + id * 0.41 }], labels: [{ text: roster[id].name, x, y: 2.1, z }], labelPx: 10, shadow: 5 });
+  });
+  await shot('near' + s, tiles);
+}
+
+// one person doing every action, tile by tile ---------------------------------------------------------------------------------
+if (on('actions')) {
+  const acts = ['walk', 'run', 'idle', 'smoke', 'drink', 'vape', 'phone', 'protest', 'dance', 'drum', 'yoga', 'sit', 'lie', 'fight'];
+  const who = byId[process.env.WHO || 'developerChad'];
+  const extra = await spare(who, acts.length);
+  const tiles = acts.map((a, k) => {
+    const c = k % 7, r = Math.floor(k / 7), tw = Math.floor(W / 7), th = Math.floor(H / 2), x = 12 * k;
+    return { x: c * tw, y: r * th, w: tw, h: th, eye: eyeAt(x + 2.6, 1.3, 4.6), target: [x, 0.95, 0], fov: 32, poses: [{ h: extra[k], x, z: 0, yaw: 0.25, action: a, phase: 1.7 + k * 0.13 }], labels: [{ text: a, x, y: 2.05, z: 0 }], labelPx: 11, shadow: 5 };
+  });
+  await shot('actions', tiles);
+}
+
+// gait cycles, frame by frame: the person walks, the camera and the pavement grid go with them, so a planted foot stays on its joint
+async function cycle(name, action, stride, arch, frames = 12, sideYaw = Math.PI / 2, cycles = 1) {
+  const [h] = await spare(arch, 1);
+  const tiles = [];
+  for (let k = 0; k < frames; k++) {
+    const c = k % 6, r = Math.floor(k / 6), tw = Math.floor(W / 6), th = Math.floor(H / (frames / 6));
+    const ph = 0.37 + (k / frames) * cycles, Z = ph * stride;
+    tiles.push({ x: c * tw, y: r * th, w: tw, h: th, eye: eyeAt(4.3, 1.05, Z), target: [0, 0.9, Z], fov: 34, groundZ: 0, poses: [{ h, x: 0, z: Z, yaw: 0, action, phase: ph }], shadow: 4, labels: [{ text: `${(ph % 1).toFixed(2)}`, x: 0, y: 2.0, z: Z }], labelPx: 10 });
+  }
+  await shot(name, tiles);
+}
+if (on('walk')) await cycle('walk', 'walk', 1.42, byId[process.env.WHO || 'developerChad']);
+if (on('run')) await cycle('run', 'run', 2.2, byId[process.env.WHO || 'gymBro']);
+// front-on walk (arm swing, hip drop, shoulder twist)
+if (on('walkfront')) {
+  const [h] = await spare(byId[process.env.WHO || 'developerChad'], 1);
+  const tiles = [];
+  for (let k = 0; k < 12; k++) {
+    const c = k % 6, r = Math.floor(k / 6), tw = Math.floor(W / 6), th = Math.floor(H / 2), ph = 0.37 + k / 12, Z = ph * 1.42;
+    tiles.push({ x: c * tw, y: r * th, w: tw, h: th, eye: eyeAt(0.4, 1.15, Z + 4.4), target: [0, 0.9, Z], fov: 34, poses: [{ h, x: 0, z: Z, yaw: 0, action: 'walk', phase: ph }], shadow: 4 });
+  }
+  await shot('walkfront', tiles);
+}
+// standing about: the same standing action at different moments and for different people (weight shift, look-around, arms)
+if (on('idle')) {
+  const ids = ['developerChad', 'hoaPresident', 'karen', 'bigDale', 'zoningLawyer', 'techBro', 'trucker', 'communeHippie', 'egirl', 'oldTimerEarl', 'gymBro', 'goth'].map((k) => byId[k]);
+  const tiles = ids.map((id, k) => {
+    const c = k % 6, r = Math.floor(k / 6), tw = Math.floor(W / 6), th = Math.floor(H / 2), x = 10 * k;
+    return { x: c * tw, y: r * th, w: tw, h: th, eye: eyeAt(x + 1.4, 1.2, 5.2), target: [x, 0.95, 0], fov: 30, poses: [{ h: hands[id], x, z: 0, yaw: 0.35, action: 'idle', phase: 7.3 + k * 2.9 }], labels: [{ text: roster[id].name, x, y: 2.05, z: 0 }], labelPx: 10, shadow: 5 };
+  });
+  await shot('idle', tiles);
+}
+// one person standing, sampled over ~40 seconds
+if (on('idle2')) {
+  const who = byId[process.env.WHO || 'developerChad'];
+  const extra = await spare(who, 12);
+  const tiles = extra.map((h, k) => {
+    const c = k % 6, r = Math.floor(k / 6), tw = Math.floor(W / 6), th = Math.floor(H / 2), x = 10 * k;
+    return { x: c * tw, y: r * th, w: tw, h: th, eye: eyeAt(x + 1.6, 1.2, 5.0), target: [x, 0.95, 0], fov: 30, poses: [{ h, x, z: 0, yaw: 0.3, action: 'idle', phase: 1 + k * 3.4 }], labels: [{ text: `t=${(1 + k * 3.4).toFixed(1)}s`, x, y: 2.05, z: 0 }], labelPx: 10, shadow: 5 };
+  });
+  await shot('idle2', tiles);
+}
+
+// feet on the ground: the model's own vertex shader run on the GPU for one person, every deformed vertex read back, and how far
+// the lowest vertices of each shoe move over the pavement while they are on it (0% = planted, 100% = skating with the body)
+if (on('feet')) {
+  const rows = [];
+  for (const who of (process.env.WHOS || 'karen,cryptoBro,floridaMan,bigDale,influencer,brainrotKid,granny').split(',')) {
+    const arch = byId[who === 'granny' ? 'golfCartGrandma' : who];
+    if (arch === undefined) continue;
+    const [h] = await spare(arch, 1);
+    for (const [action, stride, speed] of [['walk', 1.42, 1.4], ['run', 2.2, 3]]) {
+      const cyc = 4, step = 0.02;
+      const r = await page.evaluate(([a]) => window.__people.probe(a), [{ h, action, step, samples: Math.round((cyc * stride) / step), stride }]);
+      rows.push({ who, action, ...r });
+      const b = r.band0.012, c = r['band0.03'];
+      console.log(`${who.padEnd(14)} ${action.padEnd(4)} sole y ${String(r.sole).padStart(7)}  slide mean ${String(c.slideMeanPct).padStart(5)}% p95 ${String(c.slideP95Pct).padStart(5)}% max ${String(c.slideMaxPct).padStart(5)}% (3 cm band)   ${String(b.slideMeanPct).padStart(5)}% / ${String(b.slideP95Pct).padStart(5)}% (1.2 cm)   contact L ${c.contactFracL} R ${c.contactFracR} airborne ${c.airborneFrac}   top ${r.topRange}`);
+    }
+  }
+  writeFileSync(`${out}/feet.json`, JSON.stringify(rows, null, 1));
+}
+
+const info = await page.evaluate(() => window.__people.info());
+console.log('renderer', JSON.stringify(info), 'errors', JSON.stringify(errs.slice(0, 5)));
+await browser.close();
+process.exit(errs.length ? 1 : 0);

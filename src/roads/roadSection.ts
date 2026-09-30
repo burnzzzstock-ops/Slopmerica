@@ -39,13 +39,14 @@ export const DRIVE_FLARE = 1.2;
 // Everything below is drawing only. The cars run on the network's own numbers (seg.trimA / trimB, laneOffset, the curves
 // traffic.ts builds between them) and nothing here may move those: roadJunction.ts reads them, it never writes them.
 //
-// Curb returns. Real kerb-return radii at a right-angle corner (recalled from NACTO's Urban Street Design Guide, the FHWA
-// intersection primer and ITE's residential street guidance, see docs/cars-look/junction.md): local streets 3 to 4.5 m
-// (dense urban 1.5 to 3), collectors about 6, arterials 7.5 to 12 m. A US local street is 8 to 9 m wide with a parked lane
-// each side, so its curb radius of 4.5 m is an effective turning radius near 7. These roads have no parked lane, so the
-// curb carries the whole turn: the radius below is about the smallest that still leaves the game's own turning curves (the
-// cubic each car follows from one leg's stop line to the next leg's entry, traffic.ts) 1.3 m of asphalt between the curve
-// and the kerb, i.e. 0.35 m to spare beside a 1.9 m car, at every junction angle (scripts/junctionmouth.mjs --sweep).
+// Curb returns. Real kerb-return radii at a right-angle corner (NACTO's Urban Street Design Guide, and the municipal design
+// manuals found by search; the numbers and their sources are in docs/cars-look/junction.md): 10 to 15 ft (3 to 4.6 m) is the
+// standard, many cities go as small as 2 ft, and the manuals ask 4.6 m between local streets, 6 to 7.6 m for collectors and 9 to
+// 10.7 m between arterials. A US local street is 8 to 9 m wide with a parked lane each side, so its curb radius is not the radius
+// a car turns on; these roads have no parked lane, so the curb carries the whole turn. What sets the radius here is the game's own
+// turning curve (the cubic each car follows from one leg's stop line to the next leg's entry, traffic.ts): roadJunction.ts keeps
+// CAR_CLEAR of asphalt between that curve and the kerb at every angle, growing the arc where the formula below leaves less
+// (scripts/junctionmouth.mjs --sweep shows the clearance per radius and angle).
 /** kerb radius of a right-angle corner between two roads: bounds of the value curbReturnRadius starts from */
 export const CORNER_R_MIN = 2.4;
 export const CORNER_R_MAX = 3.6;

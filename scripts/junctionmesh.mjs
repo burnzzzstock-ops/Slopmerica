@@ -2,44 +2,16 @@
 // a stub canvas and a stub terrain, builds the reference block's meshes (scripts/refblock.mjs' saved town) and runs, on the real
 // triangles, what scripts/roadjunction.mjs runs in a page: casts a ray straight down at a 1 m grid over each junction's roads'
 // full-width strips within 14 m of the node and counts the spots where nothing at all is drawn (holes, target 0), and counts
-// the asphalt and zebra triangles that face down (target 0). Same numbers on the old code and the new, in seconds.
+// the asphalt and zebra triangles that face down (target 0), and prints what the road renderer submits (meshes, instances,
+// triangles). Same numbers on the old code and the new, in seconds.
 // usage: node scripts/junctionmesh.mjs [--nodes 45,49] [--quiet]     (run from the checkout to measure)
-import { createServer } from 'vite';
-import { readFileSync } from 'node:fs';
 
 const args = process.argv.slice(2);
 const opt = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : undefined; };
 const only = opt('--nodes')?.split(',').map(Number);
 
-// ---- a canvas that draws nothing: the renderer paints its road textures into canvases, and only their existence matters here
-const noop = () => undefined;
-const ctx = new Proxy({}, {
-  get: (t, k) => {
-    if (k === 'getImageData') return (x, y, w, h) => ({ data: new Uint8ClampedArray(Math.max(1, w) * Math.max(1, h) * 4), width: w, height: h });
-    if (k === 'createImageData') return (w, h) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h });
-    if (k === 'createRadialGradient' || k === 'createLinearGradient') return () => ({ addColorStop: noop });
-    if (k === 'measureText') return () => ({ width: 10 });
-    return t[k] ?? noop;
-  },
-  set: (t, k, v) => { t[k] = v; return true; },
-});
-globalThis.document = { createElement: () => ({ width: 0, height: 0, getContext: () => ctx, style: {} }) };
-
-const server = await createServer({ root: process.cwd(), server: { middlewareMode: true, watch: null, hmr: false }, appType: 'custom', logLevel: 'error' });
-const THREE = await server.ssrLoadModule('three');
-const NET = await server.ssrLoadModule('/src/roads/network.ts');
-const MESH = await server.ssrLoadModule('/src/roads/roadMesh.ts');
-const RT = await server.ssrLoadModule('/src/roads/roadTypes.ts');
-const { ROAD_TYPES } = RT;
-
-const terrain = { h: () => 10, coverAt: () => 0, inBounds: () => true, gradeRoad() {}, forgetRoad() {}, raycast: () => null };
-const net = new NET.RoadNetwork(terrain, { cut() {} });
-net.map = { id: 'flat' };
-net.restore(JSON.parse(readFileSync('shots/lookbook/town.json', 'utf8')).roads);
-const rr = new MESH.RoadRenderer(net, { capabilities: { getMaxAnisotropy: () => 4 } });
-const t0 = performance.now();
-rr.update();
-const buildMs = performance.now() - t0;
+import { makeRig } from './lib/roadrig.mjs';
+const { server, THREE, net, rr, ROAD_TYPES, buildMs } = await makeRig();
 
 const surfaces = [...rr.typeMeshes.values(), rr.junctionMesh, rr.concMesh];
 for (const m of [...surfaces, rr.crosswalkMesh]) m.updateMatrixWorld(true);
@@ -96,7 +68,17 @@ const facing = (mesh) => {
 };
 const tris = (m) => (m.geometry.index ? m.geometry.index.count / 3 : 0);
 const allTris = surfaces.reduce((a, m) => a + tris(m), 0) + tris(rr.crosswalkMesh);
+// what the road renderer submits: meshes drawn (one call each), how many are instanced, their instances, and triangles counting instances
+let calls = 0, instancedCalls = 0, instances = 0, trisWithInstances = 0;
+rr.group.traverse((o) => {
+  if (!(o.isMesh || o.isLine) || !o.geometry) return;
+  const n = o.geometry.index ? o.geometry.index.count / 3 : (o.geometry.attributes.position?.count ?? 0) / 3;
+  if ((!n && !o.isLine) || (o.isInstancedMesh && !o.count)) return;
+  calls++;
+  if (o.isInstancedMesh) { instancedCalls++; instances += o.count; trisWithInstances += n * o.count; } else trisWithInstances += n;
+});
 const res = {
+  roadRenderer: { meshesDrawn: calls, instanced: instancedCalls, instances, trianglesWithInstances: Math.round(trisWithInstances) },
   junctions, holes: miss, gridPoints: tot, worst,
   zebra: facing(rr.crosswalkMesh), junctionAsphalt: facing(rr.junctionMesh),
   triangles: { junctionMesh: tris(rr.junctionMesh), zebra: tris(rr.crosswalkMesh), concrete: tris(rr.concMesh), roadMeshes: [...rr.typeMeshes.values()].reduce((a, m) => a + tris(m), 0), total: allTris },

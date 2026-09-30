@@ -686,6 +686,7 @@ export class Environment {
     atmo.uGlassTop.value.copy(this.zenith).add(this.tmp.setRGB(0.03, 0.04, 0.07).multiplyScalar(this.night));
     atmo.uGlassHor.value.copy(this.horizon).add(this.tmp.setRGB(0.055, 0.07, 0.1).multiplyScalar(this.night));
     atmo.uGlassSun.value.copy(this.lightDir);
+    atmo.uFill.value.copy(this.hemi.color).multiplyScalar(this.hemi.intensity);
     this.scene.background = null;
     this.refreshEnv(daylight);
   }

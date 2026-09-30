@@ -20,6 +20,12 @@ let night = 0;
  */
 export const GLASS = {
   uGlass: { value: new THREE.Vector4(0.14, 0.8, 0.12, 0.15) },
+  /**
+   * Wall fill for presets that have no environment map (Low, Medium): a share of the hemisphere light added to vertical faces
+   * only. The sky dome lights a wall from half its height and the ground bounce is weak, so on Low every wall in shade was a
+   * dark slab next to a bright roof (High has the environment map for that). 0 switches it off.
+   */
+  uFillK: { value: 0.35 },
 };
 
 function glow(n: number) {
@@ -50,7 +56,7 @@ export function buildingMaterial(): THREE.MeshStandardMaterial {
       sh.uniforms.satMap = { value: satMap };
       sh.uniforms.satEmi = { value: satEmissive };
       bindLamps(sh);
-      Object.assign(sh.uniforms, GLASS, { uGlassTop: atmo.uGlassTop, uGlassHor: atmo.uGlassHor, uGlassSun: atmo.uGlassSun });
+      Object.assign(sh.uniforms, GLASS, { uGlassTop: atmo.uGlassTop, uGlassHor: atmo.uGlassHor, uGlassSun: atmo.uGlassSun, uFill: atmo.uFill });
       // the pools of light at night (world/nightLights.ts): lot paving and the foot of the walls
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vLampW;\nvarying float vLampH;')
@@ -67,7 +73,7 @@ export function buildingMaterial(): THREE.MeshStandardMaterial {
         .replace('#include <lights_physical_fragment>', `${lampAdd('vLampW', 'clamp(1.0 - vLampH / 3.5, 0.0, 1.0)')}\n#include <lights_physical_fragment>`)
         .replace('#include <common>', `#include <common>\nvarying vec3 vLampW;\nvarying float vLampH;\n${LAMP_PARS}`)
         .replace('#include <common>', '#include <common>\nuniform sampler2D satMap;\nuniform sampler2D satEmi;')
-        .replace('#include <common>', '#include <common>\nuniform vec4 uGlass;\nuniform vec3 uGlassTop, uGlassHor, uGlassSun;')
+        .replace('#include <common>', '#include <common>\nuniform vec4 uGlass;\nuniform float uFillK;\nuniform vec3 uGlassTop, uGlassHor, uGlassSun, uFill;')
         .replace(
           '#include <map_fragment>',
           `float glassK = 0.0;
@@ -94,6 +100,9 @@ export function buildingMaterial(): THREE.MeshStandardMaterial {
         .replace(
           '#include <opaque_fragment>',
           `vec3 gN = transformDirectionByInverseViewMatrix(normal, viewMatrix);
+#ifndef USE_ENVMAP
+  outgoingLight += diffuseColor.rgb * uFill * (uFillK * RECIPROCAL_PI * (1.0 - gN.y * gN.y));
+#endif
 if (glassK > 0.0) {
   vec3 gV = normalize(cameraPosition - vLampW);
   float gNV = clamp(dot(gN, gV), 0.0, 1.0);
@@ -109,7 +118,7 @@ if (glassK > 0.0) {
 #include <opaque_fragment>`,
         );
     };
-    material.customProgramCacheKey = () => 'slop-buildings-2sheet-lamps-glass';
+    material.customProgramCacheKey = () => 'slop-buildings-2sheet-lamps-glass-fill';
   }
   return material;
 }

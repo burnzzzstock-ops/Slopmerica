@@ -214,6 +214,8 @@ export const atmo = {
   uGlassTop: { value: new THREE.Color(0.2, 0.45, 0.9) },
   uGlassHor: { value: new THREE.Color(0.7, 0.8, 0.9) },
   uGlassSun: { value: new THREE.Vector3(0.3, 0.8, 0.2) },
+  // the hemisphere light's colour x intensity, for the wall fill of presets without an environment map (buildings/material.ts)
+  uFill: { value: new THREE.Color(0.8, 0.85, 0.9) },
 };
 export type AtmoUniforms = typeof atmo;
 
@@ -231,6 +233,7 @@ export const ATMOS_EXTRA = {
   uGlassTop: atmo.uGlassTop,
   uGlassHor: atmo.uGlassHor,
   uGlassSun: atmo.uGlassSun,
+  uFill: atmo.uFill,
   uFlowerMap: { value: 0 }, // 0 Holler County, 1 Golden Coast, 2 Gator Gulch
 };
 Object.assign(ATMOS, ATMOS_EXTRA);

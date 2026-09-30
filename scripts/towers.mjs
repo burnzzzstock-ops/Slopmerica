@@ -13,6 +13,7 @@
 //   VIEWS=over,tall,street   which cameras (default all): over = the lookbook overview, tall = the tallest tower from ~3.4x its
 //                  height, street = the lookbook street corner
 //   OUT=dir        save dir/<prefix><quality>-<hour>-<view>.jpg (JPEG q85; phone shots at CSS size)
+//   FILL=0         set the wall fill (GLASS.uFillK) first: 0 = off, to measure the glass alone
 //   TALL=22        metres above the pad from which a wall counts as a tower facade
 // Exits 0; prints one JSON line per capture and a summary table.
 import { chromium } from 'playwright-core';
@@ -32,6 +33,8 @@ if (OUT) mkdirSync(OUT, { recursive: true });
 const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
 const { page, errs, center } = await openBlock(browser, phone ? { base, quality, width: 390, height: 780, phone: true } : { base, quality });
 
+// FILL=0.35 sets the building material's wall fill (buildings/material.ts GLASS.uFillK) before shooting: 0 = off, to measure the glass alone
+if (process.env.FILL !== undefined) await page.evaluate(async (k) => { (await import('/src/buildings/material.ts')).GLASS.uFillK.value = k; }, Number(process.env.FILL));
 // the tallest building of the block and a list of the tall ones
 const towers = await page.evaluate(() => {
   const g = window.__game;

@@ -29,9 +29,10 @@ for (const m of list) {
 }
 console.log('id'.padEnd(24), 'close'.padStart(6), 'near'.padStart(6), 'far'.padStart(5), '  ms', '   w×h×l (model)      spec');
 for (const r of rows) {
-  const over = r.w > r.specW * 1.06 || r.l > r.specL * 1.06 || r.h > r.specH * 1.08 + 0.15;
-  const budget = ['semi', 'boxTruck', 'ambulance', 'firetruck', 'cityBus', 'garbageTruck', 'towTruck'].includes(r.kind) ? 5000 : 2500;
-  const flags = [over ? 'OUTSIDE-SIZE' : '', r.close > budget ? 'CLOSE-OVER' : '', r.near > 1300 ? 'NEAR-OVER' : '', r.far > 200 && r.far !== r.near ? 'FAR-OVER' : ''].filter(Boolean);
+  // the same limits scripts/vehicletest.mjs gates on (mirrors, a bike's rider and accessories may stick out a little)
+  const over = r.l > r.specL * 1.04 + 0.1 || r.w > r.specW + 0.55 || r.h > (r.kind === 'motorcycle' ? 1.9 : r.specH * 1.06 + 0.2);
+  const big = ['semi', 'boxTruck', 'ambulance', 'firetruck', 'cityBus', 'garbageTruck', 'towTruck', 'liftedTruck', 'pickup'].includes(r.kind);
+  const flags = [over ? 'OUTSIDE-SIZE' : '', r.close > (big ? 5000 : 2500) ? 'CLOSE-OVER' : '', r.near > (big ? 1600 : 1200) ? 'NEAR-OVER' : '', r.far > 350 && r.far !== r.near ? 'FAR-OVER' : ''].filter(Boolean);
   if (flags.length) bad++;
   console.log(r.id.padEnd(24), String(r.close).padStart(6), String(r.near).padStart(6), String(r.far).padStart(5), String(r.ms).padStart(5), `  ${r.w}×${r.h}×${r.l}`.padEnd(22), `${r.specW}×${r.specH}×${r.specL}`, flags.join(' '));
 }

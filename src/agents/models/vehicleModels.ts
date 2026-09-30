@@ -3,8 +3,8 @@
 // fills a ModelBuilder. The same builder runs three times: close (a few cars within ~40 m), near (to ~180 m) and far (a
 // per-kind silhouette), so a model is described once and every level of detail agrees with the others.
 //
-// A model may never be bigger than its kind: buildVehicleModel is handed VEHICLE_SPECS[kind] and every builder fits inside it
-// (scripts/vehiclestats.mjs checks the boxes).
+// A model stays inside its kind: buildVehicleModel is handed VEHICLE_SPECS[kind] and every builder fits inside it (mirrors, a rider
+// and a few accessories may stick out a little; scripts/vehicletest.mjs checks the boxes).
 import * as THREE from 'three';
 import type { VehicleKind } from '../../contracts';
 import { ModelBuilder, triCount, type LampSet } from './vehicleKit';
@@ -39,12 +39,6 @@ export function vehicleModelList(): Array<{ id: string; kind: VehicleKind; label
 export function modelDef(id: string): ModelDef | undefined { return DEFS.find((d) => d.id === id); }
 export function variantsOf(kind: VehicleKind): ModelDef[] { return DEFS.filter((d) => d.kind === kind); }
 
-/** Scale a finished model to exactly fit the kind's size on the axes it overshoots (never grows it). */
-function fit(g: THREE.BufferGeometry, s: VehicleDimensions): void {
-  g.computeBoundingBox();
-  void s;
-}
-
 export interface ModelLod { geometry: THREE.BufferGeometry; lamps: LampSet; wheelRadius: number; triangles: number }
 /** Build one level of detail of one model: 0 close, 1 near, 2 far. The renderer builds close on demand and far once per kind. */
 export function buildModelLod(kind: VehicleKind, s: VehicleDimensions, id: string | undefined, lod: 0 | 1 | 2): ModelLod {
@@ -62,7 +56,6 @@ export function buildVehicleModel(kind: VehicleKind, s: VehicleDimensions, id?: 
     const mb = new ModelBuilder(lod, s.length, s.width, s.height);
     const wheelRadius = d.build(mb);
     const geometry = mb.finish();
-    fit(geometry, s);
     return { geometry, wheelRadius, lamps: mb.lamps };
   };
   const close = make(0), near = make(1);

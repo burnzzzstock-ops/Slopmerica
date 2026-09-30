@@ -84,7 +84,7 @@ function finishShipment(g: Game, id: number, arrived: boolean) {
     shop.supplier = g.buildings.list.get(s.fromId)?.label ?? 'Demolished factory';
   } else {
     totals.imported += s.qty; shop.imported += s.qty;
-    shop.supplier = 'The Interstate Logistics Cloud'; importCosts += s.qty * 4.8;
+    shop.supplier = 'The Interstate Logistics Cloud'; importCosts += s.qty * IMPORT_PRICE;
   }
 }
 
@@ -108,6 +108,16 @@ function launch(g: Game, kind: FreightKind, qty: number, from: Bld | 'edge', to:
  */
 const DRY_DAYS = 8;
 const SELL_RATE = 0.12, MAKE_RATE = 0.2;
+/** what a unit of emergency goods from the county line costs the town */
+const IMPORT_PRICE = 4.8;
+/**
+ * Until junctions stop locking into rings of full lanes (docs/PLAYTEST_6.md:
+ * the goods trucks sat behind them for weeks and a county's shops went bare),
+ * a shop with bare shelves gets a small parcel from the county line without a
+ * truck (owner, 2026-09-30): TRICKLE_SHARE of its shelves, at most every
+ * TRICKLE_DAYS days, billed as an emergency import. The trucks still come.
+ */
+const TRICKLE_DAYS = 5, TRICKLE_SHARE = 0.15;
 
 function produceAndSell(g: Game) {
   for (const b of g.buildings.list.values()) {
@@ -130,8 +140,15 @@ function scheduleDeliveries(g: Game) {
   const available = [...factories.entries()].map(([id, s]) => ({ b: g.buildings.list.get(id), s }))
     // up to three trucks out per factory: one at a time left most shops dry for a week-long round trip
     .filter((x): x is { b: Bld; s: FactoryStock } => !!x.b && POLICY_MOBILITY.truckAllowed(x.b) && x.s.stock >= 4 && trucksOut(x.b.id) < 3).sort((a, b) => b.s.stock - a.s.stock);
+  const outside = g.traffic.outsideConnections() > 0;
   for (const [id, shop] of shops) {
     const b = g.buildings.list.get(id);
+    // bare shelves and nothing in for days: a parcel from the county line, no truck
+    if (outside && b && isShop(b) && shop.stock < 0.05 && shop.dryDays >= 1 && g.sim.day - shop.lastDelivery >= TRICKLE_DAYS) {
+      const qty = Math.min(shop.capacity * TRICKLE_SHARE, shop.capacity - shop.stock);
+      shop.stock += qty; shop.imported += qty; totals.imported += qty; importCosts += qty * IMPORT_PRICE;
+      shop.lastDelivery = g.sim.day; shop.dryDays = 0; shop.supplier = 'The Interstate Logistics Cloud';
+    }
     // a slow import still on the road from the county line doesn't stop a nearby factory from delivering
     const importing = incoming(id, 'import') > 0;
     // two loads on the way at most: across a big town one arrives weeks after it was ordered

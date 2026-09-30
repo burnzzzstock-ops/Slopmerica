@@ -61,6 +61,8 @@ export function presetPixelRatio(q: Quality['name']): number {
   return IS_TOUCH ? Math.max(base, q === 'low' ? 1.5 : 1.75) : base;
 }
 /** Dynamic resolution never drops below this share of the preset density. */
+/** Settings → Field of view (degrees, the camera's vertical angle): the slider's range, and what a saved value may be */
+export const FOV_MIN = 35, FOV_MAX = 110;
 export const MIN_RENDER_SCALE = IS_TOUCH ? 0.8 : 0.75;
 
 export function storedQuality(): Quality['name'] | null {

@@ -15,7 +15,7 @@ import { GRID_BLOCKS, type GridBlock } from '../tools/gridRoads';
 import { FeedPanel } from './feedPanel';
 import { MERCH_URL, brandById } from '../art/brands';
 import { BUILD, crumb, onCapturedError, openBugReport } from './bugreport';
-import { IS_TOUCH } from '../config';
+import { FOV_MAX, FOV_MIN, IS_TOUCH } from '../config';
 import { QUALITY, type Quality } from '../config';
 import { BANKRUPT_AT, BANKRUPT_WEEKS, CREDIT_LINE, LEDGER_LABEL, LOSS_LABEL, ONE_TIME, RECURRING, SPEEDS, Sim, UNLOCKS, usd, type DemandKey } from '../sim/sim';
 import { SERVICE_DEFS, overloadedServices, type EmergencyView } from '../sim/services';
@@ -1319,7 +1319,7 @@ export class Hud implements UiSink {
           <button class="chip ${emergencySpeed() !== 'off' ? 'on' : ''}" id="emergency-toggle" title="When a city-wide service emergency begins: slow the clock to normal speed, pause it, or keep going">🚨 Emergencies: ${EMERGENCY_SPEED_LABEL[emergencySpeed()]}</button>
           <button class="chip ${g.audio.musicOn ? 'on' : ''}" id="music-toggle" aria-pressed="${g.audio.musicOn}">🎹 Music: ${g.audio.musicOn ? 'on' : 'off'}</button>
           <label class="fov-ctl" for="music-range">Music volume <input type="range" id="music-range" min="5" max="100" step="5" value="${Math.round(g.audio.musicVolume * 100)}"></label>
-          <label class="fov-ctl" for="fov-range">Field of view <input type="range" id="fov-range" min="35" max="75" step="1" value="${Math.round(g.camera.fov)}"><b id="fov-v">${Math.round(g.camera.fov)}°</b></label>
+          <label class="fov-ctl" for="fov-range">Field of view <input type="range" id="fov-range" min="${FOV_MIN}" max="${FOV_MAX}" step="1" value="${Math.round(g.camera.fov)}"><b id="fov-v">${Math.round(g.camera.fov)}°</b></label>
         </div>
         <small>Resolution and shadows change immediately. Reload applies scenery, traffic, and post-processing budgets.</small>
         <div class="help">${IS_TOUCH ? `

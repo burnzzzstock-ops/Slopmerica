@@ -1,7 +1,7 @@
 // Game: owns the scene and every subsystem, and runs the frame loop.
 import { milestoneAt, nameUnlock, unlockPop } from './sim/milestones';
 import * as THREE from 'three';
-import { defaultQuality, GLOW, HALF, IS_TOUCH, MIN_RENDER_SCALE, nightLift, presetPixelRatio, QUALITY, Quality, saveQuality, storedQuality, WATER } from './config';
+import { defaultQuality, FOV_MAX, FOV_MIN, GLOW, HALF, IS_TOUCH, MIN_RENDER_SCALE, nightLift, presetPixelRatio, QUALITY, Quality, saveQuality, storedQuality, WATER } from './config';
 import type { FeedContext, FeedEventKind, LandmarkId } from './contracts';
 import { generateMap, MapData, MapId } from './world/maps';
 import { Terrain } from './world/terrain';
@@ -241,7 +241,7 @@ export class Game {
     container.appendChild(this.renderer.domElement);
     this.camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 1, 50000);
     // Settings → Field of view (playtest: "hard to see what you're doing")
-    try { const f = Number(localStorage.getItem('slopmerica.fov')); if (f >= 35 && f <= 75) this.camera.fov = f; } catch { /* default */ }
+    try { const f = Number(localStorage.getItem('slopmerica.fov')); if (f >= FOV_MIN && f <= FOV_MAX) this.camera.fov = f; } catch { /* default */ }
     this.camera.updateProjectionMatrix();
 
     // world

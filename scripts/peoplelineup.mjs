@@ -18,8 +18,9 @@ const on = (n) => want.size === 0 || want.has(n);
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 const errs = [];
-page.on('pageerror', (e) => errs.push(e.message));
-page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
+const noise = (t) => /WebSocket|\[vite\]|Vite server|status of 404/.test(t); // a frozen snapshot has no HMR socket, and the page has no favicon
+page.on('pageerror', (e) => { if (!noise(e.message)) errs.push(e.message); });
+page.on('console', (m) => { if (m.type() === 'error' && !noise(m.text())) errs.push(m.text()); });
 await page.goto(`${base}/dev/people.html`, { waitUntil: 'load', timeout: 180000 });
 await page.waitForFunction(() => window.__people?.ready, null, { timeout: 180000 });
 const roster = await page.evaluate(() => window.__people.archetypes);

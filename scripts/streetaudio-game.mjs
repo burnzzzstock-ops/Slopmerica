@@ -26,17 +26,17 @@ const r = await page.evaluate(async () => {
   // aim at moving cars
   const moving = tr.cars.filter((c) => c.v > 6 && !c.junction && c.crashed === 0);
   const target = moving[0] || tr.cars[0];
-  window.__dbg.view(target.x, target.z, 60, target.ryaw + 0.9, 0.5);
-  g.rts.target.set(target.x, target.y, target.z); g.rts.distance = 60;
+  const look = (dist) => g.rts.setView(target.x, target.z, dist, target.ryaw + 0.9, 0.5, true); // instant, no render
+  look(60);
   const frames = async (n, dt = 1 / 20, step = true) => { for (let i = 0; i < n; i++) { if (step) tr.update(dt, 1, 8, g.sim.population, g.sim.jobsFilled, g.rts.target); g.frame(dt, false); await sleep(30); } };
   await frames(40);
   out.randomTrafficOff = au.amb.randomTraffic === false;
   out.near = { cars: tr.cars.length, voices: st().stats.voices, cap: st().stats.cap, dbg: st().debug().slice(0, 4).map((d) => ({ kind: d.kind, dist: +d.dist.toFixed(1), gain: +d.gain.toFixed(4), pan: +d.pan.toFixed(2), ratio: +d.ratio.toFixed(3) })) };
   // zoom out to the map: the cars fade out and every voice is put to sleep
-  g.rts.distance = 1800;
+  look(1800);
   await frames(40, 1 / 20, false);
   out.zoomedOut = { voices: st().stats.voices, awake: st().awake };
-  g.rts.distance = 60;
+  look(60);
   await frames(30, 1 / 20, false);
   out.back = { voices: st().stats.voices, awake: st().awake };
   // pause

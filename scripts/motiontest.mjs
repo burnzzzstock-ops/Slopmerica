@@ -38,7 +38,10 @@ const r = await page.evaluate(() => {
   const oneWays = new Set([...g.net.segs.values()].filter((s) => s.type === 'oneWay1' || s.type === 'oneWay2').map((s) => s.id));
   g.sim.speed = 1;
   g.rts.setView(cx, cz, 260, 0.6, 0.8, true);
-  g.peds.population = 3000;
+  // walkers in proportion to a big town (the game sets peds.population from this empty test town every frame,
+  // which left a budget of ~3 walkers of random kinds, and some runs saw none walk)
+  const pedsUpdate = g.peds.update.bind(g.peds);
+  g.peds.update = (...args) => { g.peds.population = 3000; return pedsUpdate(...args); };
   const prev = new Map(), laneOf = new Map(), pedPrev = new Map();
   let activeFrames = 0, maxJump = 0, jumpAt = null, samples = 0, laneChanges = 0, wrongWay = 0, blinks = 0, brakedBeforeTurn = 0, turnsSeen = 0, pedSteps = 0, pedTeleports = 0, cadence = [], trips = 0;
   const turnSpeed = new Map();

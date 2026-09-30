@@ -6,7 +6,10 @@
 // not inside a junction (cars on one turning curve don't follow each other, and
 // all stop at its end when the exit is full). Also: no car waits more than 60 s
 // away from a red light, and no heading snaps. Crashes, arrivals and the share
-// of cars moving are printed so a fix that only stops cars shows up.
+// of cars moving are printed so a fix that only stops cars shows up. And at
+// every set of lights, only roads straight across from each other share a green
+// (at a T, the stem shared one with half the through road: a left turn out of
+// it crossed the through traffic).
 // usage: node scripts/carsolid.mjs   (BASE_URL, default http://127.0.0.1:5173;
 // SECONDS of traffic to measure, default 120). Exits 1 on failure.
 import { chromium } from 'playwright-core';
@@ -63,8 +66,24 @@ const r = await page.evaluate((SECONDS) => {
       if (ex.length < 4) ex.push(`${where(a)}  ×  ${where(b)}`);
     }
   }
+  // roads sharing a green at each set of lights: at least 135 degrees apart
+  const badGreens = [];
+  for (const [nodeId, sig] of tr.signals) {
+    const node = net.nodes.get(nodeId), dirOf = (id) => {
+      const s = net.segs.get(id), P = s.samp.pts, q = s.a === nodeId ? P[Math.min(3, P.length - 1)] : P[Math.max(0, P.length - 4)];
+      return Math.atan2(q.z - node.z, q.x - node.x);
+    };
+    const arms = [...sig.phaseOf];
+    for (let i = 0; i < arms.length; i++) for (let j = i + 1; j < arms.length; j++) {
+      if (arms[i][1] !== arms[j][1]) continue;
+      let d = Math.abs(dirOf(arms[i][0]) - dirOf(arms[j][0])) % (2 * Math.PI);
+      if (d > Math.PI) d = 2 * Math.PI - d;
+      if (d < (Math.PI * 3) / 4) badGreens.push(`node ${nodeId}: roads ${arms[i][0]} and ${arms[j][0]}, ${Math.round((d * 180) / Math.PI)} degrees apart`);
+    }
+  }
   const cc = tr.crashCause;
   return {
+    signals: tr.signals.size, badGreens,
     pop: g.sim.population, cars: tr.cars.length, samples,
     lanePerSample: laneOverlaps / samples, boxPerSample: boxOverlaps / samples, laneEx, boxEx,
     longest: { s: +longest.s.toFixed(1), car: longest.car }, snaps, movingShare: moving / Math.max(1, total),
@@ -77,6 +96,7 @@ check(`no two cars inside each other in a junction (${r.boxPerSample.toFixed(2)}
 check(`no car waits over 60 s away from a red light (longest ${r.longest.s} s)`, r.longest.s <= 60, r.longest);
 check(`no heading snaps over 0.35 rad in a frame (${r.snaps})`, r.snaps === 0);
 check(`traffic still flows (${(r.movingShare * 100).toFixed(0)}% of cars moving, target at least 50%)`, r.movingShare >= 0.5);
+check(`at lights, only roads straight across from each other share a green (${r.badGreens.length} pairs that cross, ${r.signals} sets of lights)`, r.badGreens.length === 0, r.badGreens);
 check('no page errors', errs.length === 0, errs.slice(0, 3));
 await browser.close();
 process.exit(bad ? 1 : 0);

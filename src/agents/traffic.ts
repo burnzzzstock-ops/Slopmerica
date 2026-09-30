@@ -337,10 +337,26 @@ export class Traffic {
         const p = atA ? s.samp.pts[Math.min(3, s.samp.pts.length - 1)] : s.samp.pts[Math.max(0, s.samp.pts.length - 4)];
         return { id: s.id, a: Math.atan2(p.z - n.z, p.x - n.x) };
       });
-      ang.sort((x, y) => x.a - y.a);
+      // Roads straight across from each other (at least 135 degrees apart) share a
+      // green, the most nearly opposite pair first; every other road gets its own.
+      // (Alternating round the junction put a T's stem in the same green as half
+      // its through road, so a left turn out of it crossed the through traffic.)
+      const pairs: { i: number; j: number; d: number }[] = [];
+      for (let i = 0; i < ang.length; i++) for (let j = i + 1; j < ang.length; j++) {
+        let d = Math.abs(ang[i].a - ang[j].a) % (Math.PI * 2);
+        if (d > Math.PI) d = Math.PI * 2 - d;
+        if (d >= (Math.PI * 3) / 4) pairs.push({ i, j, d });
+      }
+      pairs.sort((x, y) => y.d - x.d);
       const phaseOf = new Map<number, number>();
-      ang.forEach((e, i) => phaseOf.set(e.id, i % 2));
-      this.signals.set(n.id, { phaseOf, phases: 2, t: old.get(n.id)?.t ?? Math.random() * 20 });
+      let phases = 0;
+      for (const { i, j } of pairs) {
+        if (phaseOf.has(ang[i].id) || phaseOf.has(ang[j].id)) continue;
+        phaseOf.set(ang[i].id, phases);
+        phaseOf.set(ang[j].id, phases++);
+      }
+      for (const e of ang) if (!phaseOf.has(e.id)) phaseOf.set(e.id, phases++);
+      this.signals.set(n.id, { phaseOf, phases, t: old.get(n.id)?.t ?? Math.random() * 20 });
     }
   }
 

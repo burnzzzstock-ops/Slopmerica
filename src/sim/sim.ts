@@ -13,6 +13,8 @@ import { HALF, WATER } from '../config';
 import { MILESTONES, unlockNames } from './milestones';
 
 export const DAY_SECONDS = 2.5;
+/** the vacancy reason of a shop with bare shelves (freight.ts): it's still a shop, short of goods */
+export const NO_GOODS = 'No goods to sell';
 export const SPEEDS = [0, 1, 2, 4];
 
 export type Mode = 'sandbox' | 'ponzi' | 'hippie' | 'speedrun';
@@ -447,6 +449,8 @@ export class Sim {
 
   private dailyTick(d: number) {
     const cap = { comLow: 0, comHigh: 0, industry: 0, office: 0 };
+    // shops standing with bare shelves: no jobs today, but still shops
+    let dryCap = 0, dryShops = 0;
     // Households arrive at a steady, city-wide rate (a trickle that grows with
     // the town), not by instantly filling every new building.
     const open: Bld[] = [];
@@ -456,8 +460,10 @@ export class Sim {
       if (bld.zone === 'resLow' || bld.zone === 'resHigh') {
         if (leaving && bld.occ > 0 && this.rng.chance(0.2)) { bld.occ--; this.lose(1, leaving); }
         else if (bld.occ < bld.cap && !this.vacancyBlock(bld)) open.push(bld);
-      } else if (isZoned(bld) && !this.vacancyBlock(bld)) {
-        cap[bld.zone as keyof typeof cap] += bld.cap;
+      } else if (isZoned(bld)) {
+        const why = this.vacancyBlock(bld);
+        if (!why) cap[bld.zone as keyof typeof cap] += bld.cap;
+        else if (why === NO_GOODS && (bld.zone === 'comLow' || bld.zone === 'comHigh')) { dryCap += bld.cap; dryShops++; }
       }
     }
     if (this.demand.res > -30 && open.length) {
@@ -497,7 +503,10 @@ export class Sim {
     const taxHit = (this.taxRate - 0.09) * 450;
     const gap = jobs * 0.95 - W;
     const jobsTerm = (70 * gap) / Math.max(60, W);
-    const comCap = cap.comLow + cap.comHigh;
+    // (shops out of goods count as shops: playtest 6, Florida sat at 1,214 people for
+    // 1,000 days with 142 of 143 shops bare, the bars asking for more shops and
+    // saying there were enough factories)
+    const comCap = cap.comLow + cap.comHigh + dryCap;
     const retailNeed = P * 0.2 + 8;
     const retailTerm = (100 * (retailNeed - comCap)) / Math.max(25, retailNeed);
     const goodsNeed = comCap * 0.8 + 18;
@@ -513,7 +522,7 @@ export class Sim {
     part('res', gap >= 0 ? `${Math.round(gap)} more jobs than workers` : `${Math.round(-gap)} more workers than jobs`, jobsTerm);
     if (boom) part('res', 'small-town boom', boom);
     part('com', comCap < retailNeed ? `shoppers want ${Math.round(retailNeed - comCap)} more shop jobs` : `${Math.round(comCap - retailNeed)} too many shop jobs for ${P} people`, retailTerm);
-    part('ind', cap.industry < goodsNeed ? `shops need goods: ${Math.round(goodsNeed - cap.industry)} factory jobs short` : 'enough factories for the shops', goodsTerm);
+    part('ind', cap.industry < goodsNeed ? `shops need goods: ${Math.round(goodsNeed - cap.industry)} factory jobs short${dryShops ? ` (${dryShops} shop${dryShops === 1 ? ' has' : 's have'} nothing to sell)` : ''}` : 'enough factories for the shops', goodsTerm);
     if (this.unemployment > 0.05) part('ind', `${Math.round(this.unemployment * 100)}% unemployed want work`, joblessTerm);
     part('off', cap.office < officeNeed ? `${Math.round(officeNeed - cap.office)} office jobs wanted` : 'offices saturated', officeTerm);
     if (Math.abs(taxHit) > 2) for (const k of ['res', 'com', 'ind', 'off'] as const) part(k, `taxes at ${Math.round(this.taxRate * 100)}%`, -taxHit);

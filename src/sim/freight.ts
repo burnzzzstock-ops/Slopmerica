@@ -4,6 +4,7 @@ import type { Game, Selection } from '../game';
 import type { Car } from '../agents/traffic';
 import type { Bld } from './buildings';
 import { POLICY_MOBILITY } from './policyEffects';
+import { NO_GOODS } from './sim';
 import { registerInspector, registerSystem, registerView } from '../ext/registry';
 
 type FreightKind = 'local' | 'import' | 'export';
@@ -277,7 +278,7 @@ registerSystem({
     routeMaterial = new THREE.LineDashedMaterial({ color: 0xffb62e, dashSize: 10, gapSize: 7, transparent: true, opacity: 0.95, depthWrite: false });
     routeLines = new THREE.LineSegments(new THREE.BufferGeometry(), routeMaterial); routeLines.visible = false; routeLines.renderOrder = 7; routeLines.frustumCulled = false; g.scene.add(routeLines);
     g.traffic.freightTrip = () => false;
-    g.sim.hooks.vacancy.push((b) => { const s = shops.get(b.id); return s && s.stock < 0.05 && s.dryDays >= DRY_DAYS ? 'No goods to sell' : null; });
+    g.sim.hooks.vacancy.push((b) => { const s = shops.get(b.id); return s && s.stock < 0.05 && s.dryDays >= DRY_DAYS ? NO_GOODS : null; });
     g.sim.hooks.demand.push((d, why) => { const share = importShare(); if (share > 0) { d.ind += Math.min(25, share * 30); why.ind.push(`Shops import ${Math.round(share * 100)}% of goods`); } });
     g.sim.hooks.landValue.push((b) => b.zone === 'industry' ? 0 : -Math.min(5, (truckRoutes.get(b.seg) ?? 0) * 0.35));
     // the forecast repeats last week's freight; the bill is this week's

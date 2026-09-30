@@ -191,7 +191,7 @@ const STILL_FRAMES = 12;
  * at a time, so it can take longer), on top of the town's other trips, at most
  * EVENT_MAX cars.
  */
-const VISIT_PULL: Partial<Record<LandmarkId, number>> = { slopCannon: 0.025, slop69Field: 0.015, pigCabanaResort: 0.035, neuralFlyDatacenter: 0.01, propaneParadise: 0.02, fillErUpMegaStation: 0.035, megachurch: 0.015 };
+export const VISIT_PULL: Partial<Record<LandmarkId, number>> = { slopCannon: 0.025, slop69Field: 0.015, pigCabanaResort: 0.035, neuralFlyDatacenter: 0.01, propaneParadise: 0.02, fillErUpMegaStation: 0.035, megachurch: 0.015 };
 const VISIT_MAX = 0.12;
 const EVENT_ARRIVE = 1.5;
 const EVENT_OUT = 3;

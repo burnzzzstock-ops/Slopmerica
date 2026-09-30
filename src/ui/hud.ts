@@ -26,6 +26,7 @@ import { ARCHETYPES } from '../agents/people';
 import { saveGame } from '../sim/save';
 import { VEHICLE_SPECS } from '../agents/vehicles';
 import { LANDMARK_EVENTS } from '../agents/parking';
+import { VISIT_PULL } from '../agents/traffic';
 
 
 /** 5 pm, 8:30 am */
@@ -34,7 +35,8 @@ const clock12 = (h: number) => `${((Math.floor(h) + 11) % 12) + 1}${h % 1 ? `:${
 function landmarkEffects(id: LandmarkId | undefined): string {
   const e = id && LANDMARK_EVENTS[id];
   const when = e ? ` ${e.label}: ${e.when}, ${clock12(e.from)} to ${clock12(e.to)}; the town drives in and the lot fills.` : '';
-  return `Draws visitors by day and lifts land value around it (more within 140 m, a little out to 300 m).${when}`;
+  const lifts = 'lifts land value around it (more within 140 m, a little out to 300 m)';
+  return `${id && VISIT_PULL[id] ? `Draws visitors by day and ${lifts}` : `${lifts[0].toUpperCase()}${lifts.slice(1)}`}.${when}`;
 }
 
 const esc = (s: string) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);

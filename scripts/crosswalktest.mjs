@@ -58,16 +58,18 @@ const r = await page.evaluate((center) => {
     }
     if (f % 5) continue;
     samples++;
-    const cars = tr.cars.filter((c) => c.crashed === 0 && c.dep <= 0 && c.arr < 0);
+    const cars = tr.cars.filter((c) => c.crashed === 0 && c.dep <= 0 && c.arr < 0 && !c.thru);
     for (const p of P.peds) {
       if (p.kind !== 'walk') continue;
       walkers++;
       for (const c of cars) {
         const dx = p.x - c.x, dz = p.z - c.z;
-        if (dx * dx + dz * dz > 100) continue;
-        const hx = Math.sin(c.ryaw), hz = Math.cos(c.ryaw);
-        const along = Math.abs(dx * hx + dz * hz), across = Math.abs(dx * hz - dz * hx);
-        if (along < c.len / 2 + 0.2 && across < 1.2) { inside++; if (examples.length < 4) examples.push({ walker: p.label, crossing: !!p.crossing, car: c.kind, v: +c.v.toFixed(1), inBox: !!c.junction }); }
+        if (dx * dx + dz * dz > (c.len / 2 + 3) ** 2) continue;
+        // (along the car's path from its front to its rear, where the traffic has it:
+        // a long truck drawn as one rigid body cuts inside a corner it turns)
+        let hit = false;
+        for (let b = 0; b <= c.len && !hit; b += Math.min(1, c.len / 4)) { const q = tr.pathPoint(c, b); hit = (p.x - q.x) ** 2 + (p.z - q.z) ** 2 < 1.2 * 1.2; }
+        if (hit) { inside++; if (examples.length < 4) examples.push({ walker: p.label, crossing: !!p.crossing, car: c.kind, v: +c.v.toFixed(1), inBox: !!c.junction }); }
       }
     }
   }

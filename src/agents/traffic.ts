@@ -1473,7 +1473,12 @@ export class Traffic {
       const sg = this.net.segs.get(sid);
       if (!sg) continue;
       const dir: 1 | -1 = sg.b === nodeId ? 1 : -1; // travelling toward this node
-      const exitS = this.exitOf(sg, dir);
+      const exitS = this.exitOf(sg, dir), entryS = this.entryOf(sg, -dir as 1 | -1);
+      // a car standing on the crosswalk (queued up to the box, or just out of it), whatever the light
+      for (let k = 0; k < ROAD_TYPES[sg.type].lanesPerDir; k++) {
+        for (const o of this.buckets.get(sid * 16 + (dir > 0 ? 0 : 8) + k) ?? []) if (o.s > exitS - 2 && o.s - o.len < exitS + 5) return false;
+        for (const o of this.buckets.get(sid * 16 + (dir > 0 ? 8 : 0) + k) ?? []) if (o.s - o.len < entryS + 4 && o.s > entryS - 5) return false;
+      }
       if (!sig && !impatient) for (let k = 0; k < ROAD_TYPES[sg.type].lanesPerDir; k++) {
         for (const o of this.buckets.get(sid * 16 + (dir > 0 ? 0 : 8) + k) ?? []) {
           if (o.crashed === 0 && o.v > 1.5 && exitS - o.s < 25 && exitS - o.s > -2) return false;

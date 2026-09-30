@@ -20,6 +20,9 @@ const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
 const { page, errs } = await openBlock(browser, { base, quality: 'low' });
 const r = await page.evaluate((SECONDS) => {
   const g = window.__game, tr = g.traffic, net = g.net;
+  // cars only: this steps traffic without the people, whose last frame would stand
+  // frozen on the crosswalks (people and cars together: crosswalktest.mjs)
+  tr.crosswalkWalkers = undefined;
   const step = () => tr.update(1 / 20, 1, 7.5, g.sim.population, g.sim.jobsFilled, g.rts.target);
   for (let i = 0; i < 1200; i++) step(); // a minute for the morning traffic to build
   const crashes0 = tr.crashes, cause0 = { ...tr.crashCause };

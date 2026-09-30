@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import type { PersonAction } from '../contracts';
 import { clamp, closestOnSampled, lerp, locate, norm, sub, type V2 } from '../core/math';
 import type { RoadNetwork, RSeg } from '../roads/network';
-import { ROAD_TYPES } from '../roads/roadTypes';
+import { carriageHalf, ROAD_TYPES } from '../roads/roadTypes';
 import { WALK_TOP } from '../roads/roadSection'; // (display height only: the raised sidewalk)
 import { isZoned, type Bld, type Buildings } from '../sim/buildings';
 import type { Terrain } from '../world/terrain';
@@ -46,7 +46,22 @@ export interface Ped {
   lat?: number;
   /** which way to face once they've walked to their spot */
   face?: number;
+  /** crossing a junction arm on foot (cars on those arms stop for them) */
+  crossing?: { node: number; segs: number[] };
+  /** the road it waited at the kerb to cross to */
+  nextSeg?: number;
+  /** seconds spent waiting at the kerb for traffic before crossing */
+  kerbWait?: number;
+  /** the rest of a walk over a junction: to the crosswalk, over it (`cross`), and on to the next sidewalk */
+  legs?: { x: number; z: number; cross?: { node: number; segs: number[] } }[];
 }
+
+/** at a junction with no lights, a walker gives up waiting for a gap after this long and steps out anyway (cars stop for them) */
+const KERB_PATIENCE = 20;
+/** people reaching the kerb this soon after others stepped out cross with them */
+const CROSS_JOIN = 3;
+/** after a crossing clears, the cars waiting for it get this long before the next person steps out */
+const CROSS_TURN = 4;
 
 /** Leg cycles per metre: a stride (two steps) is about 1.4 m walking, 2.2 m running. */
 const STRIDE = { walk: 1.42, run: 2.2 };
@@ -61,6 +76,36 @@ const angEase = (a: number, b: number, t: number) => {
 const hippies = () => ARCHETYPES.map((a, i) => (a.hippie ? i : -1)).filter((i) => i >= 0);
 const normies = () => ARCHETYPES.map((a, i) => (!a.hippie ? i : -1)).filter((i) => i >= 0);
 const merchHeads = () => ARCHETYPES.map((a, i) => (a.merch ? i : -1)).filter((i) => i >= 0);
+
+/** Which side of a road a point is on, relative to the road's own direction (the sidewalk `side`). */
+function sideOf(seg: RSeg, x: number, z: number): 1 | -1 {
+  const c = closestOnSampled({ x, z }, seg.samp);
+  const { i } = locate(seg.samp, clamp(c.s, 0, seg.length));
+  const t = norm(sub(seg.samp.pts[i + 1], seg.samp.pts[i]));
+  return (x - c.pt.x) * -t.z + (z - c.pt.z) * t.x >= 0 ? 1 : -1;
+}
+
+
+/** Distance from point to segment a-b. */
+function ptSeg(px: number, pz: number, ax: number, az: number, bx: number, bz: number): number {
+  const dx = bx - ax, dz = bz - az, L = dx * dx + dz * dz;
+  const t = L > 1e-9 ? clamp(((px - ax) * dx + (pz - az) * dz) / L, 0, 1) : 0;
+  return Math.hypot(px - (ax + dx * t), pz - (az + dz * t));
+}
+/** Closest distance between segments p1-p2 and p3-p4 (0 when they cross). */
+function segDist(x1: number, z1: number, x2: number, z2: number, x3: number, z3: number, x4: number, z4: number): number {
+  if (segmentsCross(x1, z1, x2, z2, x3, z3, x4, z4)) return 0;
+  return Math.min(ptSeg(x1, z1, x3, z3, x4, z4), ptSeg(x2, z2, x3, z3, x4, z4), ptSeg(x3, z3, x1, z1, x2, z2), ptSeg(x4, z4, x1, z1, x2, z2));
+}
+
+/** Do segments p1-p2 and p3-p4 cross (strictly)? */
+function segmentsCross(x1: number, z1: number, x2: number, z2: number, x3: number, z3: number, x4: number, z4: number): boolean {
+  const d = (x2 - x1) * (z4 - z3) - (z2 - z1) * (x4 - x3);
+  if (Math.abs(d) < 1e-9) return false;
+  const u = ((x3 - x1) * (z4 - z3) - (z3 - z1) * (x4 - x3)) / d;
+  const v = ((x3 - x1) * (z2 - z1) - (z3 - z1) * (x2 - x1)) / d;
+  return u > 0 && u < 1 && v > 0 && v < 1;
+}
 
 /** seconds between people leaving the same building (plus 0-4 s by building) */
 const DOOR_GAP = 6;
@@ -82,6 +127,94 @@ export class Pedestrians {
   // codex:policies end
   /** scales the crowd with the city: nobody walks in a town of 50 */
   population = 0;
+  /**
+   * game wiring: may someone start over these junction arms now, taking `secs`
+   * to cross? (a walk phase at lights; no car close; `impatient`: they've waited
+   * long enough at a junction without lights to step out anyway)
+   */
+  canCross?: (node: number, segs: number[], secs: number, impatient: boolean) => boolean;
+  /** people on each crosswalk right now, by `node:seg`: where they are and which way they're walking */
+  private onCrosswalk = new Map<string, { x: number; z: number; dx: number; dz: number }[]>();
+  /** when each crosswalk's current crossing started, and when the last one cleared (walking clock) */
+  private cwSince = new Map<string, number>();
+  private cwClear = new Map<string, number>();
+  /** walking time (seconds at the pace people walk, which follows the game speed up to 3x) */
+  private walkClock = 0;
+  /** Is someone walking over this arm of this junction? */
+  crosswalkBusy(node: number, seg: number): boolean {
+    return (this.onCrosswalk.get(`${node}:${seg}`)?.length ?? 0) > 0;
+  }
+  /** The people on this arm's crosswalk (cars wait while one is on or heading into their lanes). */
+  crosswalkWalkers(node: number, seg: number) {
+    return this.onCrosswalk.get(`${node}:${seg}`);
+  }
+  /** where each road's sidewalks end, by `seg:side` (with the junction layout it was worked out for) */
+  private kerbCache = new Map<string, { key: string; ab: [number, number] }>();
+  /**
+   * Where a road's sidewalk on this side ends at each end: the kerb at the
+   * junction box's edge, where the crosswalk is (cars stop 3 m back from it;
+   * turning cars are still in their lanes there). At a sharp corner the box
+   * edge is still on the other road, or where a turning truck swings, so the
+   * sidewalk stops short of that road. A road with no box at that end runs on
+   * to the node.
+   */
+  private kerbs(seg: RSeg, side: 1 | -1): [number, number] {
+    const nA = this.net.nodes.get(seg.a), nB = this.net.nodes.get(seg.b);
+    const key = `${seg.length}|${nA?.segs.join(',')}|${nB?.segs.join(',')}`;
+    const hit = this.kerbCache.get(`${seg.id}:${side}`);
+    if (hit && hit.key === key) return hit.ab;
+    const T = ROAD_TYPES[seg.type], off = (T.sidewalk > 0 ? T.width / 2 - T.sidewalk / 2 : T.width / 2 + 1.3) * side;
+    const clearOf = (node: typeof nA, at: number) => {
+      const { i, f } = locate(seg.samp, clamp(at, 0, seg.length));
+      const a = seg.samp.pts[i], b = seg.samp.pts[i + 1], tan = norm(sub(b, a));
+      const pt = { x: lerp(a.x, b.x, f) - tan.z * off, z: lerp(a.z, b.z, f) + tan.x * off };
+      for (const id of node?.segs ?? []) {
+        const o = id !== seg.id && this.net.segs.get(id);
+        // (clear of its lanes by 2.5 m: a long truck turning in cuts the corner)
+        if (o && closestOnSampled(pt, o.samp).d < carriageHalf(ROAD_TYPES[o.type]) + 2.5) return false;
+      }
+      return true;
+    };
+    const tA = seg.trimA ?? 0, tB = seg.trimB ?? 0, half = seg.length / 2;
+    let a = tA > 0 ? tA : 0, b = seg.length - (tB > 0 ? tB : 0);
+    while (a < Math.min(half - 1, tA + 20) && !clearOf(nA, a)) a += 0.5;
+    while (b > Math.max(half + 1, seg.length - tB - 20) && !clearOf(nB, b)) b -= 0.5;
+    const ab: [number, number] = a < b - 1 ? [a, b] : [half - 0.5, half + 0.5];
+    this.kerbCache.set(`${seg.id}:${side}`, { key, ab });
+    return ab;
+  }
+
+  /** People cross together, and between groups the waiting cars get a turn. */
+  private crossingTurn(nodeId: number, arms: number[]): boolean {
+    for (const sid of arms) {
+      const k = `${nodeId}:${sid}`, since = this.cwSince.get(k);
+      if (since !== undefined ? this.walkClock - since > CROSS_JOIN : this.walkClock - (this.cwClear.get(k) ?? -1e9) < CROSS_TURN) return false;
+    }
+    return true;
+  }
+
+  /**
+   * The junction arms a walk from (fx, fz) to (tx, tz) past this node crosses:
+   * the ones whose centreline, from the node out past the box, the walk cuts.
+   */
+  private armsCrossed(nodeId: number, fx: number, fz: number, tx: number, tz: number): number[] {
+    const node = this.net.nodes.get(nodeId);
+    if (!node) return [];
+    const out: number[] = [];
+    for (const id of node.segs) {
+      const sg = this.net.segs.get(id);
+      if (!sg || ROAD_TYPES[sg.type].width < 4) continue;
+      const atA = sg.a === nodeId, P = sg.samp.pts;
+      const q = atA ? P[Math.min(P.length - 1, 3)] : P[Math.max(0, P.length - 4)];
+      const dx = q.x - node.x, dz = q.z - node.z, dl = Math.hypot(dx, dz) || 1;
+      const reach = Math.min(sg.length * 0.5, (atA ? sg.trimA : sg.trimB) + 4);
+      const ex = node.x + (dx / dl) * reach, ez = node.z + (dz / dl) * reach;
+      // over the roadway: the walk cuts the arm's centreline, or passes within its
+      // carriageway of it (a crossing that starts or ends on the road's own kerb)
+      if (segmentsCross(fx, fz, tx, tz, node.x, node.z, ex, ez) || segDist(fx, fz, tx, tz, node.x, node.z, ex, ez) < carriageHalf(ROAD_TYPES[sg.type]) - 0.3) out.push(id);
+    }
+    return out;
+  }
 
   constructor(scene: THREE.Scene, private net: RoadNetwork, private b: Buildings, private terrain: Terrain, private communes: Communes, private max: number) {
     this.renderer = new PeopleRenderer(scene, max);
@@ -111,6 +244,20 @@ export class Pedestrians {
 
   update(dtReal: number, simSpeed: number, cam: THREE.Vector3, camDist: number, time: number) {
     this.clock += dtReal;
+    this.walkClock += dtReal * Math.max(0.3, Math.min(simSpeed, 3));
+    this.onCrosswalk.clear();
+    for (const p of this.peds) {
+      if (!p.crossing || !p.go) continue;
+      const g = p.go, gl = Math.hypot(g.tx - g.fx, g.tz - g.fz) || 1;
+      for (const sid of p.crossing.segs) {
+        const k = `${p.crossing.node}:${sid}`;
+        let list = this.onCrosswalk.get(k);
+        if (!list) this.onCrosswalk.set(k, (list = []));
+        list.push({ x: p.x, z: p.z, dx: (g.tx - g.fx) / gl, dz: (g.tz - g.fz) / gl });
+      }
+    }
+    for (const k of this.onCrosswalk.keys()) if (!this.cwSince.has(k)) this.cwSince.set(k, this.walkClock);
+    for (const k of [...this.cwSince.keys()]) if (!this.onCrosswalk.has(k)) { this.cwSince.delete(k); this.cwClear.set(k, this.walkClock); }
     const near = camDist < 900;
     const R = Math.min(520, camDist * 0.9 + 120);
     // despawn far or expired
@@ -164,7 +311,19 @@ export class Pedestrians {
         p.ryaw = p.ryaw === undefined ? p.yaw : angEase(p.ryaw, p.yaw, 1 - Math.exp(-dtReal * 9));
         if (u >= 1) {
           delete p.go;
+          delete p.crossing;
           if (g.remove) { p.gone = true; continue; }
+          // on over the junction: the next leg of the walk
+          const leg = p.legs?.shift();
+          if (leg) {
+            if (!p.legs!.length) delete p.legs;
+            const d = Math.hypot(leg.x - p.x, leg.z - p.z);
+            this.goTo(p, p.x, p.z, leg.x, leg.z, false);
+            p.go!.T = Math.max(0.4, d / Math.max(0.8, p.speed));
+            if (leg.cross) p.crossing = leg.cross;
+            this.renderer.set(p.h, p.x, p.y, p.z, p.ryaw ?? p.yaw, 'walk', p.phase);
+            continue;
+          }
           // arrived: turn to face the street, the grill, each other
           if (p.face !== undefined && p.kind !== 'walk') p.yaw = p.face;
           if (p.kind === 'walk') this.placeOnSidewalk(p);
@@ -190,16 +349,51 @@ export class Pedestrians {
           this.renderer.set(p.h, p.x, p.y, p.z, p.yaw, p.action, p.phase);
           continue;
         }
-        if (p.s < 0 || p.s > seg.length) {
+        // (the sidewalk ends at the kerb where the junction box starts: walking on to
+        // the node took people into the middle of the box, among the turning cars)
+        const [kA, kB] = this.kerbs(seg, p.side);
+        if (p.s < kA || p.s > kB) {
           // hop to a connected segment at the node
-          const nodeId = p.s > seg.length ? seg.b : seg.a;
+          const nodeId = p.s > kB ? seg.b : seg.a;
           const node = this.net.nodes.get(nodeId);
-          const opts = node ? node.segs.filter((id) => id !== seg.id) : [];
+          // on foot, people cross one arm of a junction at a time, at the kerb: a road
+          // reached only by walking diagonally over the box (over two or more arms)
+          // isn't an option from this corner
+          // Over an arm, the walk goes to that arm's kerb on this side, straight over
+          // its crosswalk at the box's edge, and on to the next sidewalk (a straight
+          // line from kerb to kerb cut through the box, among the turning cars).
+          // Not over an arm whose kerbs sit well back from the box (a sharp corner:
+          // the cars there don't stop short of them).
+          const hand0 = p.side * p.dir;
+          const route = (nid: number) => {
+            const ns = this.net.segs.get(nid);
+            if (!ns) return null;
+            const dir = (ns.a === nodeId ? 1 : -1) as 1 | -1;
+            const [nA, nB] = this.kerbs(ns, (hand0 * dir) as 1 | -1);
+            const t = { ...p, seg: nid, dir, side: (hand0 * dir) as 1 | -1, s: dir > 0 ? nA + 0.5 : nB - 0.5 };
+            this.placeOnSidewalk(t as Ped);
+            const arms = this.armsCrossed(nodeId, p.x, p.z, t.x, t.z);
+            if (!arms.length) return { arms, legs: [] as NonNullable<Ped['legs']>, tx: t.x, tz: t.z };
+            if (arms.length > 1) return null;
+            const xs = this.net.segs.get(arms[0])!, atA = xs.a === nodeId, trim = Math.max(0, (atA ? xs.trimA : xs.trimB) ?? 0);
+            const q: V2[] = [];
+            for (const sd of [1, -1] as const) {
+              const [a, b] = this.kerbs(xs, sd);
+              if ((atA ? a : xs.length - b) > trim + 1.5) return null;
+              const k = { ...p, seg: xs.id, side: sd, dir: 1 as const, lat: 0, s: atA ? a : b };
+              this.placeOnSidewalk(k as Ped);
+              q.push({ x: k.x, z: k.z });
+            }
+            const [n1, n2] = Math.hypot(q[0].x - p.x, q[0].z - p.z) <= Math.hypot(q[1].x - p.x, q[1].z - p.z) ? q : [q[1], q[0]];
+            if (this.armsCrossed(nodeId, p.x, p.z, n1.x, n1.z).length || this.armsCrossed(nodeId, n2.x, n2.z, t.x, t.z).length) return null;
+            return { arms, legs: [{ x: n2.x, z: n2.z, cross: { node: nodeId, segs: arms } }, { x: t.x, z: t.z }], tx: n1.x, tz: n1.z };
+          };
+          const opts = (node ? node.segs.filter((id) => id !== seg.id) : []).filter((id) => route(id));
           if (!opts.length) {
             // dead end: turn round on the same sidewalk (stepping over to keep right)
             const fx = p.x, fz = p.z;
             p.dir = -p.dir as 1 | -1;
-            p.s = clamp(p.s, 0, seg.length);
+            p.s = clamp(p.s, kA, kB);
             this.placeOnSidewalk(p);
             const gd = Math.hypot(p.x - fx, p.z - fz);
             if (gd > 0.3) {
@@ -209,23 +403,47 @@ export class Pedestrians {
               continue;
             }
           } else {
-            const nid = opts[Math.floor(Math.random() * opts.length)];
+            const nid = p.nextSeg !== undefined && opts.includes(p.nextSeg) ? p.nextSeg : opts[Math.floor(Math.random() * opts.length)];
             const ns = this.net.segs.get(nid)!;
             // the side is relative to the road's direction: keep the walker on
             // their own hand (they used to pop across the street at corners)
             const hand = p.side * p.dir;
             const fx = p.x, fz = p.z;
+            const was = { seg: p.seg, dir: p.dir, side: p.side, s: p.s };
             p.seg = nid;
             p.dir = ns.a === nodeId ? 1 : -1;
             p.side = (hand * p.dir) as 1 | -1;
-            p.s = p.dir > 0 ? 0.5 : ns.length - 0.5;
+            const [nA, nB] = this.kerbs(ns, p.side);
+            p.s = p.dir > 0 ? nA + 0.5 : nB - 0.5;
+            // (worked out from where they stand, before they're moved onto the next road)
+            const rt = route(nid);
             this.placeOnSidewalk(p);
+            // over a crosswalk: wait at the kerb for the walk phase at lights, or for no
+            // car close (at a junction without lights, go anyway after a while: cars
+            // stop for people on it); cross in groups, and let waiting cars go between
+            const arms = rt?.arms ?? [];
+            const tx = rt ? rt.tx : p.x, tz = rt ? rt.tz : p.z;
+            const secs = (Math.hypot(tx - fx, tz - fz) + (rt?.legs.length ? Math.hypot(rt.legs[0].x - tx, rt.legs[0].z - tz) : 0)) / Math.max(0.8, p.speed);
+            if (arms.length && this.canCross && (!this.crossingTurn(nodeId, arms) || !this.canCross(nodeId, arms, secs, (p.kerbWait ?? 0) >= KERB_PATIENCE))) {
+              p.kerbWait = (p.kerbWait ?? 0) + dtReal * Math.max(0.3, Math.min(simSpeed, 3));
+              p.seg = was.seg; p.dir = was.dir as 1 | -1; p.side = was.side as 1 | -1; p.s = clamp(was.s, kA, kB);
+              p.nextSeg = nid;
+              p.x = fx; p.z = fz;
+              p.action = 'idle';
+              this.renderer.set(p.h, p.x, p.y, p.z, p.ryaw ?? p.yaw, 'idle', p.phase);
+              continue;
+            }
+            delete p.nextSeg;
+            p.kerbWait = 0;
+            p.action = 'walk';
             // round the corner (or over the crosswalk) on foot
-            const gd = Math.hypot(p.x - fx, p.z - fz);
-            if (gd > 0.3) {
-              this.goTo(p, fx, fz, p.x, p.z, false);
+            const gd = Math.hypot(tx - fx, tz - fz);
+            if (rt?.legs.length) p.legs = rt.legs.map((l) => ({ ...l }));
+            if (gd > 0.3 || p.legs) {
+              this.goTo(p, fx, fz, tx, tz, false);
               const go = (p as Ped).go as Ped['go'];
               if (go) go.T = Math.max(0.4, gd / Math.max(0.8, p.speed));
+              if (arms.length) p.crossing = { node: nodeId, segs: arms };
               continue;
             }
           }
@@ -259,17 +477,22 @@ export class Pedestrians {
   /** Time's up: walk somewhere believable and disappear there. false = remove now. */
   private leave(p: Ped): boolean {
     if (p.leaving) return true;
+    if (p.kind === 'walk' && (p.go || p.legs)) return true; // over the junction first (not straight from mid-road to a door)
     if (p.kind === 'walk') {
-      // step into the nearest building along this street
-      let best: Bld | null = null, bd = 60;
-      for (const b of this.b.near(p.x, p.z, 60)) {
+      // step into the nearest building along this street, on this side of it
+      // (a door across the road meant a straight walk over the lanes, through the traffic)
+      const seg = this.net.segs.get(p.seg);
+      // (and close: a straight walk to a door 50 m away cut across the road)
+      let best: Bld | null = null, bd = 14;
+      for (const b of this.b.near(p.x, p.z, 20)) {
         if (b.seg !== p.seg || b.state !== 'active' || !isZoned(b)) continue;
+        if (seg && sideOf(seg, b.x, b.z) !== p.side) continue;
         const d = Math.hypot(b.x - p.x, b.z - p.z);
         if (d < bd) { bd = d; best = b; }
       }
       if (!best) {
         p.retries = (p.retries ?? 0) + 1;
-        if (p.retries > 5) return false;
+        if (p.retries > 10) return false;
         p.life = 6; // keep strolling until a door comes up
         return true;
       }

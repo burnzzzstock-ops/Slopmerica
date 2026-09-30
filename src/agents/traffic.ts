@@ -7,7 +7,7 @@ import type { VehicleKind } from '../contracts';
 import { clamp, closestOnSampled, lerp, locate, norm, sub, V2 } from '../core/math';
 import { fx } from '../core/rng';
 import type { RNode, RoadNetwork, RSeg } from '../roads/network';
-import { laneOffset, ROAD_TYPES } from '../roads/roadTypes';
+import { carriageHalf, laneOffset, ROAD_TYPES } from '../roads/roadTypes';
 import type { Bld, Buildings } from '../sim/buildings';
 import { FIXED_PAINT, randomVehicleKind, VEHICLE_SPECS, VehicleRenderer } from './vehicles';
 import { ARCHETYPES } from './people';
@@ -24,6 +24,8 @@ interface Step {
 export interface Car {
   id: number;
   h: number;
+  /** the junction it last slowed for someone on foot at (counts each stop once) */
+  pedNode?: number;
   kind: VehicleKind;
   path: Step[];
   pi: number;
@@ -140,6 +142,8 @@ const ARR_T = 2.2;
 const KERB_T = DEP_T * 0.55;
 /** a queue lets a waiting driver in after this long (seconds at the kerb) */
 const COURTESY_T = 5;
+/** where cars stop short of a junction (m before the box): behind the crosswalk at the box's edge */
+const STOP_LINE = 3;
 /** cars that can wait in one lot to pull out before its building starts no more trips */
 const LOT_QUEUE_MAX = 3;
 /**
@@ -254,6 +258,13 @@ export class Traffic {
   // codex:policies end
   /** terrain height sampler (set by the game) for cars in lots */
   groundAt?: (x: number, z: number) => number;
+  /** game wiring: the people walking over this arm of this junction: where they are and which way they're going */
+  crosswalkWalkers?: (node: number, seg: number) => { x: number; z: number; dx: number; dz: number }[] | undefined;
+  /** crosswalk stops (a car slowing for someone on foot at a junction, once each), for tests */
+  pedYields = 0;
+  private yieldedTo(c: Car, node: number) {
+    if (c.v > 1 && c.pedNode !== node) { c.pedNode = node; this.pedYields++; }
+  }
   private pop = 0;
   private jobsNow = 0;
   totalTrips = 0;
@@ -781,11 +792,19 @@ export class Traffic {
             if (g < gap) { gap = g; dv = c.v - bt.v; }
           }
         }
+        // someone on the crosswalk over my lanes, or over the lanes I'm turning into: stop at the line
+        if (!last && this.crosswalkWalkers && exitS - c.s < 20) {
+          const nodeId = st.dir > 0 ? seg.b : seg.a, nx = c.path[c.pi + 1], ns = nx && this.net.segs.get(nx.seg);
+          if (this.walkerOnLanes(nodeId, seg, st.dir, true) || (ns && this.walkerOnLanes(nodeId, ns, nx.dir, false))) {
+            const g7 = exitS - STOP_LINE - c.s;
+            if (g7 < gap) { gap = g7; dv = c.v; this.yieldedTo(c, nodeId); }
+          }
+        }
         // turning left across the oncoming lanes on a green: wait at the line for a gap
         if (!last && c.turn > 0 && exitS - c.s < 25) {
           const nodeId = st.dir > 0 ? seg.b : seg.a;
           if (this.signals.has(nodeId) && !this.clearing(nodeId, seg.id) && this.oncoming(nodeId, seg.id)) {
-            const g6 = exitS - 1.5 - c.s;
+            const g6 = exitS - STOP_LINE - c.s;
             if (g6 < gap) { gap = g6; dv = c.v; }
           }
         }
@@ -800,7 +819,7 @@ export class Traffic {
           if (g < gap) { gap = g; dv = c.v; }
         }
         if (!last && exitS - c.s < 30 && !this.exitClear(c)) {
-          const g4 = exitS - 1.5 - c.s;
+          const g4 = exitS - STOP_LINE - c.s;
           if (g4 < gap) { gap = g4; dv = c.v; }
         }
         if (!last) {
@@ -811,7 +830,7 @@ export class Traffic {
             const runIt = c.reckless && Math.random() < 0.004;
             if (runIt) c.redsRun++;
             if (!(c.reckless && c.redsRun > 0 && exitS - c.s < 12)) {
-              const g2 = exitS - 1.5 - c.s;
+              const g2 = exitS - STOP_LINE - c.s;
               if (g2 < gap) { gap = g2; dv = c.v; }
             }
           }
@@ -834,7 +853,7 @@ export class Traffic {
             let mine: V2[] | null = null;
             if (others.length && ns) { const K = this.curveFor(c, seg, st, ns, nx); mine = Traffic.curvePts(K.p0, K.c1, K.c2, K.p2); }
             if (mine && others.some((o) => this.crossesBox(mine!, o))) {
-              const g5 = exitS - 1.5 - c.s;
+              const g5 = exitS - STOP_LINE - c.s;
               if (g5 < gap) { gap = g5; dv = c.v; }
             }
           }
@@ -924,6 +943,8 @@ export class Traffic {
           const remO = (1 - clamp(o.junction.t, 0, 1)) * o.junction.len;
           if (remO < rem - 1e-3 || (Math.abs(remO - rem) <= 1e-3 && o.id < c.id)) gap = Math.min(gap, rem - remO - o.len);
         }
+        // someone crossing the road I'm turning into: hold in the box short of their crosswalk
+        if (J.t < 0.85 && this.walkerOnLanes(J.node, nseg, next.dir, false)) { this.yieldedTo(c, J.node); gap = Math.min(gap, Math.max(0, rem - 4)); }
         const blocked = gap < 2;
         const vFree = Number.isFinite(c.turnV) ? c.turnV : Math.min(13, ROAD_TYPES[nseg.type].speed);
         const vt = blocked ? 0 : Math.min(vFree, Math.sqrt(2 * 3 * (gap - 2)));
@@ -1173,6 +1194,66 @@ export class Traffic {
           if (exitS - o.s < o.v * 2.5 + 6) return true;
         }
       }
+    }
+    return false;
+  }
+
+  /**
+   * May someone on foot start across these arms of a junction, taking `secs` to
+   * cross? At lights, only in the walk phase: while the arm is red, and early
+   * enough to be over before its green (or right as the walk starts, for a road
+   * too wide to cross in one red). Without lights, not while a car is coming up
+   * to the junction on the arm, unless they've waited long enough to step out
+   * anyway (`impatient`). Never while a car is in the box turning into or out
+   * of the arm.
+   */
+  canCross(nodeId: number, segs: number[], secs = 0, impatient = false): boolean {
+    const sig = this.signals.get(nodeId);
+    for (const sid of segs) {
+      if (sig) {
+        if (this.isGreen(nodeId, sid) || this.clearing(nodeId, sid)) return false;
+        const T = (GREEN + CLEAR) * sig.phases, t = sig.t % T, start = (sig.phaseOf.get(sid) ?? 0) * (GREEN + CLEAR);
+        const redLeft = (((start - t) % T) + T) % T, window = T - GREEN - CLEAR;
+        if (redLeft < Math.min(secs, window) - 1) return false;
+      }
+      const sg = this.net.segs.get(sid);
+      if (!sg) continue;
+      const dir: 1 | -1 = sg.b === nodeId ? 1 : -1; // travelling toward this node
+      const exitS = this.exitOf(sg, dir);
+      if (!sig && !impatient) for (let k = 0; k < ROAD_TYPES[sg.type].lanesPerDir; k++) {
+        for (const o of this.buckets.get(sid * 16 + (dir > 0 ? 0 : 8) + k) ?? []) {
+          if (o.crashed === 0 && o.v > 1.5 && exitS - o.s < 25 && exitS - o.s > -2) return false;
+        }
+      }
+      for (const o of this.junctionCars.get(nodeId) ?? []) {
+        const J = o.junction;
+        if (!J || o.crashed !== 0) continue;
+        // coming out of that arm until its rear is clear of the crosswalk, or going into it at all
+        if ((J.fromSeg === sid && clamp(J.t, 0, 1) * J.len < o.len + 3) || o.path[o.pi + 1]?.seg === sid) return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Is someone on this arm's crosswalk on the lanes a car travelling `dir` along
+   * it uses (`toward` the junction: the lanes coming in; else the ones going
+   * out), or about to step onto them? Someone on the far half, or walking away
+   * from these lanes, doesn't hold the car.
+   */
+  private walkerOnLanes(nodeId: number, sg: RSeg, dir: 1 | -1, toward: boolean): boolean {
+    const ws = this.crosswalkWalkers?.(nodeId, sg.id);
+    if (!ws || !ws.length) return false;
+    const T = ROAD_TYPES[sg.type];
+    const L = this.lanePos(sg, dir, toward ? this.exitOf(sg, dir) : this.entryOf(sg, dir), 0);
+    const r = { x: -L.t.z, z: L.t.x }, off0 = laneOffset(T, 0);
+    const cx = L.p.x - r.x * off0, cz = L.p.z - r.z * off0;
+    // my lanes run from `lo` to `hi` metres right of the centreline (a one-way: all of it)
+    const hi = carriageHalf(T), lo = T.oneWay ? -hi : off0 - T.laneW / 2;
+    for (const w of ws) {
+      const lat = (w.x - cx) * r.x + (w.z - cz) * r.z, head = w.dx * r.x + w.dz * r.z;
+      if (lat > lo - 0.5 && lat < hi + 0.5) return true;
+      if ((lat <= lo - 0.5 && lat > lo - 4.5 && head > 0.2) || (lat >= hi + 0.5 && lat < hi + 4.5 && head < -0.2)) return true;
     }
     return false;
   }

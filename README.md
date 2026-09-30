@@ -25,8 +25,8 @@ As in Cities: Skylines, the town earns its tools by growing (src/sim/milestones.
 | Wide Spot in the Road | 150 | $5,000 | landfill, urgent care; Freedom Stroad, one-way couplet |
 | Census-Designated Place | 350 | $10,000 | fire station, sheriff; small roadside attractions; Propane Paradise |
 | Speed Trap Town | 650 | $15,000 | big-box commercial; school, coal plant; buses; Fill Er Up Mega Station |
-| Boomburb | 1,100 | $20,000 | high-density homes; MEGA Stroad; solar farm; bigger attractions; the Slop Cannon |
-| Exurb | 1,800 | $30,000 | offices; treatment plant, incinerator; Megachurch |
+| Boomburb | 1,100 | $20,000 | high-density homes, offices; MEGA Stroad; solar farm; bigger attractions; the Slop Cannon |
+| Exurb | 1,800 | $30,000 | treatment plant, incinerator; Megachurch |
 | Edge City | 2,800 | $45,000 | the Slopway and diamond interchanges; hospital; the biggest attractions; Pig Cabana Resort |
 | Metroplex | 4,200 | $60,000 | Katy Stroad; university; Slop 69 Field |
 | Megalopolis | 6,500 | $90,000 | nuclear plant; Neural Fly Datacenter |
@@ -161,7 +161,7 @@ node scripts/firststeps.mjs      # first-steps Next bar and its button; demand w
 node scripts/playtest5.mjs       # transit lines survive a street joining their road; bulldoze names the line; transit list refreshes; per-ride costs; green "Built" after placing; valid-site rings; save on page hide
 node scripts/housetown.mjs       # a dense town of every house style: variety, model cost, building batch budget (SHOTS=prefix)
 node scripts/motiontest.mjs      # cars: no heading snaps, brake for turns, change lanes, blink, never wrong-way on a one-way; walkers' stride, no teleports
-node scripts/carsolid.mjs        # (fails today; docs/AUDIT_ROUND7.md) cars never drawn inside each other in a lane or a junction at morning rush, no car stuck off a red, no heading snaps; steps the traffic model without rendering
+node scripts/carsolid.mjs        # (fails in most runs on one residual: two cars from the two lanes of the block's road 44 overlapping as they enter the box side by side; lanes are clean) cars never drawn inside each other in a lane or a junction at morning rush, no car stuck off a red, no heading snaps; steps the traffic model without rendering
 node scripts/vehicletest.mjs     # (no browser) vehicles: all 59 models build inside their kind's size and triangle budget, a 100-car town costs no more draw calls than the old renderer, the paint mix is the real-US mix, wheels turn the right way (forwards, backwards, steering), suspension settles, reverse lamps come on by themselves, the public API and every emergency livery are kept
 node scripts/vehiclestats.mjs    # (no browser) per model: triangles at close / near / far, build time, bounding box against the kind's spec; flags over-budget or oversize models
 node scripts/lineup.mjs tag      # every vehicle model at 8 m / 40 m / 150 m, day and night, on the real renderer with no game boot (dev/vehicles.html; BASE_URL= picks old or new code; AZS EL SEEDS BRAKE TURN REV PARKED WET FOV env); contact sheets and index.html in shots/lineup/tag
@@ -187,6 +187,7 @@ node scripts/snapshot.mjs name 5176   # (tooling) serves a frozen copy of the tr
 node scripts/crosswalktest.mjs   # people and cars at crosswalks: nobody on foot inside a car, people cross junction arms and wait at the kerb for a gap or the walk phase, cars stop for them, and stopping costs under a tenth of the traffic
 node scripts/parkingtest.mjs     # live parking and drive-thru lines: lots fill by the hour (offices mid-morning, shops at noon, empty at 3 am), cars pull into stalls and back out, a grand opening spills the drive-thru line onto the road and it clears; parked cars, frame time and calls per preset with and without
 node scripts/landmarktest.mjs    # landmarks draw visitors: sightseers by day, a game-night crowd at Slop 69 Field (every evening, 5 to 10 pm) that arrives, fills its lot and drives home after; the inspector counts today's visitors; a landmark no road reaches draws nobody
+node scripts/collegetest.mjs     # the College's first graduates: the first home in its reach to reach level 5 says so once (with how many homes can follow), none without a college, never twice
 node scripts/trafficscale.mjs    # (over its 4 ms target today: about 5 ms a step at 1,000 cars on this machine) traffic at 250, 500 and 1,000 cars in a big seeded town (grown once to shots/scale/town.json): the median, mean and 95th percentile of one traffic.update
 node scripts/civictest.mjs       # Civic Foundry pack streams in: street trees, furniture, bus shelters; instanced LODs; Low skips it
 node scripts/starttest.mjs       # new county: sensible site (random among good ones, saved), county road follows the land; trees: no detail disc, no gaps; far trees keep their shape (no rectangles)

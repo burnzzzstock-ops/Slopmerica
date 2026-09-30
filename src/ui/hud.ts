@@ -779,7 +779,7 @@ export class Hud implements UiSink {
     if (locked) {
       // nothing that's unlocked wants building, so "zone what's in demand" led nowhere
       // (playtest 6: a town sat at 1,181 people for 2,600 days waiting for offices
-      // at 1,800, with taxes at 15% holding homes back): say what's holding homes back
+      // at 1,800 then, with taxes at 15% holding homes back): say what's holding homes back
       const u = UNLOCKS.find((x) => x.zone === DEM[locked.k].zones[0]);
       const drag = s.demandParts.res.filter((p) => !p.base && p.v !== null && p.v < -3).sort((a, b) => a.v! - b.v!)[0];
       return {

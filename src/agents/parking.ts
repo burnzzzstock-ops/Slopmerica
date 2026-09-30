@@ -74,7 +74,7 @@ const LANDMARK_CURVE: Partial<Record<LandmarkId, string>> = {
  * calendar's days, some 20 weeks, so every evening has its Friday and every
  * morning its Sunday.) `crowd` is the share of the town's people who drive
  * there (the traffic sends them, and home afterwards); `lot`, how full its lot
- * gets.
+ * gets. (The crowds approved as they stand by the owner, 2026-09-30.)
  */
 export const LANDMARK_EVENTS: Partial<Record<LandmarkId, { from: number; to: number; crowd: number; lot: number; purpose: string; label: string; when: string }>> = {
   slop69Field: { from: 17, to: 22, crowd: 0.03, lot: 0.95, purpose: 'going to the game', label: 'Game night', when: 'every evening' },

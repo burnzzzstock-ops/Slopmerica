@@ -189,7 +189,7 @@ const STILL_FRAMES = 12;
  * of hours on the clock) and everyone who came drives home at the rate of
  * EVENT_OUT hours for the whole crowd from the end (a lot lets out three cars
  * at a time, so it can take longer), on top of the town's other trips, at most
- * EVENT_MAX cars.
+ * EVENT_MAX cars. (The shares approved as they stand by the owner, 2026-09-30.)
  */
 export const VISIT_PULL: Partial<Record<LandmarkId, number>> = { slopCannon: 0.025, slop69Field: 0.015, pigCabanaResort: 0.035, neuralFlyDatacenter: 0.01, propaneParadise: 0.02, fillErUpMegaStation: 0.035, megachurch: 0.015 };
 const VISIT_MAX = 0.12;

@@ -50,7 +50,8 @@ unlocks the one thing that would unstick it. NorCal A sat at 1,650–1,703
 for 2,600 days; Florida C sat at 1,662, with the guide saying so correctly
 ("Grow: offices unlock at 1,800 people, and nothing else wants building").
 The towns that got past 1,800 (Appalachia D and E, NorCal B) then grew
-fast: 2,800 about 130 days later, 4,200 about 130 after that.
+fast: 2,800 about 130 days later, 4,200 about 130 after that. (Offices now
+unlock at 1,100: see the owner's decisions at the end.)
 
 **Bare shelves: the goods don't reach the shops (Florida, worst).** In
 every Florida run most shops ended with nothing to sell: 142 of 143 in one
@@ -72,6 +73,8 @@ town stalls.
   putting up shops on 12 zoned lots". Now bare shops count as shops, and
   the factory reason says how many have nothing to sell (commit
   "Demand: shops with bare shelves still count as shops").
+- *Eased (owner's decision, below):* a shop with bare shelves and no
+  delivery for five days gets a parcel from the county line.
 - *Not fixed (proposal):* a gridlock breaker. A driver held at the line for
   more than about 20 s with the box empty could creep in, or reroute; or
   goods trucks could bypass the junction wait. That changes how every
@@ -116,10 +119,11 @@ Does it do something visible? Yes: homes in its reach grow to level 5, the
 tallest models. The inspector says why a building has stopped, and the
 Education view shows the college's reach. What's weak is that nothing says
 what it did once built, and a tower going up a level reads as ordinary
-growth. **Proposal (the owner's call):** a toast when the first home
-reaches level 5 because of it ("First graduates: 12 homes can grow to
-level 5"), and the college's inspector counting how many buildings it has
-lifted past a cap.
+growth. **Now (owner's decision, below):** the first home in its reach to
+reach level 5 says so, once a game ("🎓 First graduates from Prosperity
+Gospel University: 9 homes in its reach can now grow to level 5."). Still a
+proposal: the college's inspector counting how many buildings it has lifted
+past a cap.
 
 ## Landmarks
 
@@ -160,14 +164,17 @@ of hours on the clock, longer when the crowd queues at a left turn. The
 field's 12 stalls fill, and 18–19 cars drive home after, backing out of
 the stalls.
 
-**Proposals (the owner's call):** the shares and crowd sizes above are
-first guesses, in two tables (`VISIT_PULL` in `src/agents/traffic.ts`,
-`LANDMARK_EVENTS` in `src/agents/parking.ts`). The design doc's other ideas
+The shares and crowd sizes above were first guesses; the owner approved
+them as they stand (2026-09-30). They live in two tables, `VISIT_PULL` in
+`src/agents/traffic.ts` and `LANDMARK_EVENTS` in `src/agents/parking.ts`.
+**Proposals (the owner's call):** the design doc's other ideas
 for landmarks are untouched: the Slop Cannon drawing a crowd when it fires,
 a feed post on game night, the stadium's lights at night. The Neural Fly
 Datacenter could bring commuters (jobs) rather than sightseers.
 
-## Balance proposals (the owner's call)
+## Balance proposals
+
+As put to the owner; all three were approved, see the next section.
 
 1. **Offices unlock earlier, at 1,100 (Boomburb) instead of 1,800 (Exurb).**
    It's the one lock every stalled town ran into. Alternatively, keep 1,800
@@ -183,6 +190,21 @@ Datacenter could bring commuters (jobs) rather than sightseers.
    trickle of goods from the county line at a price (imports exist, but
    only when a shop is dry and no truck is coming). Or a factory with a
    shop on its own road could stock it without a truck.
+
+## The owner's decisions (2026-09-30)
+
+All five proposals were approved and are in:
+
+| decision | change | measured |
+|---|---|---|
+| Offices unlock earlier | at Boomburb (1,100 people), not the Exurb (1,800); the Exurb keeps its services and the megachurch | the guide on a stuck town now says "offices unlock at 1,100 people" (`progresstest`, `demandtest`) |
+| Softer tax penalty | 3 points of every demand bar per point of tax off 9%, not 4.5 | the tax reason on the homes bar: 5% +12, 9% 0, 12% −9, 15% −18 (was −27) |
+| A small import of goods | a shop with bare shelves and nothing delivered for 5 days gets 15% of its shelf from the county line at $4.80 a unit, while the town has a road out | the saved Florida town, 60 days, same seed: goods sold 90 → 425, imported 246 units for $1,181 (about $140 a week), truck deliveries 240 → 413; goods still add up (`freighttest`) |
+| Landmark numbers | as they stand | — |
+| A College toast | the first home in a college's reach to reach level 5 says so, once a game | `collegetest`: none without a college, one with, never a second |
+
+The goods parcel is a stopgap until the gridlock breaker exists; it is
+labelled "The Interstate Logistics Cloud" as the shop's supplier.
 
 ## Bugs found and fixed on the way
 

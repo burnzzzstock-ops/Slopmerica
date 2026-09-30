@@ -3,7 +3,7 @@ import type { PersonAction } from '../../contracts';
 import type { Archetype, FaceStyle } from '../people';
 import {
   attachPersonInstanceAttributes, buildFaceAtlas, buildPersonGeometry, createPersonDepthMaterial, createPersonMaterial,
-  geometryTriangles, PROP, writeLook,
+  geometryTriangles, PROP, PersonStyle,
   type PersonInstanceAttributes, type PersonMaterialControl,
 } from './personModel';
 import { resolveLook } from './personLooks';
@@ -72,6 +72,7 @@ export class PeopleRendererCore {
   private motionDirtyMin: number;
   private motionDirtyMax = -1;
   private readonly faceAtlas: THREE.CanvasTexture;
+  private readonly style: PersonStyle;
   private readonly pose: PersonPosePass;
   /** the renderer the figure is drawn with (found the first time it draws, or given to bindRenderer) and whether it can run the pose pass */
   private gl: THREE.WebGLRenderer | null = null;
@@ -84,7 +85,8 @@ export class PeopleRendererCore {
     this.cadence = new Float32Array(max).fill(1);
     this.matrixDirtyMin = this.styleDirtyMin = this.motionDirtyMin = max;
     this.faceAtlas = buildFaceAtlas();
-    this.pose = new PersonPosePass(max);
+    this.style = new PersonStyle(max);
+    this.pose = new PersonPosePass(max, this.style.texture);
 
     const nearGeometry = buildPersonGeometry(false);
     const farGeometry = buildPersonGeometry(true);
@@ -118,9 +120,11 @@ export class PeopleRendererCore {
     // Ultra in a town of zero people
     mesh.count = 0;
     mesh.frustumCulled = false;
-    mesh.castShadow = !far;
+    // the shadow is cast by the far figure, for everybody: a third of the near figure's triangles go through the shadow pass, and nobody
+    // reads the detail of a shadow (the near figure is only drawn once, in the view)
+    mesh.castShadow = far;
     mesh.receiveShadow = true;
-    const depth = far ? undefined : createPersonDepthMaterial(this.pose.uniforms);
+    const depth = far ? createPersonDepthMaterial(this.pose.uniforms) : undefined;
     if (depth) mesh.customDepthMaterial = depth;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     // the first draw tells us the renderer, which the pose pass needs (and it allocates the pose textures before they are sampled)
@@ -142,9 +146,9 @@ export class PeopleRendererCore {
     this.alive[h] = 1; this.archetypeIndex[h] = ai;
     const look = resolveLook(a, seed, FACE_ID[a.face ?? 'plain'], propId);
     this.cadence[h] = look.cadence;
+    this.style.write(h, look);
     for (let i = 0; i < this.batches.length; i++) {
       const at = this.batches[i].attributes;
-      writeLook(at, h, look);
       at.motion.setXYZW(h, ACTION_ID.idle, 0, 0, 0);
       this.batches[i].mesh.setMatrixAt(h, this.hidden);
     }
@@ -201,12 +205,7 @@ export class PeopleRendererCore {
       markRange(this.near.mesh.instanceMatrix, this.matrixDirtyMin, this.matrixDirtyMax);
       markRange(this.far.mesh.instanceMatrix, this.matrixDirtyMin, this.matrixDirtyMax);
     }
-    if (this.styleDirtyMax >= this.styleDirtyMin) {
-      for (let b = 0; b < this.batches.length; b++) {
-        const all = this.batches[b].attributes.style;
-        for (let i = 0; i < all.length; i++) markRange(all[i], this.styleDirtyMin, this.styleDirtyMax);
-      }
-    }
+    if (this.styleDirtyMax >= this.styleDirtyMin) this.style.upload();
     if (this.motionDirtyMax >= this.motionDirtyMin) {
       markRange(this.near.attributes.motion, this.motionDirtyMin, this.motionDirtyMax);
       markRange(this.far.attributes.motion, this.motionDirtyMin, this.motionDirtyMax);
@@ -232,8 +231,8 @@ export class PeopleRendererCore {
   dispose(): void {
     this.object.removeFromParent();
     this.near.mesh.geometry.dispose(); this.far.mesh.geometry.dispose();
-    this.near.depth?.dispose();
+    this.far.depth?.dispose();
     this.pickMesh.geometry.dispose(); (this.pickMesh.material as THREE.Material).dispose();
-    this.near.material.dispose(); this.far.material.dispose(); this.faceAtlas.dispose(); this.pose.dispose();
+    this.near.material.dispose(); this.far.material.dispose(); this.faceAtlas.dispose(); this.pose.dispose(); this.style.dispose();
   }
 }

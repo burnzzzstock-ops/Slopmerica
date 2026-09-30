@@ -192,16 +192,18 @@ if (on('bench')) {
     { name: 'street (40 near + 80 far)', parts: [[40, 5, [-12, 12], [-8, 8]], [80, 9, [-40, 40], [-150, -100]]], eye: [0, 10, 45], target: [0, 1, -40], shadow: 60 },
   ];
   const rows = [];
+  const only = process.env.SCENE ? process.env.SCENE.split(',').map(Number) : null; // e.g. SCENE=1 for the far crowd alone
   await page.evaluate((hs) => hs.forEach((h) => window.__people.remove(h)), hands); // the lineup's own 69 would be drawn too: 120 instances in every crowd
-  for (const sc of scenes) {
+  for (const sc of scenes.filter((_, i) => !only || only.includes(i))) {
     const poses = [];
     for (const [n, seed, xr, zr] of sc.parts) {
       const list = mk(n, seed);
       const hs = await page.evaluate((l) => l.map((r) => window.__people.spawn(r.arch, r.arch * 3761 + 17)), list);
       poses.push(...place(hs, list, xr, zr));
     }
-    const res = await page.evaluate(({ sc, poses, W, H, rounds, frames }) => {
+    const measure = (cfg) => page.evaluate(({ sc, poses, W, H, rounds, frames, cfg }) => {
       const api = window.__people;
+      api.parts({ near: true, far: true, shadows: true, plain: 'off', flat: false, ...cfg });
       const gl = document.querySelector('canvas').getContext('webgl2');
       const tiles = [{ x: 0, y: 0, w: W, h: H, eye: sc.eye, target: sc.target, fov: 40, poses, shadow: sc.shadow }];
       const med = (a) => a.slice().sort((p, q) => p - q)[a.length >> 1];
@@ -212,10 +214,17 @@ if (on('bench')) {
       const on = [], off = [], delta = [];
       let a, b;
       for (let r = 0; r < rounds; r++) { a = runs(false); b = runs(true); off.push(a.ms); on.push(b.ms); delta.push(b.ms - a.ms); }
-      api.setVisible(true);
+      api.setVisible(true); api.parts({ near: true, far: true, shadows: true, plain: 'off', flat: false });
       const d = delta.slice().sort((p, q) => p - q);
       return { on: med(on), off: med(off), delta: med(delta), lo: d[0], hi: d[d.length - 1], calls: b.calls - a.calls, tris: b.triangles - a.triangles };
-    }, { sc, poses, W, H, rounds: +(process.env.ROUNDS || 9), frames: +(process.env.FRAMES || 3) });
+    }, { sc, poses, W, H, rounds: +(process.env.ROUNDS || 9), frames: +(process.env.FRAMES || 3), cfg });
+    const res = await measure({});
+    const want = process.env.PARTS ? process.env.PARTS.split(',') : null; // e.g. PARTS=plain limits the breakdown to the labels containing it
+    if (process.env.BREAKDOWN) for (const [label, cfg] of [['shadows off', { shadows: false }], ['far figure hidden', { far: false }], ['near figure hidden', { near: false }], ['near, no shadows', { far: false, shadows: false }], ['far, no shadows', { near: false, shadows: false }], ['near, plain basic material', { far: false, shadows: false, plain: 'basic' }], ['near, plain standard material', { far: false, shadows: false, plain: 'standard' }], ['near, plain basic, not indexed', { far: false, shadows: false, plain: 'basic', flat: true }]].filter(([label]) => !want || want.some((w) => label.includes(w)))) {
+      const b = await measure(cfg);
+      console.log(`    ${label.padEnd(20)} ${b.delta.toFixed(1)} ms (range ${b.lo.toFixed(1)} .. ${b.hi.toFixed(1)})`);
+      (res.parts ??= {})[label] = b.delta;
+    }
     await page.evaluate((hs) => hs.forEach((h) => window.__people.remove(h)), poses.map((p) => p.h));
     rows.push({ scene: sc.name, people: poses.length, ...res });
     console.log(`${sc.name.padEnd(36)} people group: ${res.delta.toFixed(1)} ms per frame (range ${res.lo.toFixed(1)} .. ${res.hi.toFixed(1)}; ${res.on.toFixed(1)} with, ${res.off.toFixed(1)} without) = ${(1000 * res.delta / poses.length).toFixed(0)} us per person, ${res.calls} draw calls, ${res.tris} triangles`);

@@ -5,7 +5,7 @@ import {
 import {
   FRAGMENT_BODY, FRAGMENT_DECLARATIONS, FRAGMENT_LIB, POSE_SAMPLER_DECLARATIONS, VERTEX_DECLARATIONS, VERTEX_LIB,
 } from './personShader';
-import { poseSupported, type PoseUniforms } from './personPose';
+import { poseSupported, type SharedUniforms } from './personPose';
 import type { PersonLook } from './personLooks';
 
 // One procedural citizen is instanced for the whole population (two draw calls: near and far). The geometry is a set of small
@@ -81,17 +81,13 @@ const VERTEX_INJECT = `${VERTEX_DECLARATIONS}\n${POSE_SAMPLER_DECLARATIONS}\n${V
 const poseDefine = (renderer: THREE.WebGLRenderer | undefined): string => (renderer && poseSupported(renderer) ? '#define CITIZEN_POSE_TEX\n' : '');
 const VARYINGS = /* glsl */`
   {
-    int i1 = int(iLook.x + 0.5), i2 = int(iLook.y + 0.5);
     vZP = vec4(aTag.y, aTag.x, aTag.z, aTag.w);
     vRest = position;
-    vColA = iColA; vColB = iColB;
-    vLookA = vec4(float(i1 & 31), float((i1 >> 5) & 3), float((i1 >> 7) & 7), float((i1 >> 23) & 1));
-    vLookB = vec4(float((i1 >> 13) & 15), float((i1 >> 17) & 7), float((i1 >> 20) & 7), float(((i2 >> 19) & 15) * 8 + ((i1 >> 10) & 7)));
-    vLookC = vec4(iLook.w, iMaskA.w, iLook.z, iMotion.x);
+    vInst = vec2(float(CITIZEN_INSTANCE), iMotion.x);
   }
 `;
 
-export function createPersonMaterial(faceAtlas: THREE.Texture, far: boolean, pose: PoseUniforms): PersonMaterialControl {
+export function createPersonMaterial(faceAtlas: THREE.Texture, far: boolean, pose: SharedUniforms): PersonMaterialControl {
   const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.78, metalness: 0.02 });
   const uniforms = { uFaceAtlas: { value: faceAtlas }, uNight: { value: 0 }, uLodDistance: { value: 64 }, uFarDistance: { value: 1500 }, uFarLod: { value: far ? 1 : 0 } };
   material.onBeforeCompile = (shader, renderer) => {
@@ -119,7 +115,7 @@ export function createPersonMaterial(faceAtlas: THREE.Texture, far: boolean, pos
 }
 
 /** Shadow pass companion: the same pose and feature masks, without the view camera's level-of-detail test. */
-export function createPersonDepthMaterial(pose: PoseUniforms): THREE.MeshDepthMaterial {
+export function createPersonDepthMaterial(pose: SharedUniforms): THREE.MeshDepthMaterial {
   const material = new THREE.MeshDepthMaterial();
   const uniforms = { uLodDistance: { value: 1e7 }, uFarDistance: { value: 1e7 }, uFarLod: { value: 0 } };
   material.onBeforeCompile = (shader, renderer) => {
@@ -132,35 +128,41 @@ export function createPersonDepthMaterial(pose: PoseUniforms): THREE.MeshDepthMa
   return material;
 }
 
+/** What still changes every frame and so stays a vertex attribute: the action and its phase. The rest of a person is the style texture. */
 export interface PersonInstanceAttributes {
-  colA: THREE.InstancedBufferAttribute;
-  colB: THREE.InstancedBufferAttribute;
-  shape: THREE.InstancedBufferAttribute;
-  build: THREE.InstancedBufferAttribute;
-  mask: THREE.InstancedBufferAttribute;
-  look: THREE.InstancedBufferAttribute;
   motion: THREE.InstancedBufferAttribute;
-  /** every attribute but the motion one, which changes every frame */
-  style: THREE.InstancedBufferAttribute[];
 }
 
 export function attachPersonInstanceAttributes(geometry: THREE.BufferGeometry, max: number): PersonInstanceAttributes {
-  const attr = () => new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4).setUsage(THREE.DynamicDrawUsage);
-  const r: PersonInstanceAttributes = { colA: attr(), colB: attr(), shape: attr(), build: attr(), mask: attr(), look: attr(), motion: attr(), style: [] };
-  r.style = [r.colA, r.colB, r.shape, r.build, r.mask, r.look];
-  geometry.setAttribute('iColA', r.colA); geometry.setAttribute('iColB', r.colB); geometry.setAttribute('iShape', r.shape);
-  geometry.setAttribute('iBuild', r.build); geometry.setAttribute('iMaskA', r.mask); geometry.setAttribute('iLook', r.look);
-  geometry.setAttribute('iMotion', r.motion);
-  return r;
+  const motion = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4).setUsage(THREE.DynamicDrawUsage);
+  geometry.setAttribute('iMotion', motion);
+  return { motion };
 }
 
-export function writeLook(at: PersonInstanceAttributes, h: number, l: PersonLook): void {
-  at.colA.setXYZW(h, l.colA[0], l.colA[1], l.colA[2], l.colA[3]);
-  at.colB.setXYZW(h, l.colB[0], l.colB[1], l.colB[2], l.colB[3]);
-  at.shape.setXYZW(h, l.shape[0], l.shape[1], l.shape[2], l.shape[3]);
-  at.build.setXYZW(h, l.build[0], l.build[1], l.build[2], l.build[3]);
-  at.mask.setXYZW(h, l.maskA, l.maskB, l.maskC, l.seed01);
-  at.look.setXYZW(h, l.ints1, l.ints2, l.ints3, l.face);
+/**
+ * The per-person data every vertex and fragment of a drawn person reads (see STYLE_ACCESS in personShader.ts): STYLE_TEXELS float
+ * texels per person, one person per row. One texture serves both figures, the shadow pass and the pose pass.
+ */
+export const STYLE_TEXELS = 6;
+export class PersonStyle {
+  readonly data: Float32Array;
+  readonly texture: THREE.DataTexture;
+  constructor(max: number) {
+    this.data = new Float32Array(STYLE_TEXELS * 4 * Math.max(1, max));
+    this.texture = new THREE.DataTexture(this.data, STYLE_TEXELS, Math.max(1, max), THREE.RGBAFormat, THREE.FloatType);
+    this.texture.minFilter = THREE.NearestFilter; this.texture.magFilter = THREE.NearestFilter; this.texture.generateMipmaps = false;
+    this.texture.name = 'person-style';
+    this.texture.needsUpdate = true;
+  }
+  write(h: number, l: PersonLook): void {
+    const d = this.data, o = h * STYLE_TEXELS * 4;
+    d.set(l.colA, o); d.set(l.colB, o + 4); d.set(l.shape, o + 8); d.set(l.build, o + 12);
+    d[o + 16] = l.maskA; d[o + 17] = l.maskB; d[o + 18] = l.maskC; d[o + 19] = l.seed01;
+    d[o + 20] = l.ints1; d[o + 21] = l.ints2; d[o + 22] = l.ints3; d[o + 23] = l.face;
+  }
+  /** upload what was written since the last call */
+  upload(): void { this.texture.needsUpdate = true; }
+  dispose(): void { this.texture.dispose(); }
 }
 
 export function geometryTriangles(geometry: THREE.BufferGeometry): number {

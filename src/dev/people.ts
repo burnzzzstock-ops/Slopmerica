@@ -273,6 +273,26 @@ function probe(opts: {
   info: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles }),
   /** hide / show the whole people group (for cost runs: hidden, the instances are not even drawn) */
   setVisible: (v: boolean) => { people.object.visible = v; },
+  /** switch parts of a cost run on and off: the near figure, the far figure, the sun's shadow map */
+  parts: (cfg: { near?: boolean; far?: boolean; shadows?: boolean; plain?: 'basic' | 'standard' | 'off'; flat?: boolean }) => {
+    for (const c of people.object.children) {
+      const m = c as THREE.InstancedMesh;
+      if (c.name === 'people-near' && cfg.plain !== undefined) {
+        const keep = (m.userData.keep ??= m.material);
+        m.material = cfg.plain === 'basic' ? new THREE.MeshBasicMaterial({ color: 0x808080 }) : cfg.plain === 'standard' ? new THREE.MeshStandardMaterial({ color: 0x808080 }) : keep;
+      }
+      if (c.name === 'people-near' && cfg.flat !== undefined) {
+        const keepG = (m.userData.keepGeo ??= m.geometry);
+        m.geometry = cfg.flat ? keepG.toNonIndexed() : keepG;
+      }
+      if (c.name === 'people-near' && cfg.near !== undefined) c.visible = cfg.near;
+      if (c.name === 'people-far' && cfg.far !== undefined) c.visible = cfg.far;
+    }
+    if (cfg.shadows !== undefined && renderer.shadowMap.enabled !== cfg.shadows) {
+      renderer.shadowMap.enabled = cfg.shadows;
+      scene.traverse((o) => { const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined; if (m) (Array.isArray(m) ? m : [m]).forEach((x) => { x.needsUpdate = true; }); });
+    }
+  },
   api: { renderer: 'PeopleRenderer' },
 };
 if (hud) hud.textContent = `people lineup: ${ARCHETYPES.length} archetypes ready (window.__people)`;

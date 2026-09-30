@@ -9,25 +9,32 @@
 
 export const PED_STRIDE = { walk: 1.42, run: 2.2 } as const; // must equal pedestrians.ts STRIDE (metres of ground per leg cycle)
 
+// The per-person data (colours, build, feature mask, look ints) lives in a small float texture, one row per person (STYLE_TEXELS wide),
+// not in vertex attributes: fetched only by the vertices and fragments that are drawn, so the ones that are not drawn carry no fetch and
+// no varyings. Texel 0 colours skin, hair, shirt, pants (sRGB24 packed in a float); 1 outer, trim, shoe, bag; 2 width, height, depth, head
+// scale; 3 belly, shoulders, limbs, stride (metres of ground per walking cycle); 4 feature bits 0-23, 24-47, 48-71, seed 0..1;
+// 5 packed small ints 1, 2, 3, face.
+export const STYLE_ACCESS = /* glsl */`
+uniform highp sampler2D uStyle;
+#ifdef CITIZEN_PROBE
+uniform float uProbeInstance;
+#define CITIZEN_INSTANCE int(uProbeInstance + 0.5)
+#else
+#define CITIZEN_INSTANCE gl_InstanceID
+#endif
+vec4 styleAt(int k) { return texelFetch(uStyle, ivec2(k, CITIZEN_INSTANCE), 0); }
+`;
+
 export const VERTEX_DECLARATIONS = /* glsl */`
 attribute vec4 aTag;      // part, zone, feature, cell
-attribute vec4 iColA;     // skin, hair, shirt, pants (sRGB24 packed in a float)
-attribute vec4 iColB;     // outer, trim, shoe, bag
-attribute vec4 iShape;    // width, height, depth, head scale
-attribute vec4 iBuild;    // belly, shoulders, limbs, stride (metres of ground per walking cycle)
-attribute vec4 iMaskA;    // feature bits 0-23, 24-47, 48-71, seed 0..1
-attribute vec4 iLook;     // packed small ints 1, 2, 3, face
-attribute vec4 iMotion;   // action, time (cycles when walking, seconds when standing), spare, spare
+attribute vec4 iMotion;   // action (-1: a free slot), time (cycles when walking, seconds when standing), spare, spare
 flat varying vec4 vZP;    // zone, part, feature, cell
-flat varying vec4 vColA;
-flat varying vec4 vColB;
-flat varying vec4 vLookA; // outfit, sleeve, legwear, sleeveOuter
-flat varying vec4 vLookB; // shirt pattern, outer pattern, pants pattern, bag*8 + shoe
-flat varying vec4 vLookC; // face, seed, ints3, action
+flat varying vec2 vInst;  // the person (a row of the style texture)
 varying vec3 vRest;
 uniform float uLodDistance;
 uniform float uFarDistance;
 uniform float uFarLod;
+${STYLE_ACCESS}
 `;
 
 const HELPERS = /* glsl */`
@@ -342,19 +349,20 @@ int propFor(int action, int base) {
 `;
 
 // The skeleton. The whole pose is evaluated for ONE bone (part pt) and comes out as a rigid transform of that bone: q' = Rn * q + tr, with q
-// the vertex in the scaled space (position * iShape.xyz, after the per-vertex build changes). Every vertex of a part moves with the same
+// the vertex in the scaled space (position * the person's size, after the per-vertex build changes). Every vertex of a part moves with the same
 // transform, so nothing here depends on the vertex: it runs once per person and bone in the pose pass (personPose.ts) and the vertices only
 // fetch the result. Without float render targets (no EXT_color_buffer_float) the vertex shader calls it itself, once per vertex.
 const BONE = /* glsl */`
 void citizenBone(int pt, out mat3 Rn, out vec3 tr) {
   int action = int(iMotion.x + 0.5);
-  int i2 = int(iLook.y + 0.5);
+  vec4 shp = styleAt(2), bld = styleAt(3), msk = styleAt(4), lk = styleAt(5);
+  int i2 = int(lk.y + 0.5);
   int gaitStyle = i2 & 7, idleStyle = (i2 >> 3) & 7, stoopI = (i2 >> 6) & 15, baseProp = (i2 >> 10) & 63, danceStyle = (i2 >> 16) & 7;
   int prop = propFor(action, baseProp);
-  float seed = iMaskA.w;
-  vec3 sh = iShape.xyz;
+  float seed = msk.w;
+  vec3 sh = shp.xyz;
   float sx = sh.x, sy = sh.y, sz = sh.z;
-  float shoulders = iBuild.y, stride = iBuild.w;
+  float shoulders = bld.y, stride = bld.w;
 
   float ph = iMotion.y;
   float Lp = stride;
@@ -454,13 +462,13 @@ void citizenBone(int pt, out mat3 Rn, out vec3 tr) {
 // One vertex: the person's level of detail and the pieces they wear decide whether it is drawn at all (before anything is fetched or
 // computed), the build of this person reshapes it in the rest pose, and its bone's transform poses it.
 const SKIN = /* glsl */`
-bool featureOn(float f, int prop, int scene) {
+bool featureOn(float f, int prop, int scene, vec4 msk) {
   if (f < 0.5) return true;
   int fi = int(f + 0.5);
   if (fi >= 200) return fi - 200 == scene;
   if (fi >= 100) return fi - 100 == prop;
   int b = fi - 1;
-  float m = b < 24 ? iMaskA.x : (b < 48 ? iMaskA.y : iMaskA.z);
+  float m = b < 24 ? msk.x : (b < 48 ? msk.y : msk.z);
   return ((int(m + 0.5) >> (b - (b / 24) * 24)) & 1) == 1;
 }
 
@@ -477,22 +485,25 @@ void citizenDeform(inout vec3 nrm, out vec3 outPos) {
 #endif
   if (!showLod) return;
 
-  int i1 = int(iLook.x + 0.5), i2 = int(iLook.y + 0.5);
+  vec4 lk = styleAt(5);
+  int i1 = int(lk.x + 0.5), i2 = int(lk.y + 0.5);
   int baseProp = (i2 >> 10) & 63;
   int prop = propFor(action, baseProp);
   int scene = action == 11 ? 1 : 0;
-  if (!featureOn(aTag.z, prop, scene)) return;
+  vec4 msk = styleAt(4);
+  if (!featureOn(aTag.z, prop, scene, msk)) return;
 
   vec3 p = position;
   int pt = int(aTag.x + 0.5);
   int zone = int(aTag.y + 0.5);
-  float seed = iMaskA.w;
-  vec3 sh = iShape.xyz;
-  float belly = iBuild.x, shoulders = iBuild.y, limbs = iBuild.z;
+  float seed = msk.w;
+  vec4 shp = styleAt(2), bld = styleAt(3);
+  vec3 sh = shp.xyz;
+  float belly = bld.x, shoulders = bld.y, limbs = bld.z;
   int legwear = (i1 >> 7) & 7;
 
   // ---- build: proportions of this person, in the rest pose
-  if (pt == 3) { vec3 hc = vec3(0.0, 1.50, 0.0); p = hc + (p - hc) * iShape.w; }
+  if (pt == 3) { vec3 hc = vec3(0.0, 1.50, 0.0); p = hc + (p - hc) * shp.w; }
   if (pt == 1 || pt == 2) {
     float bw = smoothstep(0.82, 0.98, p.y) * (1.0 - smoothstep(1.18, 1.34, p.y));
     float sw = 1.0 + (shoulders - 1.0) * smoothstep(1.06, 1.36, p.y);
@@ -533,11 +544,7 @@ void citizenDeform(inout vec3 nrm, out vec3 outPos) {
   mat3 Rn;
   vec3 tr;
 #ifdef CITIZEN_POSE_TEX
-#ifdef CITIZEN_PROBE
-  ivec2 bt = ivec2(pt, int(uProbeInstance + 0.5));
-#else
-  ivec2 bt = ivec2(pt, gl_InstanceID);
-#endif
+  ivec2 bt = ivec2(pt, CITIZEN_INSTANCE);
   vec4 b0 = texelFetch(uPoseA, bt, 0), b1 = texelFetch(uPoseB, bt, 0), b2 = texelFetch(uPoseC, bt, 0);
   Rn = mat3(b0.xyz, b1.xyz, b2.xyz);
   tr = vec3(b0.w, b1.w, b2.w);
@@ -553,20 +560,17 @@ void citizenDeform(inout vec3 nrm, out vec3 outPos) {
 // along x, one person per row): texel k of a bone holds column k of Rn in xyz and component k of tr in w
 export const POSE_DECLARATIONS = /* glsl */`
 attribute float aBone;
-attribute vec4 iShape;
-attribute vec4 iBuild;
-attribute vec4 iMaskA;
-attribute vec4 iLook;
 attribute vec4 iMotion;
 uniform vec2 uPoseSize;
 varying vec4 vPoseA;
 varying vec4 vPoseB;
 varying vec4 vPoseC;
+${STYLE_ACCESS}
 `;
 export const POSE_LIB = HELPERS + GAIT + POSE_GLOBALS + STAND + WALK + ACTIONS + PROPFOR + BONE;
 export const POSE_MAIN = /* glsl */`
 void main() {
-  if (iMotion.x < -0.5 || iShape.y < 0.05) { gl_Position = vec4(3.0, 3.0, 3.0, 1.0); gl_PointSize = 1.0; return; }
+  if (iMotion.x < -0.5) { gl_Position = vec4(3.0, 3.0, 3.0, 1.0); gl_PointSize = 1.0; return; }
   mat3 Rn;
   vec3 tr;
   citizenBone(int(aBone + 0.5), Rn, tr);
@@ -594,21 +598,15 @@ export const POSE_SAMPLER_DECLARATIONS = /* glsl */`
 uniform highp sampler2D uPoseA;
 uniform highp sampler2D uPoseB;
 uniform highp sampler2D uPoseC;
-#ifdef CITIZEN_PROBE
-uniform float uProbeInstance;
-#endif
 #endif
 `;
 
 // ---- fragment ---------------------------------------------------------------------------------------------------------------
 export const FRAGMENT_DECLARATIONS = /* glsl */`
 flat varying vec4 vZP;
-flat varying vec4 vColA;
-flat varying vec4 vColB;
-flat varying vec4 vLookA;
-flat varying vec4 vLookB;
-flat varying vec4 vLookC;
+flat varying vec2 vInst;
 varying vec3 vRest;
+uniform highp sampler2D uStyle;
 uniform sampler2D uFaceAtlas;
 uniform float uNight;
 `;
@@ -724,16 +722,19 @@ vec3 citizenColor(out vec3 emis) {
   int zone = int(vZP.x + 0.5);
   int part = int(vZP.y + 0.5);
   vec3 r = vRest;
-  vec3 skin = cpal(vColA.x), hair = cpal(vColA.y), shirt = cpal(vColA.z), pants = cpal(vColA.w);
-  vec3 outer = cpal(vColB.x), trim = cpal(vColB.y), shoe = cpal(vColB.z), bag = cpal(vColB.w);
-  int outfit = int(vLookA.x + 0.5), sleeve = int(vLookA.y + 0.5), legwear = int(vLookA.z + 0.5), sleeveOuter = int(vLookA.w + 0.5);
-  int patS = int(vLookB.x + 0.5), patO = int(vLookB.y + 0.5), patP = int(vLookB.z + 0.5), bagShoe = int(vLookB.w + 0.5);
+  int inst = int(vInst.x + 0.5);
+  vec4 colA = texelFetch(uStyle, ivec2(0, inst), 0), colB = texelFetch(uStyle, ivec2(1, inst), 0), lk = texelFetch(uStyle, ivec2(5, inst), 0);
+  int i1 = int(lk.x + 0.5), i2 = int(lk.y + 0.5);
+  vec3 skin = cpal(colA.x), hair = cpal(colA.y), shirt = cpal(colA.z), pants = cpal(colA.w);
+  vec3 outer = cpal(colB.x), trim = cpal(colB.y), shoe = cpal(colB.z), bag = cpal(colB.w);
+  int outfit = i1 & 31, sleeve = (i1 >> 5) & 3, legwear = (i1 >> 7) & 7, sleeveOuter = (i1 >> 23) & 1;
+  int patS = (i1 >> 13) & 15, patO = (i1 >> 17) & 7, patP = (i1 >> 20) & 7, bagShoe = ((i2 >> 19) & 15) * 8 + ((i1 >> 10) & 7);
   patO = patO == 1 ? 5 : (patO == 2 ? 1 : (patO == 3 ? 13 : (patO == 4 ? 2 : (patO == 5 ? 8 : (patO == 6 ? 9 : (patO == 7 ? 11 : 0))))));
   int shoeSt = bagShoe & 7;
-  int flags = int(vLookC.z + 0.5);
+  int flags = int(lk.z + 0.5);
   vec3 sleeveCol = sleeveOuter == 1 ? outer : shirt;
   // (sampled before any branch so the texture's derivatives stay defined)
-  float faceIndex = floor(vLookC.x + 0.5);
+  float faceIndex = floor(lk.w + 0.5);
   vec2 fcell = vec2(mod(faceIndex, 4.0), floor(faceIndex / 4.0));
   vec2 fuv = clamp(vec2((r.x + 0.0905) / 0.181, 1.0 - (r.y - 1.575) / 0.15), 0.02, 0.98);
   vec4 faceInk = texture2D(uFaceAtlas, (fuv + fcell) / vec2(4.0, 3.0));

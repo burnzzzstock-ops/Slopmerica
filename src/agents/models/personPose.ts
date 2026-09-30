@@ -10,10 +10,12 @@ import { POSE_DECLARATIONS, POSE_FRAGMENT, POSE_LIB, POSE_MAIN } from './personS
 
 export const POSE_BONES = 14;
 
-export interface PoseUniforms {
+/** the textures every material of the figure shares: the poses (this pass) and the per-person data (PersonStyle) */
+export interface SharedUniforms {
   uPoseA: { value: THREE.Texture | null };
   uPoseB: { value: THREE.Texture | null };
   uPoseC: { value: THREE.Texture | null };
+  uStyle: { value: THREE.Texture | null };
 }
 
 /** Float render targets are needed to write the transforms; without them the figure's vertex shader works the pose out itself. */
@@ -23,35 +25,35 @@ export function poseSupported(renderer: THREE.WebGLRenderer): boolean {
 
 export class PersonPosePass {
   readonly target: THREE.WebGLRenderTarget;
-  readonly uniforms: PoseUniforms;
+  readonly uniforms: SharedUniforms;
   private geometry: THREE.InstancedBufferGeometry | null = null;
   private readonly material: THREE.ShaderMaterial;
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.Camera();
   private readonly clearColor = new THREE.Color();
 
-  constructor(private readonly max: number) {
+  constructor(private readonly max: number, style: THREE.Texture) {
     this.target = new THREE.WebGLRenderTarget(POSE_BONES, Math.max(1, max), {
       count: 3, type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: false, stencilBuffer: false,
       minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false,
     });
     this.target.textures.forEach((t, i) => { t.name = `person-pose-${'ABC'[i]}`; });
-    this.uniforms = { uPoseA: { value: this.target.textures[0] }, uPoseB: { value: this.target.textures[1] }, uPoseC: { value: this.target.textures[2] } };
+    this.uniforms = { uPoseA: { value: this.target.textures[0] }, uPoseB: { value: this.target.textures[1] }, uPoseC: { value: this.target.textures[2] }, uStyle: { value: style } };
     this.material = new THREE.ShaderMaterial({
       glslVersion: THREE.GLSL3,
       vertexShader: `${POSE_DECLARATIONS}\n${POSE_LIB}\n${POSE_MAIN}`,
       fragmentShader: POSE_FRAGMENT,
-      uniforms: { uPoseSize: { value: new THREE.Vector2(POSE_BONES, Math.max(1, max)) } },
+      uniforms: { uPoseSize: { value: new THREE.Vector2(POSE_BONES, Math.max(1, max)) }, uStyle: this.uniforms.uStyle },
       blending: THREE.NoBlending, depthTest: false, depthWrite: false,
     });
   }
 
-  /** Read the per-person attributes of the figure's own geometry (shared, not copied: one upload serves both draws). */
+  /** Read the per-person motion attribute of the figure's own geometry (shared, not copied: one upload serves both draws). */
   connect(source: THREE.BufferGeometry): void {
     const g = new THREE.InstancedBufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(POSE_BONES * 3), 3));
     g.setAttribute('aBone', new THREE.BufferAttribute(Float32Array.from({ length: POSE_BONES }, (_, i) => i), 1));
-    for (const name of ['iShape', 'iBuild', 'iMaskA', 'iLook', 'iMotion']) g.setAttribute(name, source.getAttribute(name));
+    g.setAttribute('iMotion', source.getAttribute('iMotion'));
     g.instanceCount = 0;
     const points = new THREE.Points(g, this.material);
     points.frustumCulled = false;

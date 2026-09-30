@@ -2,21 +2,22 @@
 // frame time of the old code"): opens the saved block (scripts/refblock.mjs), fills the street with citizens (the pedestrian update, as the game does it),
 // then draws the same frames with the people group shown and hidden and reports the difference: draw calls, triangles and wall time per frame (the GL
 // queue is drained with finish() after every frame, so the time is the software GPU's too), plus how many people are on the near and far figure.
-// Three views of the busiest few metres of street: close (24 m), street (60 m, the usual play height) and overview (140 m). Run it once against the
+// Views of the busiest few metres of street: close (24 m), street (60 m, the usual play height) and overview (140 m; VIEWS=close,street,overview). Run it once against the
 // old code and once against the new one and compare the "people group" lines.
 //
 // usage: scripts/withslot.sh env BASE_URL=http://127.0.0.1:5181/new node scripts/peoplecost.mjs [low|high] [phone]
-//   env: PEOPLE=160 (how many to ask for), ROUNDS=12 (alternations of hidden / shown), FRAMES=6 (frames per measurement),
+//   env: PEOPLE=160 (how many to ask for), ROUNDS=4 (alternations of hidden / shown), FRAMES=4 (frames per measurement), VIEWS=close,street (or add overview),
 //        SHOT=prefix writes prefix-close.jpg and prefix-street.jpg
 import { chromium } from 'playwright-core';
 import { ARGS, EXE, openBlock } from './refblock.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const quality = process.argv[2] || 'low';
 const phone = process.argv[3] === 'phone' || quality === 'low';
-const want = +(process.env.PEOPLE || 160), rounds = +(process.env.ROUNDS || 12), frames = +(process.env.FRAMES || 6);
+const want = +(process.env.PEOPLE || 160), rounds = +(process.env.ROUNDS || 4), frames = +(process.env.FRAMES || 4);
+const viewNames = (process.env.VIEWS || 'close,street').split(',');
 const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
 const { page, center, errs } = await openBlock(browser, { base, quality, phone, width: phone ? 390 : 1280, height: phone ? 844 : 720 });
-const r = await page.evaluate(async ({ center, want, rounds, frames }) => {
+const r = await page.evaluate(async ({ center, want, rounds, frames, viewNames }) => {
   const g = window.__game;
   g.sim.day = 120; g.weather.force('clear', 30); g.weather.settle(); g.env.hour = 12.5; g.hour = 12.5;
   window.__dbg.view(center.x, center.z, 140, 0.7, 0.55);
@@ -43,7 +44,7 @@ const r = await page.evaluate(async ({ center, want, rounds, frames }) => {
     return { ms: med(ms), calls, tris };
   };
   const out = [];
-  for (const [name, dist, pitch] of [['close', 24, 0.35], ['street', 60, 0.5], ['overview', 140, 0.7]]) {
+  for (const [name, dist, pitch] of [['close', 24, 0.35], ['street', 60, 0.5], ['overview', 140, 0.7]].filter((v) => viewNames.includes(v[0]))) {
     window.__dbg.view(at.x, at.z, dist, 0.9, pitch);
     for (let i = 0; i < 4; i++) g.frame(0.016);
     let near = 0, far = 0, seen = 0;
@@ -61,7 +62,7 @@ const r = await page.evaluate(async ({ center, want, rounds, frames }) => {
   const meshes = [];
   group.traverse((o) => { if (o.isMesh) meshes.push({ name: o.name, count: o.count, tris: (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3, shadow: o.castShadow }); });
   return { peds: g.peds.peds.length, cluster: at, views: out, meshes, quality: g.q.name, group: group.name };
-}, { center, want, rounds, frames });
+}, { center, want, rounds, frames, viewNames });
 // pictures: the busiest few metres of street, from near and from the usual gameplay height
 if (process.env.SHOT) {
   for (const [name, dist, pitch] of [['close', 24, 0.35], ['street', 60, 0.5]]) {

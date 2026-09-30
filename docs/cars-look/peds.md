@@ -129,7 +129,7 @@ Run on the final code (a frozen snapshot on port 5181, single jobs through `/hom
 * `npx tsc --noEmit`: clean. `node scripts/shadercheck.mjs`: OK. glslangValidator (GLSL ES 3.00) on the near vertex, near fragment, shadow
   vertex and pose vertex/fragment shaders, both variants (pose textures, and per-vertex pose without float render targets): OK.
 * `peoplelineup.mjs feet`: OK (see the table). `peoplelineup.mjs lod`: 13 people every 2.5 m from 50 to 80 m all drawn across the switch.
-* `motiontest.mjs`, `scaletest.mjs`: {{MOTION_SCALE}}
+* `motiontest.mjs`: every check OK on the new code (walkers' legs 0.704 cycles per metre, 0 teleports in 6430 steps); one earlier run met no walking pedestrian in its window (0 steps, so its two walker checks had nothing to measure) and the rerun measured them. `scaletest.mjs`: every check OK. The only FAIL in both, and identically against the old code, is "no page errors": the Vite client of my frozen snapshot server logs `WebSocket closed without opened`; it is the harness, not the game.
 * Not run (the final run is the lead's): qualitytest, glcheck, nighttest, nightglow, treelod, impostortest, reflecttest, starttest,
   audiotest, junctiontest, tooltest, uisweep, tiptest, overlaptest, touchtest. None of them refers to the people renderer; what could
   break them is a shader that fails to compile or a GL error, which glslang, the lineup page and the game runs above rule out on

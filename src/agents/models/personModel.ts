@@ -72,7 +72,6 @@ export function buildFaceAtlas(): THREE.CanvasTexture {
 export interface PersonMaterialControl {
   material: THREE.MeshStandardMaterial;
   setNight(value: number): void;
-  setLodDistance(value: number): void;
   dispose(): void;
 }
 
@@ -87,9 +86,11 @@ const VARYINGS = /* glsl */`
   }
 `;
 
-export function createPersonMaterial(faceAtlas: THREE.Texture, far: boolean, pose: SharedUniforms): PersonMaterialControl {
+export function createPersonMaterial(faceAtlas: THREE.Texture, pose: SharedUniforms): PersonMaterialControl {
   const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.78, metalness: 0.02 });
-  const uniforms = { uFaceAtlas: { value: faceAtlas }, uNight: { value: 0 }, uLodDistance: { value: 64 }, uFarDistance: { value: 1500 }, uFarLod: { value: far ? 1 : 0 } };
+  // (which figure a person is drawn as, and whether at all, is decided on the CPU: personRenderer.ts hands each draw only its own people;
+  // near and far are the same program)
+  const uniforms = { uFaceAtlas: { value: faceAtlas }, uNight: { value: 0 } };
   material.onBeforeCompile = (shader, renderer) => {
     Object.assign(shader.uniforms, uniforms, pose);
     shader.vertexShader = shader.vertexShader
@@ -109,7 +110,6 @@ export function createPersonMaterial(faceAtlas: THREE.Texture, far: boolean, pos
   return {
     material,
     setNight(value: number) { uniforms.uNight.value = THREE.MathUtils.clamp(value, 0, 1); },
-    setLodDistance(value: number) { uniforms.uLodDistance.value = value; },
     dispose() { material.dispose(); },
   };
 }
@@ -117,9 +117,8 @@ export function createPersonMaterial(faceAtlas: THREE.Texture, far: boolean, pos
 /** Shadow pass companion: the same pose and feature masks, without the view camera's level-of-detail test. */
 export function createPersonDepthMaterial(pose: SharedUniforms): THREE.MeshDepthMaterial {
   const material = new THREE.MeshDepthMaterial();
-  const uniforms = { uLodDistance: { value: 1e7 }, uFarDistance: { value: 1e7 }, uFarLod: { value: 0 } };
   material.onBeforeCompile = (shader, renderer) => {
-    Object.assign(shader.uniforms, uniforms, pose);
+    Object.assign(shader.uniforms, pose);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\n#define CITIZEN_DEPTH\n${poseDefine(renderer)}${VERTEX_INJECT}`)
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vec3 cNormal = vec3(0.0, 1.0, 0.0);\n  vec3 cPos = vec3(0.0);\n  citizenDeform(cNormal, cPos);\n  transformed = cPos;');

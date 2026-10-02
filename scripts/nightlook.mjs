@@ -55,6 +55,12 @@ async function closeUp(page, name, setup, sweep) {
         if (c) {
           const orig = Array.isArray(o.material) ? o.material[0] : o.material, am = !!info.alphaMasked?.(o);
           const m = new MBM({ color: colors[c], toneMapped: false, fog: false, map: am ? orig.map ?? null : null, alphaTest: am ? 0.1 : 0, side: am ? 2 : 0 });
+          // (the mask colour must stay flat: no instance colour (the forest trees carry one, a dark green: it took the red under the cut),
+          // and a leaf card is cut by its texture's alpha only, its colour does not tint it)
+          m.onBeforeCompile = (sh) => {
+            sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>', '').replace('#include <map_fragment>', am ? '#ifdef USE_MAP\n  diffuseColor.a *= texture2D(map, vMapUv).a;\n#endif' : '');
+          };
+          m.customProgramCacheKey = () => (am ? 'nightlook-mask-alpha' : 'nightlook-mask');
           made.push(m); saved.push([o, o.material]); o.material = m;
           return;
         }
@@ -72,24 +78,6 @@ async function closeUp(page, name, setup, sweep) {
       for (const m of made) m.dispose();
       return out;
     };
-    // a case that offers several candidate subjects (the Low trees): the first one the camera really sees wins
-    if (info.candidates) {
-      let best = null, bestN = -1;
-      const tried = [];
-      for (const cand of info.candidates.slice(0, 14)) {
-        info.place(cand);
-        for (let i = 0; i < 3; i++) g.frame(0.05, false);
-        const mk = readMask();
-        let n = 0; for (let i = 0; i < w * h; i++) if (mk[i * 4] > 128) n++;
-        tried.push(n);
-        if (n > bestN) { bestN = n; best = cand; }
-        if (n >= 4000) break;
-      }
-      info.where.tried = tried;
-      info.place(best);
-      info.where.tree = best.id; info.where.x = Math.round(best.x); info.where.z = Math.round(best.z); info.where.seen = bestN;
-      for (let i = 0; i < 6; i++) g.frame(0.05, false);
-    }
     const frames = [{ label: null, shot: draw() }];
     const mask = readMask();
     // ---- a sweep of the build's tuning uniform: the same camera and mask, one more frame per value
@@ -140,43 +128,51 @@ const treeSetup = async (g) => {
       for (const it of b.items) { const d = Math.hypot(it.x - C.x, it.z - C.z); if (d < best) { best = d; tree = { x: it.x, y: it.y, z: it.z, id }; } }
     }
     kind = 'civic street tree';
-  }
-  let candidates = null;
-  if (!tree) {
-    // Low has no civic layer: the forest trees near the town (drawn near, as instanced meshes with leaf cards). Candidates: full size,
-    // not under a building or on a road, lit trees (some lamp light on the ground at the foot: the pool texture's red channel, read back
-    // from the canvas it was painted on) before unlit ones, nearest the block's centre first; the camera keeps the first it really sees.
-    g.rts.setView(C.x, C.z, 60, 2.4, 0.4, true);
-    for (let i = 0; i < 6; i++) g.frame(0.05, false);
-    const NL = await import('/src/world/nightLights.ts'), R4 = NL.LAMPS.uLampRect.value, cvs = g.nightLights.canvas, c2 = cvs.getContext('2d');
-    g.nightLights.paint();
-    const pool = (x, z) => { const u = (x - R4.x) * R4.z, v = (z - R4.y) * R4.w; if (u < 0 || v < 0 || u > 1 || v > 1) return 0; return c2.getImageData(Math.min(cvs.width - 1, Math.floor(u * cvs.width)), Math.min(cvs.height - 1, Math.floor(v * cvs.height)), 1, 1).data[0]; };
-    const m = new (g.camera.matrixWorld.constructor)();
-    candidates = [];
-    for (const im of g.trees.near) {
-      for (let i = 0; i < im.count; i++) {
-        im.getMatrixAt(i, m);
-        const e = m.elements, sc = Math.hypot(e[0], e[1], e[2]), x = e[12], z = e[14];
-        if (sc < 0.6 || g.buildings.near(x, z, 8).length || g.net.pickSeg(x, z, 10)) continue;
-        const p = pool(x, z);
-        candidates.push({ x, y: e[13], z, d: Math.hypot(x - C.x, z - C.z), p, id: `forest (pool ${p})` });
-      }
+    g.rts.setView(tree.x, tree.z, 20, 2.4, 0.3, true);
+  } else {
+    // Low has no civic street trees, and the reference town has cleared its forest (only shrubs stand in its streaming set). So: a real
+    // broadleaf tree (the biggest oak, else decid, redwood, pine, nearest the block among the tallest 40) is found in the forest, the
+    // camera is taken there for a few frames so the stream draws it, its instance (matrix and colour) is copied, and the camera goes to
+    // the nearest street lamp, where the copy is written into slot 0 of that model's near mesh (count 1) before every frame, 4 m along the
+    // road from the pole. The shader under test is the real one; only the place is the test's.
+    const T = g.trees, KIND = { oak: 3, decid: 0, redwood: 2, pine: 1 };
+    let pick = -1;
+    for (const kind of ['oak', 'decid', 'redwood', 'pine']) {
+      const list = [];
+      for (let i = 0; i < T.n; i++) if (T.A[i] && T.K[i] === KIND[kind] && T.W[i] <= T.renderDensity) list.push(i);
+      list.sort((a, b) => Math.hypot(T.X[a] - C.x, T.Z[a] - C.z) - Math.hypot(T.X[b] - C.x, T.Z[b] - C.z));
+      const top = list.slice(0, 40).sort((a, b) => T.S[b] - T.S[a]);
+      if (top.length) { pick = top[0]; break; }
     }
-    candidates.sort((a, b) => (b.p >= 10) - (a.p >= 10) || a.d - b.d);
-    if (!candidates.length) throw new Error('no near forest tree to look at');
-    tree = candidates[0];
-    kind = 'forest tree (near mesh)';
+    if (pick < 0) throw new Error('no forest tree to copy');
+    g.rts.setView(T.X[pick], T.Z[pick], 40, 2.4, 0.5, true);
+    for (let i = 0; i < 6; i++) g.frame(0.05, false);
+    const sl = T.slotOf[pick];
+    if (sl < 0 || (sl >> 20) >= T.near.length) throw new Error('the forest tree is not drawn near');
+    const bm = T.near[sl >> 20], slot = sl & 0xfffff;
+    const mat = Array.from(bm.instanceMatrix.array.slice(slot * 16, slot * 16 + 16)), col = Array.from(bm.instanceColor.array.slice(slot * 3, slot * 3 + 3));
+    let lamp = null, best = 1e18;
+    for (const L of g.roads.lampSpots) { const d = Math.hypot(L.x - C.x, L.z - C.z); if (d < best) { best = d; lamp = L; } }
+    const ax = Math.cos(lamp.yaw), az = -Math.sin(lamp.yaw);
+    const x = lamp.x + ax * 4, z = lamp.z + az * 4, y = g.terrain.h(x, z) + 0.15;
+    g.rts.setView(x, z, 22, lamp.yaw + 0.6, 0.3, true);
+    var moveTree = () => {
+      bm.count = 1;
+      bm.instanceMatrix.array.set(mat, 0); bm.instanceMatrix.array[12] = x; bm.instanceMatrix.array[13] = y; bm.instanceMatrix.array[14] = z;
+      bm.instanceColor.array.set(col, 0);
+      bm.instanceMatrix.needsUpdate = true; bm.instanceColor.needsUpdate = true;
+    };
+    moveTree();
+    tree = { x, y, z, id: `${['decid', 'pine', 'redwood', 'oak'][T.K[pick]] ?? 'tree'} (size ${T.S[pick].toFixed(2)}) copied from ${Math.round(T.X[pick])},${Math.round(T.Z[pick])} to the lamp at ${Math.round(lamp.x)},${Math.round(lamp.z)}` };
+    kind = 'forest tree, copied beside the nearest street lamp';
   }
-  g.rts.setView(tree.x, tree.z, 20, 2.4, 0.3, true);
   const near = new Set(g.trees.near);
   return {
-    where: { kind, id: tree.id, x: Math.round(tree.x), z: Math.round(tree.z), view: candidates ? '30 m, yaw 2.4, pitch 0.7' : '20 m, yaw 2.4, pitch 0.3' },
-    // crowns: the pack's foliage material; or the forest tree meshes
-    // (with the civic layer loaded the crowns are its foliage; without it (Low) the forest trees' near meshes)
-    classify: (o) => (candidates ? near.has(o) : o.material && !Array.isArray(o.material) && o.material.name === 'civic-foliage'),
-    alphaMasked: (o) => !!candidates && near.has(o),
-    candidates,
-    place: (c) => g.rts.setView(c.x, c.z, 30, 2.4, 0.7, true),
+    where: { kind, id: tree.id, x: Math.round(tree.x), z: Math.round(tree.z), view: g.q.name === 'low' ? '22 m from the lamp side, pitch 0.3' : '20 m, yaw 2.4, pitch 0.3' },
+    // crowns: the pack's foliage material (civic street trees), or on Low the forest trees' near meshes
+    classify: (o) => (g.q.name === 'low' ? near.has(o) : o.material && !Array.isArray(o.material) && o.material.name === 'civic-foliage'),
+    alphaMasked: (o) => g.q.name === 'low' && near.has(o),
+    tick: g.q.name === 'low' ? () => moveTree() : undefined,
   };
 };
 

@@ -24,6 +24,9 @@ interface Step {
   dir: 1 | -1;
 }
 
+/** What a car on the road is following or waiting for (diagnostics: the tests and probes ask why a queue isn't moving) */
+export type Hold = 'lead' | 'side' | 'box tail' | 'box merge' | 'drive-thru' | 'walker' | 'left: oncoming' | 'courtesy' | 'driveway' | 'no room past the box' | 'red' | 'blocked' | 'all-way stop';
+
 export interface Car {
   id: number;
   h: number;
@@ -41,6 +44,8 @@ export interface Car {
   drawn?: { s: number; pi: number; lane: number; dep: number; arr: number; j: Car['junction']; turn: number; still: number; why: keyof Traffic['sigWhy'] };
   /** the junction it last slowed for someone on foot at (counts each stop once) */
   pedNode?: number;
+  /** what it's following or waiting for on the road this step (the nearest of them; unset with the road clear ahead) */
+  hold?: Hold;
   kind: VehicleKind;
   path: Step[];
   pi: number;
@@ -1079,7 +1084,7 @@ export class Traffic {
           if (Number.isFinite(c.turnV)) v0 = Math.min(v0, Math.sqrt(c.turnV * c.turnV + 2 * 2.1 * Math.max(0, exitS - c.s - 1)));
         }
         // obstacles: leader, red light, blocked seg
-        let gap = Infinity, dv = 0;
+        let gap = Infinity, dv = 0, hold: Hold = 'lead';
         const lead = arr[i + 1];
         if (lead) {
           gap = lead.s - c.s - lead.len;
@@ -1095,7 +1100,7 @@ export class Traffic {
               if (o.s <= c.s || o.crashed !== 0 || o.dep > 0 || o.arr >= 0) continue;
               const g = o.s - o.len - c.s;
               if (g >= gap) break;
-              if (Math.abs(o.lat - c.lat) < 2) { gap = g; dv = c.v - o.v; break; }
+              if (Math.abs(o.lat - c.lat) < 2) { gap = g; dv = c.v - o.v; hold = 'side'; break; }
             }
           }
         }
@@ -1105,7 +1110,7 @@ export class Traffic {
           const bt = this.boxTail.get(st.seg * 16 + (st.dir > 0 ? 0 : 8) + c.lane);
           if (bt) {
             const g = exitS - c.s + this.pastLine(bt) - bt.len;
-            if (g < gap) { gap = g; dv = c.v - bt.v; }
+            if (g < gap) { gap = g; dv = c.v - bt.v; hold = 'box tail'; }
           }
         }
         // someone from another lane already in the box on the way to the lane I'm
@@ -1120,7 +1125,7 @@ export class Traffic {
               const J = o.junction;
               if (!J || o.crashed !== 0 || J.lane2 !== lane2 || o.path[o.pi + 1]?.seg !== nx.seg || (J.fromSeg === seg.id && J.fromLane === c.lane)) continue;
               const g = exitS - c.s + this.pastLine(o) - o.len;
-              if (g < gap) { gap = g; dv = c.v - o.v; }
+              if (g < gap) { gap = g; dv = c.v - o.v; hold = 'box merge'; }
             }
           }
         }
@@ -1128,7 +1133,7 @@ export class Traffic {
         // (the line spills onto the stroad and blocks this lane until there's room)
         if (last && c.thruB && !this.thruRoom(c.thruB)) {
           const g8 = exitS - 1 - c.s;
-          if (g8 < gap) { gap = g8; dv = c.v; }
+          if (g8 < gap) { gap = g8; dv = c.v; hold = 'drive-thru'; }
           if (exitS - c.s < 15 && c.v < 0.5) {
             c.thruWait = (c.thruWait ?? 0) + dt;
             if (c.thruWait > 8 && this.clock - (this.spilledAt.get(c.thruB) ?? -1e9) > 300) { this.spilledAt.set(c.thruB, this.clock); this.onDriveThruSpill?.(c.thruB, seg); }
@@ -1139,7 +1144,7 @@ export class Traffic {
           const nodeId = st.dir > 0 ? seg.b : seg.a, nx = c.path[c.pi + 1], ns = nx && this.net.segs.get(nx.seg);
           if (this.walkerOnLanes(nodeId, seg, st.dir, true) || (ns && this.walkerOnLanes(nodeId, ns, nx.dir, false))) {
             const g7 = exitS - this.stopBack(nodeId, seg.id) - c.s;
-            if (g7 < gap) { gap = g7; dv = c.v; this.yieldedTo(c, nodeId); }
+            if (g7 < gap) { gap = g7; dv = c.v; hold = 'walker'; this.yieldedTo(c, nodeId); }
           }
         }
         // turning left across the oncoming lanes on a green: wait at the line for a gap
@@ -1147,7 +1152,7 @@ export class Traffic {
           const nodeId = st.dir > 0 ? seg.b : seg.a;
           if (this.signals.has(nodeId) && !this.clearing(nodeId, seg.id) && this.oncoming(nodeId, seg.id)) {
             const g6 = exitS - this.stopBack(nodeId, seg.id) - c.s;
-            if (g6 < gap) { gap = g6; dv = c.v; }
+            if (g6 < gap) { gap = g6; dv = c.v; hold = 'left: oncoming'; }
           }
         }
         // a car pulling out (or in) at a driveway ahead; a slow queue also lets a waiting driver in
@@ -1158,11 +1163,11 @@ export class Traffic {
           // too; one already too close, or not crawling, just carries on)
           const g = b.s - b.len - c.s - (b.courtesy ? 7 : 0);
           if (b.courtesy && (c.v > 5 || b.s - c.s > 25 || g < 0)) continue;
-          if (g < gap) { gap = g; dv = c.v; }
+          if (g < gap) { gap = g; dv = c.v; hold = b.courtesy ? 'courtesy' : 'driveway'; }
         }
         if (!last && exitS - c.s < 30 && !this.exitClear(c)) {
           const g4 = exitS - this.stopBack(st.dir > 0 ? seg.b : seg.a, seg.id) - c.s;
-          if (g4 < gap) { gap = g4; dv = c.v; }
+          if (g4 < gap) { gap = g4; dv = c.v; hold = 'no room past the box'; }
         }
         if (!last) {
           const nodeId = st.dir > 0 ? seg.b : seg.a;
@@ -1173,13 +1178,13 @@ export class Traffic {
             if (runIt) c.redsRun++;
             if (!(c.reckless && c.redsRun > 0 && exitS - c.s < 12)) {
               const g2 = exitS - this.stopBack(nodeId, seg.id) - c.s;
-              if (g2 < gap) { gap = g2; dv = c.v; }
+              if (g2 < gap) { gap = g2; dv = c.v; hold = 'red'; }
             }
           }
         }
         if (seg.blocked > 0) {
           const mid = seg.length / 2 - c.len;
-          if (c.s < mid) { const g3 = mid - c.s; if (g3 < gap) { gap = g3; dv = c.v; } }
+          if (c.s < mid) { const g3 = mid - c.s; if (g3 < gap) { gap = g3; dv = c.v; hold = 'blocked'; } }
         }
         // no lights here: wait at the line while someone from another road is crossing near your entry
         if (!last && exitS - c.s < 22 + extra) {
@@ -1200,7 +1205,7 @@ export class Traffic {
             const myBend = Math.abs(Math.atan2(ta.x * tb.z - ta.z * tb.x, ta.x * tb.x + ta.z * tb.z));
             if (mine && others.some((o) => this.crossesBox(mine!, o, o.junction!.fromSeg === seg.id || myBend < 0.5 ? 0 : c.len))) {
               const g5 = exitS - this.stopBack(nodeId, seg.id) - c.s;
-              if (g5 < gap) { gap = g5; dv = c.v; }
+              if (g5 < gap) { gap = g5; dv = c.v; hold = 'all-way stop'; }
             }
           }
         }
@@ -1238,6 +1243,7 @@ export class Traffic {
         acc = clamp(acc, -12, a);
         c.brakeT = acc < -1.2 ? 0.6 : Math.max(0, c.brakeT - dt);
         c.acc = acc;
+        c.hold = gap < Infinity ? hold : undefined;
         c.v = Math.max(0, c.v + acc * dt);
         const move = Math.min(c.v * dt, Math.max(0, gap + 0.5));
         c.s += move;

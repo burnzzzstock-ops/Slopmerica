@@ -8,6 +8,8 @@ const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, permissions: ['clipboard-read', 'clipboard-write'] });
 const page = await ctx.newPage();
+// (a frame takes seconds on the software GPU when the machine is busy, and a tap waits for the page to take it: 30 s timed taps out for no reason)
+page.setDefaultTimeout(240000);
 const pageErrors = [];
 page.on('pageerror', (e) => pageErrors.push(e.message));
 await page.addInitScript(() => { try { localStorage.setItem('slopmerica.quality', 'low'); } catch { /* */ } });
@@ -82,20 +84,50 @@ ok('context loss saved the city', await page.evaluate(() => !!localStorage.getIt
 await shot('shots/playtest/context-lost.png');
 
 // 6. a save that breaks loading lands on the rescue screen, not a frozen loader.
+// Two kinds of broken save (what the game does with each is the premise of this check; it changed when the title began validating saves, commit
+// 06ecee0 "a partial city file is turned away on the title"; before that `communes = 42` got past the title and threw while loading):
+//   a. DAMAGED SHAPE (communes is not a list): the title never offers it. With an earlier checkpoint Resume loads that instead; without one there is no
+//      Resume at all. Either way the rescue screen is not involved and nothing throws.
+//   b. A VALID SHAPE THAT WILL NOT LOAD (the county is not one this build has): Resume starts loading, throws, and the rescue screen appears.
 // Corrupt it from the title screen: leaving the game autosaves over it.
 await page.goto(`${base}/`, { waitUntil: 'load' });
 await page.waitForSelector('#continue', { timeout: 60000 });
+const goodSave = await page.evaluate(() => localStorage.getItem('slopmerica.save.v1'));
 await page.evaluate(() => {
   const d = JSON.parse(localStorage.getItem('slopmerica.save.v1'));
-  d.communes = 42; // not a list: loading throws
+  d.communes = 42; // not a list: the shape check turns it away
   localStorage.setItem('slopmerica.save.v1', JSON.stringify(d));
 });
+await page.reload({ waitUntil: 'load' });
+await page.waitForSelector('.aaa-nav', { timeout: 60000 });
+const hasCheckpoint = await page.evaluate(() => !!localStorage.getItem('slopmerica.save.v1.checkpoint'));
+const offered = await page.isVisible('#continue');
+ok(`a save with a damaged shape is not offered as it is (${hasCheckpoint ? 'the checkpoint is' : 'no Resume without a checkpoint'})`, offered === hasCheckpoint, JSON.stringify({ offered, hasCheckpoint }));
+if (offered) {
+  await page.tap('#continue');
+  await page.waitForFunction(() => window.__game, null, { timeout: 180000 }).catch(() => {});
+  ok('... Resume starts the game from the checkpoint, and the rescue screen stays away', (await page.evaluate(() => !!window.__game)) && !(await page.isVisible('.boot-fail')));
+  await page.goto(`${base}/`, { waitUntil: 'load' });
+  await page.waitForSelector('.aaa-nav', { timeout: 60000 });
+}
+await page.evaluate((good) => {
+  const d = JSON.parse(good);
+  d.map = 'atlantis'; // the right shape, but a county this build does not have: loading throws
+  localStorage.setItem('slopmerica.save.v1', JSON.stringify(d));
+}, goodSave);
 await page.reload({ waitUntil: 'load' });
 await page.waitForSelector('#continue', { timeout: 60000 });
 await page.tap('#continue');
 await page.waitForSelector('.boot-fail', { timeout: 120000 }).catch(() => {});
 ok('broken save shows the rescue screen', await page.isVisible('.boot-fail'));
 await shot('shots/playtest/rescue.png');
+if (await page.isVisible('#bf-city')) {
+  // (it used to do its work in silence, and where downloads are blocked it did nothing at all)
+  await page.tap('#bf-city');
+  await page.waitForTimeout(800);
+  const said = (await page.textContent('.bf-status').catch(() => '')) ?? '';
+  ok('"Save the city file" on the rescue screen says what happened', /saved|copied/i.test(said), said);
+}
 if (await page.isVisible('#bf-fresh')) {
   // with an earlier checkpoint the button restores it; without one it starts fresh
   const label = await page.textContent('#bf-fresh');

@@ -43,7 +43,7 @@ const SELF_HOSTED = new Set(['savefallback']);
 // env a test needs
 const ENV = { 'streetaudio-game': { QUALITY: 'low' } };
 // tests that legitimately take long (seconds)
-const SLOW = { soak: 3600, yellowflash: 5400, nighttest: 2400, uisweep: 1800 };
+const SLOW = { soak: 3600, yellowflash: 5400, nighttest: 2400, uisweep: 1800, presetlight: 7200 };
 
 // ---- the list: README lines `node scripts/<name>.mjs <args>   # <what>`
 const readme = readFileSync('README.md', 'utf8').split('\n');

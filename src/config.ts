@@ -26,6 +26,16 @@ export interface Quality {
   lod: [number, number, number]; // terrain LOD switch distances
   maxCars: number;
   maxPeople: number;
+  /** People are drawn from lists made every frame (agents/models/personRenderer.ts). Metres from a camera within which a person is the near figure
+   * (3117 triangles held, 768 shown; beyond it the far figure, 497 held, 210 shown): 64 m is ~64 px tall at 1080p x2, ~38 px on a phone at 1.5x. */
+  peopleNear: number;
+  /** ... at most this many near figures at a time, the nearest to a camera (the rest of the crowd in range is the far figure): bounds the worst case
+   * (a near figure costs about 3x the old model's person on the software GPU, 14 ms against 4.4 ms in the lineup bench; High's and Ultra's caps are above any crowd that spawns round a camera) */
+  peopleNearMax: number;
+  /** ... metres from a camera within which a person casts a shadow (when in the view, or out of it by less than a shadow's reach, 24 m) */
+  peopleShadow: number;
+  /** ... the shadow map gets a lighter figure: no hair, hats, jackets or bags (239 triangles held per person, not 497) */
+  peopleShadowLite: boolean;
   post: boolean;
   ao: boolean;
   aoFull: boolean;
@@ -35,19 +45,19 @@ export interface Quality {
 export const QUALITY: Record<Quality['name'], Quality> = {
   low: {
     name: 'low', pixelRatio: 1, shadows: true, shadowMap: 1024, treeDensity: 0.5, treeNear: 290, treeNearCap: 6000, treeFarCap: 42000,
-    lod: [600, 1300, 2800], maxCars: 450, maxPeople: 120, post: false, ao: false, aoFull: false, groundRadius: 150,
+    lod: [600, 1300, 2800], maxCars: 450, maxPeople: 120, peopleNear: 40, peopleNearMax: 12, peopleShadow: 120, peopleShadowLite: true, post: false, ao: false, aoFull: false, groundRadius: 150,
   },
   medium: {
     name: 'medium', pixelRatio: 1.4, shadows: true, shadowMap: 2048, treeDensity: 0.75, treeNear: 480, treeNearCap: 12000, treeFarCap: 85000,
-    lod: [650, 1450, 3000], maxCars: 800, maxPeople: 250, post: true, ao: false, aoFull: false, groundRadius: 190,
+    lod: [650, 1450, 3000], maxCars: 800, maxPeople: 250, peopleNear: 64, peopleNearMax: 40, peopleShadow: 160, peopleShadowLite: true, post: true, ao: false, aoFull: false, groundRadius: 190,
   },
   high: {
     name: 'high', pixelRatio: 2, shadows: true, shadowMap: 2048, treeDensity: 1, treeNear: 700, treeNearCap: 26000, treeFarCap: 160000,
-    lod: [900, 1900, 3800], maxCars: 1400, maxPeople: 420, post: true, ao: true, aoFull: false, groundRadius: 240,
+    lod: [900, 1900, 3800], maxCars: 1400, maxPeople: 420, peopleNear: 64, peopleNearMax: 100, peopleShadow: 9999, peopleShadowLite: false, post: true, ao: true, aoFull: false, groundRadius: 240,
   },
   ultra: {
     name: 'ultra', pixelRatio: 2.25, shadows: true, shadowMap: 4096, treeDensity: 1.15, treeNear: 850, treeNearCap: 34000, treeFarCap: 210000,
-    lod: [1100, 2200, 4200], maxCars: 1900, maxPeople: 580, post: true, ao: true, aoFull: true, groundRadius: 300,
+    lod: [1100, 2200, 4200], maxCars: 1900, maxPeople: 580, peopleNear: 64, peopleNearMax: 120, peopleShadow: 9999, peopleShadowLite: false, post: true, ao: true, aoFull: true, groundRadius: 300,
   },
 };
 

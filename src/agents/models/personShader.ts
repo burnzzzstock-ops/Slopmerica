@@ -31,9 +31,6 @@ attribute vec4 iMotion;   // action (-1: a free slot), time (cycles when walking
 flat varying vec4 vZP;    // zone, part, feature, cell
 flat varying vec2 vInst;  // the person (a row of the style texture)
 varying vec3 vRest;
-uniform float uLodDistance;
-uniform float uFarDistance;
-uniform float uFarLod;
 ${STYLE_ACCESS}
 `;
 
@@ -459,8 +456,8 @@ void citizenBone(int pt, out mat3 Rn, out vec3 tr) {
 }
 `;
 
-// One vertex: the person's level of detail and the pieces they wear decide whether it is drawn at all (before anything is fetched or
-// computed), the build of this person reshapes it in the rest pose, and its bone's transform poses it.
+// One vertex: the pieces the person wears decide whether it is drawn at all (before anything is fetched or
+// computed; which figure a person is drawn as, and whether at all, was decided on the CPU: personRenderer.ts), the build of this person reshapes it in the rest pose, and its bone's transform poses it.
 const SKIN = /* glsl */`
 bool featureOn(float f, int prop, int scene, vec4 msk) {
   if (f < 0.5) return true;
@@ -476,15 +473,6 @@ void citizenDeform(inout vec3 nrm, out vec3 outPos) {
   outPos = vec3(0.0);
   int action = int(iMotion.x + 0.5);
   if (action < 0) return;                        // a free slot
-  vec3 center = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-  float dist = distance(cameraPosition, center);
-#ifdef CITIZEN_DEPTH
-  bool showLod = true;
-#else
-  bool showLod = uFarLod > 0.5 ? (dist > uLodDistance && dist < uFarDistance) : (dist <= uLodDistance);
-#endif
-  if (!showLod) return;
-
   vec4 lk = styleAt(5);
   int i1 = int(lk.x + 0.5), i2 = int(lk.y + 0.5);
   int baseProp = (i2 >> 10) & 63;
@@ -577,7 +565,7 @@ void main() {
   vPoseA = vec4(Rn[0], tr.x);
   vPoseB = vec4(Rn[1], tr.y);
   vPoseC = vec4(Rn[2], tr.z);
-  gl_Position = vec4((aBone + 0.5) / uPoseSize.x * 2.0 - 1.0, (float(gl_InstanceID) + 0.5) / uPoseSize.y * 2.0 - 1.0, 0.0, 1.0);
+  gl_Position = vec4((aBone + 0.5) / uPoseSize.x * 2.0 - 1.0, (iMotion.z + 0.5) / uPoseSize.y * 2.0 - 1.0, 0.0, 1.0); // the row is the person's handle
   gl_PointSize = 1.0;
 }
 `;

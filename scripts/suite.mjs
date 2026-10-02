@@ -34,6 +34,7 @@ const SKIP = {
   lowperf: 'a measurement (two builds side by side)', peoplelineup: 'a capture tool (its `feet` mode is a check, run on purpose)', peoplecost: 'a measurement',
   peoplestats: 'a measurement', junctionplan: 'a capture tool', junctionshots: 'a capture tool', lookbook: 'a capture tool', vehiclestats: 'a table, not a test',
   aacompare: 'a measurement', trafficscale: 'a measurement over its target today (the traffic pass owns it)', audit8: 'a scripted play session that writes pictures',
+  nightcost: 'a measurement (where a night frame goes)', nightlook: 'a measurement (MIN_TREE / MIN_CAR make it a check)',
   parkingtags: 'asks the Jev model: needs a key (its --dry-run needs none)', econtest: 'a measurement (CHECK=1 makes it a gate)', bldshots: 'a capture tool',
 };
 // tests that serve the game themselves (they build it and host it, so they take no BASE_URL)

@@ -134,7 +134,7 @@ export class Pedestrians {
    */
   canCross?: (node: number, segs: number[], secs: number, impatient: boolean) => boolean;
   /** people on each crosswalk right now, by `node:seg`: where they are and which way they're walking */
-  private onCrosswalk = new Map<string, { x: number; z: number; dx: number; dz: number }[]>();
+  private onCrosswalk = new Map<string, { x: number; z: number; dx: number; dz: number; pending: boolean }[]>();
   /** when each crosswalk's current crossing started, and when the last one cleared (walking clock) */
   private cwSince = new Map<string, number>();
   private cwClear = new Map<string, number>();
@@ -270,7 +270,8 @@ export class Pedestrians {
         const k = `${p.crossing.node}:${sid}`;
         let list = this.onCrosswalk.get(k);
         if (!list) this.onCrosswalk.set(k, (list = []));
-        list.push({ x: p.x, z: p.z, dx: (g.tx - g.fx) / gl, dz: (g.tz - g.fz) / gl });
+        // (pending: still walking round to the kerb they'll step off, committed to crossing the whole arm)
+        list.push({ x: p.x, z: p.z, dx: (g.tx - g.fx) / gl, dz: (g.tz - g.fz) / gl, pending: !!p.legs?.[0]?.cross });
       }
     }
     for (const k of this.onCrosswalk.keys()) if (!this.cwSince.has(k)) this.cwSince.set(k, this.walkClock);

@@ -530,7 +530,7 @@ export class Traffic {
     return FIXED_PAINT[kind] ?? PAINT[Math.floor(rnd() * PAINT.length)];
   }
   /** game wiring: the people walking over this arm of this junction: where they are and which way they're going */
-  crosswalkWalkers?: (node: number, seg: number) => { x: number; z: number; dx: number; dz: number }[] | undefined;
+  crosswalkWalkers?: (node: number, seg: number) => { x: number; z: number; dx: number; dz: number; pending?: boolean }[] | undefined;
   /** game wiring: how far past its trim people cross this arm at this node (pedestrians.ts walkSetback) */
   crosswalkSetback?: (node: number, seg: number) => number;
   /** crosswalk stops (a car slowing for someone on foot at a junction, once each), for tests */
@@ -1269,8 +1269,11 @@ export class Traffic {
         // someone on the crosswalk over my lanes, or over the lanes I'm turning into: stop at the line
         if (!last && this.crosswalkWalkers && exitS - c.s < 20 + extra) {
           const nodeId = st.dir > 0 ? seg.b : seg.a, nx = c.path[c.pi + 1], ns = nx && this.net.segs.get(nx.seg);
-          if (this.walkerOnLanes(nodeId, seg, st.dir, true) || (ns && this.walkerOnLanes(nodeId, ns, nx.dir, false))) {
-            const g7 = exitS - this.stopBack(nodeId, seg.id) - c.s;
+          const g7 = exitS - this.stopBack(nodeId, seg.id) - c.s;
+          // (and for someone still walking round to the kerb they'll step off: they cross every lane of the arm, and a
+          // car that set off as they left the corner was past its line when they stepped out. Not a car too close to
+          // stop short of where they'll walk, at 6 m/s/s: it goes through before they get there)
+          if (this.walkerOnLanes(nodeId, seg, st.dir, true) || (ns && this.walkerOnLanes(nodeId, ns, nx.dir, false)) || (g7 + STOP_LINE - 1 > (c.v * c.v) / 12 && this.walkerPending(nodeId, seg.id))) {
             if (g7 < gap) { gap = g7; dv = c.v; hold = 'walker'; this.yieldedTo(c, nodeId); }
           }
         }
@@ -1802,6 +1805,13 @@ export class Traffic {
       }
     }
     return true;
+  }
+
+  /** Someone committed to crossing this arm who is still walking round to the kerb they'll step off (pedestrians.ts `pending`). */
+  private walkerPending(nodeId: number, segId: number): boolean {
+    const ws = this.crosswalkWalkers?.(nodeId, segId);
+    if (ws) for (const w of ws) if (w.pending) return true;
+    return false;
   }
 
   /**

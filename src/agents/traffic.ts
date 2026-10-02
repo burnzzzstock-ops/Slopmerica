@@ -531,7 +531,7 @@ export class Traffic {
     return FIXED_PAINT[kind] ?? PAINT[Math.floor(rnd() * PAINT.length)];
   }
   /** game wiring: the people walking over this arm of this junction: where they are and which way they're going */
-  crosswalkWalkers?: (node: number, seg: number) => { x: number; z: number; dx: number; dz: number; pending?: boolean }[] | undefined;
+  crosswalkWalkers?: (node: number, seg: number) => { x: number; z: number; dx: number; dz: number }[] | undefined;
   /** crosswalk stops (a car slowing for someone on foot at a junction, once each), for tests */
   pedYields = 0;
   private yieldedTo(c: Car, node: number) {
@@ -1271,11 +1271,8 @@ export class Traffic {
         // someone on the crosswalk over my lanes, or over the lanes I'm turning into: stop at the line
         if (!last && this.crosswalkWalkers && exitS - c.s < 20 + extra) {
           const nodeId = st.dir > 0 ? seg.b : seg.a, nx = c.path[c.pi + 1], ns = nx && this.net.segs.get(nx.seg);
-          const g7 = exitS - this.stopBack(nodeId, seg.id, c.lane) - c.s;
-          // (and for someone still walking round to the kerb they'll step off: they cross every lane of the arm, and a
-          // car that set off as they left the corner was past its line when they stepped out. Not a car too close to
-          // stop short of where they'll walk, at 6 m/s/s: it goes through before they get there)
-          if (this.walkerOnLanes(nodeId, seg, st.dir, true) || (ns && this.walkerOnLanes(nodeId, ns, nx.dir, false)) || (g7 + STOP_LINE - 1 > (c.v * c.v) / 12 && this.walkerPending(nodeId, seg.id))) {
+          if (this.walkerOnLanes(nodeId, seg, st.dir, true) || (ns && this.walkerOnLanes(nodeId, ns, nx.dir, false))) {
+            const g7 = exitS - this.stopBack(nodeId, seg.id, c.lane) - c.s;
             if (g7 < gap) { gap = g7; dv = c.v; hold = 'walker'; this.yieldedTo(c, nodeId); }
           }
         }
@@ -1599,6 +1596,9 @@ export class Traffic {
     if (exitS - head < 8) {
       const nodeId = st.dir > 0 ? seg.b : seg.a, at = this.lanePos(seg, st.dir, c.s - c.len / 2, c.lane).p;
       for (const o of this.junctionCars.get(nodeId) ?? []) if (o.crashed === 0 && Math.hypot(o.x - at.x, o.z - at.z) < (o.len + c.len) / 2 + 1.5) return false;
+      // (and nobody on the arm's crosswalk, if it joins past its line: once out, it's too close to stop for them. A car
+      // that pulled out right at the crosswalk drove through someone halfway over it)
+      if (head > exitS - this.stopBack(nodeId, seg.id, c.lane) && this.crosswalkWalkers?.(nodeId, seg.id)?.length) return false;
     }
     if (c.lotLeft) {
       const lanes = ROAD_TYPES[seg.type].lanesPerDir, sOpp = seg.length - c.s;
@@ -1793,6 +1793,9 @@ export class Traffic {
       for (let k = 0; k < ROAD_TYPES[sg.type].lanesPerDir; k++) {
         for (const o of this.buckets.get(sid * 16 + (dir > 0 ? 0 : 8) + k) ?? []) if (o.s > exitS - out - 2 && o.s - o.len < exitS - out + 5) return false;
         for (const o of this.buckets.get(sid * 16 + (dir > 0 ? 8 : 0) + k) ?? []) if (o.s - o.len < entryS + out + 4 && o.s > entryS + out - 5) return false;
+        // (and a car pulling out of a driveway there, which isn't in the lane lists until it's out)
+        for (const b of this.mergeBlocks.get(sid * 16 + (dir > 0 ? 0 : 8) + k) ?? []) if (!b.courtesy && b.s > exitS - out - 6 && b.s - b.len < exitS - out + 5) return false;
+        for (const b of this.mergeBlocks.get(sid * 16 + (dir > 0 ? 8 : 0) + k) ?? []) if (!b.courtesy && b.s - b.len < entryS + out + 4 && b.s > entryS + out - 5) return false;
       }
       if (!sig && !impatient) for (let k = 0; k < ROAD_TYPES[sg.type].lanesPerDir; k++) {
         for (const o of this.buckets.get(sid * 16 + (dir > 0 ? 0 : 8) + k) ?? []) {
@@ -1801,19 +1804,15 @@ export class Traffic {
       }
       for (const o of this.junctionCars.get(nodeId) ?? []) {
         const J = o.junction;
-        if (!J || o.crashed !== 0) continue;
+        if (o.crashed !== 0) continue;
+        // (out of the box this step, into this arm: not in its lane lists until the next step, and its rear is on the
+        // crosswalk. Someone waiting at the kerb stepped out under a box truck's tail as it left the box)
+        if (!J) { if (o.path[o.pi]?.seg === sid && o.s - o.len < entryS + out + 4) return false; continue; }
         // coming out of that arm until its rear is clear of the crosswalk, or going into it at all
         if ((J.fromSeg === sid && clamp(J.t, 0, 1) * J.len < o.len + 3) || o.path[o.pi + 1]?.seg === sid) return false;
       }
     }
     return true;
-  }
-
-  /** Someone committed to crossing this arm who is still walking round to the kerb they'll step off (pedestrians.ts `pending`). */
-  private walkerPending(nodeId: number, segId: number): boolean {
-    const ws = this.crosswalkWalkers?.(nodeId, segId);
-    if (ws) for (const w of ws) if (w.pending) return true;
-    return false;
   }
 
   /**

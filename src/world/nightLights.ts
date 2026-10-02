@@ -53,6 +53,11 @@ export const LAMPS = {
   uLampOn: { value: 0 },
 };
 
+/**
+ * How much of a pool's light a tree's trunk and crown (near trees and street trees) take, against the ground's 1. Uniform, so a test
+ * page can sweep it (scripts/nightlook.mjs).
+ */
+export const TREE_LAMP = { value: 1 };
 /** GLSL: uniforms for the fragment shader */
 export const LAMP_PARS = /* glsl */ `
 uniform sampler2D uLampMap;
@@ -79,11 +84,12 @@ export function bindLamps(sh: { uniforms: Record<string, THREE.IUniform> }) {
  * Give a plain MeshStandardMaterial (roads, sidewalks) the pools. Chains any
  * onBeforeCompile the material already has.
  */
-export function litByLamps(mat: THREE.MeshStandardMaterial) {
+export function litByLamps(mat: THREE.MeshStandardMaterial, share?: { name: string; u: THREE.IUniform<number> }) {
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (sh, r) => {
     prev?.call(mat, sh, r);
     bindLamps(sh);
+    if (share) sh.uniforms[share.name] = share.u;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vLampW;')
       .replace('#include <project_vertex>', `#include <project_vertex>
@@ -98,11 +104,11 @@ export function litByLamps(mat: THREE.MeshStandardMaterial) {
   vLampW = (modelMatrix * lw).xyz;
 }`);
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vLampW;\n${LAMP_PARS}`)
-      .replace('#include <lights_physical_fragment>', `${lampAdd('vLampW')}\n#include <lights_physical_fragment>`);
+      .replace('#include <common>', `#include <common>\nvarying vec3 vLampW;\n${share ? `uniform float ${share.name};\n` : ''}${LAMP_PARS}`)
+      .replace('#include <lights_physical_fragment>', `${lampAdd('vLampW', share?.name ?? '1.0')}\n#include <lights_physical_fragment>`);
   };
   const key = mat.customProgramCacheKey.bind(mat);
-  mat.customProgramCacheKey = () => key() + '|lamps';
+  mat.customProgramCacheKey = () => key() + (share ? `|lamps:${share.name}` : '|lamps');
   mat.needsUpdate = true;
 }
 

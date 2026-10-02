@@ -12,6 +12,7 @@ import { carriageHalf, ROAD_TYPES } from '../roads/roadTypes';
 import { segDriveways, segLamps } from '../roads/roadMesh';
 import { edgeLift, WALK_TOP } from '../roads/roadSection';
 import { applyAtmosphere } from '../world/seasons';
+import { litByLamps, TREE_LAMP } from '../world/nightLights';
 import { fetchPack } from '../core/pack';
 import { clamp, lerp, locate, norm, sub } from '../core/math';
 
@@ -116,7 +117,11 @@ export class CivicLayer {
         roughnessMap: orm, metalnessMap: orm, aoMap: orm, aoMapIntensity: 0.5, roughness: 1, metalness: 1,
       });
       mat.name = `civic-${m.id}`;
-      mats.set(m.id, applyAtmosphere(mat));
+      applyAtmosphere(mat);
+      // the street trees take the street lamps' pools of light like the roads and facades do (a crown and trunk under a lamp read at
+      // night instead of black); furniture is left as it was
+      if (m.id === 'foliage' || m.id === 'bark') litByLamps(mat, { name: 'uTreeLamp', u: TREE_LAMP });
+      mats.set(m.id, mat);
     }
     for (const [id, a] of Object.entries(pack.assets)) {
       const geos = a.lods.map((lod) => lod.prims.map((p) => {

@@ -8,7 +8,6 @@
 // feed posts exactly what it posted before this change, draw for draw.
 // Exits nonzero on failure.
 import { chromium } from 'playwright-core';
-import { execSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -22,8 +21,8 @@ const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, o
   const dir = mkdtempSync(join(tmpdir(), 'feed-'));
   // the feed's picking code as it was before tags, run on today's lines (the owner edits lines;
   // this checks the picking, not the text)
-  const rev = execSync('git log --format=%H -S FEED_TEMPLATES -- src/content/feed.ts', { encoding: 'utf8' }).trim().split('\n').pop();
-  const before = execSync(`git show ${rev ? `${rev}~1` : 'HEAD'}:src/content/feed.ts`, { encoding: 'utf8' });
+  // (the picking code from before the tags is a fixture, not a `git show`: a frozen snapshot has no .git and a shallow clone has no such commit)
+  const before = readFileSync(new URL('./fixtures/feed-before-tags.ts', import.meta.url), 'utf8');
   const today = readFileSync(new URL('../src/content/feed.ts', import.meta.url), 'utf8');
   const lines = (src) => [src.indexOf('const roads = ['), src.indexOf('const firstNames')];
   const [a0, a1] = lines(before), [b0, b1] = lines(today);

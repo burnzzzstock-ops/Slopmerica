@@ -458,13 +458,13 @@ export function estimateRun(g: Game, d: SvcDef, x: number, z: number): { perWk: 
   return null;
 }
 
-/** Stations serving more than they can handle, worst first (the Next hint puts these ahead of zoning tips) */
-export function overloadedServices(g: Game): { name: string; icon: string; cat: SvcCat; load: number; capacity: number }[] {
-  const out: { name: string; icon: string; cat: SvcCat; load: number; capacity: number }[] = [];
+/** Stations serving more than they can handle, worst first, and where they are (the Next hint puts these ahead of zoning tips) */
+export function overloadedServices(g: Game): { name: string; icon: string; cat: SvcCat; load: number; capacity: number; x: number; z: number }[] {
+  const out: { name: string; icon: string; cat: SvcCat; load: number; capacity: number; x: number; z: number }[] = [];
   for (const f of facilities(g)) {
     if (!f.def.capacity) continue;
     const load = fsOf(f).load;
-    if (load > f.def.capacity * 1.05) out.push({ name: f.def.name, icon: f.def.icon, cat: f.def.cat, load: Math.round(load), capacity: f.def.capacity });
+    if (load > f.def.capacity * 1.05) out.push({ name: f.def.name, icon: f.def.icon, cat: f.def.cat, load: Math.round(load), capacity: f.def.capacity, x: f.x, z: f.z });
   }
   return out.sort((a, b) => b.load / b.capacity - a.load / a.capacity);
 }

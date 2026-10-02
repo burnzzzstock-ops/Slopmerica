@@ -206,6 +206,77 @@ All five proposals were approved and are in:
 The goods parcel is a stopgap until the gridlock breaker exists; it is
 labelled "The Interstate Logistics Cloud" as the shop's supplier.
 
+## Round 8: the owner's decisions, measured (2026-10-01)
+
+The same bot, from nothing, on c85b1e6, the round-7 code with the five
+decisions in. One run a map, so read it as a direction, not a distribution.
+
+**Days to each milestone (treasury then).** Before: round 7, without the
+decisions; the table at the top has every run. After: this round.
+
+| map | | 1,100 | 1,800 | 2,800 | 4,200 | 6,500 | 10,000 | peak (day) |
+|---|---|---|---|---|---|---|---|---|
+| Florida | before (A, B, C) | 433 / 444 / 393 | – | – | – | – | – | 1,214 / 1,278 / 1,662 |
+| | **after** | **363** ($16k) | **444** ($40k) | **504** ($58k) | **565** ($65k) | **675** ($105k) | **766** ($175k) | **22,464** (1157) |
+| NorCal | before (A, B) | 363 / 383 | – / 524 | – / 645 | – / 746 | – / 1192 | – | 1,703 / 8,161 |
+| | **after** | **393** ($19k) | **474** ($53k) | **534** ($79k) | **585** ($67k) | **642** ($112k) | **729** ($178k) | **17,144** (1069) |
+| Appalachia | before (C, D, E) | 454 / 434 / 454 | – / 696 / 575 | – / 829 / 715 | – / – / 846 | – | – | 1,217 / 3,878 / 4,323 |
+| | **after** | **363** ($26k) | **504** ($43k) | **583** ($53k) | **698** ($64k) | **1004** ($97k) | – | **8,131** (1468) |
+
+(A fourth run, Florida grown to save at 2,800 for the traffic tests, matched:
+1,800 on day 433, 2,800 on 504, 4,200 on 565.)
+
+- **The 1,100-1,800 stall is gone.** Every map passed 1,800 people by day
+  444-504. Before, 4 runs in 10 did. Offices at 1,100 were the key.
+- **Two maps reach Capital of Slop.** Florida on day 766, NorCal on day 729.
+  Before, nobody did. The best got 9,395 people, on Appalachia.
+- **The treasury is thin but never breaks.** No bankruptcy. Florida was in
+  the red at 70 of 116 samples, NorCal 51 of 111, Appalachia 83 of 150. It
+  was running services as fast as the guide asked for them.
+
+**What got in the way now** (the bot's most frequent blockers):
+
+- Florida: no spot for a school (164), can't afford a sheriff (110), no
+  unzoned block left (92), no spot for a clinic (84).
+- NorCal: can't afford a sheriff (145) or a clinic (110), no unzoned block
+  (106).
+- Appalachia: no unzoned block (221), can't afford a sheriff (218), a clinic
+  (154), a school (128).
+
+So the late game is now space and money for services, not demand.
+
+**What's broken, and fixed:**
+
+- **The bot built dozens of clinics that helped nobody.** On "Urgent Care is
+  overloaded", it built another at the town's middle. Each building is
+  served by its nearest clinic, so the new one took none of the load: 83
+  clinics in Florida, 53 in NorCal, 44 in Appalachia. In Appalachia the same
+  clinic stayed overloaded (2,180 of 1,200) for the last 450 days. That's
+  the bot, not the game; a person builds next to the overloaded one.
+  `overloadedServices` now says where each one is, and the bot builds there.
+  `scripts/botclinics.mjs` (Florida from nothing to 2,800 people, seed 1):
+  before, 9 clinics by 2,927 people with 2 still overloaded; after, 5 by
+  2,836 and none overloaded.
+- **Goods trucks and gridlock.** "Bare shelves" above. See
+  docs/AUDIT_ROUND8_SIM.md #1-#2 and the two traffic fixes: trucks let out
+  of a lot for longer, and a car held by a full lane past the box takes
+  another way out.
+
+**Proposed, for the owner:**
+
+- **Pacing.** With the decisions in, 10,000 people arrive in about 730-770
+  game days: about 8 minutes of play at >>>, half an hour at >. If that's
+  now too fast, the owner's lever is the 1,800 and 2,800 thresholds, or
+  services' upkeep. I'd keep it as it is until a person has played it.
+- **The trash cliff (Appalachia).** The main landfill was full by day 748,
+  and by day 772 258 buildings were piling up trash. Population fell from
+  5,109 to 4,269 between days 782 and 792. 45 days later the abandoned
+  buildings were torn down: 447 -> 298 buildings between days 819 and 835.
+  The game warns at 75% and 90% full. A bot that doesn't act in
+  time loses a third of its town. Proposal: warn at 75% with the days
+  left, and give an abandoned building 90 days instead of 45 before it's
+  torn down. That gives the player a second chance.
+
 ## Bugs found and fixed on the way
 
 - The demand bars counted bare shops as missing shops (above).

@@ -173,7 +173,10 @@ export function installLatePlayer(opts = {}) {
   const overloadFix = () => {
     let did = 0;
     for (const o of SV.overloadedServices(g)) {
-      const c = centre();
+      // next to the overloaded one, as a person would: each building is served by its nearest
+      // station, so one built at the town's middle took none of its load (83 clinics in a
+      // Florida run, the same one still overloaded)
+      const c = Number.isFinite(o.x) ? { x: o.x, z: o.z } : centre();
       const id = { fire: 'fireStation', police: 'sheriff', health: s.peakPop >= 2800 && s.money > 90000 ? 'hospital' : 'clinic', education: 'school', garbage: 'landfill', parks: 'park' }[o.cat];
       if (id && build(id, c.x + (rnd() - 0.5) * 200, c.z + (rnd() - 0.5) * 200, `${o.name} overloaded ${o.load}/${o.capacity}`)) did++;
     }

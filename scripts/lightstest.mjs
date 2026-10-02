@@ -4,12 +4,16 @@
 // 6 cars a minute into the box from it, waiting 57 s on average. Now a green
 // with nobody waiting for it (no car near its lines, nobody on foot waiting to
 // walk in it or on its crosswalks) goes to its yellow as soon as someone waits
-// on another's (traffic.ts CALL_DIST, WALK_CALL). The same town and seed
-// twice, cars and people stepped for SECONDS of game time at hour HOUR: with
-// fixed 11 s greens (tr.actuated = false), then actuated. Each run: cars a
-// minute into the box at node 45 and at all the lights, per arm the time from
-// stopping in the queue to the box (lefts apart), and the longest anyone on
-// foot waited at the kerb of a junction with lights.
+// on another's (traffic.ts CALL_DIST, WALK_CALL). And a left out of one of two
+// roads that share a green waited 110-130 s for gaps in the other's traffic,
+// one on each change: now that road's green leads the other's while its lefts
+// wait (traffic.ts LEAD_T). The same town and seed three times, cars and people
+// stepped for SECONDS of game time at hour HOUR: with fixed 11 s greens
+// (tr.actuated = false), actuated without the leading greens (tr.leadLefts =
+// false), then both. Each run: cars a minute into the box at node 45 and at all
+// the lights, per arm the time from stopping in the queue to the box (lefts
+// apart), and the longest anyone on foot waited at the kerb of a junction with
+// lights.
 // usage: node scripts/lightstest.mjs   (BASE_URL, default http://127.0.0.1:5173; SEED=n replays a run;
 // NODE, default 45; SECONDS, default 240; HOUR, default 17.5). Exits 1 on failure.
 import { chromium } from 'playwright-core';
@@ -22,11 +26,12 @@ let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 600)); if (!ok) bad++; };
 const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
 
-async function run(actuated) {
+async function run(actuated, lead) {
   const { page, errs } = await openBlock(browser, { base, seed: SEED, quality: 'low' });
-  const r = await page.evaluate(({ NODE, SECONDS, HOUR, actuated }) => {
+  const r = await page.evaluate(({ NODE, SECONDS, HOUR, actuated, lead }) => {
     const g = window.__game, tr = g.traffic, P = g.peds, net = g.net, node = net.nodes.get(NODE);
     tr.actuated = actuated;
+    tr.leadLefts = lead;
     let time = 0;
     const step = () => {
       time += 1 / 20;
@@ -75,17 +80,18 @@ async function run(actuated) {
     const into = [...A.values()].reduce((x, a) => x + a.into, 0);
     return {
       arms: [...A.values()].map((a) => ({ seg: a.seg, name: a.name, perMin: +(a.into / (SECONDS / 60)).toFixed(1), waits: stat(a.waits), lefts: stat(a.lefts) })),
-      perMin: +(into / (SECONDS / 60)).toFixed(1), allPerMin: +(intoAll / (SECONDS / 60)).toFixed(1), lights: tr.signals.size, kerbMax: +kerbMax.toFixed(1), overlaps,
+      perMin: +(into / (SECONDS / 60)).toFixed(1), allPerMin: +(intoAll / (SECONDS / 60)).toFixed(1), lights: tr.signals.size, kerbMax: +kerbMax.toFixed(1), overlaps, leads: tr.leads ?? 0,
     };
-  }, { NODE, SECONDS, HOUR, actuated });
+  }, { NODE, SECONDS, HOUR, actuated, lead });
   await page.close();
   return { ...r, errs };
 }
 
-const fixed = await run(false);
-const act = await run(true);
-for (const [n, r] of [['fixed 11 s greens', fixed], ['actuated', act]]) {
-  console.log(`${n}: ${r.perMin} cars a minute into node ${NODE}'s box, ${r.allPerMin} into all ${r.lights} sets of lights; the longest anyone waited at a kerb at the lights ${r.kerbMax} s`);
+const fixed = await run(false, false);
+const noLead = await run(true, false);
+const act = await run(true, true);
+for (const [n, r] of [['fixed 11 s greens', fixed], ['actuated, no leading greens', noLead], ['actuated with leading greens', act]]) {
+  console.log(`${n}: ${r.perMin} cars a minute into node ${NODE}'s box, ${r.allPerMin} into all ${r.lights} sets of lights; the longest anyone waited at a kerb at the lights ${r.kerbMax} s${r.leads ? `; ${r.leads} leading greens` : ''}`);
   for (const a of r.arms) console.log(`  seg ${a.seg} (${a.name}): ${a.perMin} a minute; from stopping to the box ${a.waits.mean} s on average, ${a.waits.max} s at most (${a.waits.n} cars)${a.lefts.n ? `; lefts ${a.lefts.mean} s, ${a.lefts.max} s at most (${a.lefts.n})` : ''}`);
 }
 check(`more cars through node ${NODE} (${act.perMin} a minute against ${fixed.perMin}: a fifth more at least)`, act.perMin >= fixed.perMin * 1.2);
@@ -94,6 +100,14 @@ const lefts = (r) => r.arms.reduce((x, a) => x + a.lefts.mean * a.lefts.n, 0) / 
 check(`lefts wait no longer (${lefts(act).toFixed(0)} s on average against ${lefts(fixed).toFixed(0)} s)`, lefts(act) <= lefts(fixed) * 1.15 + 5);
 check(`people on foot wait no longer at the lights (the longest ${act.kerbMax} s against ${fixed.kerbMax} s)`, act.kerbMax <= fixed.kerbMax + 5);
 check(`no two cars from different phases inside each other in the box (${act.overlaps} times)`, act.overlaps === 0);
-check('no page errors', fixed.errs.length === 0 && act.errs.length === 0, [...fixed.errs, ...act.errs].slice(0, 3));
+// the leading greens: the lefts at node NODE against the same lights without them
+const leftsAt = (r) => { const n = r.arms.reduce((x, a) => x + a.lefts.n, 0); return { n, mean: r.arms.reduce((x, a) => x + a.lefts.mean * a.lefts.n, 0) / Math.max(1, n) }; };
+const lA = leftsAt(act), lN = leftsAt(noLead);
+check(`a leading green cuts the lefts' wait at node ${NODE} (${lA.mean.toFixed(0)} s on average, ${lA.n} cars, against ${lN.mean.toFixed(0)} s, ${lN.n}: two thirds at most)`, lA.n > 0 && lA.mean <= lN.mean * 0.67);
+// (all the lights to within a tenth: a road going alone lengthens the cycle, and on seeds 1-3 that cost all four sets
+// of lights 6% of their cars at the evening rush, 22.5-25.3 a minute against 24-26.8, with the lefts' wait cut 60-70%)
+check(`and costs the junction no cars (${act.perMin} a minute into node ${NODE} against ${noLead.perMin}; all the lights ${act.allPerMin} against ${noLead.allPerMin})`, act.perMin >= noLead.perMin * 0.95 && act.allPerMin >= noLead.allPerMin * 0.9);
+check(`nor anyone on foot much time (the longest at a kerb ${act.kerbMax} s against ${noLead.kerbMax} s)`, act.kerbMax <= noLead.kerbMax + 8);
+check('no page errors', fixed.errs.length === 0 && noLead.errs.length === 0 && act.errs.length === 0, [...fixed.errs, ...noLead.errs, ...act.errs].slice(0, 3));
 await browser.close();
 process.exit(bad ? 1 : 0);

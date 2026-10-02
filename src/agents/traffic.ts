@@ -273,6 +273,8 @@ interface Signal {
   phaseOf: Map<number, number>;
   phases: number;
   t: number;
+  /** a leading green running: this road goes alone (the cycle's clock waits) for `left` more seconds (LEAD_T) */
+  lead?: { seg: number; left: number };
 }
 
 const GREEN = 11;
@@ -286,6 +288,15 @@ const CLEAR = 2.5;
 const CALL_DIST = 40;
 /** someone on foot held at the kerb by the light keeps the button pressed this long (s of game time) */
 const WALK_CALL = 2;
+/**
+ * A leading green, for the lefts. Where two roads straight across from each other share a green, a
+ * left out of one waits for a gap in the other's traffic, and at a busy T (node 45 on the reference
+ * block) that was one left on each change: 100-140 s in the queue at the evening rush. Now, when the
+ * first car at one of their lines is turning left and someone's coming the other way, that road's
+ * green starts up to LEAD_T s before the other's: its lefts turn across nobody. Over as soon as the
+ * first car at its line isn't turning left.
+ */
+const LEAD_T = 5;
 const PAINT = [0xf2f2f2, 0x1a1a1a, 0x9aa0a6, 0x5a5e63, 0xb3202a, 0x1d3a8a, 0x2d4a2d, 0xc9b48a, 0xe0e0e0, 0x7a1f1f, 0x0f5f7a, 0xd8d8d2, 0xe89b2a, 0x2a2a2a];
 
 class Heap {
@@ -675,6 +686,7 @@ export class Traffic {
   isGreen(nodeId: number, segId: number): boolean {
     const s = this.signals.get(nodeId);
     if (!s) return true;
+    if (s.lead) return segId === s.lead.seg;
     const cyc = GREEN + CLEAR;
     const t = s.t % (cyc * s.phases);
     const ph = Math.floor(t / cyc);
@@ -684,6 +696,52 @@ export class Traffic {
 
   signalState(nodeId: number) {
     return this.signals.get(nodeId);
+  }
+
+  /** The lamp a road sees at this junction (what the drawn signal heads show) */
+  lampState(nodeId: number, segId: number): 'green' | 'yellow' | 'red' {
+    const s = this.signals.get(nodeId);
+    if (!s) return 'green';
+    if (s.lead) return segId === s.lead.seg ? 'green' : 'red';
+    const cyc = GREEN + CLEAR, t = s.t % (cyc * s.phases), ph = Math.floor(t / cyc);
+    if (s.phaseOf.get(segId) !== ph) return 'red';
+    return t - ph * cyc > GREEN ? 'yellow' : 'green';
+  }
+
+  /** false: no leading greens for the lefts (a test compares the two) */
+  leadLefts = true;
+  /** leading greens given, for tests */
+  leads = 0;
+  /** Anyone on this road coming up to the node within CALL_DIST of the line, going on through it? */
+  private approaching(nodeId: number, sid: number): boolean {
+    const seg = this.net.segs.get(sid);
+    if (!seg) return false;
+    const dir: 1 | -1 = seg.b === nodeId ? 1 : -1, exitS = this.exitOf(seg, dir);
+    for (let k = 0; k < ROAD_TYPES[seg.type].lanesPerDir; k++) {
+      const h = this.buckets.get(sid * 16 + (dir > 0 ? 0 : 8) + k)?.at(-1);
+      if (h && h.crashed === 0 && h.pi < h.path.length - 1 && exitS - h.s < CALL_DIST) return true;
+    }
+    return false;
+  }
+  /** Is the first car at this road's line (within 8 m of it, in any lane) turning left? */
+  private leftAtLine(nodeId: number, sid: number): boolean {
+    const seg = this.net.segs.get(sid);
+    if (!seg) return false;
+    const dir: 1 | -1 = seg.b === nodeId ? 1 : -1, exitS = this.exitOf(seg, dir);
+    for (let k = 0; k < ROAD_TYPES[seg.type].lanesPerDir; k++) {
+      const h = this.buckets.get(sid * 16 + (dir > 0 ? 0 : 8) + k)?.at(-1);
+      if (h && h.crashed === 0 && h.turn > 0 && h.pi < h.path.length - 1 && exitS - this.stopBack(nodeId, sid, h.lane) - h.s < 8) return true;
+    }
+    return false;
+  }
+  /** The road of this green to lead with (LEAD_T), or undefined: one whose first car is turning left, if anyone's coming the other way */
+  private leadFor(nodeId: number, s: Signal, ph: number): number | undefined {
+    const roads: number[] = [];
+    for (const [sid, p] of s.phaseOf) if (p === ph) roads.push(sid);
+    if (roads.length < 2) return undefined; // alone in its green: its lefts cross nobody
+    const lead = roads.find((sid) => this.leftAtLine(nodeId, sid));
+    if (lead === undefined || !roads.some((sid) => sid !== lead && this.approaching(nodeId, sid))) return undefined;
+    return lead;
   }
 
   /** false: every light keeps its fixed 11 s greens (tests compare the two) */
@@ -717,7 +775,7 @@ export class Traffic {
   /** In the yellow and all-red that follow this road's green: a left-turner waiting at the line finishes its turn now. */
   private clearing(nodeId: number, segId: number): boolean {
     const s = this.signals.get(nodeId);
-    if (!s) return false;
+    if (!s || s.lead) return false;
     const cyc = GREEN + CLEAR, t = s.t % (cyc * s.phases), ph = Math.floor(t / cyc);
     return t - ph * cyc > GREEN && s.phaseOf.get(segId) === ph;
   }
@@ -1113,10 +1171,23 @@ export class Traffic {
     this.lastDt = Math.max(dtReal, dt);
     this.stepN++;
     if (simSpeed > 0) for (const [nodeId, s] of this.signals) {
+      // (the buckets are last step's here: who's waiting at each line)
+      // a leading green: one road goes alone while the cycle's clock waits, until its lefts are gone or LEAD_T is up
+      if (s.lead) {
+        s.lead.left -= dt;
+        if (s.lead.left > 0 && this.leftAtLine(nodeId, s.lead.seg)) continue;
+        s.lead = undefined;
+      }
+      const cyc = GREEN + CLEAR, T = cyc * s.phases, ph0 = Math.floor((s.t % T) / cyc);
       s.t += dt;
       if (!this.actuated) continue;
-      // (the buckets are last step's here: who's waiting at each line)
-      const cyc = GREEN + CLEAR, t = s.t % (cyc * s.phases), ph = Math.floor(t / cyc), into = t - ph * cyc;
+      // a green starting: lead with the road whose lefts are waiting, if someone's coming the other way
+      const ph1 = Math.floor((s.t % T) / cyc);
+      if (ph1 !== ph0 && this.leadLefts) {
+        const seg = this.leadFor(nodeId, s, ph1);
+        if (seg !== undefined) { s.t -= (s.t % T) - ph1 * cyc; s.lead = { seg, left: LEAD_T }; this.leads++; continue; }
+      }
+      const t = s.t % T, ph = Math.floor(t / cyc), into = t - ph * cyc;
       if (into >= GREEN) continue;
       const calls = this.calls(nodeId, s);
       if (calls & (1 << ph) || !calls) continue;
@@ -1804,7 +1875,8 @@ export class Traffic {
       if (sig.phaseOf.get(J.fromSeg) === ph && o.turn <= 0) return true;
     }
     for (const sid of node.segs) {
-      if (sid === fromSeg || sig.phaseOf.get(sid) !== ph) continue;
+      // (in a leading green the roads held at red aren't coming)
+      if (sid === fromSeg || sig.phaseOf.get(sid) !== ph || (sig.lead && sid !== sig.lead.seg)) continue;
       const sg = this.net.segs.get(sid);
       if (!sg) continue;
       const dir: 1 | -1 = sg.b === nodeId ? 1 : -1; // travelling toward this node

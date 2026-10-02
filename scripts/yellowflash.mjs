@@ -10,6 +10,7 @@
 // was an HDR particle puff 3 m across, lifted 1.85x by the night exposure and blooming; its emitter skipped
 // half its ticks, so each one flashed on and off every 0.6-1.2 s. Fireflies (blinking HDR yellow, also lifted)
 // drifted over the lit town.
+// Every case runs on a freshly opened page, so no case can depend on the ones before it (ISOLATE=0: one page for all, the old way).
 // env: BASE_URL, Q (ultra), W/H (640x360), DPR (1), OUT (dir for annotated JPEG frames),
 //      CASES="move=static&w=clear&moon=0&frames=40&dt=0.1&hide=fire+fireflies&ff=1;..." (keys: move pan|static,
 //      view street|overview|houses, w weather, moon phase, frames, dt, hide (see __hide), ff firefly amount)
@@ -35,10 +36,21 @@ const MAX_POPS = +(process.env.MAX_POPS || 40 * (W * H * DPR * DPR) / (640 * 360
 if (OUT) mkdirSync(OUT, { recursive: true });
 
 const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
-const { page, errs, center } = await openBlock(browser, { base, quality: Q, width: W, height: H, dpr: DPR });
-console.log('open', JSON.stringify(await page.evaluate(() => ({ pr: window.__game.renderer.getPixelRatio(), buf: window.__game.renderer.domElement.width + 'x' + window.__game.renderer.domElement.height, q: window.__game.q.name }))));
-
-await page.evaluate(() => {
+// Every case runs on its own freshly opened page (ISOLATE=0 reuses one page for all of them, the way this test used to run). Particle pools,
+// weather blends, exposure and the traffic of one case leaked into the next one: the moonlit pan failed in the full run (45 to 52 flash pixels in one
+// frame, limit 40) and passed alone (28 to 36).
+const ISOLATE = process.env.ISOLATE !== '0';
+const pageErrors = [];
+const broken = [];
+const openFresh = async () => {
+  const o = await openBlock(browser, { base, quality: Q, width: W, height: H, dpr: DPR });
+  o.errs = pageErrors;
+  o.page.on('pageerror', (e) => pageErrors.push(e.message));
+  console.log('open', JSON.stringify(await o.page.evaluate(() => ({ pr: window.__game.renderer.getPixelRatio(), buf: window.__game.renderer.domElement.width + 'x' + window.__game.renderer.domElement.height, q: window.__game.q.name }))));
+  await init(o.page);
+  return o;
+};
+const init = (page) => page.evaluate(() => {
   const g = window.__game;
   // cars on the road, with lights
   g.hour = 22.5;
@@ -76,7 +88,10 @@ await page.evaluate(() => {
 });
 
 const all = [];
+let cur = null;
 for (const C of CASES) {
+  if (!cur || ISOLATE) cur = await openFresh();
+  const { page, center } = cur;
   const weather = C.w || 'clear', moon = C.moon || '0', VIEW = VIEWS[C.view], FRAMES = +C.frames, DT = +C.dt, MOVE = C.move;
   const res = await page.evaluate(async ({ center, weather, moon, VIEW, FRAMES, MOVE, save, DT, hide, ff }) => {
     const g = window.__game;
@@ -198,11 +213,12 @@ for (const C of CASES) {
   console.log('  pop blobs [frame,x,y,n,r,g,b]:', JSON.stringify(blobs.slice(0, 30)));
   if (OUT) for (const [i, b64] of res.saved) writeFileSync(`${OUT}/${Q}-${C.move}-${C.view}-${weather}-${moon}${C.hide ? '-' + C.hide : ''}${C.ff ? '-ff' + C.ff : ''}-${String(i).padStart(3, '0')}.jpg`, Buffer.from(b64, 'base64'));
   all.push(summary);
+  // a shader that failed to compile (three logs it and skips the draw): the new firefly and particle code must build
+  broken.push(...await page.evaluate(() => window.__game.renderer.info.programs.filter((p) => p.diagnostics && !p.diagnostics.runnable).map((p) => p.name || p.cacheKey.slice(0, 60))));
+  if (ISOLATE) { await page.close(); cur = null; }
 }
 console.log('SUMMARY', JSON.stringify(all));
 let bad = 0;
-// a shader that failed to compile (three logs it and skips the draw): the new firefly and particle code must build
-const broken = await page.evaluate(() => window.__game.renderer.info.programs.filter((p) => p.diagnostics && !p.diagnostics.runnable).map((p) => p.name || p.cacheKey.slice(0, 60)));
 console.log(broken.length ? 'FAIL' : 'OK  ', `shader programs that failed to build: ${broken.length}`, broken.length ? JSON.stringify(broken) : '');
 if (broken.length) bad++;
 const ffOn = all.find((r) => r.cond.includes('houses') && r.cond.endsWith('ff 1') && !r.cond.includes('fireflies'));
@@ -218,6 +234,6 @@ for (const r of all) {
   console.log(ok ? 'OK  ' : 'FAIL', `${r.cond}: flash pixels ${r.popsPerFrame}/frame, at most ${r.maxPops} in one frame (limits ${MEAN_POPS.toFixed(1)}, ${MAX_POPS.toFixed(0)})`);
   if (!ok) bad++;
 }
-if (errs.length) { console.log('FAIL page errors:', errs.slice(0, 3)); bad++; }
+if (pageErrors.length) { console.log('FAIL page errors:', pageErrors.slice(0, 3)); bad++; }
 await browser.close();
 process.exit(bad ? 1 : 0);

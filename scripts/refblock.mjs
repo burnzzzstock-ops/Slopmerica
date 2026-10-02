@@ -57,7 +57,7 @@ export async function openBlock(browser, { base, quality = 'high', width = 1280,
   await page.addInitScript(({ save, quality }) => { try { localStorage.setItem('slopmerica.quality', quality); localStorage.setItem('slopmerica.onboarded', '1'); localStorage.setItem('slopmerica.firstSteps', '1'); localStorage.setItem('slopmerica.save.v1', save); } catch { /* */ } }, { save, quality });
   await page.goto(`${base}/`, { waitUntil: 'load', timeout: 180000 });
   await page.waitForSelector('#continue', { timeout: 180000 });
-  await page.click('#continue');
+  await page.click('#continue', { timeout: 240000 }); // (a Medium or High page under load draws a frame in seconds, and the click waits for the button to stand still over two of them)
   await page.waitForFunction(() => window.__game && window.__dbg, null, { timeout: 300000 });
   await page.evaluate(() => {
     const g = window.__game;

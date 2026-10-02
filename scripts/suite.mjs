@@ -25,6 +25,7 @@ const only = (opt('--only') || '').split(',').filter(Boolean), skipArg = (opt('-
 
 // why a README script is not run as a test (name without .mjs)
 const SKIP = {
+  suite: 'this runner (its own README line: run from the suite it would start the suite again)',
   contentaudit: 'asks the Jev model: needs a key, run on purpose (content gate)',
   feedtags: 'asks the Jev model: needs a key', nametags: 'asks the Jev model: needs a key', learnability: 'asks the Jev model: needs a key',
   brandcheck: 'asks the Jev model: needs a key', triage: 'asks the Jev model: needs a key and a folder of reports',

@@ -212,7 +212,7 @@ builds, from traffic), `peoplecost.mjs`, `reflecttest`, `starttest`, `scaletest`
 - `scripts/presetlight.mjs` documents `VIEWS=` but never reads it (only `ONLY=` filters), so a one-camera run is not possible.
 - `presetlight` fails on the base tip too (Low noon shore, +0.047): the Low preset's daylight shore view is a little brighter than High's
   (High has the water mirror and the environment map, Low neither). Not a night problem.
-- Nothing found in the Opus-owned files.
+- Nothing found in the simulation session's files.
 
 ## README lines for the new scripts (the lead adds them)
 

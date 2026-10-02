@@ -2791,6 +2791,25 @@ a {
   gap: 4px 18px;
   margin-top: 4px;
 }
+.aaa-paste {
+  display: grid;
+  gap: 6px;
+  max-width: 380px;
+  font-size: 13px;
+  color: var(--aaa-soft);
+}
+.aaa-paste textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.45);
+  color: inherit;
+  font: 12px/1.3 ui-monospace, monospace;
+  padding: 8px;
+}
+.bf-status:empty { display: none; }
+.bf-status { margin-top: 8px; font-size: 13px; font-weight: 700; }
 .aaa-import-msg {
   max-width: 380px;
   padding: 8px 12px;

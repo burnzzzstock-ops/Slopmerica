@@ -85,9 +85,15 @@ export function showTitle(parent: HTMLElement): Promise<StartChoice> {
           </button>
           <div class="aaa-links">
             <button class="aaa-link" id="import">Load a city file</button>
+            <button class="aaa-link" id="paste-open">Paste a copied city</button>
             <a class="aaa-link" href="${MERCH_URL}" target="_blank" rel="noopener">Real Slop merch ↗</a>
           </div>
           <input type="file" id="import-file" accept=".json,application/json" hidden />
+          <div class="aaa-paste" hidden>
+            <label for="paste-box">Paste the city you copied (where downloads are blocked, Save city file copies it instead):</label>
+            <textarea id="paste-box" rows="4" spellcheck="false" placeholder="Paste here, then tap Load this city"></textarea>
+            <button class="aaa-link" id="paste-go">Load this city</button>
+          </div>
           <div class="aaa-import-msg" role="status" hidden></div>
         </nav>
       </section>
@@ -169,6 +175,15 @@ export function showTitle(parent: HTMLElement): Promise<StartChoice> {
       const d = parseCityFile(await f.text());
       file.value = '';
       if (typeof d === 'string') { msg.textContent = d; msg.hidden = false; return; }
+      leave();
+      resolve({ map: d.map, mode: d.mode, cityName: d.city, restore: d, imported: true });
+    });
+    // the same city, pasted: reading the clipboard is not allowed everywhere (the artifact viewer), but the player's own paste is
+    const pasteBox = el.querySelector('.aaa-paste') as HTMLElement, paste = el.querySelector('#paste-box') as HTMLTextAreaElement;
+    el.querySelector('#paste-open')!.addEventListener('click', () => { pasteBox.hidden = !pasteBox.hidden; if (!pasteBox.hidden) paste.focus(); });
+    el.querySelector('#paste-go')!.addEventListener('click', () => {
+      const d = parseCityFile(paste.value.trim());
+      if (typeof d === 'string') { msg.textContent = paste.value.trim() ? d : 'Paste the copied city into the box first.'; msg.hidden = false; return; }
       leave();
       resolve({ map: d.map, mode: d.mode, cityName: d.city, restore: d, imported: true });
     });

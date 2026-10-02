@@ -116,6 +116,7 @@ Headless checks live in `scripts/` and drive the dev server with Playwright + Sw
 
 ```sh
 node scripts/playtestcheck.mjs   # bug reporter, crash toast, context loss, rescue screen (phone)
+node scripts/savefallback.mjs     # saving where downloads are blocked: the built game in a sandboxed iframe (no allow-downloads) copies the city file to the clipboard and says so; outside a frame the file still downloads; "Paste a copied city" loads it back (DIST= another build, BUILD=0 skips the build)
 node scripts/touchtest.mjs       # phone road drawing: plan, Build, Done, double-tap
 node scripts/phonetargets.mjs    # phone: every control in every panel reaches 44 px for a finger (measured with elementFromPoint); the one-row top bar is listed at its minimum
 node scripts/gesturetest.mjs     # phone: pinching or panning with two fingers keeps a planned road or service (real touch events); a stroke that turns into a pinch plans nothing

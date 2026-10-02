@@ -14,7 +14,7 @@ import type { ToolId } from '../tools/tools';
 import { GRID_BLOCKS, type GridBlock } from '../tools/gridRoads';
 import { FeedPanel } from './feedPanel';
 import { MERCH_URL, brandById } from '../art/brands';
-import { BUILD, crumb, onCapturedError, openBugReport } from './bugreport';
+import { BUILD, cityFile, crumb, onCapturedError, openBugReport, saveFile, saveMessage } from './bugreport';
 import { FOV_MAX, FOV_MIN, IS_TOUCH } from '../config';
 import { QUALITY, type Quality } from '../config';
 import { BANKRUPT_AT, BANKRUPT_WEEKS, CREDIT_LINE, LEDGER_LABEL, LOSS_LABEL, ONE_TIME, RECURRING, SPEEDS, Sim, UNLOCKS, usd, type DemandKey } from '../sim/sim';
@@ -1342,9 +1342,15 @@ export class Hud implements UiSink {
           <div><b>Interchanges</b> Roads → Interchanges · , and . rotate</div>
           <div><b>Performance</b> F3 shows FPS, frame time, draw calls and triangles</div>`}
         </div>
-        <div class="sp-row"><button class="chip" id="save-now">💾 Save now</button><button class="chip" id="new-city">🆕 New city</button><small>Autosaves every 30 seconds in this browser.</small></div>
+        <div class="sp-row"><button class="chip" id="save-now">💾 Save now</button><button class="chip" id="save-file">📁 Save city file</button><button class="chip" id="new-city">🆕 New city</button><small>Autosaves every 30 seconds in this browser. A city file is a backup you keep: where downloads are blocked it is copied to the clipboard instead.</small></div>
         <div class="sp-row"><button class="chip on" id="report-bug">🐞 Report a bug</button><small>Playtest build ${BUILD}</small></div>`;
       this.sub.querySelector('#save-now')?.addEventListener('click', () => { const ok = saveGame(g); this.toast(ok ? 'Saved.' : 'Could not save in this browser', !ok); });
+      this.sub.querySelector('#save-file')?.addEventListener('click', async () => {
+        const f = cityFile(g);
+        const r = await saveFile(f.name, f.data);
+        crumb(`city file: ${r}`);
+        this.toast(saveMessage(r, 'City file', 'to load it later: title screen, Load a city file, Paste a copied city'), r === 'failed');
+      });
       this.sub.querySelector('#new-city')?.addEventListener('click', () => { saveGame(g); location.hash = ''; location.reload(); });
       this.sub.querySelector('#report-bug')?.addEventListener('click', () => this.reportBug());
       // buttons, not a native <select>: the playtest recording caught the

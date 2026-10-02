@@ -79,15 +79,18 @@ export function curbReturnRadius(ei: number, ej: number, phi: number): number {
 
 /**
  * Zebra crossing and stop bar (metres), painted where the simulation has people cross and cars wait. People cross a
- * junction arm where its sidewalk ends, at the leg's trim (pedestrians.ts kerbs); a car waiting at a red light, or for
- * people on the crosswalk, holds its nose STOP_LINE back from the trim (traffic.ts takes it from here, so the two can't
- * drift apart). A car's position in the traffic is its nose.
+ * junction arm on its walk line, from where the sidewalk ends on one side to where it ends on the other (roadJunction.ts
+ * armCrossing: at the leg's trim on most arms); a car waiting at a red light, or for people on the crosswalk, holds its
+ * nose STOP_LINE back from where that line crosses its lane (crossingStop; traffic.ts takes it from there, so the three
+ * can't drift apart). A car's position in the traffic is its nose.
  */
 export const STOP_LINE = 3;
 /** The crosswalk is centred on that walk line, and sits at least this far past the crossing road's kerb line ... */
 export const ZEBRA_SETBACK = 0.45;
 /** ... is this wide (the MUTCD's minimum for a crosswalk is 1.8 m; 2.4 is the usual ladder)... */
 export const ZEBRA_MIN = 1.8, ZEBRA_MAX = 2.4;
+/** ... and reaches at least this far (half a stride, with a body's width) either side of the walk line */
+export const ZEBRA_STRIDE = 0.45;
 /** ... and its stop bar (STOP_GAP behind it, BAR_DEPTH deep) ends at least this far short of a waiting car's nose */
 export const NOSE_CLEAR = 0.85;
 export const BAR_DEPTH = 0.37;

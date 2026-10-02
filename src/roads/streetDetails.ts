@@ -337,7 +337,7 @@ export class StreetDetails {
         // The crossing is the textured zebra strip roadMesh.ts lays from z0 + EDGE to z1 - EDGE (bars along the road), framed by
         // a transverse line at each end: a ladder crosswalk. (These used to be seven rungs across the whole strip, which the strip
         // hid except for its last few centimetres and the ends of each rung; only where a real junction has a strip.)
-        if (t.sidewalk > 0 && segs.length >= 3) {
+        if (t.sidewalk > 0 && segs.length >= 3 && paint.cross) {
           for (const d of [paint.z0 + ZEBRA_EDGE / 2, paint.z1 - ZEBRA_EDGE / 2]) {
             const f = frameAt(seg, at(d));
             crosswalks.push({ x: f.p.x, y: lift(d, f, 0.105), z: f.p.z, yaw: yawAt(f), sx: paint.half * 2, sz: (ZEBRA_EDGE - 0.02) / 0.34 });

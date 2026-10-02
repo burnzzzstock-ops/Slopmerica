@@ -7,12 +7,13 @@
 // connector so the sidewalk carries on. The legs are trimmed back far enough
 // that their ribbons start where the arc meets the straight curb.
 //
-// Everything here is render-only geometry. Directions and distances (s along a leg, lateral offsets) are relative
+// Everything here is render-only geometry, but for where people cross each arm (armCrossing), which the people and
+// the traffic use too. Directions and distances (s along a leg, lateral offsets) are relative
 // to the node; the points in a Corner (curb path, outer edge) are in world metres.
-import { clamp, lerp, locate, norm, sub, V2 } from '../core/math';
+import { clamp, closestOnSampled, lerp, locate, norm, sub, V2 } from '../core/math';
 import type { RoadNetwork, RSeg } from './network';
 import { carriageHalf, laneOffset, ROAD_TYPES } from './roadTypes';
-import { CAR_CLEAR, CORNER_R_GROW, curbOffset, curbReturnRadius, BAR_DEPTH, FILLET_MIN, NOSE_CLEAR, STOP_GAP, STOP_LINE, ZEBRA_MAX, ZEBRA_MIN, ZEBRA_SETBACK } from './roadSection';
+import { CAR_CLEAR, CORNER_R_GROW, curbOffset, curbReturnRadius, BAR_DEPTH, FILLET_MIN, NOSE_CLEAR, STOP_GAP, STOP_LINE, ZEBRA_MAX, ZEBRA_MIN, ZEBRA_SETBACK, ZEBRA_STRIDE } from './roadSection';
 
 export interface Leg {
   seg: RSeg;
@@ -39,6 +40,8 @@ export interface LegMarks {
   half: number;
   /** the stop bar's centre (the bar is 0.37 m deep) */
   bar: number;
+  /** people cross this leg (armCrossing): false, no zebra is painted (the stop bar still is) */
+  cross: boolean;
 }
 
 export interface Corner {
@@ -148,7 +151,7 @@ function buildShape(net: RoadNetwork, node: { x: number; z: number; segs: number
     const t = ROAD_TYPES[seg.type];
     if (t.sidewalk <= 0) return null; // highways, ramps and gravel lanes keep the plain hull
     const u = legDirection(net, seg, nodeId);
-    legs.push({ seg, atA: seg.a === nodeId, u, r: { x: -u.z, z: u.x }, e: curbOffset(t), h: t.width / 2, ang: Math.atan2(u.z, u.x), trim: baseTrim(net, seg, nodeId), marks: { z0: 0, z1: 0, half: 0, bar: 0 } });
+    legs.push({ seg, atA: seg.a === nodeId, u, r: { x: -u.z, z: u.x }, e: curbOffset(t), h: t.width / 2, ang: Math.atan2(u.z, u.x), trim: baseTrim(net, seg, nodeId), marks: { z0: 0, z1: 0, half: 0, bar: 0, cross: true } });
   }
   legs.sort((a, b) => a.ang - b.ang);
   const n = legs.length;
@@ -290,7 +293,7 @@ function buildShape(net: RoadNetwork, node: { x: number; z: number; segs: number
     c.kind = 'none'; // a sharp gap between two wide roads: the walks overlap, so no slab (the asphalt outline still closes)
     c.outer = [];
   }
-  for (let k = 0; k < n; k++) legs[k].marks = legMarks(legs, corners, k);
+  for (let k = 0; k < n; k++) legs[k].marks = legMarks(net, nodeId, legs, corners, k);
   return { nodeId, x: node.x, z: node.z, legs, corners };
 }
 
@@ -333,16 +336,19 @@ function carClearance(Li: Leg, Lj: Leg, O: V2, r: number, Ti: V2, Tj: V2): numbe
 }
 
 /**
- * Where the zebra crossing and the stop bar go across one leg of a junction, so the paint sits where the cars stand.
+ * Where the zebra crossing and the stop bar go across one leg of a junction, so the paint sits where people walk and
+ * the cars stand.
  *
- * People cross at the leg's trim, where its sidewalk ends (pedestrians.ts), and a car waiting at the line holds its nose
- * STOP_LINE behind the trim (traffic.ts). The crossing is centred on the walk line, but never nearer the node than
- * ZEBRA_SETBACK past the kerb line of the road it crosses (measured at the zebra's two ends, so a skewed junction is cleared on
- * its acute side too); it is 1.8 to 2.4 m wide, and the stop bar follows STOP_GAP behind it, NOSE_CLEAR short of the waiting
- * nose. Where the crossing road's kerb pushes the zebra out that far, it keeps its 1.8 m and the bar slides back under the
- * car's bumper rather than the crossing under its wheels.
+ * People cross the leg on its walk line (armCrossing: from one sidewalk's end to the other's; at the trim on most legs,
+ * a little skewed past it where a corner pushes one sidewalk's end back), and a car waiting at the line holds its nose
+ * STOP_LINE behind where that line crosses its lane (crossingStop). The zebra covers the walk line, with half a stride
+ * either side, centred on it where it can be; never nearer the node than ZEBRA_SETBACK past the kerb line of the road it
+ * crosses (measured at the zebra's two ends, so a skewed junction is cleared on its acute side too); 1.8 to 2.4 m wide,
+ * more where the line is skewed. The stop bar follows STOP_GAP behind it, NOSE_CLEAR short of the nearest waiting nose.
+ * Where the crossing road's kerb pushes the zebra out that far, it keeps its width and the bar slides back under the
+ * car's bumper rather than the crossing under its wheels. A leg nobody crosses (a sharp corner) gets no zebra.
  */
-function legMarks(legs: Leg[], corners: Corner[], k: number): LegMarks {
+function legMarks(net: RoadNetwork, nodeId: number, legs: Leg[], corners: Corner[], k: number): LegMarks {
   const n = legs.length, L = legs[k];
   const half = Math.max(1, carriageHalf(ROAD_TYPES[L.seg.type]) - 0.2);
   let clear = 0;
@@ -351,23 +357,109 @@ function legMarks(legs: Leg[], corners: Corner[], k: number): LegMarks {
     const s = (other.e + half * Math.cos(c.phi)) / Math.sin(c.phi);
     if (Number.isFinite(s) && s > 0) clear = Math.max(clear, Math.min(s, 25));
   }
-  const net = L.atA ? L.seg.trimA : L.seg.trimB;
-  const walk = net > 0.01 ? net : L.trim, nose = walk + STOP_LINE;
-  const z0 = Math.max(clear > 0 ? clear + ZEBRA_SETBACK : 0, walk - ZEBRA_MAX / 2);
-  const z1 = Math.max(z0 + ZEBRA_MIN, Math.min(z0 + ZEBRA_MAX, nose - NOSE_CLEAR - BAR_DEPTH - STOP_GAP));
-  return { z0, z1, half, bar: z1 + STOP_GAP + BAR_DEPTH / 2 };
+  const trim = L.atA ? L.seg.trimA : L.seg.trimB, cr = armCrossing(net, L.seg, nodeId);
+  // the walk line's span along the leg, and the nearest waiting nose (a leg with no box of the network's own: the drawn trim)
+  let lo = L.trim, hi = L.trim, nose = L.trim + STOP_LINE;
+  if (trim > 0.01) {
+    lo = cr.open ? Math.min(cr.plus, cr.minus) : trim;
+    hi = cr.open ? Math.max(cr.plus, cr.minus) : trim;
+    nose = trim + STOP_LINE;
+    if (cr.open) {
+      nose = Infinity;
+      for (let lane = 0; lane < ROAD_TYPES[L.seg.type].lanesPerDir; lane++) nose = Math.min(nose, trim + crossingStop(cr, L.seg, nodeId, lane));
+    }
+  }
+  const z0 = Math.max(clear > 0 ? clear + ZEBRA_SETBACK : 0, Math.min(lo - ZEBRA_STRIDE, (lo + hi) / 2 - ZEBRA_MAX / 2));
+  const z1 = Math.max(z0 + ZEBRA_MIN, hi + ZEBRA_STRIDE, Math.min(z0 + ZEBRA_MAX, nose - NOSE_CLEAR - BAR_DEPTH - STOP_GAP));
+  return { z0, z1, half, bar: z1 + STOP_GAP + BAR_DEPTH / 2, cross: cr.open || trim <= 0.01 };
 }
 
 /** The paint for a leg of a node that gets no drawn junction shape (the plain hull): the old fixed offsets from the ribbon's start. */
 export function hullMarks(net: RoadNetwork, seg: RSeg, nodeId: number): LegMarks {
   const trim = baseTrim(net, seg, nodeId);
-  return { z0: trim + 0.7, z1: trim + 3.5, half: Math.max(1, carriageHalf(ROAD_TYPES[seg.type]) - 0.5), bar: trim + 4.45 };
+  return { z0: trim + 0.7, z1: trim + 3.5, half: Math.max(1, carriageHalf(ROAD_TYPES[seg.type]) - 0.5), bar: trim + 4.45, cross: true };
 }
 
 /** The paint for one leg of a node: from the drawn junction when it has one, else the plain hull's. */
 export function legPaint(net: RoadNetwork, seg: RSeg, nodeId: number, J: Junction | null = junctionShape(net, nodeId)): LegMarks {
   if (J) for (const L of J.legs) if (L.seg === seg) return L.marks;
   return hullMarks(net, seg, nodeId);
+}
+
+/**
+ * Where a road's sidewalk on this side ends at each end (distances along the road from its a end): the kerb at the
+ * junction box's edge, where people step off to cross. At a sharp corner the box edge is still on the other road, or where
+ * a turning truck swings, so the sidewalk stops short of that road (clear of its lanes by 2.5 m). A road with no box at
+ * that end runs on to the node. (Was pedestrians.ts kerbs; people walk it, armCrossing takes the crossings from it.)
+ */
+export function sidewalkEnds(net: RoadNetwork, seg: RSeg, side: 1 | -1): [number, number] {
+  const nA = net.nodes.get(seg.a), nB = net.nodes.get(seg.b);
+  const T = ROAD_TYPES[seg.type], off = (T.sidewalk > 0 ? T.width / 2 - T.sidewalk / 2 : T.width / 2 + 1.3) * side;
+  const clearOf = (node: typeof nA, at: number) => {
+    const { i, f } = locate(seg.samp, clamp(at, 0, seg.length));
+    const a = seg.samp.pts[i], b = seg.samp.pts[i + 1], tan = norm(sub(b, a));
+    const pt = { x: lerp(a.x, b.x, f) - tan.z * off, z: lerp(a.z, b.z, f) + tan.x * off };
+    for (const id of node?.segs ?? []) {
+      const o = id !== seg.id && net.segs.get(id);
+      // (clear of its lanes by 2.5 m: a long truck turning in cuts the corner)
+      if (o && closestOnSampled(pt, o.samp).d < carriageHalf(ROAD_TYPES[o.type]) + 2.5) return false;
+    }
+    return true;
+  };
+  const tA = seg.trimA ?? 0, tB = seg.trimB ?? 0, half = seg.length / 2;
+  let a = tA > 0 ? tA : 0, b = seg.length - (tB > 0 ? tB : 0);
+  while (a < Math.min(half - 1, tA + 20) && !clearOf(nA, a)) a += 0.5;
+  while (b > Math.max(half + 1, seg.length - tB - 20) && !clearOf(nB, b)) b -= 0.5;
+  return a < b - 1 ? [a, b] : [half - 0.5, half + 0.5];
+}
+
+/** People cross an arm only where neither sidewalk ends more than this far past its trim (m; beyond it, a sharp corner). */
+export const CROSS_SETBACK_MAX = 1.5;
+
+/**
+ * Where people cross one arm of a junction: the walk line, straight from where the sidewalk ends on one side of the road
+ * to where it ends on the other (pedestrians.ts walks it), in metres from the node along the arm at each side (`plus` on
+ * the road's own side +1, `minus` on -1; the sidewalks' centre lines are `off` m either side of the centreline). An arm
+ * whose sidewalk ends more than CROSS_SETBACK_MAX past its trim on either side is `open: false`: nobody crosses it there,
+ * nobody waits for walkers on it, and it gets no zebra. traffic.ts stops each lane short of the walk line over it
+ * (crossingStop), roadJunction.ts paints the zebra over it (legMarks).
+ */
+export interface ArmCrossing { plus: number; minus: number; off: number; trim: number; open: boolean }
+const crossings = new Map<string, { key: string; c: ArmCrossing }>();
+export function armCrossing(net: RoadNetwork, seg: RSeg, nodeId: number): ArmCrossing {
+  const nA = net.nodes.get(seg.a), nB = net.nodes.get(seg.b);
+  const key = `${seg.length}|${seg.trimA}|${seg.trimB}|${nA?.segs.join(',')}|${nB?.segs.join(',')}`;
+  const k = `${seg.id}:${nodeId}`, hit = crossings.get(k);
+  if (hit && hit.key === key) return hit.c;
+  const atA = seg.a === nodeId, T = ROAD_TYPES[seg.type];
+  const end = (side: 1 | -1) => { const [a, b] = sidewalkEnds(net, seg, side); return atA ? a : seg.length - b; };
+  const trim = Math.max(0, (atA ? seg.trimA : seg.trimB) ?? 0), plus = end(1), minus = end(-1);
+  const c: ArmCrossing = { plus, minus, off: T.sidewalk > 0 ? T.width / 2 - T.sidewalk / 2 : T.width / 2 + 1.3, trim, open: Math.max(plus, minus) <= trim + CROSS_SETBACK_MAX };
+  crossings.set(k, { key, c });
+  return c;
+}
+
+/** The walk line's distance from the node where it crosses `lat` m across the arm (+ on the road's side +1). */
+export function crossingAt(c: ArmCrossing, lat: number): number {
+  return lerp(c.minus, c.plus, clamp((lat + c.off) / (2 * c.off), 0, 1));
+}
+
+/**
+ * How far short of the arm's trim a car arriving at the node in `lane` (all its arriving lanes if none) holds its nose:
+ * STOP_LINE behind where people walk over that lane, the walk line at the lane's two edges (on an arm nobody crosses,
+ * STOP_LINE behind the trim). Capped at 6 m past STOP_LINE.
+ */
+export function crossingStop(c: ArmCrossing, seg: RSeg, nodeId: number, lane?: number): number {
+  if (!c.open) return STOP_LINE;
+  const T = ROAD_TYPES[seg.type], arriving = seg.b === nodeId ? 1 : -1;
+  let far = c.trim;
+  for (let k = 0; k < T.lanesPerDir; k++) {
+    if (lane !== undefined && k !== lane) continue;
+    // (a one-way's lanes fill the carriageway: laneOffset counts them from its left)
+    const lo = laneOffset(T, k) - T.laneW / 2, hi = lo + T.laneW;
+    for (const lat of [lo, hi]) far = Math.max(far, crossingAt(c, lat * arriving));
+  }
+  return STOP_LINE + clamp(far - c.trim, 0, 6);
 }
 
 /** True when no two non-adjacent edges of the closed polygon cross (repeated points are ignored). */

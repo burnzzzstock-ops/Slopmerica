@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import type { PersonAction } from '../contracts';
 import { clamp, closestOnSampled, lerp, locate, norm, sub, type V2 } from '../core/math';
 import type { RoadNetwork, RSeg } from '../roads/network';
+import { armCrossing, sidewalkEnds } from '../roads/roadJunction';
 import { carriageHalf, ROAD_TYPES } from '../roads/roadTypes';
 import { WALK_TOP } from '../roads/roadSection'; // (display height only: the raised sidewalk)
 import { isZoned, type Bld, type Buildings } from '../sim/buildings';
@@ -148,55 +149,15 @@ export class Pedestrians {
   crosswalkWalkers(node: number, seg: number) {
     return this.onCrosswalk.get(`${node}:${seg}`);
   }
-  /**
-   * How far past its trim people cross this arm at this node (metres; 0 at most junctions). At a sharp corner the sidewalk
-   * on the acute side stops short of the other road (kerbs), so the crossing is further out: the traffic stops its cars
-   * behind it (on the reference block, 10 of 94 arms, by up to 5.5 m).
-   */
-  walkSetback(node: number, seg: number): number {
-    const s = this.net.segs.get(seg);
-    if (!s || (s.a !== node && s.b !== node)) return 0;
-    const atA = s.a === node, trim = Math.max(0, (atA ? s.trimA : s.trimB) ?? 0);
-    let back = 0;
-    for (const side of [1, -1] as const) {
-      const [a, b] = this.kerbs(s, side);
-      back = Math.max(back, (atA ? a : s.length - b) - trim);
-    }
-    return back;
-  }
   /** where each road's sidewalks end, by `seg:side` (with the junction layout it was worked out for) */
   private kerbCache = new Map<string, { key: string; ab: [number, number] }>();
-  /**
-   * Where a road's sidewalk on this side ends at each end: the kerb at the
-   * junction box's edge, where the crosswalk is (cars stop 3 m back from it,
-   * wherever it is: traffic.ts stopBack;
-   * turning cars are still in their lanes there). At a sharp corner the box
-   * edge is still on the other road, or where a turning truck swings, so the
-   * sidewalk stops short of that road. A road with no box at that end runs on
-   * to the node.
-   */
+  /** Where a road's sidewalk on this side ends at each end (roadJunction.ts sidewalkEnds), cached until the junctions change. */
   private kerbs(seg: RSeg, side: 1 | -1): [number, number] {
     const nA = this.net.nodes.get(seg.a), nB = this.net.nodes.get(seg.b);
     const key = `${seg.length}|${nA?.segs.join(',')}|${nB?.segs.join(',')}`;
     const hit = this.kerbCache.get(`${seg.id}:${side}`);
     if (hit && hit.key === key) return hit.ab;
-    const T = ROAD_TYPES[seg.type], off = (T.sidewalk > 0 ? T.width / 2 - T.sidewalk / 2 : T.width / 2 + 1.3) * side;
-    const clearOf = (node: typeof nA, at: number) => {
-      const { i, f } = locate(seg.samp, clamp(at, 0, seg.length));
-      const a = seg.samp.pts[i], b = seg.samp.pts[i + 1], tan = norm(sub(b, a));
-      const pt = { x: lerp(a.x, b.x, f) - tan.z * off, z: lerp(a.z, b.z, f) + tan.x * off };
-      for (const id of node?.segs ?? []) {
-        const o = id !== seg.id && this.net.segs.get(id);
-        // (clear of its lanes by 2.5 m: a long truck turning in cuts the corner)
-        if (o && closestOnSampled(pt, o.samp).d < carriageHalf(ROAD_TYPES[o.type]) + 2.5) return false;
-      }
-      return true;
-    };
-    const tA = seg.trimA ?? 0, tB = seg.trimB ?? 0, half = seg.length / 2;
-    let a = tA > 0 ? tA : 0, b = seg.length - (tB > 0 ? tB : 0);
-    while (a < Math.min(half - 1, tA + 20) && !clearOf(nA, a)) a += 0.5;
-    while (b > Math.max(half + 1, seg.length - tB - 20) && !clearOf(nB, b)) b -= 0.5;
-    const ab: [number, number] = a < b - 1 ? [a, b] : [half - 0.5, half + 0.5];
+    const ab = sidewalkEnds(this.net, seg, side);
     this.kerbCache.set(`${seg.id}:${side}`, { key, ab });
     return ab;
   }
@@ -393,11 +354,11 @@ export class Pedestrians {
             const arms = this.armsCrossed(nodeId, p.x, p.z, t.x, t.z);
             if (!arms.length) return { arms, legs: [] as NonNullable<Ped['legs']>, tx: t.x, tz: t.z };
             if (arms.length > 1) return null;
-            const xs = this.net.segs.get(arms[0])!, atA = xs.a === nodeId, trim = Math.max(0, (atA ? xs.trimA : xs.trimB) ?? 0);
+            const xs = this.net.segs.get(arms[0])!, atA = xs.a === nodeId;
+            if (!armCrossing(this.net, xs, nodeId).open) return null;
             const q: V2[] = [];
             for (const sd of [1, -1] as const) {
               const [a, b] = this.kerbs(xs, sd);
-              if ((atA ? a : xs.length - b) > trim + 1.5) return null;
               const k = { ...p, seg: xs.id, side: sd, dir: 1 as const, lat: 0, s: atA ? a : b };
               this.placeOnSidewalk(k as Ped);
               q.push({ x: k.x, z: k.z });

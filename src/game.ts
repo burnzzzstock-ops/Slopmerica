@@ -326,7 +326,6 @@ export class Game {
     this.peds = new Pedestrians(this.scene, this.net, this.buildings, this.terrain, this.communes, this.q.maxPeople);
     // crosswalks: people wait for a gap (or the walk phase), cars stop for people on them
     this.traffic.crosswalkWalkers = (node, seg) => this.peds.crosswalkWalkers(node, seg);
-    this.traffic.crosswalkSetback = (node, seg) => this.peds.walkSetback(node, seg);
     this.peds.canCross = (node, segs, secs, impatient) => this.traffic.canCross(node, segs, secs, impatient);
     // Civic Foundry street furniture, street trees and bus shelters (streamed in; low quality skips it)
     this.civic = new CivicLayer(this);

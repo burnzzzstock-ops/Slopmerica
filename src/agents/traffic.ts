@@ -10,6 +10,7 @@ import type { RNode, RoadNetwork, RSeg } from '../roads/network';
 import { carriageHalf, laneOffset, ROAD_TYPES } from '../roads/roadTypes';
 // where cars stop short of a junction (m before the box): behind the crosswalk at the box's edge, and the paint's too
 import { STOP_LINE } from '../roads/roadSection';
+import { armCrossing, crossingStop } from '../roads/roadJunction';
 import type { Bld, Buildings } from '../sim/buildings';
 import { FIXED_PAINT, randomVehicleKind, VEHICLE_SPECS, VehicleRenderer } from './vehicles';
 import { LANDMARK_EVENTS, type Parking, type WorldSpot } from './parking';
@@ -531,8 +532,6 @@ export class Traffic {
   }
   /** game wiring: the people walking over this arm of this junction: where they are and which way they're going */
   crosswalkWalkers?: (node: number, seg: number) => { x: number; z: number; dx: number; dz: number; pending?: boolean }[] | undefined;
-  /** game wiring: how far past its trim people cross this arm at this node (pedestrians.ts walkSetback) */
-  crosswalkSetback?: (node: number, seg: number) => number;
   /** crosswalk stops (a car slowing for someone on foot at a junction, once each), for tests */
   pedYields = 0;
   private yieldedTo(c: Car, node: number) {
@@ -565,14 +564,17 @@ export class Traffic {
   private bendCuts = new Map<number, number>();
   private stopBacks = new Map<number, number>();
   /**
-   * How far short of the end of its road a car waiting at the line holds its nose: STOP_LINE behind the crosswalk, wherever
-   * people cross that arm. (At a sharp corner the crossing sits up to a few metres further out than the trim; with the stop
-   * a fixed 3 m behind the trim, people there walked through the waiting cars: crosswalktest, 1 run in 3 to 6.)
+   * How far short of the end of its road a car arriving in `lane` (all its lanes if none) holds its nose at the line:
+   * STOP_LINE behind where people walk over that lane (roadJunction.ts crossingStop, from the same walk line pedestrians.ts
+   * walks and the zebra is painted on); STOP_LINE behind the trim on an arm nobody crosses. Cached per arm and lane,
+   * cleared with the signals when the network changes. (Round 7 held every lane behind the further of the two sidewalks'
+   * ends, up to 6 m: on the reference block 10 sharp-cornered arms that nobody may cross, 3 to 6.5 m back.)
    */
-  private stopBack(nodeId: number, segId: number): number {
-    const k = nodeId * 1048576 + segId, hit = this.stopBacks.get(k);
+  private stopBack(nodeId: number, segId: number, lane?: number): number {
+    const k = (nodeId * 1048576 + segId) * 8 + (lane ?? 7), hit = this.stopBacks.get(k);
     if (hit !== undefined) return hit;
-    const back = STOP_LINE + clamp(this.crosswalkSetback?.(nodeId, segId) ?? 0, 0, 6);
+    const seg = this.net.segs.get(segId);
+    const back = seg ? crossingStop(armCrossing(this.net, seg, nodeId), seg, nodeId, lane) : STOP_LINE;
     this.stopBacks.set(k, back);
     return back;
   }
@@ -1203,7 +1205,7 @@ export class Traffic {
         const exitS = last ? c.endS : this.exitOf(seg, st.dir);
         // how much further back than STOP_LINE this arm's line is, where people cross it further out (0 on most arms):
         // the distances below that were measured for a line STOP_LINE short of the end move back with it
-        const extra = last ? 0 : this.stopBack(st.dir > 0 ? seg.b : seg.a, seg.id) - STOP_LINE;
+        const extra = last ? 0 : this.stopBack(st.dir > 0 ? seg.b : seg.a, seg.id, c.lane) - STOP_LINE;
         let v0 = T.speed * this.speedMul * c.v0mul * (c.drunk ? 0.9 + Math.sin(c.wob * 0.7) * 0.3 : 1);
         // ease off for the turn ahead: brake early and smoothly, not in the box
         if (!last) {
@@ -1269,7 +1271,7 @@ export class Traffic {
         // someone on the crosswalk over my lanes, or over the lanes I'm turning into: stop at the line
         if (!last && this.crosswalkWalkers && exitS - c.s < 20 + extra) {
           const nodeId = st.dir > 0 ? seg.b : seg.a, nx = c.path[c.pi + 1], ns = nx && this.net.segs.get(nx.seg);
-          const g7 = exitS - this.stopBack(nodeId, seg.id) - c.s;
+          const g7 = exitS - this.stopBack(nodeId, seg.id, c.lane) - c.s;
           // (and for someone still walking round to the kerb they'll step off: they cross every lane of the arm, and a
           // car that set off as they left the corner was past its line when they stepped out. Not a car too close to
           // stop short of where they'll walk, at 6 m/s/s: it goes through before they get there)
@@ -1281,7 +1283,7 @@ export class Traffic {
         if (!last && c.turn > 0 && exitS - c.s < 25 + extra) {
           const nodeId = st.dir > 0 ? seg.b : seg.a;
           if (this.signals.has(nodeId) && !this.clearing(nodeId, seg.id) && this.oncoming(nodeId, seg.id)) {
-            const g6 = exitS - this.stopBack(nodeId, seg.id) - c.s;
+            const g6 = exitS - this.stopBack(nodeId, seg.id, c.lane) - c.s;
             if (g6 < gap) { gap = g6; dv = c.v; hold = 'left: oncoming'; }
           }
         }
@@ -1296,7 +1298,7 @@ export class Traffic {
           if (g < gap) { gap = g; dv = c.v; hold = b.courtesy ? 'courtesy' : 'driveway'; }
         }
         if (!last && exitS - c.s < 30 && !this.exitClear(c)) {
-          const g4 = exitS - this.stopBack(st.dir > 0 ? seg.b : seg.a, seg.id) - c.s;
+          const g4 = exitS - this.stopBack(st.dir > 0 ? seg.b : seg.a, seg.id, c.lane) - c.s;
           if (g4 < gap) { gap = g4; dv = c.v; hold = 'no room past the box'; }
         }
         if (!last) {
@@ -1307,7 +1309,7 @@ export class Traffic {
             const runIt = c.reckless && Math.random() < 0.004;
             if (runIt) c.redsRun++;
             if (!(c.reckless && c.redsRun > 0 && exitS - c.s < 12)) {
-              const g2 = exitS - this.stopBack(nodeId, seg.id) - c.s;
+              const g2 = exitS - this.stopBack(nodeId, seg.id, c.lane) - c.s;
               if (g2 < gap) { gap = g2; dv = c.v; hold = 'red'; }
             }
           }
@@ -1334,7 +1336,7 @@ export class Traffic {
             const ta = this.endTangent(seg, st.dir, true), tb = ns ? this.endTangent(ns, nx.dir, false) : ta;
             const myBend = Math.abs(Math.atan2(ta.x * tb.z - ta.z * tb.x, ta.x * tb.x + ta.z * tb.z));
             if (mine && others.some((o) => this.crossesBox(mine!, o, o.junction!.fromSeg === seg.id || myBend < 0.5 ? 0 : c.len))) {
-              const g5 = exitS - this.stopBack(nodeId, seg.id) - c.s;
+              const g5 = exitS - this.stopBack(nodeId, seg.id, c.lane) - c.s;
               if (g5 < gap) { gap = g5; dv = c.v; hold = 'all-way stop'; }
             }
           }

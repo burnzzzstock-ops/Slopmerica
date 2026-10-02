@@ -912,7 +912,7 @@ export class RoadRenderer {
         // where the paint goes is roadJunction.ts's call (legMarks): past the crossing road's kerb, short of a stopped car's nose
         const m = legPaint(this.net, s, n.id, J);
         const d0 = m.z0 + ZEBRA_EDGE, d1 = m.z1 - ZEBRA_EDGE; // (the transverse lines at each end are streetDetails')
-        if (m.bar > s.length * 0.45) continue;
+        if (m.bar > s.length * 0.45 || !m.cross) continue; // (nobody crosses at a sharp corner: no zebra)
         const hw = m.half;
         const row = (d: number, v: number) => {
           const F = RoadRenderer.frame(s, clamp(atA ? d : s.length - d, 0, s.length));

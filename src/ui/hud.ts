@@ -172,7 +172,7 @@ export class Hud implements UiSink {
       if (this.demandPop.contains(t) || t.closest?.('[data-dem]')) return;
       this.closeDemand();
     }, true);
-    window.addEventListener('resize', () => { if (this.demandKey) this.placeDemand(); });
+    window.addEventListener('resize', () => { if (this.demandKey) this.placeDemand(); const f = this.sub?.querySelector('#fov-v'); if (f) f.textContent = this.fovText(); });
     this.actions.innerHTML = `<span class="ta-tip" id="ta-tip"></span><button id="ta-build" class="ta-build">🔨 Build</button><button id="ta-done" class="ta-done">${IS_TOUCH ? '✓ Done' : '✕ Stop'}</button><button id="ta-undo">↶ Undo</button>`;
     this.actions.hidden = true;
     // phones: Done leaves the tool entirely (double-tap ends just the current
@@ -1319,9 +1319,9 @@ export class Hud implements UiSink {
           <button class="chip ${emergencySpeed() !== 'off' ? 'on' : ''}" id="emergency-toggle" title="When a city-wide service emergency begins: slow the clock to normal speed, pause it, or keep going">🚨 Emergencies: ${EMERGENCY_SPEED_LABEL[emergencySpeed()]}</button>
           <button class="chip ${g.audio.musicOn ? 'on' : ''}" id="music-toggle" aria-pressed="${g.audio.musicOn}">🎹 Music: ${g.audio.musicOn ? 'on' : 'off'}</button>
           <label class="fov-ctl" for="music-range">Music volume <input type="range" id="music-range" min="5" max="100" step="5" value="${Math.round(g.audio.musicVolume * 100)}"></label>
-          <label class="fov-ctl" for="fov-range">Field of view <input type="range" id="fov-range" min="${FOV_MIN}" max="${FOV_MAX}" step="1" value="${Math.round(g.camera.fov)}"><b id="fov-v">${Math.round(g.camera.fov)}°</b></label>
           <button class="chip ${g.audio.soundOn ? 'on' : ''}" id="sound-toggle" aria-pressed="${g.audio.soundOn}" title="Effects, ambience and the sound of the cars in the street">🔊 Sound: ${g.audio.soundOn ? 'on' : 'off'}</button>
           <label class="fov-ctl" for="sound-range">Sound volume <input type="range" id="sound-range" min="5" max="100" step="5" value="${Math.round(g.audio.soundVolume * 100)}"></label>
+          <label class="fov-ctl" for="fov-range">Field of view <input type="range" id="fov-range" min="${FOV_MIN}" max="${FOV_MAX}" step="1" value="${Math.round(g.camera.fov)}"><b id="fov-v">${this.fovText()}</b></label>
         </div>
         <small>Resolution and shadows change immediately. Reload applies scenery, traffic, and post-processing budgets.</small>
         <div class="help">${IS_TOUCH ? `
@@ -1402,7 +1402,7 @@ export class Hud implements UiSink {
         const v = Number((e.target as HTMLInputElement).value);
         g.camera.fov = v;
         g.camera.updateProjectionMatrix();
-        this.sub.querySelector('#fov-v')!.textContent = `${v}°`;
+        this.sub.querySelector('#fov-v')!.textContent = this.fovText();
         try { localStorage.setItem('slopmerica.fov', String(v)); } catch { /* not remembered */ }
       });
       this.sub.querySelector('#edge-toggle')?.addEventListener('click', () => {
@@ -1412,6 +1412,12 @@ export class Hud implements UiSink {
         this.renderPanel();
       });
     }
+  }
+
+  /** The slider is the camera's vertical angle; say so, and how wide that is across this window ("110° tall · 137° across"). */
+  private fovText(): string {
+    const c = this.game.camera, across = 2 * Math.atan(Math.tan((c.fov * Math.PI) / 360) * c.aspect) * (180 / Math.PI);
+    return `${Math.round(c.fov)}° tall · ${Math.round(across)}° across`;
   }
 
   private taxFeed(raised: boolean) {

@@ -118,6 +118,7 @@ Headless checks live in `scripts/` and drive the dev server with Playwright + Sw
 node scripts/playtestcheck.mjs   # bug reporter, crash toast, context loss, rescue screen (phone)
 node scripts/savefallback.mjs     # saving where downloads are blocked: the built game in a sandboxed iframe (no allow-downloads) copies the city file to the clipboard and says so; outside a frame the file still downloads; "Paste a copied city" loads it back (DIST= another build, BUILD=0 skips the build)
 node scripts/soundtest.mjs        # Settings > Sound on/off and volume (effects, ambience, street sound; the music keeps its own): the audio graph's gains, the street voices asleep when off, remembered after a reload, the phone panel still fits
+node scripts/fovtest.mjs phone     # the field of view slider at 35, 50, 75 and 110: the label says what the number is, Settings fits at 390 px, tapping a building selects it, edge scrolling (desk), draw calls per angle; pictures in shots/r8/fov
 node scripts/touchtest.mjs       # phone road drawing: plan, Build, Done, double-tap
 node scripts/phonetargets.mjs    # phone: every control in every panel reaches 44 px for a finger (measured with elementFromPoint); the one-row top bar is listed at its minimum
 node scripts/gesturetest.mjs     # phone: pinching or panning with two fingers keeps a planned road or service (real touch events); a stroke that turns into a pinch plans nothing

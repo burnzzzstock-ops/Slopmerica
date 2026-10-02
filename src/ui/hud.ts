@@ -87,6 +87,8 @@ export class Hud implements UiSink {
   private inspector!: HTMLElement;
   /** when the inspector sheet last opened (performance.now()): see the click guard in the constructor */
   private inspectorOpenedAt = 0;
+  /** when a finger last lifted off the screen (performance.now()) */
+  private lastTouchUpAt = 0;
   private toasts!: HTMLElement;
   private remeasureToasts = true;
   private tip!: HTMLElement;
@@ -149,8 +151,9 @@ export class Hud implements UiSink {
     this.inspector = this.mk('aside', 'inspector');
     // A tap on the map opens the sheet under the finger, and the browser's emulated click is then delivered to whatever is under the finger NOW: a building
     // tapped where the sheet's x appears was selected and then closed 21 ms later (seen at 110 degrees on the phone, scripts/ghosttap.mjs). No click that
-    // soon after the sheet opens is a deliberate press, so none reaches it.
-    this.inspector.addEventListener('click', (e) => { if (performance.now() - this.inspectorOpenedAt < 350) { e.stopPropagation(); e.preventDefault(); } }, true);
+    // soon after a finger lifted and the sheet opened is a deliberate press, so none reaches it (a click with no finger just before it, a script's, does).
+    window.addEventListener('pointerup', (e) => { if (e.pointerType === 'touch') this.lastTouchUpAt = performance.now(); }, true);
+    this.inspector.addEventListener('click', (e) => { const now = performance.now(); if (now - this.inspectorOpenedAt < 350 && now - this.lastTouchUpAt < 350) { e.stopPropagation(); e.preventDefault(); } }, true);
     this.inspector.hidden = true;
     this.sideCards = this.mk('div', 'side-cards');
     this.toasts = this.mk('div', 'toasts');

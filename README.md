@@ -116,6 +116,7 @@ Headless checks live in `scripts/` and drive the dev server with Playwright + Sw
 
 ```sh
 node scripts/playtestcheck.mjs   # bug reporter, crash toast, context loss, rescue screen (phone)
+node scripts/glcheck.mjs          # no draw call raises a GL error (BASE_URL=; GL_JS= runs a snippet in the page first); exits 1 on any, or on a page error
 node scripts/savefallback.mjs     # saving where downloads are blocked: the built game in a sandboxed iframe (no allow-downloads) copies the city file to the clipboard and says so; outside a frame the file still downloads; "Paste a copied city" loads it back (DIST= another build, BUILD=0 skips the build)
 node scripts/soundtest.mjs        # Settings > Sound on/off and volume (effects, ambience, street sound; the music keeps its own): the audio graph's gains, the street voices asleep when off, remembered after a reload, the phone panel still fits
 node scripts/fovtest.mjs phone     # the field of view slider at 35, 50, 75 and 110: the label says what the number is, Settings fits at 390 px, tapping a building selects it, edge scrolling (desk), draw calls per angle; pictures in shots/r8/fov

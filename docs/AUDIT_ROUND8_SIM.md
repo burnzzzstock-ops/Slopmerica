@@ -74,3 +74,65 @@ enough gets waved out by moving traffic, as people wave out a truck, not only
 by a crawling queue. It's measured on the 2,800 save (deliveries a week) and
 checked against the reference block's tests on the same seeds, with the ring
 detector watching a long ▶▶▶ soak.
+
+## Addendum: what the fixes found (2026-10-02)
+
+Corrections to the findings above, and what turned up while fixing them.
+Each fix's commit has its before and after numbers.
+
+- **#2, rings: they exist.** The 60-day runs found none, but a 30-minute
+  ▶▶▶ soak of the same Florida county (grown on to 5,200 people) locked into
+  rings: seed 1 had nine full blocks and 59 cars, each lane's front car
+  waiting for room on the next, for the rest of the soak. The gridlock
+  breaker (a front car held 20 s by a full lane past the box takes another
+  way out) cut the moments with a ring 747 -> 142 and 813 -> 20, and the
+  longest standing front car 6,424 s -> 1,176 s and 6,752 s -> 480 s.
+- **#3, left turns: capacity, not a bug.** By hour at node 45, the waits are
+  within one green in the morning and at noon. At the evening rush the lefts
+  from Wildflower Dr (seg 48) wait 113 s on average, because one left goes
+  on each change and the oncoming platoon fills the green. carsolid's "60 s
+  away from a red" passes on every seed, before and after: a car at a light
+  waits at most a green and a clearing. Two lefts on the change only moved
+  the waits around, and a leading left never triggered. What did help was
+  the lights themselves: a green nobody waits for now gives way to one
+  somebody does (actuated), +31-58% cars through node 45 and +31-39%
+  through all the lights. The lefts are the owner's call: a protected left
+  phase, or a turn lane, at a T this busy.
+- **#8, lane overlaps: they aren't wrong-lane turns.** carsolid's remaining
+  lane overlaps (seg 44, both cars on their first road, side by side at
+  s 16-31) are cars pulling out of a lot across the near lane to the far one.
+  The car is drawn across the near lane while a car passes in it. Not fixed
+  (at most 0.03 pairs at any moment); the fix would treat a pull-out as in
+  both lanes until it's over.
+- **New: people inside cars, a timing bug.** crosswalktest put someone
+  inside a car on 4 seeds of 13. Three different windows, each traced to
+  the step:
+  - people asked to cross from the corner, before the 2 s walk round to the
+    kerb, and a car that set off meanwhile was past its line when they
+    stepped out;
+  - a car out of the box into the arm, which isn't in the arm's lane lists
+    until the next step;
+  - a car pulling out of a driveway at the crosswalk.
+  Fixed: people wait at the kerb they step off, and canCross sees both kinds
+  of car. 0 of 13 seeds now, with 3% more trips.
+- **New: round 7's stop line, on arms nobody crosses.** The 10 sharp-cornered
+  arms that held cars 3-6.5 m behind their line are arms pedestrians.ts
+  never lets anyone cross. Where people cross, where cars stop and where the
+  zebra goes now come from one function (roadJunction.ts armCrossing). Arms
+  nobody crosses have no zebra, and their cars stop at the bar.
+- **New: the landmark crowd is late.** It isn't stuck and the lot isn't slow.
+  A drive across the block takes 1-4 hours on the clock (15 s of traffic an
+  hour; a light's cycle is nearly 2 hours), and the crowd sets off 0-1.5
+  hours before kickoff. Half arrive during the game, and 4-7 of 21 are still
+  driving there at 1 am. The test now counts the fans who got there. When
+  they set off is proposed to the owner.
+- **New: a thousand cars, many shapes.** The cars had a dozen of their fields
+  added as they came up, so the loops over them read many shapes of object.
+  One shape each (and four smaller changes) took a step at 1,000 cars from
+  7-9 ms to 4.3-4.8 ms on this machine, with every car where it was.
+- **New: a residual divergence in the seeded runs.** The same seed on the
+  same code gives one of two outcomes (on trafficscale's town, two
+  fingerprints with the same town fingerprint), seemingly by load. Every
+  before/after comparison here was made between matching outcomes, or
+  across many seeds. The source isn't found yet. It isn't the asset pack
+  (same town), and the feed has its own random stream.

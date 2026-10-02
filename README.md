@@ -122,6 +122,7 @@ node scripts/soundtest.mjs        # Settings > Sound on/off and volume (effects,
 node scripts/fovtest.mjs phone     # the field of view slider at 35, 50, 75 and 110: the label says what the number is, Settings fits at 390 px, tapping a building selects it, edge scrolling (desk), draw calls per angle; pictures in shots/r8/fov
 node scripts/ghosttap.mjs       # phone: a tap on a building that sits where the inspector sheet's x will appear selects it and the sheet stays (the emulated click used to close it 21 ms later); the x still closes it when pressed on purpose
 node scripts/copytest.mjs       # (no browser) sentences built from numbers read right at 1 and many ("1 building", "Court in 1 day"), and the HUD uses them
+node scripts/suite.mjs --dir shots/suite/x   # runs every test in this list against BASE_URL, two at a time, a timeout each; results go to a summary file as they finish, so a rerun resumes (--retry-failed, --only a,b, --list, --lint); prints a table
 node scripts/touchtest.mjs       # phone road drawing: plan, Build, Done, double-tap
 node scripts/phonetargets.mjs    # phone: every control in every panel, and on the title screen, reaches 44 px for a finger (measured with elementFromPoint); the one-row top bar is listed at its minimum
 node scripts/gesturetest.mjs     # phone: pinching or panning with two fingers keeps a planned road or service (real touch events); a stroke that turns into a pinch plans nothing
@@ -224,6 +225,7 @@ node scripts/overlaptest.mjs     # HUD panels never cover each other: emergency 
 node scripts/gradetest.mjs       # contours and slope shading around the cursor when drawing roads or placing; live road grade in the tip (amber near 15%); steep refusal names the rule and the way out
 node scripts/reflecttest.mjs     # water mirror pass: first look at water compiles no shader variants (was 12.9 s on the software GPU), image matches the old clipping, nothing under the surface shows
 node scripts/nighttest.mjs       # night exposure targets on the reference block: road median >= 50, pools p90 >= 100, lit facades clear of the ground, < 1% blown out, pools off by day
+node scripts/presetlight.mjs     # the presets light the same street alike (noon, dusk, moonless night on the reference block): mean luma within 0.03 of High on every camera and hour
 node scripts/lookbook.mjs high   # fixed-camera captures of the reference block (noon, dusk, moonless, full moon, rain) per quality, with a contact sheet (docs/ART_DIRECTION.md)
 node scripts/linktest.mjs        # landmarks/services off the road network: tip, toast, red no-road bubble, inspector, alerts, no land value; feed pacing
 node scripts/vaulttest.mjs       # Asset Vault: pack streams in; zoned lots grow vault buildings that fit; merch lots kept; attractions; services' vault looks + toggle; road furniture; no pack = no change

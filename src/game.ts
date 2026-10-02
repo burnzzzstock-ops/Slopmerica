@@ -324,6 +324,7 @@ export class Game {
       return t - phase * cycle > 11 ? 'yellow' : 'green';
     });
     this.peds = new Pedestrians(this.scene, this.net, this.buildings, this.terrain, this.communes, this.q.maxPeople);
+    this.peds.renderer.setDetail(this.q); // the preset's near/far distance, near cap and shadow range for the citizens (a look budget; the simulation does not read it)
     // crosswalks: people wait for a gap (or the walk phase), cars stop for people on them
     this.traffic.crosswalkWalkers = (node, seg) => this.peds.crosswalkWalkers(node, seg);
     this.traffic.crosswalkSetback = (node, seg) => this.peds.walkSetback(node, seg);

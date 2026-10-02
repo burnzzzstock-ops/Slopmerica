@@ -7,7 +7,7 @@
 // How the pixels are picked (a mask, not a guess): after the real frame is drawn and read back, the scene is drawn once more straight
 // to the canvas with every mask object in a flat colour and everything else writing depth only (colorWrite off, so a branch or a lamp
 // post in front still hides what is behind it), and read back again. A pixel is "tree" or "car" when its mask colour says so:
-//   crowns   the civic foliage material (street trees), or on Low the forest trees' instanced meshes (leaf cards, cut by their own alpha)
+//   crowns   the civic foliage material (street trees), or on Low the forest trees' instanced meshes (leaf cards, cut where their raw texture alpha is over 0.1: the shader's mip boost makes the real crowns a little fuller)
 //   cars     a private VehicleRenderer with three dark cars (black sedan, charcoal pickup, dark blue sedan; COLORS= for others), made with
 //            add(kind, colour, { exact: true }) and flushed each frame; the town's own traffic is hidden for the shot
 //   road     the road meshes, for scale (what a lamp-lit road reads at in the same frame)
@@ -54,7 +54,7 @@ async function closeUp(page, name, setup, sweep) {
         const c = info.classify(o) ? 1 : roadSet.has(o) ? 2 : 0;
         if (c) {
           const orig = Array.isArray(o.material) ? o.material[0] : o.material, am = !!info.alphaMasked?.(o);
-          const m = new MBM({ color: colors[c], toneMapped: false, fog: false, map: am ? orig.map ?? null : null, alphaTest: am ? orig.alphaTest || 0.42 : 0, side: am ? 2 : 0 });
+          const m = new MBM({ color: colors[c], toneMapped: false, fog: false, map: am ? orig.map ?? null : null, alphaTest: am ? 0.1 : 0, side: am ? 2 : 0 });
           made.push(m); saved.push([o, o.material]); o.material = m;
           return;
         }
@@ -75,14 +75,17 @@ async function closeUp(page, name, setup, sweep) {
     // a case that offers several candidate subjects (the Low trees): the first one the camera really sees wins
     if (info.candidates) {
       let best = null, bestN = -1;
+      const tried = [];
       for (const cand of info.candidates.slice(0, 14)) {
         info.place(cand);
         for (let i = 0; i < 3; i++) g.frame(0.05, false);
         const mk = readMask();
         let n = 0; for (let i = 0; i < w * h; i++) if (mk[i * 4] > 128) n++;
+        tried.push(n);
         if (n > bestN) { bestN = n; best = cand; }
         if (n >= 4000) break;
       }
+      info.where.tried = tried;
       info.place(best);
       info.where.tree = best.id; info.where.x = Math.round(best.x); info.where.z = Math.round(best.z); info.where.seen = bestN;
       for (let i = 0; i < 6; i++) g.frame(0.05, false);
@@ -167,12 +170,13 @@ const treeSetup = async (g) => {
   g.rts.setView(tree.x, tree.z, 20, 2.4, 0.3, true);
   const near = new Set(g.trees.near);
   return {
-    where: { kind, id: tree.id, x: Math.round(tree.x), z: Math.round(tree.z), view: candidates ? '20 m, yaw 2.4, pitch 0.5' : '20 m, yaw 2.4, pitch 0.3' },
+    where: { kind, id: tree.id, x: Math.round(tree.x), z: Math.round(tree.z), view: candidates ? '30 m, yaw 2.4, pitch 0.7' : '20 m, yaw 2.4, pitch 0.3' },
     // crowns: the pack's foliage material; or the forest tree meshes
-    classify: (o) => (o.material && !Array.isArray(o.material) && o.material.name === 'civic-foliage') || near.has(o),
-    alphaMasked: (o) => near.has(o),
+    // (with the civic layer loaded the crowns are its foliage; without it (Low) the forest trees' near meshes)
+    classify: (o) => (candidates ? near.has(o) : o.material && !Array.isArray(o.material) && o.material.name === 'civic-foliage'),
+    alphaMasked: (o) => !!candidates && near.has(o),
     candidates,
-    place: (c) => g.rts.setView(c.x, c.z, 20, 2.4, 0.5, true),
+    place: (c) => g.rts.setView(c.x, c.z, 30, 2.4, 0.7, true),
   };
 };
 

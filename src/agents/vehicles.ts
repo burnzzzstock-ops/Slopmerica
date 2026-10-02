@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLOW } from '../config';
 import type { VehicleKind } from '../contracts';
 import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from '../world/atmos';
+import { bindLamps, CAR_SHEEN, LAMP_PARS } from '../world/nightLights';
 import { buildModelLod, modelDef, vehicleDecalAtlas, vehicleModelList, variantsOf, type ModelLod } from './models/vehicleModels';
 import type { LampSet, V3 } from './models/vehicleKit';
 import { pickLook, type Look } from './models/vehiclePaint';
@@ -76,6 +77,8 @@ function vehicleMaterial(): THREE.MeshPhysicalMaterial {
     shader.uniforms.uVehicleNight = nightUniform;
     shader.uniforms.uVehicleTime = timeUniform;
     shader.uniforms.uGlow = GLOW;
+    bindLamps(shader);
+    shader.uniforms.uCarSheen = CAR_SHEEN;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
 attribute vec4 aTint; attribute vec4 aInfo; attribute vec3 aHub;
@@ -109,7 +112,9 @@ vLocal = transformed; vLocalN = objectNormal;`)
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
 uniform float uSnow, uSnowLine, uWet, uVehicleNight, uVehicleTime, uGlow;
+uniform vec3 uCarSheen;
 uniform sampler2D tVehicleAtlas;
+${LAMP_PARS}
 varying vec4 vTint; varying vec4 vLook; varying vec4 vMisc;
 varying vec3 vPaint, vLocal, vVehWorld, vVehWorldNormal, vLocalN;
 varying float vZone; varying vec2 vVehUv;
@@ -262,11 +267,23 @@ metalnessFactor = vMetal;`)
 #endif`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 totalEmissiveRadiance += lampEmit * uGlow;
-// a dark car at night still reads: at grazing angles the clearcoat mirrors the town's glow on the horizon (a thin bluish rim, not a lamp)
-if (zn < 3.5) totalEmissiveRadiance += vec3(0.30, 0.36, 0.50) * pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 3.0) * uVehicleNight * 0.12 * uGlow;`)
+// a dark car at night still reads: at grazing angles the clearcoat mirrors the town's glow on the horizon (a thin bluish rim, not a lamp) ...
+if (zn < 3.5) {
+  float vFres = 1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0);
+  totalEmissiveRadiance += vec3(0.30, 0.36, 0.50) * pow(vFres, 3.0) * uVehicleNight * 0.12 * uGlow;
+  // ... and in a street lamp's pool the gloss of the paint and glass throws the light back: a warm highlight on the panels that face up
+  // (where the camera sees the lamp overhead mirrored), along the grazing edges, and a faint one on the sides (the lit road mirrored).
+  // The paint's own colour fades it out (vDark): black and charcoal paint read, white and silver stay as they were. The pool is 0 by day.
+  vec3 vWn = normalize(vVehWorldNormal);
+  vec3 vRefl = reflect(-normalize(cameraPosition - vVehWorld), vWn);
+  float vUp = smoothstep(0.3, 0.9, vWn.y) * pow(clamp(vRefl.y, 0.0, 1.0), 1.5);
+  float vSide = (1.0 - smoothstep(0.3, 0.9, vWn.y)) * clamp(-vRefl.y, 0.0, 1.0);
+  float vDark = 1.0 - smoothstep(0.04, 0.35, dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)));
+  totalEmissiveRadiance += lampPool(vVehWorld) * vGloss * vDark * (uCarSheen.x * vUp + uCarSheen.y * pow(vFres, 3.0) + uCarSheen.z * vSide);
+}`)
       .replace('#include <lights_fragment_end>', cloudShadowChunk('vVehWorld'));
   };
-  material.customProgramCacheKey = () => 'aa-vehicle-unified-v3';
+  material.customProgramCacheKey = () => 'aa-vehicle-unified-v4';
   return material;
 }
 

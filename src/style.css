@@ -2839,6 +2839,8 @@ a {
   left: 0;
   right: 0;
   bottom: 0;
+  /* nothing in it is a control, but on a phone its box rises into the links above it and took the taps meant for the bottom of "Real Slop merch" */
+  pointer-events: none;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -3413,6 +3415,9 @@ a {
   .bug-actions button, .bf-actions button { min-height: 44px; }
   .subpanel summary, .bug summary { padding-block: 14px; }
   input[type='range'] { min-height: 44px; }
+  /* the title screen's text links (Load a city file, Paste a copied city, merch) were 28 px tall, its back arrow 42 */
+  .aaa-link { min-height: 44px; display: inline-flex; align-items: center; padding-inline: 6px; }
+  .aaa-back { width: 44px; height: 44px; }
 
   /* top bar: same look, bigger hit areas */
   .tb-speed button, .tb-stat, .tb-meters, .dbar { position: relative; }

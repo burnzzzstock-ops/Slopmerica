@@ -120,7 +120,7 @@ node scripts/savefallback.mjs     # saving where downloads are blocked: the buil
 node scripts/soundtest.mjs        # Settings > Sound on/off and volume (effects, ambience, street sound; the music keeps its own): the audio graph's gains, the street voices asleep when off, remembered after a reload, the phone panel still fits
 node scripts/fovtest.mjs phone     # the field of view slider at 35, 50, 75 and 110: the label says what the number is, Settings fits at 390 px, tapping a building selects it, edge scrolling (desk), draw calls per angle; pictures in shots/r8/fov
 node scripts/touchtest.mjs       # phone road drawing: plan, Build, Done, double-tap
-node scripts/phonetargets.mjs    # phone: every control in every panel reaches 44 px for a finger (measured with elementFromPoint); the one-row top bar is listed at its minimum
+node scripts/phonetargets.mjs    # phone: every control in every panel, and on the title screen, reaches 44 px for a finger (measured with elementFromPoint); the one-row top bar is listed at its minimum
 node scripts/gesturetest.mjs     # phone: pinching or panning with two fingers keeps a planned road or service (real touch events); a stroke that turns into a pinch plans nothing
 node scripts/inputtest.mjs       # desktop road + zoning input
 node scripts/svctouch.mjs        # phone placement previews (services, landmarks)

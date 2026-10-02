@@ -1,6 +1,6 @@
 // Phone tap targets: on an iPhone-sized touch screen, opens every panel a
 // player uses in the first ten minutes (Roads, Zoning, Services, Views, and
-// every More item), finds each visible control and measures the area a finger
+// every More item) and the title screen, finds each visible control and measures the area a finger
 // really reaches: how many CSS px in a row and in a column still land on that
 // control (elementFromPoint), so a wide invisible hit area counts and a small
 // button that is covered doesn't. Apple's guideline is 44 px. A control under
@@ -51,7 +51,7 @@ const measure = (tight) => {
     if (document.querySelector('.bug') && !el.closest('.bug')) continue; // a dialog covers the rest, by design
     const cs = getComputedStyle(el);
     if (cs.visibility === 'hidden' || cs.display === 'none' || cs.pointerEvents === 'none' || el.closest('[hidden]')) continue;
-    if (el.closest('.subpanel, .inspector, .xfeed, .bug, .budget-panel, .card-list')) el.scrollIntoView({ block: 'center', inline: 'center' });
+    if (el.closest('.subpanel, .inspector, .xfeed, .bug, .budget-panel, .card-list, .aaa-panel')) el.scrollIntoView({ block: 'center', inline: 'center' });
     const r = el.getBoundingClientRect();
     if (r.width < 1 || r.height < 1 || r.right <= 0 || r.bottom <= 0 || r.left >= vw || r.top >= vh) continue;
     const cx = Math.round(Math.min(vw - 1, Math.max(0, r.left + r.width / 2))), cy = Math.round(Math.min(vh - 1, Math.max(0, r.top + r.height / 2)));
@@ -91,6 +91,14 @@ await page.tap('button.tbtn[data-t="inspect"]');
 await page.tap('button.tbtn[data-t="more"]'); await page.waitForTimeout(300);
 await page.tap('button.more-btn[data-more="bug"]'); await page.waitForTimeout(500);
 await scan('bug reporter');
+// the title screen: the first thing a player touches (Load a city file, Paste a copied city, the back arrow, the merch link)
+await page.goto(`${base}/`, { waitUntil: 'load', timeout: 300000 });
+await page.waitForSelector('#new', { timeout: 300000 });
+await scan('title');
+await page.tap('#paste-open'); await page.waitForTimeout(300);
+await scan('title: paste a copied city');
+await page.tap('#new'); await page.waitForSelector('#back', { timeout: 20000 }); await page.waitForTimeout(400);
+await scan('title: new city');
 await browser.close();
 
 console.log(`${stats.checked} controls measured on a 390x844 touch screen`);

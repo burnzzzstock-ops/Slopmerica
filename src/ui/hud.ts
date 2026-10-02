@@ -1766,7 +1766,10 @@ export class Hud implements UiSink {
       if (floor - from < 200 && this.nextBar) { this.nextBar.classList.add('yield'); floor = floorOf(base); }
       max = `${Math.max(180, Math.round(floor - from))}px`;
     }
-    if (!open || phone) this.nextBar?.classList.remove('yield');
+    // a phone's inspector is a sheet as wide as the screen that sits where the Next card does: the card lay across its last rows and its Bulldoze
+    // button (round 8 audit), so it steps aside while the sheet is up
+    if (phone) this.nextBar?.classList.toggle('yield', open);
+    else if (!open) this.nextBar?.classList.remove('yield');
     if (insp.style.top !== top) insp.style.top = top;
     if (insp.style.maxHeight !== max) insp.style.maxHeight = max;
   }

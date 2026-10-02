@@ -262,6 +262,15 @@ interface Signal {
 
 const GREEN = 11;
 const CLEAR = 2.5;
+/**
+ * Actuated lights: a green with nobody waiting for it (no car within CALL_DIST m of its roads'
+ * lines, nobody on foot waiting to walk in it or still on its crosswalks) goes to its yellow as
+ * soon as someone waits on another's. The stem of a quiet T held 11 s of every 27 at the evening
+ * rush while the main road's queue went round twice (docs/AUDIT_ROUND8_SIM.md #3).
+ */
+const CALL_DIST = 40;
+/** someone on foot held at the kerb by the light keeps the button pressed this long (s of game time) */
+const WALK_CALL = 2;
 const PAINT = [0xf2f2f2, 0x1a1a1a, 0x9aa0a6, 0x5a5e63, 0xb3202a, 0x1d3a8a, 0x2d4a2d, 0xc9b48a, 0xe0e0e0, 0x7a1f1f, 0x0f5f7a, 0xd8d8d2, 0xe89b2a, 0x2a2a2a];
 
 class Heap {
@@ -651,6 +660,34 @@ export class Traffic {
 
   signalState(nodeId: number) {
     return this.signals.get(nodeId);
+  }
+
+  /** false: every light keeps its fixed 11 s greens (tests compare the two) */
+  actuated = true;
+  /** someone on foot waiting at the lights to cross an arm, by node * 2^20 + seg: when they last asked (canCross) */
+  private walkCalls = new Map<number, number>();
+  /**
+   * The phases at this node someone is waiting for (a bit per phase): a car on one of its roads within CALL_DIST of the
+   * line, going on; or someone on foot waiting to cross, or on the crosswalk over, a road that's red in it.
+   */
+  private calls(nodeId: number, s: { phases: number; phaseOf: Map<number, number> }): number {
+    let calls = 0;
+    const all = (1 << s.phases) - 1;
+    for (const [sid, ph] of s.phaseOf) {
+      const t = this.walkCalls.get(nodeId * 1048576 + sid);
+      if ((t !== undefined && this.clock - t < WALK_CALL) || this.crosswalkWalkers?.(nodeId, sid)?.length) calls |= all & ~(1 << ph);
+    }
+    for (const [sid, ph] of s.phaseOf) {
+      if (calls & (1 << ph)) continue;
+      const seg = this.net.segs.get(sid);
+      if (!seg) continue;
+      const dir: 1 | -1 = seg.b === nodeId ? 1 : -1, exitS = this.exitOf(seg, dir);
+      for (let k = 0; k < ROAD_TYPES[seg.type].lanesPerDir; k++) {
+        const q = this.buckets.get(sid * 16 + (dir > 0 ? 0 : 8) + k), h = q && q[q.length - 1];
+        if (h && h.crashed === 0 && h.pi < h.path.length - 1 && exitS - h.s < CALL_DIST) { calls |= 1 << ph; break; }
+      }
+    }
+    return calls;
   }
 
   /** In the yellow and all-red that follow this road's green: a left-turner waiting at the line finishes its turn now. */
@@ -1043,7 +1080,16 @@ export class Traffic {
     const dt = dtReal * Math.max(0.0001, simSpeed);
     this.lastDt = Math.max(dtReal, dt);
     this.stepN++;
-    if (simSpeed > 0) for (const s of this.signals.values()) s.t += dt;
+    if (simSpeed > 0) for (const [nodeId, s] of this.signals) {
+      s.t += dt;
+      if (!this.actuated) continue;
+      // (the buckets are last step's here: who's waiting at each line)
+      const cyc = GREEN + CLEAR, t = s.t % (cyc * s.phases), ph = Math.floor(t / cyc), into = t - ph * cyc;
+      if (into >= GREEN) continue;
+      const calls = this.calls(nodeId, s);
+      if (calls & (1 << ph) || !calls) continue;
+      s.t += GREEN - into;
+    }
 
     // demand for trips: population & jobs, time of day, induced demand
     const tod = hour < 5 ? 0.25 : hour < 7 ? 0.6 : hour < 10 ? 1.35 : hour < 15.5 ? 0.9 : hour < 19.5 ? 1.4 : hour < 22 ? 0.8 : 0.45;
@@ -1726,10 +1772,12 @@ export class Traffic {
     const sig = this.signals.get(nodeId);
     for (const sid of segs) {
       if (sig) {
-        if (this.isGreen(nodeId, sid) || this.clearing(nodeId, sid)) return false;
+        // (held by the light: the button's pressed, so an empty green doesn't skip their walk)
+        const call = () => { this.walkCalls.set(nodeId * 1048576 + sid, this.clock); return false; };
+        if (this.isGreen(nodeId, sid) || this.clearing(nodeId, sid)) return call();
         const T = (GREEN + CLEAR) * sig.phases, t = sig.t % T, start = (sig.phaseOf.get(sid) ?? 0) * (GREEN + CLEAR);
         const redLeft = (((start - t) % T) + T) % T, window = T - GREEN - CLEAR;
-        if (redLeft < Math.min(secs, window) - 1) return false;
+        if (redLeft < Math.min(secs, window) - 1) return call();
       }
       const sg = this.net.segs.get(sid);
       if (!sg) continue;

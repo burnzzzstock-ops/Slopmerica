@@ -13,12 +13,14 @@
 // time and draw calls with the parked cars and without (median of rendered
 // frames on this software GPU, with, without, with again: compare the two, not
 // the absolute numbers).
-// usage: node scripts/parkingtest.mjs [low,high]   (BASE_URL, default http://127.0.0.1:5173)
+// usage: node scripts/parkingtest.mjs [low,high]   (BASE_URL, default http://127.0.0.1:5173; SEED=n
+// replays a run: it prints its seed, and the town it was built from)
 // Exits 1 on failure.
 import { chromium } from 'playwright-core';
-import { ARGS, EXE, openBlock } from './refblock.mjs';
+import { ARGS, EXE, openBlock, testSeed } from './refblock.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
+const SEED = testSeed();
 const presets = (process.argv[2] || 'low,high').split(',');
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 600)); if (!ok) bad++; };
@@ -27,9 +29,11 @@ const pct = (x) => `${Math.round(x * 100)}%`;
 
 // ---- behaviour (once, on the first preset)
 {
-  const { page, errs } = await openBlock(browser, { base, quality: presets[0] });
-  const r = await page.evaluate(async () => {
+  const { page, errs } = await openBlock(browser, { base, seed: SEED, quality: presets[0] });
+  const r = await page.evaluate(async (seed) => {
     const { occupancy } = await import('/src/agents/parking.ts');
+    // (the import yields to the page: seed again after it, so nothing that ran meanwhile shifts the numbers)
+    window.__reseed?.(seed);
     const g = window.__game, tr = g.traffic, P = g.parking, tgt = g.rts.target;
     tr.crosswalkWalkers = undefined; // cars only (people and cars: crosswalktest)
     P.inView = () => false; // every lot off screen: they follow the hour
@@ -82,7 +86,7 @@ const pct = (x) => `${Math.round(x * 100)}%`;
       spill = { b: b.label, places: tr.thruStats().find((x) => x.b === b).places, maxRoad, heldBehind, spills, clearedAt };
     }
     return { occ, pulledIn, backedOut, spill, parked: P.count, cap: P.cap };
-  });
+  }, SEED);
   const row = (h) => Object.entries(r.occ[h]).map(([k, v]) => `${k} ${pct(v.share)} of ${v.spots}${v.want !== undefined ? ` (its curves: ${pct(v.want)})` : ''}`).join(', ');
   for (const h of Object.keys(r.occ).sort((a, b) => a - b)) console.log(`  ${String(h).padStart(4)}:00  ${row(h)}`);
   const o = (h, k) => r.occ[h]?.[k]?.share ?? NaN;
@@ -107,7 +111,7 @@ const pct = (x) => `${Math.round(x * 100)}%`;
 
 // ---- counts and frame time per preset, with the parked cars and without
 for (const q of presets) {
-  const { page, errs, center } = await openBlock(browser, { base, quality: q });
+  const { page, errs, center } = await openBlock(browser, { base, seed: SEED, quality: q });
   const m = await page.evaluate((center) => {
     const g = window.__game, P = g.parking;
     g.rts.setView(center.x, center.z, 320, 0.7, 0.6, true);

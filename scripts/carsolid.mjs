@@ -10,17 +10,19 @@
 // every set of lights, only roads straight across from each other share a green
 // (at a T, the stem shared one with half the through road: a left turn out of
 // it crossed the through traffic).
-// usage: node scripts/carsolid.mjs   (BASE_URL, default http://127.0.0.1:5173;
+// usage: node scripts/carsolid.mjs   (BASE_URL, default http://127.0.0.1:5173; SEED=n replays a
+// run: it prints its seed, and the town it was built from;
 // SECONDS of traffic to measure, default 120). Exits 1 on failure.
 import { chromium } from 'playwright-core';
-import { ARGS, EXE, openBlock } from './refblock.mjs';
+import { ARGS, EXE, openBlock, testSeed } from './refblock.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
+const SEED = testSeed();
 const SECONDS = Number(process.env.SECONDS || 120);
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 600)); if (!ok) bad++; };
 const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
-const { page, errs } = await openBlock(browser, { base, quality: 'low' });
+const { page, errs } = await openBlock(browser, { base, seed: SEED, quality: 'low' });
 const r = await page.evaluate((SECONDS) => {
   const g = window.__game, tr = g.traffic, net = g.net;
   // cars only: this steps traffic without the people, whose last frame would stand

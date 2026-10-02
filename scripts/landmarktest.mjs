@@ -10,16 +10,18 @@
 //  - after the game the crowd drives home, backing out of the stalls;
 //  - the inspector says how many came today and when the games are;
 //  - a landmark no road reaches draws nobody.
-// usage: node scripts/landmarktest.mjs   (BASE_URL, default http://127.0.0.1:5173)
+// usage: node scripts/landmarktest.mjs   (BASE_URL, default http://127.0.0.1:5173; SEED=n replays
+// a run: it prints its seed, and the town it was built from)
 // Exits 1 on failure.
 import { chromium } from 'playwright-core';
-import { ARGS, EXE, openBlock } from './refblock.mjs';
+import { ARGS, EXE, openBlock, testSeed } from './refblock.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
+const SEED = testSeed();
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 600)); if (!ok) bad++; };
 const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
-const { page, errs } = await openBlock(browser, { base, quality: 'low' });
+const { page, errs } = await openBlock(browser, { base, seed: SEED, quality: 'low' });
 const r = await page.evaluate(() => {
   const g = window.__game, tr = g.traffic, P = g.parking, tgt = g.rts.target;
   tr.crosswalkWalkers = undefined; // cars only

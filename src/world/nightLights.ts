@@ -58,6 +58,13 @@ export const LAMPS = {
  * page can sweep it (scripts/nightlook.mjs).
  */
 export const TREE_LAMP = { value: 1 };
+/**
+ * Car paint and glass at night, as a share of the pool's light the gloss throws back: x on the panels that face up (the lamp overhead,
+ * mirrored), y along the grazing edges (the outline of the car), z on the sides (the lamp-lit ground, mirrored). Uniform so the same
+ * test page can sweep it.
+ */
+export const CAR_SHEEN = { value: new THREE.Vector3(0.6, 0.3, 0.05) };
+
 /** GLSL: uniforms for the fragment shader */
 export const LAMP_PARS = /* glsl */ `
 uniform sampler2D uLampMap;

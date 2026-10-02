@@ -54,10 +54,12 @@ export const LAMPS = {
 };
 
 /**
- * How much of a pool's light a tree's trunk and crown (near trees and street trees) take, against the ground's 1. Uniform, so a test
- * page can sweep it (scripts/nightlook.mjs).
+ * How much of a pool's light a tree takes, against the ground's 1: TREE_LAMP for the civic street trees (their foliage is a pale PBR
+ * texture), FOREST_LAMP for the forest trees' near meshes (a darker leaf atlas tinted by a dark instance colour, so they take more to read
+ * as much). Uniforms, so a test page can sweep them (scripts/nightlook.mjs).
  */
 export const TREE_LAMP = { value: 1 };
+export const FOREST_LAMP = { value: 3 };
 /**
  * Car paint and glass at night, as a share of the pool's light the gloss throws back: x on the panels that face up (the lamp overhead,
  * mirrored), y along the grazing edges (the outline of the car), z on the sides (the lamp-lit ground, mirrored). Uniform so the same

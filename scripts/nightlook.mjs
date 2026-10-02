@@ -28,8 +28,8 @@ const hour = Number(process.env.HOUR ?? 23);
 const phone = !!process.env.PHONE;
 // BASE_URL=url, or URLS=before=url,after=url to run several builds one after the other in this one job (one slot, one wait in the queue)
 const builds = process.env.URLS ? process.env.URLS.split(',').map((x) => x.split(/=(.*)/s).slice(0, 2)) : [[process.env.TAG || 'run', process.env.BASE_URL || 'http://127.0.0.1:5173']];
-// SWEEP_TREE=0,0.4,0.8 / SWEEP_CAR=0,0.2,0.4: also render the close-up at each value of the build's tuning uniform (TREE_LAMP, CAR_SHEEN in src/world/nightLights.ts)
-const sweeps = { trees: process.env.SWEEP_TREE ? { uniform: 'TREE_LAMP', values: process.env.SWEEP_TREE.split(',') } : null, cars: process.env.SWEEP_CAR ? { uniform: 'CAR_SHEEN', values: process.env.SWEEP_CAR.split(',') } : null };
+// SWEEP_TREE=0,0.4,0.8 / SWEEP_CAR=0,0.2,0.4: also render the close-up at each value of the build's tuning uniform (TREE_LAMP (FOREST_LAMP on Low), CAR_SHEEN in src/world/nightLights.ts)
+const sweeps = { trees: process.env.SWEEP_TREE ? { uniform: quality === 'low' ? 'FOREST_LAMP' : 'TREE_LAMP', values: process.env.SWEEP_TREE.split(',') } : null, cars: process.env.SWEEP_CAR ? { uniform: 'CAR_SHEEN', values: process.env.SWEEP_CAR.split(',') } : null };
 const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
 const results = [];
 let bad = 0;

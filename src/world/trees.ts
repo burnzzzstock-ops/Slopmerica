@@ -9,7 +9,7 @@ import type { MapData, TreeKind } from './maps';
 import type { Terrain } from './terrain';
 import { coverageMipmaps, createFoliageAtlas, makeTreeModel, padTransparent } from './foliage';
 import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from './atmos';
-import { bindLamps, LAMP_PARS, lampAdd, TREE_LAMP } from './nightLights';
+import { bindLamps, FOREST_LAMP, LAMP_PARS, lampAdd } from './nightLights';
 import { newSeasonLook, sampleSeason } from './seasons';
 import type { MapId } from './maps';
 import { Shore } from './shore';
@@ -148,7 +148,7 @@ export class Trees {
         sh.uniforms.uLeaf = decid ? this.uniforms.uLeaf : { value: 1 };
         bindAtmos(sh);
         bindLamps(sh);
-        sh.uniforms.uTreeLamp = TREE_LAMP;
+        sh.uniforms.uTreeLamp = FOREST_LAMP;
         sh.vertexShader = sh.vertexShader
           .replace('#include <common>', '#include <common>\nattribute float canopy;\nuniform float uTime, uWind;\nvarying float vCanopy;\nvarying vec3 vTWPos;')
           .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>

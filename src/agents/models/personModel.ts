@@ -16,11 +16,11 @@ import type { PersonLook } from './personLooks';
 export { PROP } from './personGeo';
 export { PED_STRIDE } from './personShader';
 
-export function personLodList(): { id: LodName; far: boolean }[] { return [{ id: 'near', far: false }, { id: 'far', far: true }]; }
+export function personLodList(): { id: LodName; far: boolean }[] { return [{ id: 'near', far: false }, { id: 'far', far: true }, { id: 'shadow', far: true }]; }
 
-/** far = true (or 'far') for the distant figure */
+/** far = true (or 'far') for the distant figure, 'shadow' for the lighter shape the sun's shadow map is given on the lighter presets */
 export function buildPersonGeometry(lod: LodName | boolean = 'near'): THREE.BufferGeometry {
-  const id: LodName = lod === true || lod === 'far' ? 'far' : 'near';
+  const id: LodName = lod === true || lod === 'far' ? 'far' : lod === 'shadow' ? 'shadow' : 'near';
   return mergePieces(buildPieces(id));
 }
 

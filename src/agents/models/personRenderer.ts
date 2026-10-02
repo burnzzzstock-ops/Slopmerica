@@ -27,6 +27,8 @@ export interface PeopleDetail {
   peopleNearMax?: number;
   /** metres from a camera within which a person casts a shadow (when in the view, or out of it by no more than a shadow's reach: 24 m) */
   peopleShadow?: number;
+  /** the shadow map gets the far figure without its hair, hats, jackets and bags (personGeo.ts, shadowPieces): 497 triangles held per person become 239 */
+  peopleShadowLite?: boolean;
 }
 
 /** beyond this a person is not drawn at all (the shaders used to test it) */
@@ -261,6 +263,18 @@ export class PeopleRendererCore {
     if (d.peopleNear !== undefined) this.detail.near = d.peopleNear;
     if (d.peopleNearMax !== undefined) this.detail.nearMax = d.peopleNearMax;
     if (d.peopleShadow !== undefined) this.detail.shadow = d.peopleShadow;
+    if (d.peopleShadowLite !== undefined) this.setShadowLite(d.peopleShadowLite);
+  }
+
+  private shadowLite = false;
+  private setShadowLite(lite: boolean): void {
+    if (lite === this.shadowLite) return;
+    this.shadowLite = lite;
+    const g = buildPersonGeometry(lite ? 'shadow' : 'far');
+    this.shadow.attributes = attachPersonInstanceAttributes(g, this.max);
+    const old = this.shadow.mesh.geometry;
+    this.shadow.mesh.geometry = g;
+    old.dispose();
   }
 
   /** kept for callers of the old API: only the switch distance */

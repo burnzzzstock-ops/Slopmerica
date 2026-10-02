@@ -187,11 +187,11 @@ function piece(name: string, g: THREE.BufferGeometry, part: number, zone: number
   return { name, geometry: geo, part, zone, feature: feat };
 }
 
-export type LodName = 'near' | 'far';
+export type LodName = 'near' | 'far' | 'shadow';
 
 /** Every piece of a level of detail, in the rest pose. */
 export function buildPieces(lod: LodName): Piece[] {
-  return lod === 'near' ? nearPieces() : farPieces();
+  return lod === 'near' ? nearPieces() : lod === 'far' ? farPieces() : shadowPieces();
 }
 
 /** a hand-held prop, in the right forearm's frame: the hand is at (0.215, 0.775, 0), the prop lies along +z out of the fist */
@@ -459,6 +459,17 @@ function farPieces(): Piece[] {
   add('drum', cylinder(0.17, 0.17, 0.32, 5, { t: [0, 1.0, 0.3], r: [Math.PI / 2, 0, 0] }), PART.pelvis, ZONE.prop, propFeature('drum'));
   add('crate', box(0.34, 0.36, 0.34, { t: [0, 0.18, 0.02] }), PART.root, ZONE.wood, 201);
   return P;
+}
+
+/**
+ * What the sun's shadow map is given on the lighter presets: the far figure without its small pieces (hair, hats, the jackets and vests
+ * that only recolour the torso, bags, hoods): the body, the garments that reach the knees, a sign, a drum, the crate. The shadow of a person
+ * 40 m from a phone's camera is a smudge a dozen texels tall; nobody counts its hat. (The shader hides what a person does not wear, so
+ * the pieces left out are simply never cast.)
+ */
+const SHADOW_KEEP = ['coat', 'robe', 'skirtLong', 'signPole', 'signBoard', 'drum', 'crate'];
+function shadowPieces(): Piece[] {
+  return farPieces().filter((p) => p.feature === 0 || SHADOW_KEEP.includes(p.name));
 }
 
 /** One merged geometry (indexed, position/normal/aTag). */

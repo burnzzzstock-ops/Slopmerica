@@ -2,11 +2,13 @@
 // happens"; no trip ever went to a landmark). On the reference block, with Slop
 // 69 Field placed beside one of its roads, stepping cars at game speed (an hour
 // on the clock is 15 s at ▶, 300 steps) without rendering:
-//  - the afternoon sends nobody to the game, and a few sightseers;
+//  - the small hours send nobody to the game;
 //  - game night (every evening, 5 to 10 pm) draws a crowd, 3% of the town's
-//    people, on top of the other traffic: they leave home in the 90 minutes
-//    before kickoff, arrive and pull into its lot, which is on screen, so only
-//    cars that drove there fill it;
+//    people, on top of the other traffic: they leave home by their drive (the
+//    longest up to 12 hours on the clock ahead), and two in three are in by
+//    kickoff (leaving in the 90 minutes before it, as they did, half got there
+//    during the game); they pull into its lot, which is on screen, so only cars
+//    that drove there fill it;
 //  - after the game the crowd drives home, backing out of the stalls;
 //  - the inspector says how many came today and when the games are;
 //  - a landmark no road reaches draws nobody.
@@ -63,8 +65,12 @@ const r = await page.evaluate(() => {
     return { trips: { ...trips }, arrived: (tr.visits.get(field)?.length ?? 0) - before, most, left: P.parkedAt(field).cars, backedOut, spots: P.parkedAt(field).spots };
   };
   const pop = g.sim.population;
-  const ordinary = run(12, 15.5); // the afternoon
-  const game = run(15.5, 22); // game night, and the drive there
+  const ordinary = run(2, 5); // the small hours
+  const there = run(5, 17); // the drive there, to kickoff (the longest set off up to 12 hours ahead)
+  const inByKickoff = tr.crowdIn?.get(field) ?? 0;
+  const match = run(17, 22); // the game
+  const game = { ...match, trips: { ...there.trips }, arrived: there.arrived + match.arrived, most: Math.max(there.most, match.most), inByKickoff };
+  for (const [k, n] of Object.entries(match.trips)) game.trips[k] = (game.trips[k] ?? 0) + n;
   const after = run(22, 25); // the drive home, to 2 am: who got there by 1 am, and the trips after
   // (fans still driving to the game at 1 am: a drive across the block takes hours on the clock, and someone who gets there
   // at a quarter to two can't be home-bound by two; sightseers, who come by day, aren't the crowd either)
@@ -105,17 +111,18 @@ else {
   const f = (x) => JSON.stringify(x.trips);
   const crowd = Math.round(Math.min(60, r.pop * 0.03));
   console.log(`  ${r.field}, ${r.game.spots} stalls; the town has ${r.pop.toLocaleString()} people, so a crowd of about ${crowd} cars`);
-  console.log(`  the afternoon (noon to 3:30 pm):  trips ${f(r.ordinary)}, ${r.ordinary.arrived} arrived, up to ${r.ordinary.most} parked`);
-  console.log(`  game night (3:30 to 10 pm):       trips ${f(r.game)}, ${r.game.arrived} arrived, up to ${r.game.most} parked`);
+  console.log(`  the small hours (2 to 5 am):        trips ${f(r.ordinary)}, ${r.ordinary.arrived} arrived, up to ${r.ordinary.most} parked`);
+  console.log(`  game day (5 am to 10 pm):           trips ${f(r.game)}, ${r.game.arrived} arrived (${r.game.inByKickoff} of the crowd by kickoff), up to ${r.game.most} parked`);
   console.log(`  after the game (10 pm to 2 am):   trips ${f(r.after)}, ${r.after.arrived} more arrived by 1 am and ${r.after.lateArrived} after, ${r.after.backedOut} backed out, ${r.after.left} still parked`);
   const toGame = r.game.trips['going to the game'] ?? 0;
-  check(`the afternoon sends nobody to the game (${r.ordinary.trips['going to the game'] ?? 0})`, !r.ordinary.trips['going to the game']);
+  check(`the small hours send nobody to the game (${r.ordinary.trips['going to the game'] ?? 0})`, !r.ordinary.trips['going to the game']);
   check(`game night sends the crowd (${toGame} trips to the game, ${crowd} due)`, toGame >= Math.max(3, crowd * 0.8));
+  check(`and they're in their seats by kickoff (${r.game.inByKickoff} of the ${toGame}: two in three at least)`, r.game.inByKickoff >= (toGame * 2) / 3);
   // (a drive across the block takes 40 s to a minute and a half: a couple of hours on the
   // clock, longer for the crowd's left turns at a signal, so some arrive after 10 pm)
   const came = r.game.arrived + r.after.arrived + r.after.lateArrived;
-  check(`they arrive (${r.game.arrived} by 10 pm and ${came} in all, against ${r.ordinary.arrived} in the afternoon)`, came >= Math.max(3, toGame * 0.7) && r.game.arrived > 2 * r.ordinary.arrived);
-  check(`and park in its lot (up to ${r.game.most} of ${r.game.spots} stalls; ${r.ordinary.most} in the afternoon)`, r.game.most >= Math.min(r.game.spots * 0.6, toGame * 0.5) && r.game.most > r.ordinary.most);
+  check(`they arrive (${r.game.arrived} by 10 pm and ${came} in all, against ${r.ordinary.arrived} in the small hours)`, came >= Math.max(3, toGame * 0.7) && r.game.arrived > 2 * r.ordinary.arrived);
+  check(`and park in its lot (up to ${r.game.most} of ${r.game.spots} stalls; ${r.ordinary.most} in the small hours)`, r.game.most >= Math.min(r.game.spots * 0.6, toGame * 0.5) && r.game.most > r.ordinary.most);
   // (a lot lets three cars out at a time, each waiting for a gap in the road)
   // the crowd that got there by 1 am: four in five of them have set off home by 2 am
   const fans = toGame - r.after.onTheWay;

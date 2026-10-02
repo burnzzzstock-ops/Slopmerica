@@ -198,15 +198,17 @@ export class Parking {
   /**
    * A car on its way into this building: the free stall or driveway it pulls
    * into (held for it), or null (no room, or a kind that doesn't fit a stall).
+   * `share`: how full the lot may get for it, when not the hour's (an event's
+   * crowd, there before the start).
    */
-  claim(b: Bld, kind: VehicleKind): WorldSpot | null {
+  claim(b: Bld, kind: VehicleKind, share?: number): WorldSpot | null {
     if (!FITS.has(kind)) return null;
     const L = this.lot(b);
     if (!L) return null;
     const free: number[] = [];
     L.taken.forEach((t, i) => { if (!t) free.push(i); });
     // (a lot already as full as the hour has it: this one drops someone off and goes, as before)
-    if (!free.length || L.spots.length - free.length >= Math.ceil(L.spots.length * clamp(occupancy(b, this.hour), 0, 1)) + 1) return null;
+    if (!free.length || L.spots.length - free.length >= Math.ceil(L.spots.length * clamp(share ?? occupancy(b, this.hour), 0, 1)) + 1) return null;
     // drivers take the nearest free stalls first: the front rows fill before the back
     const k = free[Math.min(free.length - 1, Math.floor(this.rnd() * this.rnd() * free.length))];
     L.taken[k] = 'held';

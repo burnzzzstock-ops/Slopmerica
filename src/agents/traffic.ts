@@ -222,16 +222,26 @@ const STILL_FRAMES = 12;
  * nothing happens"; no trip ever went to one). Each open landmark's pull, as a
  * share of the town's local trips by day (9 am to 9 pm), summed and capped;
  * half the sightseeing trips are people heading home from one. The game nights
- * and services are LANDMARK_EVENTS (parking.ts): their crowd leaves home over
- * the EVENT_ARRIVE hours before the start (a drive across town takes a couple
- * of hours on the clock) and everyone who came drives home at the rate of
- * EVENT_OUT hours for the whole crowd from the end (a lot lets out three cars
- * at a time, so it can take longer), on top of the town's other trips, at most
- * EVENT_MAX cars. (The shares approved as they stand by the owner, 2026-09-30.)
+ * and services are LANDMARK_EVENTS (parking.ts): their crowd leaves home by its
+ * drive, to be there by the start (below), and everyone who came drives home at
+ * the rate of EVENT_OUT hours for the whole crowd from the end (a lot lets out
+ * three cars at a time, so it can take longer), on top of the town's other
+ * trips, at most EVENT_MAX cars. (The shares approved as they stand by the
+ * owner, 2026-09-30.)
  */
 export const VISIT_PULL: Partial<Record<LandmarkId, number>> = { slopCannon: 0.025, slop69Field: 0.015, pigCabanaResort: 0.035, neuralFlyDatacenter: 0.01, propaneParadise: 0.02, fillErUpMegaStation: 0.035, megachurch: 0.015 };
 const VISIT_MAX = 0.12;
-const EVENT_ARRIVE = 1.5;
+/**
+ * Each of the crowd sets off its drive before the start: the route's free-flowing time EVENT_SLACK times
+ * over (the queues on the way, the lights, a driveway onto a queued road: on the reference block a drive
+ * to the field took 2 to 6 times its free-flowing time, the longest through node 45's light), and up to
+ * EVENT_EARLY hours more, so they're in by kickoff. Nobody sets off more than EVENT_ARRIVE hours before it. A drive across town is hours on the
+ * clock (15 s of traffic an hour): leaving home in the 90 minutes before kickoff, as they did, half the
+ * crowd at Slop 69 Field got there during the game. (The owner's call, 2026-10-02.)
+ */
+const EVENT_ARRIVE = 12;
+const EVENT_SLACK = 6;
+const EVENT_EARLY = 0.75;
 const EVENT_OUT = 3;
 /** anyone still there this long after the end went home unseen */
 const EVENT_OUT_MAX = 8;
@@ -443,8 +453,10 @@ export class Traffic {
   private thruLanes = new Map<Bld, { model: Bld['model']; lanes: ThruLane[] } | null>();
   /** when cars arrived at each landmark (sim clock), for the inspector's visitors today */
   private visits = new Map<Bld, number[]>();
-  /** an event's crowd not yet sent (a fraction of a car), by landmark */
+  /** an event's crowd not yet sent home (a fraction of a car), by landmark */
   private crowdDue = new Map<Bld, number>();
+  /** an event's crowd not yet set off: where from, and when (hours before the start), latest first */
+  private crowdPlan = new Map<Bld, { home: Bld; at: number }[]>();
   /** the crowd that came to an event and hasn't left for home yet, by landmark */
   private crowdIn = new Map<Bld, number>();
   /** Cars that came to this building in the last game day (6 minutes of traffic at ▶). */
@@ -461,14 +473,20 @@ export class Traffic {
     if (r >= cap) return null;
     const home = r < cap / 2;
     r *= total / cap;
-    for (let i = 0; i < landmarks.length; i++) if ((r -= pull[i]) < 0) return { b: landmarks[i], purpose: home ? 'heading home' : 'sightseeing', home };
+    for (let i = 0; i < landmarks.length; i++) {
+      if ((r -= pull[i]) >= 0) continue;
+      // (while an event's crowd is in, a car backing out of its lot is one of theirs: who came to look leaves with them)
+      if (home && (this.crowdIn.get(landmarks[i]) ?? 0) > 0) return null;
+      return { b: landmarks[i], purpose: home ? 'heading home' : 'sightseeing', home };
+    }
     return null;
   }
 
   /**
-   * A game night's or a service's crowd: people leave home for it before it
-   * starts, and everyone who came drives home after it ends (as fast as they
-   * came, however long the lot takes to let them out).
+   * A game night's or a service's crowd: people leave home for it by their drive,
+   * to be there by the start (EVENT_SLACK, EVENT_EARLY), and everyone who came
+   * drives home after it ends (as fast as they came, however long the lot takes
+   * to let them out).
    */
   private eventCrowds(dt: number, hour: number) {
     const { landmarks, res } = this.lists();
@@ -480,19 +498,47 @@ export class Traffic {
       const arriving = until > 0 && until <= EVENT_ARRIVE, leaving = since < EVENT_OUT_MAX && (this.crowdIn.get(b) ?? 0) > 0;
       // (from the first one leaving home to the last one home: anyone still there after it went home unseen)
       if ((hour - e.from + EVENT_ARRIVE + 24) % 24 >= e.to - e.from + EVENT_ARRIVE + EVENT_OUT_MAX) this.crowdIn.delete(b);
-      if (!arriving && !leaving) { this.crowdDue.delete(b); continue; }
+      if (arriving) {
+        // the crowd's plan, made as the first could set off: each one's drive from home, timed to be there by the start
+        let plan = this.crowdPlan.get(b);
+        if (!plan) {
+          plan = [];
+          const d = this.anchor(b), n = Math.round(Math.min(EVENT_MAX, this.pop * e.crowd));
+          for (let i = 0; d && i < n; i++) {
+            const home = res[Math.floor(Math.random() * res.length)], o = this.anchor(home);
+            if (!o) continue;
+            const rt = this.route(o.seg, o.s, d.seg, d.s);
+            let secs = 0;
+            if (rt) for (const x of rt.steps) { const s3 = this.net.segs.get(x.seg); if (s3) secs += this.segCost(s3, x.dir > 0 ? 0 : 1); }
+            // (the longest drives set off over the first EVENT_EARLY hours, not all at once)
+            plan.push({ home, at: Math.min(EVENT_ARRIVE - Math.random() * EVENT_EARLY, (secs * EVENT_SLACK) / CLOCK_HOUR + Math.random() * EVENT_EARLY) });
+          }
+          plan.sort((x, y) => y.at - x.at);
+          this.crowdPlan.set(b, plan);
+        }
+        // whoever's time it is sets off (four a step at most): one whose road is too busy to pull out onto tries
+        // again next step, and the rest don't wait on them (when they did, a queued road kept a third at home)
+        for (let i = 0, k = 0, n = 0; i < plan.length && plan[i].at >= until && k < 4 && n < 12 && this.cars.length < SIM_MAX_CARS; n++) {
+          const home = plan[i].home, o = this.anchor(home), d = this.anchor(b);
+          if (o && d && !this.launch(o, d, home, b, randomVehicleKind(Math.random), e.purpose, b.label, true, hour)) { i++; continue; }
+          plan.splice(i, 1);
+          k++;
+        }
+        continue;
+      }
+      this.crowdPlan.delete(b);
+      if (!leaving) { this.crowdDue.delete(b); continue; }
       const crowd = Math.min(EVENT_MAX, this.pop * e.crowd);
-      let due = (this.crowdDue.get(b) ?? 0) + (crowd / ((arriving ? EVENT_ARRIVE : EVENT_OUT) * CLOCK_HOUR)) * dt;
+      let due = (this.crowdDue.get(b) ?? 0) + (crowd / (EVENT_OUT * CLOCK_HOUR)) * dt;
       for (let k = 0; due >= 1 && k < 4 && this.cars.length < SIM_MAX_CARS; k++) {
         const home = res[Math.floor(Math.random() * res.length)];
-        const [oB, dB] = arriving ? [home, b] : [b, home];
-        const o = this.anchor(oB), d = this.anchor(dB);
+        const o = this.anchor(b), d = this.anchor(home);
         // (the lot's exit busy, or its queue full: this one goes next step)
-        if (!o || !d || !this.launch(o, d, oB, dB, randomVehicleKind(Math.random), arriving ? e.purpose : 'heading home', dB.label, true, hour)) break;
+        if (!o || !d || !this.launch(o, d, b, home, randomVehicleKind(Math.random), 'heading home', home.label, true, hour)) break;
         due -= 1;
-        if (leaving) this.crowdIn.set(b, (this.crowdIn.get(b) ?? 1) - 1);
+        this.crowdIn.set(b, (this.crowdIn.get(b) ?? 1) - 1);
       }
-      this.crowdDue.set(b, Math.min(due, arriving ? 8 : this.crowdIn.get(b) ?? 0));
+      this.crowdDue.set(b, Math.min(due, this.crowdIn.get(b) ?? 0));
     }
   }
 
@@ -1532,7 +1578,9 @@ export class Traffic {
             } else if (c.lotD) {
               // pull into the lot, then park (in a free stall or the driveway, where there is one)
               c.arr = 0; c.v = 0;
-              if (this.parking && c.destB && !c.toSpot) c.toSpot = this.parking.claim(c.destB, c.kind);
+              // (an event's crowd parks for it however early they're there: they set off by their drive)
+              const ev = c.destB?.landmark && LANDMARK_EVENTS[c.destB.landmark];
+              if (this.parking && c.destB && !c.toSpot) c.toSpot = this.parking.claim(c.destB, c.kind, ev && c.purpose === ev.purpose ? ev.lot : undefined);
             }
             else { c.arrived = true; c.crashed = -1; } // off the map via the highway
             continue;

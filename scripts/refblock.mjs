@@ -46,6 +46,34 @@ export const seededRandom = (seed) => {
   let a = seed >>> 0 || 1;
   return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 };
+/**
+ * The page side of a seeded run (pass to page.addInitScript with { seed, rng: seededRandom.toString() }):
+ * Math.random seeded before the page's own code runs, window.__reseed(n) to seed it again, and the
+ * game's real-time loop kept from ever starting (the game sets window.__game, then starts its loop in
+ * the same tick). The feed draws from a stream of its own: it lets a kind of post through only so
+ * often by the wall clock, so on a slower machine more posts got through, each one drew from
+ * Math.random, and every number after that changed (same seed, 8x slower CPU: the traffic parted
+ * within 10 s of game time).
+ */
+export function seededInit({ seed, rng }) {
+  const make = new Function(`return (${rng})`)();
+  window.__reseed = (s) => { Math.random = make(s); };
+  window.__reseed(seed);
+  let game;
+  Object.defineProperty(window, '__game', {
+    configurable: true,
+    get: () => game,
+    set: (g) => {
+      game = g;
+      g.start = () => {};
+      const feed = g.feed, own = make((seed ^ 0x5f3759df) >>> 0);
+      for (const k of ['push', 'update']) {
+        const fn = typeof feed?.[k] === 'function' ? feed[k].bind(feed) : null;
+        if (fn) feed[k] = (...a) => { const r = Math.random; Math.random = own; try { return fn(...a); } finally { Math.random = r; } };
+      }
+    },
+  });
+}
 /** SEED from the environment, or a fresh one; print it so a run can be replayed */
 export function testSeed() {
   const seed = process.env.SEED !== undefined ? Number(process.env.SEED) >>> 0 : (Math.random() * 2 ** 31) >>> 0;
@@ -79,14 +107,7 @@ export async function openBlock(browser, { base, quality = 'high', width = 1280,
   page.on('console', (m) => { if (m.text().startsWith('[vault]')) vault.push(m.text()); });
   await page.addInitScript(({ save, quality }) => { try { localStorage.setItem('slopmerica.quality', quality); localStorage.setItem('slopmerica.onboarded', '1'); localStorage.setItem('slopmerica.firstSteps', '1'); localStorage.setItem('slopmerica.save.v1', save); } catch { /* */ } }, { save, quality });
   if (seed !== undefined) {
-    await page.addInitScript(({ seed, rng }) => {
-      const make = new Function(`return (${rng})`)();
-      window.__reseed = (s) => { Math.random = make(s); };
-      window.__reseed(seed);
-      // the game sets window.__game, then starts its loop in the same tick: keep the loop from ever starting
-      let game;
-      Object.defineProperty(window, '__game', { configurable: true, get: () => game, set: (g) => { game = g; g.start = () => {}; } });
-    }, { seed, rng: seededRandom.toString() });
+    await page.addInitScript(seededInit, { seed, rng: seededRandom.toString() });
   }
   await page.goto(`${base}/`, { waitUntil: 'load', timeout: 180000 });
   await page.waitForSelector('#continue', { timeout: 180000 });

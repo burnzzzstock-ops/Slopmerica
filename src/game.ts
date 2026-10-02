@@ -314,15 +314,8 @@ export class Game {
     this.parking.paint = (kind, rnd) => Traffic.paint(kind, rnd);
     this.parking.inView = (x, z) => this.parkView.intersectsSphere(this.parkSphere.set(this.parkPt.set(x, this.terrain.h(x, z) + 1, z), 3));
     this.traffic.parking = this.parking;
-    this.roads.setSignalStateProvider((nodeId, segId) => {
-      const s = this.traffic.signalState(nodeId);
-      if (!s) return 'green';
-      const cycle = 13.5; // traffic's 11 second green plus 2.5 second clear
-      const t = s.t % (cycle * s.phases);
-      const phase = Math.floor(t / cycle);
-      if (s.phaseOf.get(segId) !== phase) return 'red';
-      return t - phase * cycle > 11 ? 'yellow' : 'green';
-    });
+    // (the lamps show what the cars obey, leading greens included)
+    this.roads.setSignalStateProvider((nodeId, segId) => this.traffic.lampState(nodeId, segId));
     this.peds = new Pedestrians(this.scene, this.net, this.buildings, this.terrain, this.communes, this.q.maxPeople);
     // crosswalks: people wait for a gap (or the walk phase), cars stop for people on them
     this.traffic.crosswalkWalkers = (node, seg) => this.peds.crosswalkWalkers(node, seg);

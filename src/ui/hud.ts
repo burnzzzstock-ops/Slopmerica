@@ -13,6 +13,7 @@ import { MAX_LEVEL } from '../contracts';
 import type { ToolId } from '../tools/tools';
 import { GRID_BLOCKS, type GridBlock } from '../tools/gridRoads';
 import { FeedPanel } from './feedPanel';
+import { courtText, emergencyToast } from './copy';
 import { MERCH_URL, brandById } from '../art/brands';
 import { BUILD, cityFile, crumb, onCapturedError, openBugReport, saveFile, saveMessage } from './bugreport';
 import { FOV_MAX, FOV_MIN, IS_TOUCH } from '../config';
@@ -467,7 +468,7 @@ export class Hud implements UiSink {
     this.hotIdx = 0;
     crumb(`emergency: ${top?.need ?? '?'} · ${e.atRisk} buildings, ${e.residents} residents · speed ${was}→${s.speed}`);
     this.game.audio.play('siren', 0.5);
-    this.toast(`🚨 ${top?.label ?? 'Service'} emergency: ${e.atRisk} buildings ${top?.failing ?? 'failing'}.${s.speed === was ? '' : s.speed ? ' Slowed to normal speed.' : ' Paused.'}`, true);
+    this.toast(emergencyToast(top?.label, e.atRisk, top?.failing, s.speed === was ? 'same' : s.speed ? 'slowed' : 'paused'), true);
     this.refreshTop();
   }
 
@@ -1562,7 +1563,7 @@ export class Hud implements UiSink {
           <div><span>Members</span><b>${c.members}</b></div>
           <div><span>Vibe</span><b>${esc(c.vibe)}</b></div>
           <div><span>Stubbornness</span><b>${Math.round(c.stubborn * 100)}%</b></div>
-          <div><span>Status</span><b>${c.forever ? '♾️ Forever' : c.state === 'suing' ? `⚖️ Court in ${Math.max(0, Math.ceil(c.suitDays - g.sim.day))} days` : c.state}</b></div>
+          <div><span>Status</span><b>${c.forever ? '♾️ Forever' : c.state === 'suing' ? courtText(Math.ceil(c.suitDays - g.sim.day)) : c.state}</b></div>
         </div>
         <p class="in-blurb">Demands: “${esc(c.demand)}”</p>
         ${c.forever ? `<p class="in-warn">They've been here since 1969. They're never leaving. Build around them.</p>` : `<p class="in-note">Roads and zoning can't cross their land. <b>Pay off</b>: if they refuse, the money is gone and they dig in harder. <b>Sue</b>: 20 days in court; lose and they dig in.</p>`}

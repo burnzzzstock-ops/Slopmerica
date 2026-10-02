@@ -172,6 +172,15 @@ const COURTESY_T = 5;
 /** and holds back for this long at a time, once every COURTESY_CYCLE seconds, until the driver is out */
 const COURTESY_HOLD = 12;
 const COURTESY_CYCLE = 30;
+/**
+ * A truck (anything longer than LONG_VEHICLE m) is let out for longer: a crawling queue has to move a
+ * whole semi's length past the gate before it fits, and held 12 s in 30 the room it made filled up
+ * again before it was enough (a Florida county's semis sat in the factory lots for the whole of a
+ * 60-day run: docs/AUDIT_ROUND8_SIM.md #1). A car needs a car's length, and keeps the short hold.
+ */
+const LONG_VEHICLE = 8;
+const COURTESY_HOLD_LONG = 35;
+const COURTESY_CYCLE_LONG = 50;
 /** cars that can wait in one lot to pull out before its building starts no more trips */
 const LOT_QUEUE_MAX = 3;
 /** drive-thru: seconds at the window per car (plus up to THRU_SERVE_VAR more), and the pace up the lane */
@@ -320,6 +329,8 @@ export class Traffic {
   }
   flowEma = 1;
   speedMul = 1;
+  /** a driver longer than this (m) waiting at a kerb gets the long courtesy (LONG_VEHICLE; a test sets Infinity to compare without it) */
+  longVehicle = LONG_VEHICLE;
   crashMul = 1;
   targetCars = 0;
   // codex:policies begin -- city/district weighted demand and smoking callbacks
@@ -1056,7 +1067,8 @@ export class Traffic {
       }
       // (the courtesy comes and goes: a driver the queue lets in who still can't go,
       // waiting on the far lanes, doesn't hold the queue for good)
-      const pulling = c.dep > 0 && (c.committed || ((c.wait ?? 0) > COURTESY_T && (c.wait ?? 0) % COURTESY_CYCLE < COURTESY_T + COURTESY_HOLD));
+      const long = c.len > this.longVehicle, cycle = long ? COURTESY_CYCLE_LONG : COURTESY_CYCLE, hold = long ? COURTESY_HOLD_LONG : COURTESY_HOLD;
+      const pulling = c.dep > 0 && (c.committed || ((c.wait ?? 0) > COURTESY_T && (c.wait ?? 0) % cycle < COURTESY_T + hold));
       const parking = c.arr >= 0 && c.arr < ARR_T * 0.5;
       if (!pulling && !parking) continue;
       this.addMergeBlock(c, pulling && !c.committed);

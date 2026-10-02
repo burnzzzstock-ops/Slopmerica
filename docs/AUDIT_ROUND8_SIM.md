@@ -136,3 +136,21 @@ Each fix's commit has its before and after numbers.
   before/after comparison here was made between matching outcomes, or
   across many seeds. The source isn't found yet. It isn't the asset pack
   (same town), and the feed has its own random stream.
+- **New, from the round's full test run: the breaker had no way out where
+  it mattered most.** On a fresh seed (1826941211) the gridlock test failed:
+  583 moments with a ring and a front car standing 4,688 s. Each stuck car's
+  destination was on the road just past the jam, so the route from every
+  other road with room went straight back through the same box (a U-turn),
+  and the breaker turned it down. Now that route is planned leaving the way
+  the car turns onto the road, round the block; the ring loses the car even
+  if it comes back to the same lane. That showed a second standstill: a car
+  just out of an all-way stop waved a driver out of a driveway with its tail
+  still in the box, the driver never got out, and the box car behind it,
+  and everyone waiting at the stop for that car, stood 4,424 s. A
+  car no longer stops for a courtesy until its tail is out of the box. The
+  two commits have the numbers.
+- **New: the bot's clinics, again.** botclinics fails on the final code
+  (10 clinics by 2,805 people, one still overloaded). The commit's "after"
+  ran on an older snapshot. The relief clinics land on the nearest free
+  lots, at the core's edge, and take little of the overloaded one's load.
+  docs/PLAYTEST_6.md has the correction and a proposal.

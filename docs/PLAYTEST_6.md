@@ -257,6 +257,18 @@ So the late game is now space and money for services, not demand.
   `scripts/botclinics.mjs` (Florida from nothing to 2,800 people, seed 1):
   before, 9 clinics by 2,927 people with 2 still overloaded; after, 5 by
   2,836 and none overloaded.
+  *Correction (the round's full test run):* that "after" ran on a snapshot
+  from before the kerb-wait commit. On the round's final code the same
+  seed builds 10 clinics by 2,805 people, and the first stays overloaded
+  (1,704 of 1,200): the relief clinics land on the nearest free lots, at
+  the built-up core's edge, and serve 19 to 960 people each by drive time
+  while the first keeps 1,600-1,750 from day 423 on.
+  The check fails, and stays in as a finding. The bot's run also depends on
+  how often the test hands control back to the page between its steps (one
+  extra read-only call a step: 5 clinics, none overloaded); what runs then
+  isn't found. Proposed: the bot weighs a few lots by how much of the
+  overloaded one's load each would take, or builds a hospital once it's
+  unlocked. The numbers above were measured with the bot as it is.
 - **Goods trucks and gridlock.** "Bare shelves" above. See
   docs/AUDIT_ROUND8_SIM.md #1-#2 and the two traffic fixes: trucks let out
   of a lot for longer, and a car held by a full lane past the box takes

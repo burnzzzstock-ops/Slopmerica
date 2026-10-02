@@ -44,32 +44,51 @@ async function closeUp(page, name, setup, sweep) {
     for (let i = 0; i < 6; i++) { info.tick?.(0.05); g.frame(0.05, false); }
     const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
     const draw = () => { info.tick?.(0.016); g.frame(0.016); const px = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; };
-    const frames = [{ label: null, shot: draw() }];
-    // ---- the mask (read once: the camera does not move between the frames): class 1 = what the case measures, 2 = road
+    // ---- the mask (the camera does not move between the frames, so it is read once): class 1 = what the case measures, 2 = road
     const roadSet = new Set([...g.roads.typeMeshes.values(), g.roads.junctionMesh]);
     const colors = [null, 0xff0000, 0x00ff00];
-    const saved = [], cw = new Map(), made = [];
-    sc.traverse((o) => {
-      if (!o.material || !o.visible) return;
-      const c = info.classify(o) ? 1 : roadSet.has(o) ? 2 : 0;
-      if (c) {
-        const orig = Array.isArray(o.material) ? o.material[0] : o.material, am = !!info.alphaMasked?.(o);
-        const m = new MBM({ color: colors[c], toneMapped: false, fog: false, map: am ? orig.map ?? null : null, alphaTest: am ? orig.alphaTest || 0.42 : 0, side: am ? 2 : 0 });
-        made.push(m); saved.push([o, o.material]); o.material = m;
-        return;
+    const readMask = () => {
+      const saved = [], cw = new Map(), made = [];
+      sc.traverse((o) => {
+        if (!o.material || !o.visible) return;
+        const c = info.classify(o) ? 1 : roadSet.has(o) ? 2 : 0;
+        if (c) {
+          const orig = Array.isArray(o.material) ? o.material[0] : o.material, am = !!info.alphaMasked?.(o);
+          const m = new MBM({ color: colors[c], toneMapped: false, fog: false, map: am ? orig.map ?? null : null, alphaTest: am ? orig.alphaTest || 0.42 : 0, side: am ? 2 : 0 });
+          made.push(m); saved.push([o, o.material]); o.material = m;
+          return;
+        }
+        for (const m of Array.isArray(o.material) ? o.material : [o.material]) { if (!cw.has(m)) cw.set(m, m.colorWrite); m.colorWrite = false; }
+      });
+      const bg = sc.background; sc.background = null;
+      const cc = R.getClearColor(new (new MBM().color.constructor)()), ca = R.getClearAlpha();
+      R.setRenderTarget(null); R.setClearColor(0x000000, 1); R.clear();
+      R.render(sc, cam);
+      const out = new Uint8Array(w * h * 4);
+      gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, out);
+      for (const [o, m] of saved) o.material = m;
+      for (const [m, v] of cw) m.colorWrite = v;
+      sc.background = bg; R.setClearColor(cc, ca);
+      for (const m of made) m.dispose();
+      return out;
+    };
+    // a case that offers several candidate subjects (the Low trees): the first one the camera really sees wins
+    if (info.candidates) {
+      let best = null, bestN = -1;
+      for (const cand of info.candidates.slice(0, 14)) {
+        info.place(cand);
+        for (let i = 0; i < 3; i++) g.frame(0.05, false);
+        const mk = readMask();
+        let n = 0; for (let i = 0; i < w * h; i++) if (mk[i * 4] > 128) n++;
+        if (n > bestN) { bestN = n; best = cand; }
+        if (n >= 4000) break;
       }
-      for (const m of Array.isArray(o.material) ? o.material : [o.material]) { if (!cw.has(m)) cw.set(m, m.colorWrite); m.colorWrite = false; }
-    });
-    const bg = sc.background; sc.background = null;
-    const cc = R.getClearColor(new (new MBM().color.constructor)()), ca = R.getClearAlpha();
-    R.setRenderTarget(null); R.setClearColor(0x000000, 1); R.clear();
-    R.render(sc, cam);
-    const mask = new Uint8Array(w * h * 4);
-    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, mask);
-    for (const [o, m] of saved) o.material = m;
-    for (const [m, v] of cw) m.colorWrite = v;
-    sc.background = bg; R.setClearColor(cc, ca);
-    for (const m of made) m.dispose();
+      info.place(best);
+      info.where.tree = best.id; info.where.x = Math.round(best.x); info.where.z = Math.round(best.z); info.where.seen = bestN;
+      for (let i = 0; i < 6; i++) g.frame(0.05, false);
+    }
+    const frames = [{ label: null, shot: draw() }];
+    const mask = readMask();
     // ---- a sweep of the build's tuning uniform: the same camera and mask, one more frame per value
     if (sweep) {
       const NL = await import('/src/world/nightLights.ts');
@@ -119,37 +138,41 @@ const treeSetup = async (g) => {
     }
     kind = 'civic street tree';
   }
+  let candidates = null;
   if (!tree) {
-    // Low has no civic layer: the forest tree nearest the centre (drawn near, as instanced meshes with leaf cards)
+    // Low has no civic layer: the forest trees near the town (drawn near, as instanced meshes with leaf cards). Candidates: full size,
+    // not under a building or on a road, lit trees (some lamp light on the ground at the foot: the pool texture's red channel, read back
+    // from the canvas it was painted on) before unlit ones, nearest the block's centre first; the camera keeps the first it really sees.
     g.rts.setView(C.x, C.z, 60, 2.4, 0.4, true);
     for (let i = 0; i < 6; i++) g.frame(0.05, false);
-    // (a tree that counts: full size, not under a building or on a road, with some lamp light on the ground at its foot: the pool texture's
-    // red channel is read back from the canvas it was painted on)
     const NL = await import('/src/world/nightLights.ts'), R4 = NL.LAMPS.uLampRect.value, cvs = g.nightLights.canvas, c2 = cvs.getContext('2d');
-    const pool = (x, z) => { const u = (x - R4.x) * R4.z, v = (z - R4.y) * R4.w; if (u < 0 || v < 0 || u > 1 || v > 1) return 0; return c2.getImageData(Math.min(cvs.width - 1, Math.floor(u * cvs.width)), Math.min(cvs.height - 1, Math.floor(v * cvs.height)), 1, 1).data[0]; };
     g.nightLights.paint();
+    const pool = (x, z) => { const u = (x - R4.x) * R4.z, v = (z - R4.y) * R4.w; if (u < 0 || v < 0 || u > 1 || v > 1) return 0; return c2.getImageData(Math.min(cvs.width - 1, Math.floor(u * cvs.width)), Math.min(cvs.height - 1, Math.floor(v * cvs.height)), 1, 1).data[0]; };
     const m = new (g.camera.matrixWorld.constructor)();
-    for (const lit of [40, 10, 0]) { // (relaxed only when no tree stands in a lamp's light)
-      let best = 1e18;
-      for (const im of g.trees.near) {
-        for (let i = 0; i < im.count; i++) {
-          im.getMatrixAt(i, m);
-          const e = m.elements, sc = Math.hypot(e[0], e[1], e[2]), x = e[12], z = e[14], d = Math.hypot(x - C.x, z - C.z);
-          if (sc < 0.6 || d >= best || g.buildings.near(x, z, 8).length || g.net.pickSeg(x, z, 10) || pool(x, z) < lit) continue;
-          best = d; tree = { x, y: e[13], z, id: `forest (pool ${pool(x, z)})` };
-        }
+    candidates = [];
+    for (const im of g.trees.near) {
+      for (let i = 0; i < im.count; i++) {
+        im.getMatrixAt(i, m);
+        const e = m.elements, sc = Math.hypot(e[0], e[1], e[2]), x = e[12], z = e[14];
+        if (sc < 0.6 || g.buildings.near(x, z, 8).length || g.net.pickSeg(x, z, 10)) continue;
+        const p = pool(x, z);
+        candidates.push({ x, y: e[13], z, d: Math.hypot(x - C.x, z - C.z), p, id: `forest (pool ${p})` });
       }
-      if (tree) break;
     }
+    candidates.sort((a, b) => (b.p >= 10) - (a.p >= 10) || a.d - b.d);
+    if (!candidates.length) throw new Error('no near forest tree to look at');
+    tree = candidates[0];
     kind = 'forest tree (near mesh)';
   }
   g.rts.setView(tree.x, tree.z, 20, 2.4, 0.3, true);
   const near = new Set(g.trees.near);
   return {
-    where: { kind, id: tree.id, x: Math.round(tree.x), z: Math.round(tree.z), view: '20 m, yaw 2.4, pitch 0.3' },
+    where: { kind, id: tree.id, x: Math.round(tree.x), z: Math.round(tree.z), view: candidates ? '20 m, yaw 2.4, pitch 0.5' : '20 m, yaw 2.4, pitch 0.3' },
     // crowns: the pack's foliage material; or the forest tree meshes
     classify: (o) => (o.material && !Array.isArray(o.material) && o.material.name === 'civic-foliage') || near.has(o),
     alphaMasked: (o) => near.has(o),
+    candidates,
+    place: (c) => g.rts.setView(c.x, c.z, 20, 2.4, 0.5, true),
   };
 };
 

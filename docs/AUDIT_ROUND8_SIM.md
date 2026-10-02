@@ -154,3 +154,33 @@ Each fix's commit has its before and after numbers.
   ran on an older snapshot. The relief clinics land on the nearest free
   lots, at the core's edge, and take little of the overloaded one's load.
   docs/PLAYTEST_6.md has the correction and a proposal.
+
+## Addendum: the owner's calls, done (2026-10-02)
+
+The owner said yes to six proposals. Each commit has its before and after
+numbers and seeds; in short:
+
+- **#3, node 45's lefts: a leading green.** When a green starts with a left
+  first at one of two paired roads' lines and someone coming the other way,
+  that road goes alone for up to 5 s. The lefts at node 45 wait 28-43 s
+  instead of 95-106 s (lightstest, seeds 1-3). The cost: all four lights pass
+  6% fewer cars at the evening rush, since a road going alone lengthens the
+  cycle. A turn lane would cost nothing at the other lights; that's a road
+  change, not done.
+- **The landmark crowd sets off by its drive.** 18-21 of 21 fans are in their
+  seats by kickoff on seven seeds, against 0 of 21 before. A drive to the
+  field takes 2-6 times its free-flowing time, so the longest set off up to
+  12 hours ahead on the clock (15 s of traffic an hour).
+- **The trash cliff: 90 days, with warnings.** An abandoned building stands
+  90 days, and the game says how many come down and when, 30 days and again
+  7 days ahead; the inspector gives the days left.
+- **Pacing:** left until a person has played it.
+- **#8, pull-outs: in both lanes until it's over.** No pull-out overlap on
+  any of carsolid's six seeds (four had one). carsolid still fails on three
+  seeds for two older overlaps, not pull-outs: a lane change at 19-20 m/s
+  near the start of road 16, and a semi's trailer swinging over the oncoming
+  lane turning onto two-lane roads 74 and 90.
+- **#9, the bot's clinics: the lot that takes the load.** Over five seeds the
+  clinics were overloaded 30-74% of the clinic-days from the first overload
+  (95/73/83/30/75% before), the worst at 123-150% of capacity (140-214%).
+  The bot never had the $66k for a hospital.

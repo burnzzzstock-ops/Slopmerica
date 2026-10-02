@@ -134,7 +134,7 @@ async function run(long, soak) {
       // the town's traffic alone at ▶▶▶ (the clock turning as in the game: 24 hours in 6 minutes of play at ▶),
       // cars only: the people aren't stepped here, and someone left standing on a crosswalk held its cars for good
       tr.crosswalkWalkers = undefined;
-      let soakRings = 0, soakCars = 0, longestHead = 0;
+      let soakRings = 0, soakCars = 0, longestHead = 0, headEx = null;
       const still = new Map();
       for (let k = 0; k < SOAK * 10; k++) {
         g.hour = (g.hour + (0.1 * 4 * 24) / 360) % 24;
@@ -148,11 +148,23 @@ async function run(long, soak) {
           if (!c || c.crashed !== 0 || c.v >= 0.3) continue;
           heads.add(c.id);
           const t = (still.get(c.id) ?? 0) + 8; still.set(c.id, t);
-          longestHead = Math.max(longestHead, t);
+          if (t > longestHead) {
+            // (what held it, where: a failing run says)
+            const st = c.path[c.pi], seg = g.net.segs.get(st.seg), node = seg && (st.dir > 0 ? seg.b : seg.a);
+            longestHead = t;
+            // (and the cars in that junction's box: where each is going and what holds it)
+            const box = (tr.junctionCars.get(node) ?? []).filter((o) => o.junction).map((o) => {
+              const nx = o.path[o.pi + 1], ns = nx && g.net.segs.get(nx.seg), k = ns ? ns.id * 16 + (nx.dir > 0 ? 0 : 8) + o.junction.lane2 : -1, q = tr.buckets.get(k) ?? [];
+              const rear = q[0], head = q[q.length - 1], entry = ns ? tr.entryOf(ns, nx.dir) : 0;
+              return { car: o.id, v: +o.v.toFixed(2), t: +o.junction.t.toFixed(2), from: o.junction.fromSeg, next: nx?.seg ?? null, lane2: o.junction.lane2, len: +o.len.toFixed(1), rerouted: o.pi === 0,
+                exitLane: { cars: q.length, room: rear ? +(rear.s - rear.len - entry).toFixed(1) : null, rear: rear ? { car: rear.id, v: +rear.v.toFixed(2), hold: rear.hold ?? null, dep: rear.dep > 0 } : null, head: head ? { car: head.id, v: +head.v.toFixed(2), hold: head.hold ?? null, still: still.get(head.id) ?? 0 } : null } };
+            });
+            headEx = { car: c.id, hold: c.hold ?? null, seg: st.seg, node, lights: tr.signals.has(node), toLine: seg ? +(tr.exitOf(seg, st.dir) - c.s).toFixed(1) : null, next: c.path[c.pi + 1]?.seg ?? null, box };
+          }
         }
         for (const id of still.keys()) if (!heads.has(id)) still.delete(id);
       }
-      Object.assign(out, { soakRings, soakCars, longestHead, soakCarsNow: tr.cars.length, reroutes: tr.reroutes });
+      Object.assign(out, { soakRings, soakCars, longestHead, headEx, soakCarsNow: tr.cars.length, reroutes: tr.reroutes });
     }
     return out;
   }, { SEED, DAYS, SOAK, long, soak });
@@ -174,7 +186,7 @@ check(`traffic still moves (${Math.round(on.moving * 100)}% of cars moving again
 if (SOAK > 0) {
   for (const [n, r] of [['with', on], ['without', off]]) console.log(`  soak ${n}: ${SOAK} s of play at ▶▶▶ (${(SOAK * 4) / 15} hours on the clock), ${r.soakCarsNow} cars at the end; a ring at ${r.soakRings} moments (up to ${r.soakCars} cars); the longest a lane's front car stood still ${r.longestHead} s; ${r.reroutes} front cars took another way out`);
   check(`a ${Math.round(SOAK / 60)}-minute soak at ▶▶▶ is rarely ringed (${on.soakRings} moments against ${off.soakRings}: a quarter at most)`, on.soakRings <= off.soakRings / 4);
-  check(`and no lane stands still for good (the longest ${on.longestHead} s against ${off.longestHead} s: a third at most)`, on.longestHead <= off.longestHead / 3);
+  check(`and no lane stands still for good (the longest ${on.longestHead} s against ${off.longestHead} s: a third at most)`, on.longestHead <= off.longestHead / 3, on.headEx);
 }
 check('no page errors', on.errs.length === 0 && off.errs.length === 0, [...on.errs, ...off.errs].slice(0, 3));
 await browser.close();

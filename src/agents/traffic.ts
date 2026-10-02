@@ -1323,7 +1323,9 @@ export class Traffic {
           // (a courteous car stops well back: the driver pulling out needs room behind it
           // too; one already too close, or not crawling, just carries on)
           const g = b.s - b.len - c.s - (b.courtesy ? 7 : 0);
-          if (b.courtesy && (c.v > 5 || b.s - c.s > 25 || g < 0)) continue;
+          // (nor one whose tail is still in the box behind it: waving a driver out there blocked the
+          // junction, and at an all-way stop everyone waiting for the car stuck behind it, for good)
+          if (b.courtesy && (c.v > 5 || b.s - c.s > 25 || g < 0 || c.s - c.len < this.entryOf(seg, st.dir))) continue;
           if (g < gap) { gap = g; dv = c.v; hold = b.courtesy ? 'courtesy' : 'driveway'; }
         }
         if (!last && exitS - c.s < 30 && !this.exitClear(c)) {

@@ -7,7 +7,7 @@ import type { LandmarkId, VehicleKind } from '../contracts';
 import { clamp, closestOnSampled, lerp, locate, norm, sub, V2 } from '../core/math';
 import { fx } from '../core/rng';
 import type { RNode, RoadNetwork, RSeg } from '../roads/network';
-import { carriageHalf, laneOffset, ROAD_TYPES } from '../roads/roadTypes';
+import { carriageHalf, laneOffset, ROAD_TYPES, type RoadType } from '../roads/roadTypes';
 // where cars stop short of a junction (m before the box): behind the crosswalk at the box's edge, and the paint's too
 import { STOP_LINE } from '../roads/roadSection';
 import { armCrossing, crossingStop } from '../roads/roadJunction';
@@ -1082,8 +1082,12 @@ export class Traffic {
       const near = this.onSegDir().get(st0.seg * 2 + (st0.dir > 0 ? 0 : 1)) ?? [];
       const busyAt = (s: number) => near.some((c) => !c.junction && c.crashed !== -1 && c.path[c.pi].seg === st0.seg && c.path[c.pi].dir === st0.dir && Math.abs(c.s - s) < 9);
       let ok = false;
+      // (its whole body on the road, out of the junctions at both ends and behind the far one's stop line: from a
+      // driveway by a junction it joined inside the box, where cars turning through swept over it; AUDIT_ROUND8_SIM.md #8)
+      const lo = Math.max(2, this.entryOf(seg0, st0.dir) + VEHICLE_SPECS[kind].length + 0.5);
+      const hi = Math.min(seg0.length - 2, this.exitOf(seg0, st0.dir) - this.stopBack(st0.dir > 0 ? seg0.b : seg0.a, seg0.id) - 1);
       for (const off of [0, 12, -12, 24, -24]) {
-        const s = rt.startS + off;
+        const s = lo <= hi ? clamp(rt.startS + off, lo, hi) : rt.startS + off;
         if (s < 2 || s > seg0.length - 2 || (rt.steps.length === 1 && s >= rt.endS)) continue;
         if (!busyAt(s)) { rt.startS = s; ok = true; break; }
       }
@@ -1345,6 +1349,13 @@ export class Traffic {
             if (g < gap) { gap = g; dv = c.v - bt.v; hold = 'box tail'; }
           }
         }
+        // still moving over between lanes at the line: finish moving over first (a car that got
+        // over for its turn just short of the box went in straddling the two lanes, beside the car
+        // in the other one: carsolid's road 44, docs/AUDIT_ROUND8_SIM.md #8)
+        if (!last && T.lanesPerDir > 1 && Number.isFinite(c.lat) && Math.abs(c.lat - laneOffset(T, c.lane)) > 0.6) {
+          const nodeId = st.dir > 0 ? seg.b : seg.a, g = exitS - this.stopBack(nodeId, seg.id, c.lane) - c.s;
+          if (g > -1 && g < gap) { gap = Math.max(0, g); dv = c.v; hold = 'side'; }
+        }
         // someone from another lane already in the box on the way to the lane I'm
         // turning into (two lanes turning into one): follow them in, not beside them
         if (!last && exitS - c.s < 25) {
@@ -1358,6 +1369,19 @@ export class Traffic {
               if (!J || o.crashed !== 0 || J.lane2 !== lane2 || o.path[o.pi + 1]?.seg !== nx.seg || (J.fromSeg === seg.id && J.fromLane === c.lane)) continue;
               const g = exitS - c.s + this.pastLine(o) - o.len;
               if (g < gap) { gap = g; dv = c.v - o.v; hold = 'box merge'; }
+            }
+            // a car from another lane of my own road in the box with its path across mine (one of us turning
+            // from the wrong lane: out of a lot just short of the box, with no room to get over first): it
+            // clears first (carsolid's road 44: a right from the inside lane and a left from the kerb one)
+            for (const o of box) {
+              const J = o.junction;
+              if (!J || o.crashed !== 0 || J.fromSeg !== seg.id || J.fromLane === c.lane) continue;
+              const K = c.boxPath;
+              const mine = K && K.path === c.path && K.pi === c.pi && K.lane === c.lane && K.turn === c.turn && K.lat === c.lat && K.epoch === this.netEpoch ? K : (c.boxPath = this.boxPathFor(c, seg, st, ns, nx));
+              if (!this.crossesBox(mine.pts, o, 0, mine.bb)) continue;
+              const g = exitS - this.stopBack(nodeId, seg.id, c.lane) - c.s;
+              if (g > -1 && g < gap) { gap = Math.max(0, g); dv = c.v; hold = 'box merge'; }
+              break;
             }
           }
         }
@@ -1687,16 +1711,21 @@ export class Traffic {
    * car near the driveway either.
    */
   private mergeClear(c: Car, seg: RSeg, st: Step): boolean {
-    const key = st.seg * 16 + (st.dir > 0 ? 0 : 8) + c.lane;
+    const base = st.seg * 16 + (st.dir > 0 ? 0 : 8), key = base + c.lane, T = ROAD_TYPES[seg.type];
     const head = c.s + 3, tail = c.s - c.len - 2;
-    for (const o of this.buckets.get(key) ?? []) {
-      if (o.s > tail && o.s - o.len < head) return false; // in the way
-      if (o.s <= tail && tail - o.s < 4 + o.v * 1.6) return false; // coming up behind
+    // (a car moving over between lanes is in both until it's over: one in the next lane with half its body still
+    // in this one counts, or a driver pulled out beside it, the two side by side; docs/AUDIT_ROUND8_SIM.md #8)
+    for (let k = Math.max(0, c.lane - 1); k <= Math.min(T.lanesPerDir - 1, c.lane + 1); k++) {
+      for (const o of this.buckets.get(base + k) ?? []) {
+        if (k !== c.lane && !this.overLane(o, T, c.lane)) continue;
+        if (o.s > tail && o.s - o.len < head) return false; // in the way
+        if (o.s <= tail && tail - o.s < 4 + o.v * 1.6) return false; // coming up behind
+      }
     }
     for (const b of this.mergeBlocks.get(key) ?? []) if (!b.courtesy && b.s > tail && b.s - b.len < head) return false;
-    // cars about to leave the junction into this lane near the driveway
+    // cars about to leave the junction into this road near the driveway (into any lane: a turn sweeps across them)
     const entryS = this.entryOf(seg, st.dir);
-    if (tail < entryS + 10 && (this.junctionTargets.get(key) ?? 0) > 0) return false;
+    if (tail < entryS + 10) for (let k = 0; k < T.lanesPerDir; k++) if ((this.junctionTargets.get(base + k) ?? 0) > 0) return false;
     // a driveway right by the junction ahead: nobody crossing the box close by
     // (a car turning out of the other lane sweeps over the end of this one)
     const exitS = this.exitOf(seg, st.dir);
@@ -1967,17 +1996,24 @@ export class Traffic {
 
   /** Room to move into lane `to` of this step beside the car? */
   private laneFree(st: Step, to: number, c: Car): boolean {
-    const key = st.seg * 16 + (st.dir > 0 ? 0 : 8) + to;
+    const base = st.seg * 16 + (st.dir > 0 ? 0 : 8), key = base + to;
     // a car pulling out of a driveway into that lane counts as being in it
     for (const b of this.mergeBlocks.get(key) ?? []) if (!b.courtesy && b.s + 7 > c.s - c.len && b.s - b.len - 7 < c.s) return false;
-    const q = this.buckets.get(key);
-    if (!q) return true;
-    for (const o of q) {
-      if (o === c) continue;
-      if (o.s >= c.s) { if (o.s - o.len - c.s < 7 + Math.max(0, c.v - o.v) * 1.2) return false; }
-      else if (c.s - c.len - o.s < 5 + Math.max(0, o.v - c.v) * 1.5) return false;
+    // and so does one moving out of it, or into it, still over it (mergeClear)
+    const seg = this.net.segs.get(st.seg), T = seg && ROAD_TYPES[seg.type];
+    for (let k = Math.max(0, to - 1); T && k <= Math.min(T.lanesPerDir - 1, to + 1); k++) {
+      for (const o of this.buckets.get(base + k) ?? []) {
+        if (o === c || (k !== to && !this.overLane(o, T, to))) continue;
+        if (o.s >= c.s) { if (o.s - o.len - c.s < 7 + Math.max(0, c.v - o.v) * 1.2) return false; }
+        else if (c.s - c.len - o.s < 5 + Math.max(0, o.v - c.v) * 1.5) return false;
+      }
     }
     return true;
+  }
+
+  /** Is part of this car's body still over that lane (moving over to or from it)? */
+  private overLane(o: Car, T: RoadType, lane: number): boolean {
+    return Number.isFinite(o.lat) && Math.abs(o.lat - laneOffset(T, lane)) < 2.4;
   }
 
   /** How far the nearest car ahead in lane `to` is (Infinity = open road). */

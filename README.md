@@ -119,6 +119,7 @@ node scripts/playtestcheck.mjs   # bug reporter, crash toast, context loss, resc
 node scripts/savefallback.mjs     # saving where downloads are blocked: the built game in a sandboxed iframe (no allow-downloads) copies the city file to the clipboard and says so; outside a frame the file still downloads; "Paste a copied city" loads it back (DIST= another build, BUILD=0 skips the build)
 node scripts/soundtest.mjs        # Settings > Sound on/off and volume (effects, ambience, street sound; the music keeps its own): the audio graph's gains, the street voices asleep when off, remembered after a reload, the phone panel still fits
 node scripts/fovtest.mjs phone     # the field of view slider at 35, 50, 75 and 110: the label says what the number is, Settings fits at 390 px, tapping a building selects it, edge scrolling (desk), draw calls per angle; pictures in shots/r8/fov
+node scripts/ghosttap.mjs       # phone: a tap on a building that sits where the inspector sheet's x will appear selects it and the sheet stays (the emulated click used to close it 21 ms later); the x still closes it when pressed on purpose
 node scripts/copytest.mjs       # (no browser) sentences built from numbers read right at 1 and many ("1 building", "Court in 1 day"), and the HUD uses them
 node scripts/touchtest.mjs       # phone road drawing: plan, Build, Done, double-tap
 node scripts/phonetargets.mjs    # phone: every control in every panel, and on the title screen, reaches 44 px for a finger (measured with elementFromPoint); the one-row top bar is listed at its minimum

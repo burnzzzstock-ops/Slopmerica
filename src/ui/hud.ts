@@ -85,6 +85,8 @@ export class Hud implements UiSink {
   private bar!: HTMLElement;
   private sub!: HTMLElement;
   private inspector!: HTMLElement;
+  /** when the inspector sheet last opened (performance.now()): see the click guard in the constructor */
+  private inspectorOpenedAt = 0;
   private toasts!: HTMLElement;
   private remeasureToasts = true;
   private tip!: HTMLElement;
@@ -145,6 +147,10 @@ export class Hud implements UiSink {
     this.buildToolbar();
     this.wirePanelMinimize();
     this.inspector = this.mk('aside', 'inspector');
+    // A tap on the map opens the sheet under the finger, and the browser's emulated click is then delivered to whatever is under the finger NOW: a building
+    // tapped where the sheet's x appears was selected and then closed 21 ms later (seen at 110 degrees on the phone, scripts/ghosttap.mjs). No click that
+    // soon after the sheet opens is a deliberate press, so none reaches it.
+    this.inspector.addEventListener('click', (e) => { if (performance.now() - this.inspectorOpenedAt < 350) { e.stopPropagation(); e.preventDefault(); } }, true);
     this.inspector.hidden = true;
     this.sideCards = this.mk('div', 'side-cards');
     this.toasts = this.mk('div', 'toasts');
@@ -1474,6 +1480,7 @@ export class Hud implements UiSink {
   // ------------------------------------------------------------------ inspector
   select(sel: Selection) {
     if (!sel) { this.inspector.hidden = true; this.layoutCards(); return; }
+    if (this.inspector.hidden) this.inspectorOpenedAt = performance.now();
     this.inspector.hidden = false;
     queueMicrotask(() => this.layoutCards());
     this.renderInspector();

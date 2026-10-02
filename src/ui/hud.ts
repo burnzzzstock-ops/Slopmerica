@@ -1320,6 +1320,8 @@ export class Hud implements UiSink {
           <button class="chip ${g.audio.musicOn ? 'on' : ''}" id="music-toggle" aria-pressed="${g.audio.musicOn}">🎹 Music: ${g.audio.musicOn ? 'on' : 'off'}</button>
           <label class="fov-ctl" for="music-range">Music volume <input type="range" id="music-range" min="5" max="100" step="5" value="${Math.round(g.audio.musicVolume * 100)}"></label>
           <label class="fov-ctl" for="fov-range">Field of view <input type="range" id="fov-range" min="${FOV_MIN}" max="${FOV_MAX}" step="1" value="${Math.round(g.camera.fov)}"><b id="fov-v">${Math.round(g.camera.fov)}°</b></label>
+          <button class="chip ${g.audio.soundOn ? 'on' : ''}" id="sound-toggle" aria-pressed="${g.audio.soundOn}" title="Effects, ambience and the sound of the cars in the street">🔊 Sound: ${g.audio.soundOn ? 'on' : 'off'}</button>
+          <label class="fov-ctl" for="sound-range">Sound volume <input type="range" id="sound-range" min="5" max="100" step="5" value="${Math.round(g.audio.soundVolume * 100)}"></label>
         </div>
         <small>Resolution and shadows change immediately. Reload applies scenery, traffic, and post-processing budgets.</small>
         <div class="help">${IS_TOUCH ? `
@@ -1374,6 +1376,18 @@ export class Hud implements UiSink {
         try { localStorage.setItem('slopmerica.music', g.audio.musicOn ? '1' : '0'); } catch { /* not remembered */ }
         crumb(`music ${g.audio.musicOn ? 'on' : 'off'}`);
         this.renderPanel();
+      });
+      this.sub.querySelector('#sound-toggle')?.addEventListener('click', () => {
+        g.audio.unlock();
+        g.audio.soundOn = !g.audio.soundOn;
+        try { localStorage.setItem('slopmerica.sound', g.audio.soundOn ? '1' : '0'); } catch { /* not remembered */ }
+        crumb(`sound ${g.audio.soundOn ? 'on' : 'off'}`);
+        this.renderPanel();
+      });
+      this.sub.querySelector('#sound-range')?.addEventListener('input', (e) => {
+        g.audio.unlock();
+        g.audio.soundVolume = Number((e.target as HTMLInputElement).value) / 100;
+        try { localStorage.setItem('slopmerica.soundVol', String(g.audio.soundVolume)); } catch { /* not remembered */ }
       });
       this.sub.querySelector('#music-range')?.addEventListener('input', (e) => {
         g.audio.musicVolume = Number((e.target as HTMLInputElement).value) / 100;

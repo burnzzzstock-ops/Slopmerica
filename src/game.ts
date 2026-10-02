@@ -343,6 +343,12 @@ export class Game {
       const mv = Number(localStorage.getItem('slopmerica.musicVol'));
       if (mv > 0 && mv <= 1) this.audio.musicVolume = mv;
     } catch { /* defaults: on, 55% */ }
+    // Settings → Sound (effects, ambience, street sound), remembered like the music's
+    try {
+      this.audio.soundOn = localStorage.getItem('slopmerica.sound') !== '0';
+      const sv = Number(localStorage.getItem('slopmerica.soundVol'));
+      if (sv > 0 && sv <= 1) this.audio.soundVolume = sv;
+    } catch { /* defaults: on, full */ }
     this.rts.setView(start.x, start.z, IS_TOUCH ? 900 : 800, start.yaw, 0.72, true);
 
     // --- ambient life (codex) ---

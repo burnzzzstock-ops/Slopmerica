@@ -33,6 +33,14 @@ export class AudioEngine {
   musicOn = true;
   musicVolume = 0.55;
   private volume = 0.8;
+  /**
+   * Settings → Sound (remembered): the effects, the ambience and the street sound, on/off and how loud. The music has its own pair above;
+   * the dev pages' setMuted/setVolume stay the master over everything.
+   */
+  private soundOn_ = true;
+  private soundVolume_ = 1;
+  private soundBus?: GainNode;   // sfxBus and ambBus (and so every street voice) go through this one
+  private soundRev?: GainNode;   // and their sends to the reverb go through this one, so a muted sound leaves no reverb tail
   private wasMuted = false;
   private lastPlay: Partial<Record<SfxKind, number>> = {};
 
@@ -62,12 +70,14 @@ export class AudioEngine {
     this.master.gain.value = this.muted ? 0 : this.volume;
     this.wasMuted = this.muted;
     this.master.connect(comp);
+    this.soundBus = c.createGain();
+    this.soundBus.connect(this.master);
     this.sfxBus = c.createGain();
     this.sfxBus.gain.value = 0.9;
-    this.sfxBus.connect(this.master);
+    this.sfxBus.connect(this.soundBus);
     this.ambBus = c.createGain();
     this.ambBus.gain.value = 0.8;
-    this.ambBus.connect(this.master);
+    this.ambBus.connect(this.soundBus);
     const conv = c.createConvolver();
     conv.buffer = s.impulse(2.6, 2.4);
     this.revIn = c.createGain();
@@ -75,7 +85,10 @@ export class AudioEngine {
     const revOut = c.createGain();
     revOut.gain.value = 0.55;
     this.revIn.connect(conv).connect(revOut).connect(this.master);
-    this.amb = new Ambience(s, this.ambBus, this.revIn);
+    this.soundRev = c.createGain();
+    this.soundRev.connect(this.revIn);
+    this.applySound();
+    this.amb = new Ambience(s, this.ambBus, this.soundRev);
     this.streetVoices = new StreetAudio(s, this.ambBus, StreetAudio.poolFor(this.quality));
     this.piano = new AmbientPiano(s, this.master, this.revIn);
     this.piano.enabled = this.musicOn;
@@ -95,12 +108,33 @@ export class AudioEngine {
     this.setVolume(this.volume);
   }
 
+  /** Settings → Sound on/off (effects, ambience, street sound). Safe before the first gesture: it is applied when the audio starts. */
+  get soundOn(): boolean { return this.soundOn_; }
+  set soundOn(on: boolean) { this.soundOn_ = on; this.applySound(); }
+  /** Settings → Sound volume, 0..1 (1 is the level the game always had). */
+  get soundVolume(): number { return this.soundVolume_; }
+  set soundVolume(v: number) { this.soundVolume_ = Math.max(0, Math.min(1, v)); this.applySound(); }
+  private applySound() {
+    if (!this.ctx || !this.soundBus || !this.soundRev) return;
+    const g = this.soundOn_ ? this.soundVolume_ : 0, t = this.ctx.currentTime;
+    this.soundBus.gain.setTargetAtTime(g, t, 0.04);
+    this.soundRev.gain.setTargetAtTime(g, t, 0.04);
+  }
+  /** What the audio graph is doing now, for tests: the gains the player's settings set and whether the street voices are asleep. */
+  debugState() {
+    return {
+      started: !!this.ctx, running: this.ctx?.state === 'running', master: this.master?.gain.value ?? null, sound: this.soundBus?.gain.value ?? null,
+      soundRev: this.soundRev?.gain.value ?? null, soundOn: this.soundOn_, soundVolume: this.soundVolume_, musicOn: this.musicOn, musicVolume: this.musicVolume,
+      streetAwake: this.streetVoices?.awake ?? null, streetVoices: this.streetVoices?.stats.voices ?? null,
+    };
+  }
+
   update(dt: number, mix: SoundMix) {
     if (!this.ctx || !this.amb || !this.master) return;
     if (this.muted !== this.wasMuted) this.setMuted(this.muted);
     if (this.muted || this.ctx.state !== 'running') return;
     this.amb.mapId = this.mapId;
-    this.amb.update(Math.min(dt, 0.1), mix);
+    if (this.soundOn_) this.amb.update(Math.min(dt, 0.1), mix);   // (sound off: the ambience is silent, so it is not even run)
     this.rainNow = (RAIN[mix.weather] ?? 0) * mix.weatherIntensity;
     this.hushNow = mix.weather === 'snow' || mix.weather === 'blizzard' ? 0.5 * mix.weatherIntensity : 0;
     if (this.piano) {
@@ -124,18 +158,18 @@ export class AudioEngine {
     V.x = cam.target.x; V.z = cam.target.z; V.y = cam.target.y + Math.min(55, Math.max(3, cam.distance * 0.3));
     V.rx = Math.cos(cam.yaw); V.rz = -Math.sin(cam.yaw); V.dist = cam.distance;
     E.rain = this.rainNow; E.wet = wet; E.hush = this.hushNow;
-    E.speed = this.muted || this.ctx.state !== 'running' ? 0 : speed; // muted or suspended = paused: the voices are released, then disconnected
+    E.speed = this.muted || !this.soundOn_ || this.ctx.state !== 'running' ? 0 : speed; // muted, sound off or suspended = paused: the voices are released, then disconnected
     st.update(Math.min(dt, 0.1), cars, V, E);
   }
 
   play(kind: SfxKind, volume = 1) {
-    if (!this.ctx || !this.synth || !this.sfxBus || !this.revIn || this.muted) return;
+    if (!this.ctx || !this.synth || !this.sfxBus || !this.soundRev || this.muted || !this.soundOn_) return;
     if (this.ctx.state !== 'running') return;
     // don't machine-gun the same sound (e.g. 40 zone cells in one frame)
     const now = this.ctx.currentTime;
     const minGap = kind === 'thunder' || kind === 'siren' ? 0.25 : 0.035;
     if (now - (this.lastPlay[kind] ?? -1) < minGap) return;
     this.lastPlay[kind] = now;
-    SFX[kind]?.(this.synth, this.sfxBus, this.revIn, Math.max(0, Math.min(1.5, volume)));
+    SFX[kind]?.(this.synth, this.sfxBus, this.soundRev, Math.max(0, Math.min(1.5, volume)));
   }
 }

@@ -162,11 +162,12 @@ numbers and seeds; in short:
 
 - **#3, node 45's lefts: a leading green.** When a green starts with a left
   first at one of two paired roads' lines and someone coming the other way,
-  that road goes alone for up to 5 s. The lefts at node 45 wait 28-43 s
-  instead of 95-106 s (lightstest, seeds 1-3). The cost: all four lights pass
-  6% fewer cars at the evening rush, since a road going alone lengthens the
-  cycle. A turn lane would cost nothing at the other lights; that's a road
-  change, not done.
+  that road goes alone for up to 5 s. The lefts at node 45 wait 16-43 s
+  instead of 95-124 s (lightstest, seeds 1-3, two runs each). A road going
+  alone lengthens the cycle: all four lights passed -6% to +8% as many cars
+  at the evening rush (the commit says 6% fewer, from the first three runs;
+  that count moves ~15% between runs of the same code). A turn lane would
+  cost the other lights nothing; that's a road change, not done.
 - **The landmark crowd sets off by its drive.** 18-21 of 21 fans are in their
   seats by kickoff on seven seeds, against 0 of 21 before. A drive to the
   field takes 2-6 times its free-flowing time, so the longest set off up to

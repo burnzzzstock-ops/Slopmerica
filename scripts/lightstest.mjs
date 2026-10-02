@@ -104,8 +104,9 @@ check(`no two cars from different phases inside each other in the box (${act.ove
 const leftsAt = (r) => { const n = r.arms.reduce((x, a) => x + a.lefts.n, 0); return { n, mean: r.arms.reduce((x, a) => x + a.lefts.mean * a.lefts.n, 0) / Math.max(1, n) }; };
 const lA = leftsAt(act), lN = leftsAt(noLead);
 check(`a leading green cuts the lefts' wait at node ${NODE} (${lA.mean.toFixed(0)} s on average, ${lA.n} cars, against ${lN.mean.toFixed(0)} s, ${lN.n}: two thirds at most)`, lA.n > 0 && lA.mean <= lN.mean * 0.67);
-// (all the lights to within a tenth: a road going alone lengthens the cycle, and on seeds 1-3 that cost all four sets
-// of lights 6% of their cars at the evening rush, 22.5-25.3 a minute against 24-26.8, with the lefts' wait cut 60-70%)
+// (all the lights to within a tenth: a road going alone lengthens the cycle; on seeds 1-3 the leading greens moved all
+// four sets of lights by -6% to +8% at the evening rush, and that count moves ~15% between runs of the same code: 20.8
+// and 24 a minute without them on seed 1)
 check(`and costs the junction no cars (${act.perMin} a minute into node ${NODE} against ${noLead.perMin}; all the lights ${act.allPerMin} against ${noLead.allPerMin})`, act.perMin >= noLead.perMin * 0.95 && act.allPerMin >= noLead.allPerMin * 0.9);
 check(`nor anyone on foot much time (the longest at a kerb ${act.kerbMax} s against ${noLead.kerbMax} s)`, act.kerbMax <= noLead.kerbMax + 8);
 check('no page errors', fixed.errs.length === 0 && noLead.errs.length === 0 && act.errs.length === 0, [...fixed.errs, ...noLead.errs, ...act.errs].slice(0, 3));

@@ -8,7 +8,19 @@
 import * as THREE from 'three';
 import type { PersonAction } from '../contracts';
 import { ARCHETYPES, PeopleRenderer } from '../agents/people';
+import { QUALITY } from '../config';
 
+// ?q=low|medium|high|ultra: the quality preset's people knobs and shadow map size (without it: High's, which is the renderer's default)
+const query = new URLSearchParams(location.search);
+const presetName = query.get('q');
+// (&near=40&max=12&shadow=120&lite=0 override single knobs of the preset, to measure one change at a time)
+const preset = presetName && presetName in QUALITY ? { ...QUALITY[presetName as keyof typeof QUALITY] } : null;
+if (preset) {
+  if (query.has('near')) preset.peopleNear = +query.get('near')!;
+  if (query.has('max')) preset.peopleNearMax = +query.get('max')!;
+  if (query.has('shadow')) preset.peopleShadow = +query.get('shadow')!;
+  if (query.has('lite')) preset.peopleShadowLite = query.get('lite') === '1';
+}
 const hud = document.getElementById('hud');
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(1);
@@ -26,7 +38,7 @@ scene.background = DAY_BG.clone();
 
 const sun = new THREE.DirectionalLight('#fff1d2', 3.1);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(preset?.shadowMap ?? 2048, preset?.shadowMap ?? 2048);
 sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.02;
 scene.add(sun, sun.target);
@@ -56,7 +68,8 @@ ground.receiveShadow = true;
 scene.add(ground);
 
 const people = new PeopleRenderer(scene, 700);
-people.bindRenderer(renderer);
+if (preset) (people as unknown as { setDetail?: (q: unknown) => void }).setDetail?.(preset); // (the old model has no knobs)
+(people as unknown as { bindRenderer?: (r: THREE.WebGLRenderer) => void }).bindRenderer?.(renderer); // (the first model has no pose pass: nothing to bind)
 const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 2000);
 
 export interface Pose { h: number; x: number; y?: number; z: number; yaw?: number; action: PersonAction; phase: number }
@@ -96,6 +109,7 @@ function place(t: Tile): void {
 
 // everyone a tile does not list goes underground, or the people of the earlier tiles stand around in the later ones
 const placed = new Set<number>();
+const spawned = new Set<number>();
 function draw(t: Tile): void {
   for (const h of placed) people.set(h, 0, -1e4, 0, 0, 'idle', 0);
   placed.clear();
@@ -105,11 +119,12 @@ function draw(t: Tile): void {
   camera.fov = t.fov ?? 40;
   camera.position.set(...t.eye);
   camera.lookAt(...t.target);
-  people.flush([camera.position]); // (each tile has its own camera: the near figure is chosen from it)
   camera.near = Math.max(0.05, Math.min(t.eye[1], 3) * 0.05);
   camera.far = 3000;
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
+  // (each tile has its own camera: the near figure and who is drawn at all are chosen from it; the first version of the renderer took positions only)
+  people.flush(typeof (people as unknown as { setDetail?: unknown }).setDetail === 'function' ? [camera as never] : [camera.position]);
   const H = window.innerHeight;
   renderer.setViewport(t.x, H - t.y - t.h, t.w, t.h);
   renderer.setScissor(t.x, H - t.y - t.h, t.w, t.h);
@@ -208,7 +223,7 @@ function probe(opts: {
   for (let s = 0; s < opts.samples; s++) {
     const Z = s * opts.step;
     people.set(opts.h, 0, 0, Z, 0, opts.action, Z / opts.stride);
-    people.flush();
+    people.flush([new THREE.Vector3(0, 2, Z + 6)]); // (a viewer in range: the person is on the lists, so his pose row is worked out)
     for (const q of inst) {
       const at = opts.h * q.size, a = q.dst.array as Float32Array, sa = q.src.array as Float32Array;
       // (the near figure's own arrays hold only the people who are near, in another order: the motion comes from the renderer by handle)
@@ -267,14 +282,27 @@ function probe(opts: {
 (window as unknown as Record<string, unknown>).__people = {
   ready: true,
   archetypes: ARCHETYPES.map((a, i) => ({ i, id: a.id, name: a.name, vices: a.vices })),
-  spawn: (arch: number, seed: number) => people.add(arch, seed),
-  remove: (h: number) => people.remove(h),
+  spawn: (arch: number, seed: number) => { const h = people.add(arch, seed); if (h >= 0) spawned.add(h); return h; },
+  remove: (h: number) => { people.remove(h); spawned.delete(h); },
+  /** everybody spawned so far goes underground (a check that reads who is drawn must not meet the people an earlier sheet left standing) */
+  parkAll: () => { for (const h of spawned) people.set(h, 0, -1e4, 0, 0, 'idle', 0); placed.clear(); },
   render,
   probe,
   size: () => ({ w: window.innerWidth, h: window.innerHeight }),
   info: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles }),
   /** hide / show the whole people group (for cost runs: hidden, the instances are not even drawn) */
-  setVisible: (v: boolean) => { people.object.visible = v; },
+  setVisible: (v: boolean) => {
+    people.object.visible = v;
+    // hidden also means no pose pass (the new model works the poses out in one draw outside the group)
+    const r = people as unknown as { poseOn?: boolean; poseWas?: boolean };
+    if (r.poseOn !== undefined) { r.poseWas ??= r.poseOn; r.poseOn = v && r.poseWas; }
+  },
+  /** how many people each draw list holds right now, and who (new model only) */
+  lists: () => (people as unknown as { listCounts?: () => unknown }).listCounts?.() ?? null,
+  listHandles: () => (people as unknown as { listHandles?: () => unknown }).listHandles?.() ?? null,
+  /** the preset's people knobs (or the renderer's defaults: High's) */
+  detail: () => ({ near: preset?.peopleNear ?? 64, nearMax: preset?.peopleNearMax ?? 9999, shadow: preset?.peopleShadow ?? 9999 }),
+  preset: presetName,
   /** switch parts of a cost run on and off: the near figure, the far figure, the sun's shadow map */
   parts: (cfg: { near?: boolean; far?: boolean; shadows?: boolean; plain?: 'basic' | 'standard' | 'off'; flat?: boolean }) => {
     for (const c of people.object.children) {
@@ -288,7 +316,7 @@ function probe(opts: {
         m.geometry = cfg.flat ? keepG.toNonIndexed() : keepG;
       }
       if (c.name === 'people-near' && cfg.near !== undefined) c.visible = cfg.near;
-      if (c.name === 'people-far' && cfg.far !== undefined) c.visible = cfg.far;
+      if ((c.name === 'people-far' || c.name === 'people-shadow') && cfg.far !== undefined) c.visible = cfg.far;
     }
     if (cfg.shadows !== undefined && renderer.shadowMap.enabled !== cfg.shadows) {
       renderer.shadowMap.enabled = cfg.shadows;

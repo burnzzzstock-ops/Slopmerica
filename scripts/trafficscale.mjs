@@ -6,17 +6,21 @@
 // each count of cars (real trips between its buildings and the highway), then
 // 300 steps timed at each: the median, mean and 95th percentile of one
 // traffic.update (a 20th of a second of game time, cars drawn), and the share
-// of cars moving. Seeded, so every run carries the same trips. Timing on this
-// machine's software GPU and shared CPU: compare runs, not machines.
-// usage: node scripts/trafficscale.mjs [250,500,1000]   (BASE_URL, default http://127.0.0.1:5173)
+// of cars moving. Then the people: with 3,000 out, peds.update timed the same
+// way (reported, not checked). Seeded, so every run carries the same trips, and it prints a
+// fingerprint of every car's state at the end of each count: a faster version of
+// the traffic that moves the cars the same way prints the same one. Timing on
+// this machine's software GPU and shared CPU: compare runs, not machines.
+// usage: node scripts/trafficscale.mjs [250,500,1000]   (BASE_URL, default http://127.0.0.1:5173; SEED, default 1)
 // Exits 1 if a step at the largest count takes over 4 ms (median), the roads
 // can't hold the cars, or the page throws.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright-core';
-import { ARGS, EXE } from './refblock.mjs';
+import { ARGS, EXE, seededInit, seededRandom } from './refblock.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const counts = (process.argv[2] || '250,500,1000').split(',').map(Number);
+const SEED = Number(process.env.SEED || 1);
 const TOWN = process.env.TOWN || 'shots/scale/town.json';
 const LIMIT = 4;
 let bad = 0;
@@ -61,24 +65,35 @@ if (!existsSync(TOWN)) {
 }
 
 const page = await browser.newPage({ viewport: { width: 1000, height: 600 } });
-const errs = [];
+const errs = [], vault = [];
 page.on('pageerror', (e) => errs.push(e.message));
+// (the asset pack gives up after 15 s on a busy machine, and the town is then built from other models: other lots, other trips)
+page.on('console', (m) => { if (m.text().startsWith('[vault]')) vault.push(m.text()); });
 const save = readFileSync(TOWN, 'utf8');
 await page.addInitScript((save) => { try { localStorage.setItem('slopmerica.save.v1', save); } catch { /* */ } }, save);
+// Math.random seeded before the game's code runs, and its own loop never started (refblock.mjs seededInit): the same
+// town, trips and cars every run
+await page.addInitScript(seededInit, { seed: SEED, rng: seededRandom.toString() });
 await boot(page, `${base}/`);
 await page.waitForSelector('#continue', { timeout: 300000 });
 await page.click('#continue');
 await page.waitForFunction(() => window.__game && window.__dbg, null, { timeout: 300000 });
-const town = await page.evaluate(() => {
+const town = await page.evaluate((SEED) => {
   const g = window.__game;
   cancelAnimationFrame(g.raf);
   g.traffic.crosswalkWalkers = undefined; // cars only (the people's own cost is theirs)
   // seeded: the same trips every run, so two versions of the traffic can be timed on the same cars
-  let a = 1;
-  Math.random = () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-  return { pop: g.sim.population, blds: g.buildings.list.size, roads: g.net.segs.size };
-});
-console.log(`  town: ${town.pop.toLocaleString()} people, ${town.blds} buildings, ${town.roads} roads`);
+  window.__reseed(SEED);
+  // what the town was built from (refblock.mjs openBlock): two runs replay each other only on the same one
+  let h = 2166136261;
+  const mix = (v) => { h = Math.imul(h ^ (v | 0), 16777619) >>> 0; };
+  for (const b of g.buildings.list.values()) {
+    mix(b.id); mix(b.model.geometry?.attributes?.position?.count ?? 0); mix(b.model.spots?.length ?? 0);
+    for (let i = 0; i < b.label.length; i++) mix(b.label.charCodeAt(i));
+  }
+  return { pop: g.sim.population, blds: g.buildings.list.size, roads: g.net.segs.size, hash: h.toString(16) };
+}, SEED);
+console.log(`  town: ${town.pop.toLocaleString()} people, ${town.blds} buildings, ${town.roads} roads (town ${town.hash}${vault.length ? `; ${vault.join('; ')}: not the usual town` : ''}; seed ${SEED})`);
 const rows = [];
 for (const want of counts) {
   const r = await page.evaluate((want) => {
@@ -100,11 +115,35 @@ for (const want of counts) {
       n += tr.cars.length;
     }
     ms.sort((a, b) => a - b);
-    return { cars: Math.round(n / 300), median: +ms[150].toFixed(2), mean: +(ms.reduce((a, b) => a + b, 0) / 300).toFixed(2), p95: +ms[285].toFixed(2), moving: tr.cars.filter((c) => c.v > 0.5).length / Math.max(1, tr.cars.length) };
+    // every car's state at the end, hashed: two versions of the traffic that time the same steps move the same cars
+    let h = 2166136261;
+    for (const c of tr.cars) for (const v of [c.id, Math.round(c.s * 1000), Math.round(c.v * 1000), c.lane, c.pi, c.junction ? Math.round(c.junction.t * 1000) : -1]) h = Math.imul(h ^ (v | 0), 16777619) >>> 0;
+    return { fp: h.toString(16), cars: Math.round(n / 300), median: +ms[150].toFixed(2), mean: +(ms.reduce((a, b) => a + b, 0) / 300).toFixed(2), p95: +ms[285].toFixed(2), moving: tr.cars.filter((c) => c.v > 0.5).length / Math.max(1, tr.cars.length) };
   }, want);
   rows.push({ want, ...r });
-  console.log(`  ${String(want).padStart(5)} cars wanted: ${r.cars} on the roads, ${Math.round(r.moving * 100)}% moving; a step ${r.median} ms (mean ${r.mean}, 95th percentile ${r.p95})`);
+  console.log(`  ${String(want).padStart(5)} cars wanted: ${r.cars} on the roads, ${Math.round(r.moving * 100)}% moving; a step ${r.median} ms (mean ${r.mean}, 95th percentile ${r.p95}); the cars' state at the end ${r.fp}`);
 }
+// people: the town's walkers stepped with the cars at a town of 3,000 people out (as crosswalktest), peds.update timed alone
+const ppl = await page.evaluate(() => {
+  const g = window.__game, tr = g.traffic, P = g.peds;
+  tr.crosswalkWalkers = (n, s) => P.crosswalkWalkers(n, s);
+  let time = 0;
+  const step = (timed) => {
+    time += 1 / 20;
+    tr.update(1 / 20, 1, 12.5, g.sim.population, g.sim.jobsFilled, g.rts.target);
+    P.population = 3000;
+    const t0 = performance.now();
+    P.update(1 / 20, 1, g.rts.target, g.rts.distance, time);
+    return performance.now() - t0;
+  };
+  for (let k = 0; k < 600; k++) step();
+  const ms = [];
+  let n = 0;
+  for (let k = 0; k < 300; k++) { ms.push(step()); n += P.peds.length; }
+  ms.sort((a, b) => a - b);
+  return { walkers: Math.round(n / 300), median: +ms[150].toFixed(2), mean: +(ms.reduce((a, b) => a + b, 0) / 300).toFixed(2), p95: +ms[285].toFixed(2) };
+});
+console.log(`  people, with 3,000 out: ${ppl.walkers} on the streets; peds.update ${ppl.median} ms (mean ${ppl.mean}, 95th percentile ${ppl.p95})`);
 const top = rows[rows.length - 1];
 check(`the roads hold the cars (${top.cars} of ${top.want})`, top.cars >= top.want * 0.9);
 check(`a step at ${top.cars} cars takes under ${LIMIT} ms (median ${top.median} ms)`, top.median < LIMIT);

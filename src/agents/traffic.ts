@@ -49,6 +49,8 @@ export interface Car {
   hold?: Hold;
   /** seconds stopped at the line with no room past the box (REROUTE_T) */
   boxWait?: number;
+  /** its own path through the all-way stop ahead (worked out once per approach: boxPathFor) */
+  boxPath?: { path: Step[]; pi: number; lane: number; turn: number; lat: number; epoch: number; pts: V2[]; bend: number; bb: [number, number, number, number] };
   kind: VehicleKind;
   path: Step[];
   pi: number;
@@ -126,7 +128,7 @@ export interface Car {
 interface PathPoint { x: number; z: number; y: number; tx: number; tz: number }
 
 /** A car crossing a junction on a cubic from the lane it left to the lane it joins; t is the share of the curve's length covered by its front. */
-interface JunctionCurve { t: number; len: number; /** its real length (len is at least 2 m for timing; a bend in the road with no box is ~0) */ arc: number; p0: V2; c1: V2; c2: V2; p2: V2; t1: V2; t2: V2; lut: number[]; y0: number; y1: number; node: number; fromSeg: number; lane2: number; /** the lane and direction it came from */ fromDir: 1 | -1; fromLane: number; /** entered this step (it already moved) */ fresh?: boolean; /** points along it, for conflict tests (made on first use) */ pts?: V2[] }
+interface JunctionCurve { t: number; len: number; /** its real length (len is at least 2 m for timing; a bend in the road with no box is ~0) */ arc: number; p0: V2; c1: V2; c2: V2; p2: V2; t1: V2; t2: V2; lut: number[]; y0: number; y1: number; node: number; fromSeg: number; lane2: number; /** the lane and direction it came from */ fromDir: 1 | -1; fromLane: number; /** entered this step (it already moved) */ fresh?: boolean; /** points along it, for conflict tests (made on first use), and their bounds */ pts?: V2[]; bb?: [number, number, number, number] }
 
 /** Endpoint of a dispatched trip: a building, or 'edge' (an outside connection). */
 export type TripEnd = Bld | 'edge';
@@ -147,6 +149,18 @@ function sampleTangent(seg: RSeg, i: number): V2 {
   return (T[i] ??= tangentAt(seg.samp.pts, i));
 }
 const tangents = new WeakMap<RSeg['samp'], V2[]>();
+/**
+ * A lane's cars in order along it: an insertion sort, stable like Array.prototype.sort, so the same order; the cars were in
+ * order last step and have hardly moved, so it's one pass where the built-in sort took a comparator call per pair.
+ */
+function sortByS(a: Car[]) {
+  for (let i = 1; i < a.length; i++) {
+    const c = a[i], s = c.s;
+    let j = i - 1;
+    while (j >= 0 && a[j].s > s) { a[j + 1] = a[j]; j--; }
+    a[j + 1] = c;
+  }
+}
 function tangentAt(P: V2[], i: number): V2 {
   const n = P.length;
   for (let k = 0; k < n; k++) {
@@ -563,6 +577,10 @@ export class Traffic {
   /** extra metres cut off both roads at a bend with no junction box, per node (cleared when the network changes) */
   private bendCuts = new Map<number, number>();
   private stopBacks = new Map<number, number>();
+  /** emptied lane and box lists, for the next step's */
+  private listPool: Car[][] = [];
+  /** bumped when the network changes (the cars' cached box curves are worked out again) */
+  private netEpoch = 0;
   /**
    * How far short of the end of its road a car arriving in `lane` (all its lanes if none) holds its nose at the line:
    * STOP_LINE behind where people walk over that lane (roadJunction.ts crossingStop, from the same walk line pedestrians.ts
@@ -613,6 +631,7 @@ export class Traffic {
 
   // ------------------------------------------------------------------ signals
   private rebuildSignals() {
+    this.netEpoch++;
     this.bendCuts.clear();
     this.stopBacks.clear();
     this.edges = null;
@@ -1023,6 +1042,11 @@ export class Traffic {
       lat: NaN, latV: 0, ryaw: NaN, turn: 0, turnV: Infinity, turnFor: -1, laneCd: 2 + Math.random() * 3, brakeT: 0, acc: 0, roll: 0, dive: 0,
       driver: Math.floor(Math.random() * ARCHETYPES.length), smokeT: Math.random() * 2, bac: drunk ? 0.09 + Math.random() * 0.2 : 0,
       dep: 0, arr: -1, lotO: null, lotD: null, local,
+      // (every field a car can get, there from the start: one shape for all of them, so the loops over a thousand cars
+      // read one kind of object; added as they came up, they made a dozen, and every read checked which)
+      toSpot: undefined, fromSpot: undefined, parked: undefined, destB: undefined, thruB: undefined, thru: undefined, thruWait: undefined,
+      drawn: undefined, pedNode: undefined, hold: undefined, boxWait: undefined, boxPath: undefined, prevJ: undefined, prevEntryS: undefined,
+      wait: undefined, committed: undefined, lotLeft: undefined, fromB: undefined, arrived: undefined, onDone: undefined,
     };
     // pull out of the origin lot / pull into the destination lot
     if (oB) {
@@ -1120,8 +1144,10 @@ export class Traffic {
     this.segDirIndex = null;
 
     // buckets per seg/dir/lane
+    for (const a of this.buckets.values()) { a.length = 0; this.listPool.push(a); }
     this.buckets.clear();
     this.enteredAt.clear();
+    for (const a of this.junctionCars.values()) { a.length = 0; this.listPool.push(a); }
     this.junctionCars.clear();
     for (const s of this.net.segs.values()) s.load[0] = s.load[1] = 0;
     this.junctionTargets.clear();
@@ -1132,7 +1158,7 @@ export class Traffic {
       if (c.dep > 0 || c.arr >= 0 || c.thru) continue; // in a lot (or its drive-thru lane): not on the road
       if (c.junction) {
         let arr = this.junctionCars.get(c.junction.node);
-        if (!arr) this.junctionCars.set(c.junction.node, (arr = []));
+        if (!arr) this.junctionCars.set(c.junction.node, (arr = this.listPool.pop() ?? []));
         arr.push(c);
         const nx = c.path[c.pi + 1];
         const ns = nx && this.net.segs.get(nx.seg);
@@ -1157,12 +1183,12 @@ export class Traffic {
       const st = c.path[c.pi];
       const key = st.seg * 16 + (st.dir > 0 ? 0 : 8) + c.lane;
       let arr = this.buckets.get(key);
-      if (!arr) this.buckets.set(key, (arr = []));
+      if (!arr) this.buckets.set(key, (arr = this.listPool.pop() ?? []));
       arr.push(c);
       const seg = this.net.segs.get(st.seg);
       if (seg) seg.load[st.dir > 0 ? 0 : 1]++;
     }
-    for (const arr of this.buckets.values()) arr.sort((a, b) => a.s - b.s);
+    for (const arr of this.buckets.values()) if (arr.length > 1) sortByS(arr);
     this.mergeBlocks.clear();
     this.lotLead.clear();
     this.lotCount.clear();
@@ -1325,14 +1351,16 @@ export class Traffic {
             // cleared it; parallel paths go together. Not for a rear still in the box
             // once its car is out: two trucks on a short block each waited for the
             // other's rear, for good)
-            const others = inBox.filter((o) => o.crashed === 0 && o.junction && (o.junction.fromSeg !== seg.id || o.junction.fromLane !== c.lane));
             const nx = c.path[c.pi + 1], ns = nx && this.net.segs.get(nx.seg);
-            let mine: V2[] | null = null;
-            if (others.length && ns) { const K = this.curveFor(c, seg, st, ns, nx); mine = Traffic.curvePts(K.p0, K.c1, K.c2, K.p2); }
-            // (a straight run through the box sweeps no wider than its path)
-            const ta = this.endTangent(seg, st.dir, true), tb = ns ? this.endTangent(ns, nx.dir, false) : ta;
-            const myBend = Math.abs(Math.atan2(ta.x * tb.z - ta.z * tb.x, ta.x * tb.x + ta.z * tb.z));
-            if (mine && others.some((o) => this.crossesBox(mine!, o, o.junction!.fromSeg === seg.id || myBend < 0.5 ? 0 : c.len))) {
+            let hit = false;
+            for (const o of inBox) {
+              if (o.crashed !== 0 || !o.junction || (o.junction.fromSeg === seg.id && o.junction.fromLane === c.lane) || !ns) continue;
+              // (my path through the box and how much it bends: the same until I change lane or the roads change)
+              const K = c.boxPath;
+              const mine = K && K.path === c.path && K.pi === c.pi && K.lane === c.lane && K.turn === c.turn && K.lat === c.lat && K.epoch === this.netEpoch ? K : (c.boxPath = this.boxPathFor(c, seg, st, ns, nx));
+              if (this.crossesBox(mine.pts, o, o.junction.fromSeg === seg.id || mine.bend < 0.5 ? 0 : c.len, mine.bb)) { hit = true; break; }
+            }
+            if (hit) {
               const g5 = exitS - this.stopBack(nodeId, seg.id, c.lane) - c.s;
               if (g5 < gap) { gap = g5; dv = c.v; hold = 'all-way stop'; }
             }
@@ -1637,7 +1665,7 @@ export class Traffic {
     // bend: the next lane can start a little behind this one) is a sideways
     // blend of a few centimetres, not a curve that doubles back
     if (K.d < 1.5 && (K.p2.x - K.p0.x) * K.t1.x + (K.p2.z - K.p0.z) * K.t1.z < 0.5) L = 0;
-    c.junction = { t: Math.min(1, over / Math.max(2, L)), len: Math.max(2, L), arc: L, p0: K.p0, c1: K.c1, c2: K.c2, p2: K.p2, t1: K.t1, t2: K.t2, lut, y0: K.y0, y1: K.y1, node: nodeId, fromSeg: seg.id, lane2: K.lane2, fromDir: st.dir, fromLane: c.lane, fresh: true };
+    c.junction = { t: Math.min(1, over / Math.max(2, L)), len: Math.max(2, L), arc: L, p0: K.p0, c1: K.c1, c2: K.c2, p2: K.p2, t1: K.t1, t2: K.t2, lut, y0: K.y0, y1: K.y1, node: nodeId, fromSeg: seg.id, lane2: K.lane2, fromDir: st.dir, fromLane: c.lane, fresh: true, pts: undefined, bb: undefined };
     // (visible to everyone else this step: two cars can't both take an empty box at once)
     let inBox = this.junctionCars.get(nodeId);
     if (!inBox) this.junctionCars.set(nodeId, (inBox = []));
@@ -1659,6 +1687,20 @@ export class Traffic {
     return { p0, c1, c2, p2, t1, t2, d, lane2, y0: f0.y, y1: P2.y };
   }
 
+  /** A car's own path through the box ahead, its bounds, and how much it bends (the all-way stop's test; cached on the car) */
+  private boxPathFor(c: Car, seg: RSeg, st: Step, ns: RSeg, nx: Step): NonNullable<Car['boxPath']> {
+    const K = this.curveFor(c, seg, st, ns, nx), pts = Traffic.curvePts(K.p0, K.c1, K.c2, K.p2);
+    const ta = this.endTangent(seg, st.dir, true), tb = this.endTangent(ns, nx.dir, false);
+    const bend = Math.abs(Math.atan2(ta.x * tb.z - ta.z * tb.x, ta.x * tb.x + ta.z * tb.z));
+    return { path: c.path, pi: c.pi, lane: c.lane, turn: c.turn, lat: c.lat, epoch: this.netEpoch, pts, bend, bb: Traffic.bounds(pts) };
+  }
+
+  private static bounds(pts: V2[]): [number, number, number, number] {
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+    for (const p of pts) { if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x; if (p.z < z0) z0 = p.z; if (p.z > z1) z1 = p.z; }
+    return [x0, z0, x1, z1];
+  }
+
   private static curvePts(p0: V2, c1: V2, c2: V2, p2: V2): V2[] {
     const out: V2[] = [];
     for (let i = 0; i <= 20; i++) out.push(cubicAt(p0, c1, c2, p2, i / 20));
@@ -1672,10 +1714,15 @@ export class Traffic {
    * on from opposite roads, right turns) don't.
    */
   /** Does path `mine` come near car `o`'s path through the box, from its rear on? `myLen` 0: side by side from one road (no allowance for long bodies). */
-  private crossesBox(mine: V2[], o: Car, myLen = 5): boolean {
+  private crossesBox(mine: V2[], o: Car, myLen = 5, bb?: [number, number, number, number]): boolean {
     const J = o.junction ?? o.prevJ;
     if (!J) return false;
     const pts = (J.pts ??= Traffic.curvePts(J.p0, J.c1, J.c2, J.p2));
+    if (bb) {
+      // (paths whose bounds are further apart than the widest reach below can't come near: most pairs, at once)
+      const ob = (J.bb ??= Traffic.bounds(pts)), reach = 2.6 + 0.15 * Math.max(0, o.len - 5) + 0.15 * Math.max(0, myLen - 5);
+      if (ob[0] - bb[2] > reach || bb[0] - ob[2] > reach || ob[1] - bb[3] > reach || bb[1] - ob[3] > reach) return false;
+    }
     const from = clamp((this.pastLine(o) - o.len) / Math.max(1, J.len), 0, 1);
     // (a long body cuts inside its path in the middle of a turn: a semi's by a metre
     // or two; at the ends of the curves, where the bodies are straight, it doesn't)
@@ -1900,6 +1947,37 @@ export class Traffic {
    * along the junction curve it is crossing (and straight back onto the
    * approach before it), or along the curve it just left.
    */
+  /** scratch for place(): the two axles' points, filled in place each car (a thousand cars made ten thousand objects a step) */
+  private ppA: PathPoint = { x: 0, z: 0, y: 0, tx: 0, tz: 0 };
+  private ppB: PathPoint = { x: 0, z: 0, y: 0, tx: 0, tz: 0 };
+  /** pathPoint into `out`: the same numbers, worked out without a temporary object on a lane (where nearly every car is) */
+  private pathPointInto(c: Car, back: number, out: PathPoint): PathPoint {
+    const st = c.path[c.pi], P = c.prevJ;
+    if (c.junction || (P && c.prevEntryS !== undefined && c.s - back < c.prevEntryS)) {
+      const q = this.pathPoint(c, back);
+      out.x = q.x; out.z = q.z; out.y = q.y; out.tx = q.tx; out.tz = q.tz;
+      return out;
+    }
+    const seg = this.net.segs.get(st.seg)!, s = c.s - back;
+    if (!Number.isFinite(c.lat)) c.lat = laneOffset(ROAD_TYPES[seg.type], c.lane);
+    // (frameAt and locate, inline)
+    const S = seg.samp, cum = S.cum, d = clamp(st.dir > 0 ? s : seg.length - s, 0, seg.length);
+    let i: number, f: number;
+    if (d <= 0) { i = 0; f = 0; }
+    else if (d >= S.length) { i = cum.length - 2; f = 1; }
+    else {
+      let lo = 0, hi = cum.length - 1;
+      while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cum[m] <= d) lo = m; else hi = m; }
+      i = lo; f = (d - cum[lo]) / (cum[hi] - cum[lo] || 1);
+    }
+    const a = S.pts[i], b = S.pts[i + 1], tt = sampleTangent(seg, i), tx = tt.x * st.dir, tz = tt.z * st.dir;
+    out.x = lerp(a.x, b.x, f) + -tz * c.lat;
+    out.z = lerp(a.z, b.z, f) + tx * c.lat;
+    out.y = lerp(seg.hs[i], seg.hs[i + 1], f);
+    out.tx = tx; out.tz = tz;
+    return out;
+  }
+
   private pathPoint(c: Car, back: number): PathPoint {
     const J = c.junction;
     // (along the curve's real length: a bend in the road with no box has none)
@@ -1950,7 +2028,7 @@ export class Traffic {
       // rear wheels are along the path (lane, junction curve, or the curve just
       // left), so a long truck behind a short car is drawn behind it, and the
       // heading turns smoothly as the car moves onto and off a curve
-      const len = c.len, fA = this.pathPoint(c, len * 0.14), rA = this.pathPoint(c, len * 0.86);
+      const len = c.len, fA = this.pathPointInto(c, len * 0.14, this.ppA), rA = this.pathPointInto(c, len * 0.86, this.ppB);
       x = (fA.x + rA.x) / 2;
       z = (fA.z + rA.z) / 2;
       y = (fA.y + rA.y) / 2 + 0.12;

@@ -210,6 +210,14 @@ function peopleOf(b: Bld): number {
 const trashDaysOf = (b: ZB, bs: BS) => bs.garbage / Math.max(0.0005, trashOf(b));
 /** days a building can stay critical before it's abandoned */
 const ABANDON_DAYS = 14;
+/**
+ * Days an abandoned building stands before it's torn down. At 45 days with no warning, Appalachia lost a
+ * third of its buildings when its landfill filled, before the player could act (docs/PLAYTEST_6.md). Now
+ * the game says how many come down and when the first does: once any are within DEMOLISH_WARN[0] days (at
+ * most every 10 days), and urgently within DEMOLISH_WARN[1] (at most every 5). The owner's call, 2026-10-02.
+ */
+const DEMOLISH_DAYS = 90;
+const DEMOLISH_WARN = [30, 7];
 /** "12 days", "5 months", "38 years" */
 const spanOf = (days: number) => (days < 120 ? `${Math.round(days)} day${Math.round(days) === 1 ? '' : 's'}` : days < 730 ? `${Math.round(days / 30.4)} months` : `${Math.round(days / 365)} years`);
 
@@ -349,6 +357,8 @@ const S = {
   emergency: null as EmergencyView | null,
   /** buildings abandoned on each of the last few days, newest last */
   abandonedDays: [] as number[],
+  /** the day of the last warning that abandoned buildings come down soon, per DEMOLISH_WARN */
+  demolishWarned: [] as number[],
   /** buildings cut off per utility yesterday (to note when a shortage starts) */
   cutWas: { power: 0, water: 0, sewage: 0 } as Record<Util, number>,
   icons: null as ProblemIcons | null,
@@ -1104,6 +1114,8 @@ function fields(g: Game, fac: Fac[], zoned: ZB[]) {
 function consequences(g: Game, zoned: ZB[]) {
   const c = { noPower: 0, noWater: 0, noSewage: 0, trash: 0, crime: 0, sick: 0, abandoned: 0 };
   let newlyAbandoned = 0;
+  // abandoned buildings within a warning's days of coming down: how many, the soonest, and what keeps people out
+  const coming = DEMOLISH_WARN.map(() => ({ n: 0, soonest: Infinity, by: new Map<Need, number>() }));
   for (const b of zoned) {
     if (b.state !== 'active' || !g.buildings.list.has(b.id)) continue;
     const bs = bsOf(b);
@@ -1128,8 +1140,29 @@ function consequences(g: Game, zoned: ZB[]) {
       b.abandoned++;
       bs.ok = critical ? 0 : bs.ok + 1;
       if (bs.ok >= 4) { g.buildings.setAbandoned(b, false); bs.bad = 0; }
-      else if (b.abandoned >= 45) { g.buildings.demolish(b, 'abandoned'); S.b.delete(b.id); }
+      else if (b.abandoned >= DEMOLISH_DAYS) { g.buildings.demolish(b, 'abandoned'); S.b.delete(b.id); }
+      else if (critical) {
+        const left = DEMOLISH_DAYS - b.abandoned, need: Need = !bs.pw ? 'power' : !bs.wa ? 'water' : !bs.se ? 'sewage' : td > TRASH_CRIT ? 'garbage' : 'health';
+        DEMOLISH_WARN.forEach((w, i) => {
+          if (left > w) return;
+          const k = coming[i];
+          k.n++; k.soonest = Math.min(k.soonest, left); k.by.set(need, (k.by.get(need) ?? 0) + 1);
+        });
+      }
     }
+  }
+  // how many abandoned buildings come down soon, when the first does, and what brings their people back
+  // (the urgent warning first; each again only after a while, not for every building as it crosses)
+  for (let i = DEMOLISH_WARN.length - 1; i >= 0; i--) {
+    const k = coming[i], every = i === DEMOLISH_WARN.length - 1 ? 5 : 10;
+    if (!k.n || S.day - (S.demolishWarned[i] ?? -1e9) < every) continue;
+    S.demolishWarned[i] = S.day;
+    let top: Need = 'garbage', topN = 0;
+    for (const [need, n] of k.by) if (n > topN) { topN = n; top = need; }
+    const one = k.n === 1, what = `${k.n} abandoned building${one ? '' : 's'}`;
+    g.sim.alert(i === DEMOLISH_WARN.length - 1 ? 'crit' : 'warn', `🏚️ ${what} within ${DEMOLISH_WARN[i]} days: the first comes down in ${k.soonest} days (${NEED[top].failing})`);
+    g.toast(`${what} will be torn down within ${DEMOLISH_WARN[i]} days, the first in ${k.soonest}: ${one ? "it's" : "they're"} ${NEED[top].failing}. Fix it in Services → ${NEED[top].label} and people move back in, or bulldoze ${one ? 'it' : 'them'}.`, true);
+    break;
   }
   Object.assign(S.counts, c);
   const share = (n: number) => (zoned.length ? n / zoned.length : 0);
@@ -1571,7 +1604,7 @@ export function problemText(g: Game, id: number): string | null {
   const notYet = fixDef && !svcUnlocked(g, fixDef) ? ` (${fixDef.name} unlocks at ${unlockAt(fixDef.unlock)}; until then it's a cost of growing)` : '';
   const why: Record<Problem, string> = {
     fire: 'On fire! A fire station within reach puts it out; without one it can spread (Services → Fire).',
-    abandoned: 'Abandoned: its people moved out. It needs its utilities and services back, or bulldoze it.',
+    abandoned: `Abandoned: its people moved out. It comes down in ${Math.max(0, DEMOLISH_DAYS - (b.abandoned ?? 0))} days unless its utilities and services come back; or bulldoze it.`,
     power: 'No electricity: its roads reach no power plant and no highway to import from. Build a plant or connect its roads (Services → Power).',
     water: 'No running water: its roads reach no pump and no highway to import from. Build one or connect its roads (Services → Water).',
     sewage: 'No sewage: its roads reach no outfall and no highway to export to. Build one or connect its roads (Services → Sewage).',

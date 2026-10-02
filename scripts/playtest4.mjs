@@ -230,7 +230,7 @@ const rec = await page.evaluate(() => {
   g.ui.refreshNow();
   const card = document.querySelector('.emergency');
   const out = { days, level: g.emergency()?.level, text: card && !card.hidden ? card.textContent : '', alerts: g.sim.alerts.map((a) => a.text).slice(-4) };
-  // the empty lots regrow (abandoned buildings come down after 45 days): homes nearest the full
+  // the empty lots regrow (abandoned buildings come down after 90 days, DEMOLISH_DAYS): homes nearest the full
   // landfill go to the new one's trucks, not to the full one (which used to keep them)
   d.run(80);
   const occupied = [...g.buildings.list.values()].filter((b) => b.zone !== 'service' && b.zone !== 'landmark' && b.state === 'active' && b.abandoned === undefined);

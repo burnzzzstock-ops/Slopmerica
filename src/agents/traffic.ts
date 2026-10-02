@@ -46,6 +46,8 @@ export interface Car {
   pedNode?: number;
   /** what it's following or waiting for on the road this step (the nearest of them; unset with the road clear ahead) */
   hold?: Hold;
+  /** seconds stopped at the line with no room past the box (REROUTE_T) */
+  boxWait?: number;
   kind: VehicleKind;
   path: Step[];
   pi: number;
@@ -183,6 +185,13 @@ const COURTESY_HOLD_LONG = 35;
 const COURTESY_CYCLE_LONG = 50;
 /** cars that can wait in one lot to pull out before its building starts no more trips */
 const LOT_QUEUE_MAX = 3;
+/**
+ * Gridlock: a ring of full blocks, each lane's front car held by "no room past the box" on the next,
+ * stood for good (a 30-minute >>> soak of a 5,000-person Florida county: nine blocks, 59 cars, still
+ * there a minute later). A front car held that way this long takes another way out of the junction,
+ * if one has room and still gets it where it's going, as people do, and the ring loses a car.
+ */
+const REROUTE_T = 20;
 /** drive-thru: seconds at the window per car (plus up to THRU_SERVE_VAR more), and the pace up the lane */
 const THRU_SERVE = 14;
 const THRU_SERVE_VAR = 12;
@@ -318,14 +327,65 @@ export class Traffic {
     const nx = c.path[c.pi + 1];
     const ns = nx && this.net.segs.get(nx.seg);
     if (!ns) return true;
+    return this.roomOn(ns, nx.dir, c.turn, c.lane);
+  }
+
+  /** Room past the box on the lane a car in `lane` turning `turn` joins on this road, going this way */
+  private roomOn(ns: RSeg, dir: 1 | -1, turn: number, lane: number): boolean {
     const lanesN = ROAD_TYPES[ns.type].lanesPerDir;
-    const lane = c.turn < 0 ? lanesN - 1 : c.turn > 0 ? 0 : Math.min(c.lane, lanesN - 1);
-    const k = nx.seg * 16 + (nx.dir > 0 ? 0 : 8) + lane;
-    const entryS = this.entryOf(ns, nx.dir);
+    const l2 = turn < 0 ? lanesN - 1 : turn > 0 ? 0 : Math.min(lane, lanesN - 1);
+    const k = ns.id * 16 + (dir > 0 ? 0 : 8) + l2;
+    const entryS = this.entryOf(ns, dir);
     const q = this.buckets.get(k);
     const inBox = this.junctionTargets.get(k) ?? 0;
     const room = q && q.length ? q[0].s - q[0].len - entryS : Infinity;
     return room > 3 + inBox * 7;
+  }
+
+  /** front cars that took another way out of a full junction (REROUTE_T), for tests */
+  reroutes = 0;
+  /** seconds held at the line by a full lane past the box before a front car goes another way (REROUTE_T; a test sets Infinity to compare without it) */
+  rerouteAfter = REROUTE_T;
+
+  /**
+   * Another way out of the junction ahead for a car held at the line (gridlock): any other road
+   * from the node, not back the way it came, with room past the box on the lane it would join,
+   * a turn it can make from the lane it's in, and a route on from there to where it's going.
+   * The cheapest such way, or false.
+   */
+  private reroute(c: Car): boolean {
+    const st = c.path[c.pi], nx = c.path[c.pi + 1], seg = this.net.segs.get(st.seg);
+    if (!nx || !seg) return false;
+    const nodeId = st.dir > 0 ? seg.b : seg.a, node = this.net.nodes.get(nodeId);
+    const end = c.path[c.path.length - 1], segD = this.net.segs.get(end.seg);
+    if (!node || !segD) return false;
+    const sD = end.dir > 0 ? c.endS : segD.length - c.endS;
+    const lanes = ROAD_TYPES[seg.type].lanesPerDir;
+    let best: { steps: Step[]; endS: number; cost: number } | null = null;
+    for (const sid of node.segs) {
+      if (sid === nx.seg || sid === st.seg) continue;
+      const s2 = this.net.segs.get(sid);
+      if (!s2) continue;
+      const dir: 1 | -1 = s2.a === nodeId ? 1 : -1;
+      if (dir < 0 && ROAD_TYPES[s2.type].oneWay) continue;
+      // (the turn as planTurn would call it: across the lane beside it is no way out)
+      const t1 = this.endTangent(seg, st.dir, true), t2 = this.endTangent(s2, dir, false);
+      const ang = Math.abs(Math.atan2(t1.x * t2.z - t1.z * t2.x, t1.x * t2.x + t1.z * t2.z));
+      const turn = ang < 0.35 || node.segs.length <= 2 ? 0 : t2.x * -t1.z + t2.z * t1.x > 0 ? -1 : 1;
+      if (lanes > 1 && ((turn > 0 && c.lane !== 0) || (turn < 0 && c.lane !== lanes - 1))) continue;
+      if (!this.roomOn(s2, dir, turn, c.lane)) continue;
+      const rt = this.route(s2, dir > 0 ? Math.min(2, s2.length / 2) : Math.max(s2.length - 2, s2.length / 2), segD, sD);
+      if (!rt || rt.steps[0].seg !== s2.id || rt.steps[0].dir !== dir) continue;
+      let cost = 0;
+      for (const x of rt.steps) { const s3 = this.net.segs.get(x.seg); if (s3) cost += this.segCost(s3, x.dir > 0 ? 0 : 1); }
+      if (!best || cost < best.cost) best = { steps: rt.steps, endS: rt.endS, cost };
+    }
+    if (!best) return false;
+    c.path = [st, ...best.steps];
+    c.pi = 0;
+    c.endS = best.endS;
+    c.turnFor = -1;
+    return true;
   }
   flowEma = 1;
   speedMul = 1;
@@ -1074,6 +1134,15 @@ export class Traffic {
       this.addMergeBlock(c, pulling && !c.committed);
     }
 
+    // gridlock: a front car held too long by a full lane past the box goes another way (REROUTE_T)
+    for (const arr of this.buckets.values()) {
+      const c = arr[arr.length - 1];
+      if (c && c.crashed === 0 && (c.boxWait ?? 0) > this.rerouteAfter) {
+        c.boxWait = 0;
+        if (this.reroute(c)) this.reroutes++;
+      }
+    }
+
     let flowSum = 0, flowN = 0;
     const camX = camTarget.x, camZ = camTarget.z;
     for (const arr of this.buckets.values()) {
@@ -1256,6 +1325,7 @@ export class Traffic {
         c.brakeT = acc < -1.2 ? 0.6 : Math.max(0, c.brakeT - dt);
         c.acc = acc;
         c.hold = gap < Infinity ? hold : undefined;
+        c.boxWait = c.hold === 'no room past the box' && c.v < 0.5 ? (c.boxWait ?? 0) + dt : 0;
         c.v = Math.max(0, c.v + acc * dt);
         const move = Math.min(c.v * dt, Math.max(0, gap + 0.5));
         c.s += move;

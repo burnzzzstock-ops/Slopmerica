@@ -13,10 +13,10 @@
 //   road     the road meshes, for scale (what a lamp-lit road reads at in the same frame)
 // usage: BASE_URL=http://127.0.0.1:5210 node scripts/nightlook.mjs [quality, default high]
 //   URLS=before=http://127.0.0.1:5210,after=http://127.0.0.1:5220  runs the builds one after the other in this one job (a slot, one wait)
-//   CASES=trees,cars (default both)   MOON=0 (moonless; 0.5 is a full moon)   HOUR=23   OUT=dir (writes <quality>-<case>-<build>.jpg, 1280x720 q85)
+//   CASES=trees,cars,lightcars (default trees,cars; lightcars = the cars case with white, silver and red paint)   MOON=0 (moonless; 0.5 is a full moon)   HOUR=23   OUT=dir (writes <quality>-<case>-<build>.jpg, 1280x720 q85)
 //   TAG=before|after (the build's name when BASE_URL is used)   PHONE=1 (390x844 @3x touch)   JSON=file (appends one JSON line per frame)
-//   SWEEP_TREE=0,0.5,1  SWEEP_CAR=0/0,0.2/0.3 (a number, or top/rim for the car sheen) also draw the close-up at each value of the build's tuning uniform
-//   COLORS=e0e0e0,9aa0a6,b3202a  paint of the three cars (hex; default three dark ones)
+//   SWEEP_TREE=0,0.5,1  SWEEP_CAR=0/0/0,0.6/0.3/0.1 (a number, or top/rim/side for the car sheen) also draw the close-up at each value of the build's tuning uniform
+//   COLORS=e0e0e0,9aa0a6,b3202a  paint of the three cars in the cars case (hex; default three dark ones)
 //   MIN_TREE / MIN_CAR: exit 1 when the last build's median luma is under the number (a gate once a fix is in)
 import { chromium } from 'playwright-core';
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -78,12 +78,12 @@ async function closeUp(page, name, setup, sweep) {
         // (a number, or "a/b" for the car sheen's two terms)
         const set = (v) => { const u = NL[sweep.uniform]; if (u.value.set) u.value.set(...String(v).split('/').map(Number)); else u.value = Number(v); };
         const was = keep.clone ? keep.clone() : keep;
-        for (const v of sweep.values) { set(v); frames.push({ label: `k${String(v).replace('/', '_')}`, shot: draw() }); }
+        for (const v of sweep.values) { set(v); frames.push({ label: `k${String(v).replaceAll('/', '_')}`, shot: draw() }); }
         if (was.clone) NL[sweep.uniform].value.copy(was); else NL[sweep.uniform].value = was;
       }
     }
     const q = (a, p) => { if (!a.length) return null; a.sort((x, y) => x - y); return Math.round(a[Math.floor(p * (a.length - 1))] * 10) / 10; };
-    const stat = (a) => ({ n: a.length, pct: Math.round((a.length / (w * h)) * 1000) / 10, p10: q(a, 0.1), median: q(a, 0.5), p90: q(a, 0.9), mean: a.length ? Math.round((a.reduce((s, v) => s + v, 0) / a.length) * 10) / 10 : null });
+    const stat = (a) => ({ n: a.length, pct: Math.round((a.length / (w * h)) * 1000) / 10, p10: q(a, 0.1), median: q(a, 0.5), p75: q(a, 0.75), p90: q(a, 0.9), readable: a.length ? Math.round((a.filter((v) => v >= 20).length / a.length) * 1000) / 10 : null, mean: a.length ? Math.round((a.reduce((s, v) => s + v, 0) / a.length) * 10) / 10 : null });
     const outFrames = frames.map(({ label, shot }) => {
       const L = [[], [], []]; let sum = 0;
       for (let i = 0; i < w * h; i++) {
@@ -123,10 +123,23 @@ const treeSetup = async (g) => {
     // Low has no civic layer: the forest tree nearest the centre (drawn near, as instanced meshes with leaf cards)
     g.rts.setView(C.x, C.z, 60, 2.4, 0.4, true);
     for (let i = 0; i < 6; i++) g.frame(0.05, false);
-    let best = 1e18;
-    for (const im of g.trees.near) {
-      const m = new (g.camera.matrixWorld.constructor)();
-      for (let i = 0; i < im.count; i++) { im.getMatrixAt(i, m); const x = m.elements[12], z = m.elements[14], d = Math.hypot(x - C.x, z - C.z); if (d < best) { best = d; tree = { x, y: m.elements[13], z, id: 'forest' }; } }
+    // (a tree that counts: full size, not under a building or on a road, with some lamp light on the ground at its foot: the pool texture's
+    // red channel is read back from the canvas it was painted on)
+    const NL = await import('/src/world/nightLights.ts'), R4 = NL.LAMPS.uLampRect.value, cvs = g.nightLights.canvas, c2 = cvs.getContext('2d');
+    const pool = (x, z) => { const u = (x - R4.x) * R4.z, v = (z - R4.y) * R4.w; if (u < 0 || v < 0 || u > 1 || v > 1) return 0; return c2.getImageData(Math.min(cvs.width - 1, Math.floor(u * cvs.width)), Math.min(cvs.height - 1, Math.floor(v * cvs.height)), 1, 1).data[0]; };
+    g.nightLights.paint();
+    const m = new (g.camera.matrixWorld.constructor)();
+    for (const lit of [40, 10, 0]) { // (relaxed only when no tree stands in a lamp's light)
+      let best = 1e18;
+      for (const im of g.trees.near) {
+        for (let i = 0; i < im.count; i++) {
+          im.getMatrixAt(i, m);
+          const e = m.elements, sc = Math.hypot(e[0], e[1], e[2]), x = e[12], z = e[14], d = Math.hypot(x - C.x, z - C.z);
+          if (sc < 0.6 || d >= best || g.buildings.near(x, z, 8).length || g.net.pickSeg(x, z, 10) || pool(x, z) < lit) continue;
+          best = d; tree = { x, y: e[13], z, id: `forest (pool ${pool(x, z)})` };
+        }
+      }
+      if (tree) break;
     }
     kind = 'forest tree (near mesh)';
   }
@@ -188,15 +201,17 @@ for (const [label, base] of builds) {
   });
   console.log(`[${label}] ${base} civic layer: ${civic}`);
   await page.evaluate((c) => { window.__center = c[0]; window.__colors = c[1]; }, [center, process.env.COLORS || '']);
-  const spec = { trees: treeSetup, cars: carSetup };
+  const spec = { trees: treeSetup, cars: carSetup, lightcars: carSetup };
   for (const c of cases) {
+    // (lightcars: the same shot with pale and coloured paint, to see what a fix does to the cars that were never the problem)
+    await page.evaluate((col) => { window.__colors = col; }, c === 'lightcars' ? 'e0e0e0,9aa0a6,b3202a' : process.env.COLORS || '');
     let r;
-    try { r = await closeUp(page, c, spec[c], sweeps[c]); } catch (e) { console.log(`[${label}] ${c}: FAILED`, String(e.message).split('\n')[0]); bad++; continue; }
+    try { r = await closeUp(page, c, spec[c], c === 'lightcars' ? sweeps.cars : sweeps[c]); } catch (e) { console.log(`[${label}] ${c}: FAILED`, String(e.message).split('\n')[0]); bad++; continue; }
     for (const f of r.frames) {
       const suffix = f.label ? `-${f.label}` : '';
       if (process.env.OUT) { mkdirSync(process.env.OUT, { recursive: true }); writeFileSync(`${process.env.OUT}/${quality}-${c}-${label}${suffix}.jpg`, Buffer.from(f.jpg, 'base64')); }
       delete f.jpg;
-      console.log(`[${label}] ${quality} ${c}${f.label ? ' ' + f.label : ''}: ${r.size}  target median ${f.target.median}  (p10 ${f.target.p10}, p90 ${f.target.p90}, ${f.target.n} px = ${f.target.pct}% of the frame)  road median ${f.road.median}  frame mean ${f.frameMean}`);
+      console.log(`[${label}] ${quality} ${c}${f.label ? ' ' + f.label : ''}: ${r.size}  target median ${f.target.median}  (p10 ${f.target.p10}, p75 ${f.target.p75}, p90 ${f.target.p90}, mean ${f.target.mean}, ${f.target.readable}% of its pixels at luma 20+; ${f.target.n} px = ${f.target.pct}% of the frame)  road median ${f.road.median}  frame mean ${f.frameMean}`);
       if (process.env.JSON) appendFileSync(process.env.JSON, JSON.stringify({ quality, case: c, build: label, sweep: f.label, moon, hour, size: r.size, where: r.where, ...f }) + '\n');
     }
     console.log(`   where: ${JSON.stringify(r.where)}`);

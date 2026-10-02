@@ -479,6 +479,27 @@ export function overloadedServices(g: Game): { name: string; icon: string; cat: 
   return out.sort((a, b) => b.load / b.capacity - a.load / a.capacity);
 }
 
+/**
+ * The people a new facility of this kind at (x, z) would take from each one of its kind now, by id: everyone
+ * whose building it would be nearer by drive time, within its reach, as the one serving them counts them
+ * (each building goes to its nearest by drive time, so a clinic on a lot round the corner from an
+ * overloaded one can take next to none of its load). Reads only: for tools (the late-game bot's relief lot).
+ */
+export function takeFrom(g: Game, id: string, x: number, z: number): Record<number, number> {
+  const d = SERVICE_DEFS.get(id), now = d?.cov ? S.covT[d.cov] : undefined, out: Record<number, number> = {};
+  const p = d && now?.size ? g.net.pickSeg(x, z, 45) : null;
+  if (!d || !now || !p) return out;
+  const half = segTime(p.seg) / 2, reach = d.reach ?? 1;
+  const mine = dijkstra(g, [{ node: p.seg.a, t: half, o: -1 }, { node: p.seg.b, t: half, o: -1 }], reach * 1.05);
+  const fac = new Map(facilities(g).map((f) => [f.id, f]));
+  for (const b of g.buildings.list.values()) {
+    if (!isZoned(b)) continue;
+    const was = reachOf(g, b, now), will = was && reachOf(g, b, mine), f = was && fac.get(was.o);
+    if (was && will && f && will.t < was.t && will.t < reach && was.t < (f.def.reach ?? 1)) out[was.o] = (out[was.o] ?? 0) + peopleOf(b);
+  }
+  return out;
+}
+
 /** Facilities being built: they cost nothing until they open, then upkeep plus running (the budget should know) */
 export function committedServices(g: Game): { n: number; perWk: number } {
   let n = 0, perWk = 0;
@@ -2384,4 +2405,4 @@ registerSystem({
 export function servicesSnapshot() {
   return { util: S.util, counts: { ...S.counts }, garbage: { ...S.garbage }, facilities: S.f.size, buildings: S.b.size, emergency: S.emergency };
 }
-(globalThis as unknown as { __services?: unknown }).__services = { snapshot: servicesSnapshot, place: placeService, canPlace: canPlaceService, findSpot: findServiceSpot, S, mergeUtilities, problemText, estimateRun: (g: Game, id: string, x: number, z: number) => estimateRun(g, SERVICE_DEFS.get(id)!, x, z), committedServices, overloadedServices, runningCosts: (g: Game) => runningCosts(g) };
+(globalThis as unknown as { __services?: unknown }).__services = { snapshot: servicesSnapshot, place: placeService, canPlace: canPlaceService, findSpot: findServiceSpot, S, mergeUtilities, problemText, estimateRun: (g: Game, id: string, x: number, z: number) => estimateRun(g, SERVICE_DEFS.get(id)!, x, z), committedServices, overloadedServices, takeFrom, runningCosts: (g: Game) => runningCosts(g) };

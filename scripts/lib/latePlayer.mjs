@@ -170,6 +170,34 @@ export function installLatePlayer(opts = {}) {
   };
   let seed = 12345;
   const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  // the lot near an overloaded station that takes most of its load: each building is served by its nearest
+  // station by drive time, so each lot is scored by the people the game would move from the overloaded one to
+  // it (SV.takeFrom, the game's own drive times; as the crow flies when the game hasn't got it), and half the
+  // people it would take from the others of its kind that are nearly full too (a town outgrowing all of them)
+  const reliefSpot = (id, kinds, o) => {
+    const site = [...g.buildings.list.values()].find((b) => b.zone === 'service' && kinds.includes(b.kind) && Math.hypot(b.x - o.x, b.z - o.z) < 1);
+    if (!site) return null;
+    const full = new Set([...g.buildings.list.values()].filter((b) => b !== site && b.zone === 'service' && kinds.includes(b.kind) && (SV.S.f.get(b.id)?.load ?? 0) >= o.capacity * 0.85).map((b) => b.id));
+    const near = [];
+    if (!SV.takeFrom) {
+      const sites = [...g.buildings.list.values()].filter((b) => b.zone === 'service' && kinds.includes(b.kind));
+      for (const b of zonedActive()) {
+        let d = Infinity, f0 = null;
+        for (const f of sites) { const df = Math.hypot(f.x - b.x, f.z - b.z); if (df < d) { d = df; f0 = f; } }
+        if (f0 === site) near.push({ b, d });
+      }
+    }
+    let best = null;
+    for (const r of [60, 120, 200, 300, 420]) for (let a = 0; a < 12; a++) {
+      const sp = SV.findSpot(g, id, o.x + Math.cos(a * 0.524 + r) * r, o.z + Math.sin(a * 0.524 + r) * r);
+      if (sp.reason || !SV.canPlace(g, id, sp.x, sp.z, sp.yaw).ok) continue;
+      let take = 0;
+      if (SV.takeFrom) for (const [k, n] of Object.entries(SV.takeFrom(g, id, sp.x, sp.z))) take += Number(k) === site.id ? n : full.has(Number(k)) ? n / 2 : 0;
+      else for (const h of near) if (Math.hypot(h.b.x - sp.x, h.b.z - sp.z) < h.d) take += Math.max(h.b.occ || 0, (h.b.cap || 0) * 0.3);
+      if (!best || take > best.take) best = { ...sp, take };
+    }
+    return best;
+  };
   const overloadFix = () => {
     let did = 0;
     for (const o of SV.overloadedServices(g)) {
@@ -177,8 +205,22 @@ export function installLatePlayer(opts = {}) {
       // station, so one built at the town's middle took none of its load (83 clinics in a
       // Florida run, the same one still overloaded)
       const c = Number.isFinite(o.x) ? { x: o.x, z: o.z } : centre();
-      const id = { fire: 'fireStation', police: 'sheriff', health: s.peakPop >= 2800 && s.money > 90000 ? 'hospital' : 'clinic', education: 'school', garbage: 'landfill', parks: 'park' }[o.cat];
-      if (id && build(id, c.x + (rnd() - 0.5) * 200, c.z + (rnd() - 0.5) * 200, `${o.name} overloaded ${o.load}/${o.capacity}`)) did++;
+      const why = `${o.name} overloaded ${o.load}/${o.capacity}`;
+      if (o.cat === 'health') {
+        // a clinic on the nearest free lot, at the built-up core's edge, took 19 to 960 people while the
+        // overloaded one kept 1,600-1,750 (botclinics: 10 clinics by 2,805 people). A person builds a hospital
+        // once they can (reach 200, room for 6,000), and before that a clinic where it takes the most load
+        if (s.money > 60000 + O.cushion && build('hospital', c.x, c.z, why)) { did++; continue; }
+        const sp = reliefSpot('clinic', ['clinic', 'hospital'], c);
+        // (no lot that takes 150 of them: one beside it, as before, adds room at least)
+        if (!sp || sp.take < 150) { bump('no lot would take an overloaded clinic\'s load'); if (build('clinic', c.x + (rnd() - 0.5) * 200, c.z + (rnd() - 0.5) * 200, why)) did++; continue; }
+        if (s.money !== Infinity && s.money < O.cushion * 0.5) { bump("can't afford clinic"); continue; }
+        const before = s.money;
+        if (SV.place(g, 'clinic', sp.x, sp.z, sp.yaw)) { P.built.clinic = (P.built.clinic || 0) + 1; P.spent += before - s.money; note(`built clinic (${why}; it takes ~${Math.round(sp.take)} people)`); did++; }
+        continue;
+      }
+      const id = { fire: 'fireStation', police: 'sheriff', education: 'school', garbage: 'landfill', parks: 'park' }[o.cat];
+      if (id && build(id, c.x + (rnd() - 0.5) * 200, c.z + (rnd() - 0.5) * 200, why)) did++;
     }
     return did;
   };

@@ -398,7 +398,10 @@ export class Traffic {
       const turn = ang < 0.35 || node.segs.length <= 2 ? 0 : t2.x * -t1.z + t2.z * t1.x > 0 ? -1 : 1;
       if (lanes > 1 && ((turn > 0 && c.lane !== 0) || (turn < 0 && c.lane !== lanes - 1))) continue;
       if (!this.roomOn(s2, dir, turn, c.lane)) continue;
-      const rt = this.route(s2, dir > 0 ? Math.min(2, s2.length / 2) : Math.max(s2.length - 2, s2.length / 2), segD, sD);
+      // (leaving the way it turns onto the road: planned from a point on it, the shortest way to a
+      // destination just past the jam turned straight back through the same box, and was no way out;
+      // round the block, it frees its place in the ring even if it comes back to the same lane)
+      const rt = this.route(s2, dir > 0 ? Math.min(2, s2.length / 2) : Math.max(s2.length - 2, s2.length / 2), segD, sD, dir);
       if (!rt || rt.steps[0].seg !== s2.id || rt.steps[0].dir !== dir) continue;
       let cost = 0;
       for (const x of rt.steps) { const s3 = this.net.segs.get(x.seg); if (s3) cost += this.segCost(s3, x.dir > 0 ? 0 : 1); }
@@ -728,12 +731,15 @@ export class Traffic {
     return (s.length / (t.speed * this.speedMul)) * (1 + 0.15 * Math.pow(vc * 1.6, 4)) + (s.blocked > 0 ? 300 : 0);
   }
 
-  /** A* from a point on segO to a point on segD. Positions are arc lengths along each seg. */
-  route(segO: RSeg, sO: number, segD: RSeg, sD: number): { steps: Step[]; startS: number; endS: number } | null {
+  /**
+   * A* from a point on segO to a point on segD. Positions are arc lengths along each seg.
+   * dirO: leave segO this way only (a car already pointed that way; not back the way it is facing).
+   */
+  route(segO: RSeg, sO: number, segD: RSeg, sD: number, dirO?: 1 | -1): { steps: Step[]; startS: number; endS: number } | null {
     const oneO = !!ROAD_TYPES[segO.type].oneWay, oneD = !!ROAD_TYPES[segD.type].oneWay;
     if (segO.id === segD.id && !(oneO && sD < sO)) {
       const dir: 1 | -1 = sD >= sO ? 1 : -1;
-      if (Math.abs(sD - sO) < 15) return null;
+      if (Math.abs(sD - sO) < 15 || (dirO && dir !== dirO)) return null;
       return { steps: [{ seg: segO.id, dir }], startS: dir > 0 ? sO : segO.length - sO, endS: dir > 0 ? sD : segD.length - sD };
     }
     // (a one-way trip back up its own street goes round the block)
@@ -749,13 +755,13 @@ export class Traffic {
     const speedO = ROAD_TYPES[segO.type].speed;
     // leaving segO toward a (dir -1) or b (dir +1)
     const A = this.net.nodes.get(segO.a)!, B = this.net.nodes.get(segO.b)!;
-    if (!oneO) {
+    if (!oneO && dirO !== 1) {
       g.set(A.id, sO / speedO);
       came.set(A.id, { prev: -1, seg: segO.id, dir: -1 });
       open.push(A.id, sO / speedO + H(A));
     }
     const gb = (segO.length - sO) / speedO;
-    if (!g.has(B.id) || gb < g.get(B.id)!) {
+    if (dirO !== -1 && (!g.has(B.id) || gb < g.get(B.id)!)) {
       g.set(B.id, gb);
       came.set(B.id, { prev: -1, seg: segO.id, dir: 1 });
       open.push(B.id, gb + H(B));

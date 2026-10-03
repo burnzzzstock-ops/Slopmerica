@@ -33,6 +33,16 @@ const setup = await page.evaluate(() => {
   let placed = false;
   for (const [dx, dz] of [[-10, 40], [-10, -40], [100, 40], [100, -40], [-100, 40], [200, 40]]) if (!placed && t.canPlaceDepot(cx + dx, cz + dz).ok) placed = t.placeDepot(cx + dx, cz + dz);
   const depot = [...g.buildings.list.values()].find((b) => b.kind === 'busDepot'); if (depot) { depot.state = 'active'; depot.progress = 1; }
+  // (and a landfill: with nobody taking their trash the homes were abandoned, and an abandoned home keeps its trash, so
+  // it stays empty until it comes down; since that's 90 days, not 45, there was often nobody left by the line to ride)
+  const SV = window.__services;
+  let landfill = null;
+  for (const [dx, dz] of [[-300, 70], [-300, -70], [-250, 110], [-250, -110], [250, 110], [250, -110]]) {
+    if (landfill) break;
+    const sp = SV.findSpot(g, 'landfill', cx + dx, cz + dz);
+    if (!sp.reason && SV.canPlace(g, 'landfill', sp.x, sp.z, sp.yaw).ok) landfill = SV.place(g, 'landfill', sp.x, sp.z, sp.yaw);
+  }
+  if (landfill) { landfill.state = 'active'; landfill.progress = 1; }
   // (and a factory between: with no goods the shops have no jobs, and nobody rides; the
   // demand bars used to keep adding bare shops, which is where the riders came from)
   d.zone(cx - 200, cz, 90, 'resHigh'); d.zone(cx + 200, cz, 90, 'comHigh'); d.zone(cx, cz, 45, 'industry');
@@ -40,9 +50,9 @@ const setup = await page.evaluate(() => {
   const ok = t.addDraftPoint(cx - 200, cz) && t.addDraftPoint(cx + 200, cz) && t.finishDraft();
   const line = [...t.lines.values()][0]; if (line) line.buses = 3;
   d.run(28);
-  return { placed, ok, cx, cz };
+  return { placed, ok, cx, cz, landfill: !!landfill };
 });
-check(setup.placed && setup.ok, `a depot and a two-stop line along one road (${JSON.stringify({ depot: setup.placed, line: setup.ok })})`);
+check(setup.placed && setup.ok && setup.landfill, `a depot, a landfill and a two-stop line along one road (${JSON.stringify({ depot: setup.placed, landfill: setup.landfill, line: setup.ok })})`);
 
 const state = () => page.evaluate(() => {
   const g = window.__game, t = g.transit, l = [...t.lines.values()][0], el = document.createElement('div');

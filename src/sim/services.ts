@@ -1456,7 +1456,7 @@ function initHooks(g: Game) {
     const miss = Math.max(S.counts.noPower, S.counts.noWater, S.counts.noSewage);
     if (miss > 0) {
       const hit = Math.min(35, (miss / n) * 80);
-      add('res', -hit, `${miss} buildings missing utilities`);
+      add('res', -hit, `${miss} building${miss === 1 ? '' : 's'} missing utilities`);
       add('com', -hit * 0.6, 'buildings missing utilities');
       add('ind', -hit * 0.6, 'buildings missing utilities');
     }

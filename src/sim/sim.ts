@@ -519,14 +519,16 @@ export class Sim {
     const why: DemandWhy = { res: [], com: [], ind: [], off: [] };
     const parts: DemandParts = { res: [], com: [], ind: [], off: [] };
     const part = (k: DemandKey, text: string, v: number, base = false) => { why[k].push(text); parts[k].push(base ? { text, v, base } : { text, v }); };
+    // (a count and its noun, singular at 1: the card read "1 more workers than jobs")
+    const many = (n: number, one: string, more = `${one}s`) => `${n} ${n === 1 ? one : more}`;
     const dm: Record<DemandKey, number> = { res: 30 + jobsTerm + boom - taxHit, com: retailTerm - taxHit, ind: goodsTerm + joblessTerm - taxHit, off: officeTerm - taxHit };
     part('res', 'new-town appetite', 30, true);
-    part('res', gap >= 0 ? `${Math.round(gap)} more jobs than workers` : `${Math.round(-gap)} more workers than jobs`, jobsTerm);
+    part('res', gap >= 0 ? `${many(Math.round(gap), 'more job')} than workers` : `${many(Math.round(-gap), 'more worker')} than jobs`, jobsTerm);
     if (boom) part('res', 'small-town boom', boom);
-    part('com', comCap < retailNeed ? `shoppers want ${Math.round(retailNeed - comCap)} more shop jobs` : `${Math.round(comCap - retailNeed)} too many shop jobs for ${P} people`, retailTerm);
-    part('ind', cap.industry < goodsNeed ? `shops need goods: ${Math.round(goodsNeed - cap.industry)} factory jobs short${dryShops ? ` (${dryShops} shop${dryShops === 1 ? ' has' : 's have'} nothing to sell)` : ''}` : 'enough factories for the shops', goodsTerm);
+    part('com', comCap < retailNeed ? `shoppers want ${many(Math.round(retailNeed - comCap), 'more shop job')}` : `${many(Math.round(comCap - retailNeed), 'shop job')} too many for ${many(P, 'person', 'people')}`, retailTerm);
+    part('ind', cap.industry < goodsNeed ? `shops need goods: ${many(Math.round(goodsNeed - cap.industry), 'factory job')} short${dryShops ? ` (${dryShops} shop${dryShops === 1 ? ' has' : 's have'} nothing to sell)` : ''}` : 'enough factories for the shops', goodsTerm);
     if (this.unemployment > 0.05) part('ind', `${Math.round(this.unemployment * 100)}% unemployed want work`, joblessTerm);
-    part('off', cap.office < officeNeed ? `${Math.round(officeNeed - cap.office)} office jobs wanted` : 'offices saturated', officeTerm);
+    part('off', cap.office < officeNeed ? `${many(Math.round(officeNeed - cap.office), 'office job')} wanted` : 'offices saturated', officeTerm);
     if (Math.abs(taxHit) > 2) for (const k of ['res', 'com', 'ind', 'off'] as const) part(k, `taxes at ${Math.round(this.taxRate * 100)}%`, -taxHit);
     // weather only damps (or boosts) demand that is already positive
     const wm = this.weatherDemandMul;

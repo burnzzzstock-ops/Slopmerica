@@ -100,11 +100,17 @@ function drawAtlas(): THREE.CanvasTexture {
 /** a building with no road link gets a bigger bubble: it's the one thing wrong with a whole landmark */
 const ROAD_ICON = PROBLEMS.indexOf('road'), ROAD_SCALE = 1.8;
 
-/** How big a bubble is in the world at `dist` from the camera (the shader and pick() share it). */
-function bubbleSize(dist: number, n: number, p?: Problem) {
-  if (n <= 1) return Math.min(22, Math.max(1.0, dist * 0.03)) * (p === 'road' ? ROAD_SCALE : 1);
+/**
+ * tan of half the default 50° view. A bubble's size is in the world, so on the screen it shrank as the view widened: a
+ * third of it at 110° (9 px on a phone, docs/AUDIT_ROUND8_UI.md S1). `wide` (tan of half the view over this) undoes it.
+ */
+const TAN25 = Math.tan((25 * Math.PI) / 180);
+
+/** How big a bubble is in the world at `dist` from the camera, in a view `wide` times the default's (the shader and pick() share it). */
+function bubbleSize(dist: number, n: number, p?: Problem, wide = 1) {
+  if (n <= 1) return Math.min(22, Math.max(1.0, dist * 0.03)) * (p === 'road' ? ROAD_SCALE : 1) * wide;
   // a neighbourhood's bubble keeps a readable size far out, and grows a little with its count
-  return Math.min(140, Math.max(3.2, dist * 0.035)) * Math.min(2, 1.25 + 0.12 * Math.log2(n));
+  return Math.min(140, Math.max(3.2, dist * 0.035)) * Math.min(2, 1.25 + 0.12 * Math.log2(n)) * wide;
 }
 
 export class ProblemIcons {
@@ -146,6 +152,8 @@ export class ProblemIcons {
           bool many = iCount > 1.5;
           // (a single icon's floor of 3.2 m made the ones next to the camera balloon to twice the others)
           float s = many ? clamp(dist * 0.035, 3.2, 140.0) * min(2.0, 1.25 + 0.12 * log2(iCount)) : clamp(dist * 0.03, 1.0, 22.0) * (abs(iIcon - ${ROAD_ICON.toFixed(1)}) < 0.5 ? ${ROAD_SCALE.toFixed(2)} : 1.0);
+          // the same size on the screen at any field of view (projectionMatrix[1][1] is 1 / tan of half of it)
+          s /= projectionMatrix[1][1] * ${TAN25.toFixed(6)};
           mv.xy += position.xy * s;
           vFade = 1.0 - (many ? smoothstep(3600.0, 4400.0, dist) : smoothstep(1400.0, 1900.0, dist));
           vUv = vec2((iIcon + uv.x) / ${COLS.toFixed(1)}, uv.y);
@@ -222,7 +230,7 @@ export class ProblemIcons {
   pick(camera: THREE.PerspectiveCamera, rect: DOMRect, cx: number, cy: number): ProblemItem | null {
     if (!this.mesh.visible) return null;
     let best: ProblemItem | null = null, bd = Infinity;
-    const k = rect.height / (2 * Math.tan((camera.fov * Math.PI) / 360));
+    const k = rect.height / (2 * Math.tan((camera.fov * Math.PI) / 360)), wide = 1 / (camera.projectionMatrix.elements[5] * TAN25);
     for (const it of this.items) {
       const n = it.n ?? 1;
       this.v.set(it.x, it.y, it.z);
@@ -231,7 +239,7 @@ export class ProblemIcons {
       this.v.project(camera);
       if (this.v.z > 1) continue;
       const sx = rect.left + ((this.v.x + 1) / 2) * rect.width, sy = rect.top + ((1 - this.v.y) / 2) * rect.height;
-      const half = (bubbleSize(dist, n, it.p) * k) / dist / 2 + 3;
+      const half = (bubbleSize(dist, n, it.p, wide) * k) / dist / 2 + 3;
       if (Math.abs(cx - sx) <= half && Math.abs(cy - sy) <= half * 1.4 && dist < bd) { bd = dist; best = it; }
     }
     return best;

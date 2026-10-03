@@ -53,6 +53,20 @@ export const LAMPS = {
   uLampOn: { value: 0 },
 };
 
+/**
+ * How much of a pool's light a tree takes, against the ground's 1: TREE_LAMP for the civic street trees (their foliage is a pale PBR
+ * texture), FOREST_LAMP for the forest trees' near meshes (a darker leaf atlas tinted by a dark instance colour, so they take more to read
+ * as much). Uniforms, so a test page can sweep them (scripts/nightlook.mjs).
+ */
+export const TREE_LAMP = { value: 1 };
+export const FOREST_LAMP = { value: 3 };
+/**
+ * Car paint and glass at night, as a share of the pool's light the gloss throws back: x on the panels that face up (the lamp overhead,
+ * mirrored), y along the grazing edges (the outline of the car), z on the sides (the lamp-lit ground, mirrored). Uniform so the same
+ * test page can sweep it.
+ */
+export const CAR_SHEEN = { value: new THREE.Vector3(0.6, 0.3, 0.05) };
+
 /** GLSL: uniforms for the fragment shader */
 export const LAMP_PARS = /* glsl */ `
 uniform sampler2D uLampMap;
@@ -79,11 +93,12 @@ export function bindLamps(sh: { uniforms: Record<string, THREE.IUniform> }) {
  * Give a plain MeshStandardMaterial (roads, sidewalks) the pools. Chains any
  * onBeforeCompile the material already has.
  */
-export function litByLamps(mat: THREE.MeshStandardMaterial) {
+export function litByLamps(mat: THREE.MeshStandardMaterial, share?: { name: string; u: THREE.IUniform<number> }) {
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (sh, r) => {
     prev?.call(mat, sh, r);
     bindLamps(sh);
+    if (share) sh.uniforms[share.name] = share.u;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vLampW;')
       .replace('#include <project_vertex>', `#include <project_vertex>
@@ -98,11 +113,11 @@ export function litByLamps(mat: THREE.MeshStandardMaterial) {
   vLampW = (modelMatrix * lw).xyz;
 }`);
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vLampW;\n${LAMP_PARS}`)
-      .replace('#include <lights_physical_fragment>', `${lampAdd('vLampW')}\n#include <lights_physical_fragment>`);
+      .replace('#include <common>', `#include <common>\nvarying vec3 vLampW;\n${share ? `uniform float ${share.name};\n` : ''}${LAMP_PARS}`)
+      .replace('#include <lights_physical_fragment>', `${lampAdd('vLampW', share?.name ?? '1.0')}\n#include <lights_physical_fragment>`);
   };
   const key = mat.customProgramCacheKey.bind(mat);
-  mat.customProgramCacheKey = () => key() + '|lamps';
+  mat.customProgramCacheKey = () => key() + (share ? `|lamps:${share.name}` : '|lamps');
   mat.needsUpdate = true;
 }
 

@@ -9,6 +9,7 @@ import type { MapData, TreeKind } from './maps';
 import type { Terrain } from './terrain';
 import { coverageMipmaps, createFoliageAtlas, makeTreeModel, padTransparent } from './foliage';
 import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from './atmos';
+import { bindLamps, FOREST_LAMP, LAMP_PARS, lampAdd } from './nightLights';
 import { newSeasonLook, sampleSeason } from './seasons';
 import type { MapId } from './maps';
 import { Shore } from './shore';
@@ -146,6 +147,8 @@ export class Trees {
         sh.uniforms.uTime = this.uniforms.uTime;
         sh.uniforms.uLeaf = decid ? this.uniforms.uLeaf : { value: 1 };
         bindAtmos(sh);
+        bindLamps(sh);
+        sh.uniforms.uTreeLamp = FOREST_LAMP;
         sh.vertexShader = sh.vertexShader
           .replace('#include <common>', '#include <common>\nattribute float canopy;\nuniform float uTime, uWind;\nvarying float vCanopy;\nvarying vec3 vTWPos;')
           .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
@@ -175,7 +178,7 @@ vCanopy = canopy;`)
   transformed.z += sway * 0.012 * uWind * transformed.y * canopy;
 #endif`);
         sh.fragmentShader = sh.fragmentShader
-          .replace('#include <common>', `#include <common>\nuniform float uLeaf, uSnow, uSnowLine;\nvarying float vCanopy;\nvarying vec3 vTWPos;\n${CLOUD_GLSL}`)
+          .replace('#include <common>', `#include <common>\nuniform float uLeaf, uSnow, uSnowLine, uTreeLamp;\nvarying float vCanopy;\nvarying vec3 vTWPos;\n${LAMP_PARS}\n${CLOUD_GLSL}`)
           .replace('#include <alphatest_fragment>', LEAF_BOOST + LEAF_ALPHA)
           .replace('#include <color_fragment>', `#include <color_fragment>
 {
@@ -183,6 +186,9 @@ vCanopy = canopy;`)
   float sn = uSnow * smoothstep(0.1, 0.75, wN.y) * smoothstep(uSnowLine - 30.0, uSnowLine + 60.0, vTWPos.y);
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.9, 0.95), sn * (0.35 + 0.45 * vCanopy));
 }`)
+          // the street lamps' pools of light (src/world/nightLights.ts) fall on the trunks and crowns near them, like on the roads
+          // and facades: without it a tree at night took only the moon and sky and read near-black, even under a lamp
+          .replace('#include <lights_physical_fragment>', `${lampAdd('vTWPos', 'uTreeLamp')}\n#include <lights_physical_fragment>`)
           .replace('#include <lights_fragment_end>', `
 #if NUM_DIR_LIGHTS > 0
 {

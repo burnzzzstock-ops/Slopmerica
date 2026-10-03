@@ -4,21 +4,27 @@
 // emergency on, a building inspected and each drawer open in turn (zoning,
 // services, roads), measures the top bar, feed, emergency card, inspector,
 // drawer, Next card, toolbar, tool badge, toasts and banner, and fails on any
-// two that overlap. SHOT=prefix saves screenshots. Exits nonzero on failure.
+// two that overlap. A second scenario has no emergency and the first-steps card up ("Step 3/5 ..."), with a building inspected and no drawer: on a
+// phone that card sat on the bottom of the inspector sheet and covered its last rows and the Bulldoze button (round 8 audit).
+// SHOT=prefix saves screenshots. Exits nonzero on failure.
 import { chromium } from 'playwright-core';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const PANELS = (process.env.PANELS || 'zones,ext:services,roads').split(',');
 const SIZES = (process.env.SIZES || '1707x1019,1280x800,1024x700,390x844').split(',').map((s) => s.split('x').map(Number));
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
 let total = 0;
-for (const [w, h] of SIZES) {
+const SCENARIOS = [
+  { name: 'drawer + inspector + emergency', steps: true, emergency: true, panels: PANELS },
+  { name: 'inspector + first-steps card', steps: false, emergency: false, needNext: true, panels: ['inspect'] },
+];
+for (const [w, h] of SIZES) for (const sc of SCENARIOS) {
   const touch = w < 600;
   const page = await browser.newPage({ viewport: { width: w, height: h }, hasTouch: touch, isMobile: touch });
-  await page.addInitScript(() => { try { localStorage.setItem('slopmerica.quality', 'low'); localStorage.setItem('slopmerica.onboarded', '1'); localStorage.setItem('slopmerica.firstSteps', '1'); localStorage.setItem('slopmerica.emergencySpeed', 'off'); } catch {} });
+  await page.addInitScript((steps) => { try { localStorage.setItem('slopmerica.quality', 'low'); localStorage.setItem('slopmerica.onboarded', '1'); if (steps) localStorage.setItem('slopmerica.firstSteps', '1'); else localStorage.removeItem('slopmerica.firstSteps'); localStorage.setItem('slopmerica.emergencySpeed', 'off'); } catch {} }, sc.steps);
   await page.goto(`${base}/#skip&map=florida&mode=ponzi`, { waitUntil: 'load', timeout: 120000 });
   await page.waitForFunction(() => window.__game && window.__dbg, null, { timeout: 180000 });
-  for (const panel of PANELS) {
-  const r = await page.evaluate(async (panel) => {
+  for (const panel of sc.panels) {
+  const r = await page.evaluate(async ({ panel, emergency, needNext }) => {
     const g = window.__game, d = window.__dbg, S = g.startView();
     cancelAnimationFrame(g.raf);
     if (!window.__otTown) { window.__otTown = 1;
@@ -30,10 +36,13 @@ for (const [w, h] of SIZES) {
     }
     // an emergency, as the playtest had one
     const home = [...g.buildings.list.values()].find((b) => b.state === 'active') ?? [...g.buildings.list.values()][0];
-    g.emergency = () => ({ level: 'crit', needs: [{ need: 'power', cat: 'power', icon: '⚡', label: 'Power', failing: 'without power', buildings: 14, residents: 65, eta: [6, 18], why: 'Demand 2.3 MW against a 2.2 MW import cap.' }], atRisk: 14, residents: 65, hot: [{ x: home.x, z: home.z, n: 14, residents: 65, id: home.id }], forecast: '🗑️ Landfills full in about 3 months', forecastDays: 90, crisis: { since: g.sim.day - 3, cause: 'power', peakAtRisk: 14, peakTrash: 0, lowPop: 0, popAtStart: 0, endedAt: -1 }, trash: 0, abandoned: 2, day: g.sim.day });
+    if (emergency) g.emergency = () => ({ level: 'crit', needs: [{ need: 'power', cat: 'power', icon: '⚡', label: 'Power', failing: 'without power', buildings: 14, residents: 65, eta: [6, 18], why: 'Demand 2.3 MW against a 2.2 MW import cap.' }], atRisk: 14, residents: 65, hot: [{ x: home.x, z: home.z, n: 14, residents: 65, id: home.id }], forecast: '🗑️ Landfills full in about 3 months', forecastDays: 90, crisis: { since: g.sim.day - 3, cause: 'power', peakAtRisk: 14, peakTrash: 0, lowPop: 0, popAtStart: 0, endedAt: -1 }, trash: 0, abandoned: 2, day: g.sim.day });
     // the zoning panel open, a building inspected, Next showing
     g.select(null); g.tools.set('inspect');
     document.querySelector(`button.tbtn[data-t="${panel}"]`)?.click();
+    for (let i = 0; i < 3; i++) { g.ui.update(0.5); g.frame(0.05, true); }
+    // is the Next card up before anything is inspected? (this scenario is about it)
+    const nextUp = [...document.querySelectorAll('.nextbar, .next-bar, [class*="nextbar"]')].some((x) => { const r = x.getBoundingClientRect(); return !x.hidden && getComputedStyle(x).display !== 'none' && r.width > 4 && r.height > 4; });
     g.select({ kind: 'building', b: home });
     for (let i = 0; i < 4; i++) { g.ui.update(0.5); g.frame(0.05, true); }
     await new Promise((res) => setTimeout(res, 300));
@@ -44,6 +53,7 @@ for (const [w, h] of SIZES) {
       if (e) { const q = e.getBoundingClientRect(); rects[k] = { x: Math.round(q.x), y: Math.round(q.y), w: Math.round(q.width), h: Math.round(q.height), cls: e.className.toString().slice(0, 40) }; }
     }
     const over = [];
+    if (needNext && !nextUp) over.push('the Next card was not showing before the building was inspected, so nothing was tested');
     const ks = Object.keys(rects);
     for (let i = 0; i < ks.length; i++) for (let j = i + 1; j < ks.length; j++) {
       const a = rects[ks[i]], b = rects[ks[j]];
@@ -51,9 +61,9 @@ for (const [w, h] of SIZES) {
       if (ox > 2 && oy > 2) over.push(`${ks[i]}×${ks[j]} ${ox}×${oy}px`);
     }
     return { rects, over };
-  }, panel);
+  }, { panel, emergency: sc.emergency, needNext: sc.needNext });
   total += r.over.length;
-  console.log(`${r.over.length ? 'FAIL' : 'OK  '} ${w}×${h}, ${panel} drawer + inspector + emergency: ${r.over.length ? r.over.join(', ') : `no overlaps (${Object.keys(r.rects).join(', ')})`}`);
+  console.log(`${r.over.length ? 'FAIL' : 'OK  '} ${w}×${h}, ${panel} ${sc.name}: ${r.over.length ? r.over.join(', ') : `no overlaps (${Object.keys(r.rects).join(', ')})`}`);
   if (process.env.RECTS) console.log(JSON.stringify(r.rects));
   if (process.env.SHOT) await page.screenshot({ path: `${process.env.SHOT}-${w}-${panel.replace(':', '')}.png` });
   }

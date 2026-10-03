@@ -40,6 +40,8 @@ console.log('segs after Build', await segs(), 'drawing', await page.evaluate(() 
   await page.waitForTimeout(500);
   const after = await page.evaluate(() => { const t = window.__game.tools; return { pending: t.pending, start: t.start && [Math.round(t.start.x), Math.round(t.start.z)] }; });
   console.log('tap start then tap end: pending', after.pending, 'start kept', JSON.stringify(after.start) === JSON.stringify(got));
+  // (the cost of a plan arrives a moment after the plan on a slow machine: wait for it, or the test takes a different path from one run to the next)
+  await page.waitForFunction(() => window.__game.tools.pendingCost !== null, null, { timeout: 30000 }).catch(() => {});
   const tip = await page.evaluate(() => ({ tip: window.__game.tools.tip?.text, cost: window.__game.tools.pendingCost }));
   console.log('planned road:', JSON.stringify(tip));
   if (tip.cost !== null) { await page.tap('#ta-build'); await page.waitForTimeout(600); console.log('segs after tap-tap-Build', await segs()); }
@@ -79,10 +81,12 @@ await off('Zoning toggled off, tap map ->');
 // double-tap ends a road: draw again, then tap twice quickly on one spot
 await page.tap('button.tbtn[data-t="roads"]');
 await page.waitForTimeout(300);
-await touch('touchStart', 120, 380);
-for (let i = 1; i <= 10; i++) { await touch('touchMove', 120 + i * 18, 380 - i * 10); await page.waitForTimeout(40); }
+// (a different stroke from the first road's: that one may still be there, and a road over a road cannot be built)
+await touch('touchStart', 90, 300);
+for (let i = 1; i <= 10; i++) { await touch('touchMove', 90 + i * 18, 300 - i * 10); await page.waitForTimeout(40); }
 await touch('touchEnd', 0, 0);
 await page.waitForTimeout(600);
+await page.waitForFunction(() => !document.querySelector('#ta-build').hidden && !document.querySelector('#ta-build').disabled, null, { timeout: 30000 }).catch(async () => { console.log('FAIL the second road cannot be built:', await page.evaluate(() => window.__game.tools.tip?.text)); });
 await page.tap('#ta-build');
 await page.waitForTimeout(600);
 console.log('drawing again', await page.evaluate(() => window.__game.tools.drawing), 'segs', await segs());

@@ -12,7 +12,7 @@ flock "$q"
 while true; do
   for n in 1 2; do
     exec {fd}>"$SLOT_DIR/slot-$n.lock"
-    if flock -n "$fd"; then exec {q}>&-; "$@"; code=$?; exec {fd}>&-; exit $code; fi
+    if flock -n "$fd"; then exec {q}>&-; echo "[slot $n acquired]" >&2; "$@"; code=$?; exec {fd}>&-; exit $code; fi
     exec {fd}>&-
   done
   sleep 1

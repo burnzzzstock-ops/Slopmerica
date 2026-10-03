@@ -157,8 +157,38 @@ function graphics(g: Game): string {
 type Downloads = { save(r: { filename: string; data: string | Blob }): Promise<{ status: string }> };
 type ClaudeWindow = { claude?: { use?: (n: string) => Promise<unknown> } };
 
-/** Save a text/JSON file: the viewer's download capability inside Claude, a plain download elsewhere. */
-export async function saveFile(filename: string, data: string): Promise<'saved' | 'declined' | 'failed'> {
+/** What happened to a save: a file went to the downloads, the text went to the clipboard, the player said no, or nothing worked. */
+export type SaveResult = 'saved' | 'copied' | 'declined' | 'failed';
+
+/**
+ * True when the page runs inside another page (the claude.ai artifact viewer, an embed). Such a frame can be sandboxed without
+ * `allow-downloads`, and then an `<a download>` click does nothing and says nothing: no event, no error, no way to tell from here.
+ */
+export function inFrame(): boolean {
+  try { return window.top !== window.self; } catch { return true; }
+}
+
+/** Put text on the clipboard: the async API, then a hidden textarea and execCommand. Resolves false when the browser refuses both. */
+export async function copyToClipboard(s: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(s);
+    return true;
+  } catch { /* no clipboard permission here: try the old way */ }
+  const t = document.createElement('textarea');
+  t.value = s;
+  t.setAttribute('readonly', '');
+  t.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none';
+  document.body.appendChild(t);
+  t.select();
+  try { return document.execCommand('copy'); } catch { return false; } finally { t.remove(); }
+}
+
+/**
+ * Save a text/JSON file. In the claude.ai viewer the downloads capability (a real save); elsewhere an ordinary download. A download that
+ * cannot start inside a frame fails silently, so there the text also goes to the clipboard and the caller says so ('copied'): the player
+ * always ends up with the save somewhere they can reach. Outside a frame the download is all that happens.
+ */
+export async function saveFile(filename: string, data: string): Promise<SaveResult> {
   const use = (window as unknown as ClaudeWindow).claude?.use;
   if (use) {
     try {
@@ -172,6 +202,10 @@ export async function saveFile(filename: string, data: string): Promise<'saved' 
       if (code === 'declined') return 'declined';
     }
   }
+  const framed = inFrame();
+  // (the clipboard write goes first: it wants the click's user activation, and an await can use that up)
+  const copying = framed ? copyToClipboard(data) : null;
+  let started = false;
   try {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([data], { type: filename.endsWith('.json') ? 'application/json' : 'text/plain' }));
@@ -179,10 +213,18 @@ export async function saveFile(filename: string, data: string): Promise<'saved' 
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
-    return 'saved';
-  } catch {
-    return 'failed';
-  }
+    started = true;
+  } catch { /* the click itself was refused */ }
+  if (copying) return (await copying) ? 'copied' : started ? 'saved' : 'failed';
+  return started ? 'saved' : 'failed';
+}
+
+/** The words for a save: `what` is "City file" or "Report"; `later` says how to use a copy. */
+export function saveMessage(r: SaveResult, what: string, later = ''): string {
+  if (r === 'saved') return `${what} saved.`;
+  if (r === 'copied') return `${what} copied: paste it somewhere safe${later ? ` (${later})` : ''}. A file download was tried too; some viewers block downloads.`;
+  if (r === 'declined') return 'Not saved.';
+  return `${what} could not be saved or copied here.`;
 }
 
 async function copyText(s: string, fallback: HTMLTextAreaElement): Promise<boolean> {
@@ -199,6 +241,10 @@ async function copyText(s: string, fallback: HTMLTextAreaElement): Promise<boole
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'city';
+/** The city as a file: its name and its text (the same JSON as the autosave). */
+export function cityFile(g: Game): { name: string; data: string } {
+  return { name: `slopmerica-${slug(g.cityName)}-day${Math.floor(g.sim.day)}.json`, data: JSON.stringify(snapshot(g)) };
+}
 
 const KINDS = ['Broken', 'Looks wrong', 'Confusing', 'Slow', 'Idea'];
 
@@ -277,12 +323,13 @@ export function openBugReport(parent: HTMLElement, g: Game | null, opts: { prefi
   $('#bug-file').addEventListener('click', async () => {
     if (!nudge()) return;
     const r = await saveFile(`slopmerica-bug-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.txt`, report());
-    say(r === 'saved' ? 'Saved. Attach the file in a message to whoever sent you the game.' : r === 'declined' ? 'Not saved.' : 'Saving files is blocked here. Use Copy report instead.', r === 'failed');
+    say(r === 'saved' ? 'Saved. Attach the file in a message to whoever sent you the game.' : r === 'copied' ? 'Report copied: paste it in a message to whoever sent you the game. A file download was tried too; some viewers block downloads.' : r === 'declined' ? 'Not saved.' : 'Saving files is blocked here. Use Copy report instead.', r === 'failed');
   });
   el.querySelector('#bug-city')?.addEventListener('click', async () => {
     if (!g) return;
-    const r = await saveFile(`slopmerica-${slug(g.cityName)}-day${Math.floor(g.sim.day)}.json`, JSON.stringify(snapshot(g)));
-    say(r === 'saved' ? 'City file saved. Attach it along with the report.' : r === 'declined' ? 'Not saved.' : 'Saving files is blocked here.', r === 'failed');
+    const f = cityFile(g);
+    const r = await saveFile(f.name, f.data);
+    say(r === 'saved' ? 'City file saved. Attach it along with the report.' : r === 'copied' ? 'City copied: paste it somewhere safe or into your message. Later: title screen, Load a city file, Paste a copied city. A file download was tried too; some viewers block downloads.' : r === 'declined' ? 'Not saved.' : 'Saving files is blocked here, and so is copying. Use Copy report instead.', r === 'failed');
   });
   setTimeout(() => { if (!IS_TOUCH) what.focus(); }, 50);
   return close;
@@ -312,6 +359,7 @@ export function showBootFailure(parent: HTMLElement, err: unknown, opts: { resto
         ${opts.restoring ? `<button id="bf-fresh">${opts.checkpoint ? '⏪ Load the earlier checkpoint' : '🆕 Start a new city'}</button>` : ''}
         ${opts.restoring && opts.savedJSON ? '<button id="bf-city">💾 Save the city file</button>' : ''}
       </div>
+      <div class="bf-status" role="status" aria-live="polite"></div>
       ${opts.restoring ? '<small>Starting a new city sets the old one aside (it is kept in this browser, not deleted) so the developer can still fix it.</small>' : ''}
       <small class="bf-build">Build ${esc(BUILD)}</small>
     </div>`;
@@ -320,7 +368,12 @@ export function showBootFailure(parent: HTMLElement, err: unknown, opts: { resto
   el.querySelector('#bf-retry')!.addEventListener('click', () => location.reload());
   // with a checkpoint: set the crashing save aside and continue from the checkpoint
   el.querySelector('#bf-fresh')?.addEventListener('click', () => { opts.shelveSave(); location.hash = ''; location.reload(); });
-  el.querySelector('#bf-city')?.addEventListener('click', () => { if (opts.savedJSON) void saveFile('slopmerica-broken-city.json', opts.savedJSON); });
+  el.querySelector('#bf-city')?.addEventListener('click', async () => {
+    if (!opts.savedJSON) return;
+    const r = await saveFile('slopmerica-broken-city.json', opts.savedJSON);
+    const say = el.querySelector('.bf-status');
+    if (say) say.textContent = saveMessage(r, 'City file', 'Later: title screen, Load a city file, Paste a copied city');
+  });
 }
 
 /** The GPU dropped the WebGL context: nothing renders until a reload. */

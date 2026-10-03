@@ -317,6 +317,7 @@ export class Game {
     // (the lamps show what the cars obey, leading greens included)
     this.roads.setSignalStateProvider((nodeId, segId) => this.traffic.lampState(nodeId, segId));
     this.peds = new Pedestrians(this.scene, this.net, this.buildings, this.terrain, this.communes, this.q.maxPeople);
+    this.peds.renderer.setDetail(this.q); // the preset's near/far distance, near cap and shadow range for the citizens (a look budget; the simulation does not read it)
     // crosswalks: people wait for a gap (or the walk phase), cars stop for people on them
     this.traffic.crosswalkWalkers = (node, seg) => this.peds.crosswalkWalkers(node, seg);
     this.peds.canCross = (node, segs, secs, impatient) => this.traffic.canCross(node, segs, secs, impatient);
@@ -335,6 +336,12 @@ export class Game {
       const mv = Number(localStorage.getItem('slopmerica.musicVol'));
       if (mv > 0 && mv <= 1) this.audio.musicVolume = mv;
     } catch { /* defaults: on, 55% */ }
+    // Settings → Sound (effects, ambience, street sound), remembered like the music's
+    try {
+      this.audio.soundOn = localStorage.getItem('slopmerica.sound') !== '0';
+      const sv = Number(localStorage.getItem('slopmerica.soundVol'));
+      if (sv > 0 && sv <= 1) this.audio.soundVolume = sv;
+    } catch { /* defaults: on, full */ }
     this.rts.setView(start.x, start.z, IS_TOUCH ? 900 : 800, start.yaw, 0.72, true);
 
     // --- ambient life (codex) ---

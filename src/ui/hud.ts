@@ -13,8 +13,9 @@ import { MAX_LEVEL } from '../contracts';
 import type { ToolId } from '../tools/tools';
 import { GRID_BLOCKS, type GridBlock } from '../tools/gridRoads';
 import { FeedPanel } from './feedPanel';
+import { courtText, emergencyToast } from './copy';
 import { MERCH_URL, brandById } from '../art/brands';
-import { BUILD, crumb, onCapturedError, openBugReport } from './bugreport';
+import { BUILD, cityFile, crumb, onCapturedError, openBugReport, saveFile, saveMessage } from './bugreport';
 import { FOV_MAX, FOV_MIN, IS_TOUCH } from '../config';
 import { QUALITY, type Quality } from '../config';
 import { BANKRUPT_AT, BANKRUPT_WEEKS, CREDIT_LINE, LEDGER_LABEL, LOSS_LABEL, ONE_TIME, RECURRING, SPEEDS, Sim, UNLOCKS, usd, type DemandKey } from '../sim/sim';
@@ -84,6 +85,10 @@ export class Hud implements UiSink {
   private bar!: HTMLElement;
   private sub!: HTMLElement;
   private inspector!: HTMLElement;
+  /** when the inspector sheet last opened (performance.now()): see the click guard in the constructor */
+  private inspectorOpenedAt = 0;
+  /** when a finger last lifted off the screen (performance.now()) */
+  private lastTouchUpAt = 0;
   private toasts!: HTMLElement;
   private remeasureToasts = true;
   private tip!: HTMLElement;
@@ -144,6 +149,11 @@ export class Hud implements UiSink {
     this.buildToolbar();
     this.wirePanelMinimize();
     this.inspector = this.mk('aside', 'inspector');
+    // A tap on the map opens the sheet under the finger, and the browser's emulated click is then delivered to whatever is under the finger NOW: a building
+    // tapped where the sheet's x appears was selected and then closed 21 ms later (seen at 110 degrees on the phone, scripts/ghosttap.mjs). No click that
+    // soon after a finger lifted and the sheet opened is a deliberate press, so none reaches it (a click with no finger just before it, a script's, does).
+    window.addEventListener('pointerup', (e) => { if (e.pointerType === 'touch') this.lastTouchUpAt = performance.now(); }, true);
+    this.inspector.addEventListener('click', (e) => { const now = performance.now(); if (now - this.inspectorOpenedAt < 350 && now - this.lastTouchUpAt < 350) { e.stopPropagation(); e.preventDefault(); } }, true);
     this.inspector.hidden = true;
     this.sideCards = this.mk('div', 'side-cards');
     this.toasts = this.mk('div', 'toasts');
@@ -172,7 +182,7 @@ export class Hud implements UiSink {
       if (this.demandPop.contains(t) || t.closest?.('[data-dem]')) return;
       this.closeDemand();
     }, true);
-    window.addEventListener('resize', () => { if (this.demandKey) this.placeDemand(); });
+    window.addEventListener('resize', () => { if (this.demandKey) this.placeDemand(); const f = this.sub?.querySelector('#fov-v'); if (f) f.textContent = this.fovText(); });
     this.actions.innerHTML = `<span class="ta-tip" id="ta-tip"></span><button id="ta-build" class="ta-build">🔨 Build</button><button id="ta-done" class="ta-done">${IS_TOUCH ? '✓ Done' : '✕ Stop'}</button><button id="ta-undo">↶ Undo</button>`;
     this.actions.hidden = true;
     // phones: Done leaves the tool entirely (double-tap ends just the current
@@ -467,7 +477,7 @@ export class Hud implements UiSink {
     this.hotIdx = 0;
     crumb(`emergency: ${top?.need ?? '?'} · ${e.atRisk} buildings, ${e.residents} residents · speed ${was}→${s.speed}`);
     this.game.audio.play('siren', 0.5);
-    this.toast(`🚨 ${top?.label ?? 'Service'} emergency: ${e.atRisk} buildings ${top?.failing ?? 'failing'}.${s.speed === was ? '' : s.speed ? ' Slowed to normal speed.' : ' Paused.'}`, true);
+    this.toast(emergencyToast(top?.label, e.atRisk, top?.failing, s.speed === was ? 'same' : s.speed ? 'slowed' : 'paused'), true);
     this.refreshTop();
   }
 
@@ -1319,7 +1329,9 @@ export class Hud implements UiSink {
           <button class="chip ${emergencySpeed() !== 'off' ? 'on' : ''}" id="emergency-toggle" title="When a city-wide service emergency begins: slow the clock to normal speed, pause it, or keep going">🚨 Emergencies: ${EMERGENCY_SPEED_LABEL[emergencySpeed()]}</button>
           <button class="chip ${g.audio.musicOn ? 'on' : ''}" id="music-toggle" aria-pressed="${g.audio.musicOn}">🎹 Music: ${g.audio.musicOn ? 'on' : 'off'}</button>
           <label class="fov-ctl" for="music-range">Music volume <input type="range" id="music-range" min="5" max="100" step="5" value="${Math.round(g.audio.musicVolume * 100)}"></label>
-          <label class="fov-ctl" for="fov-range">Field of view <input type="range" id="fov-range" min="${FOV_MIN}" max="${FOV_MAX}" step="1" value="${Math.round(g.camera.fov)}"><b id="fov-v">${Math.round(g.camera.fov)}°</b></label>
+          <button class="chip ${g.audio.soundOn ? 'on' : ''}" id="sound-toggle" aria-pressed="${g.audio.soundOn}" title="Effects, ambience and the sound of the cars in the street">🔊 Sound: ${g.audio.soundOn ? 'on' : 'off'}</button>
+          <label class="fov-ctl" for="sound-range">Sound volume <input type="range" id="sound-range" min="5" max="100" step="5" value="${Math.round(g.audio.soundVolume * 100)}"></label>
+          <label class="fov-ctl" for="fov-range">Field of view <input type="range" id="fov-range" min="${FOV_MIN}" max="${FOV_MAX}" step="1" value="${Math.round(g.camera.fov)}"><b id="fov-v">${this.fovText()}</b></label>
         </div>
         <small>Resolution and shadows change immediately. Reload applies scenery, traffic, and post-processing budgets.</small>
         <div class="help">${IS_TOUCH ? `
@@ -1342,9 +1354,15 @@ export class Hud implements UiSink {
           <div><b>Interchanges</b> Roads → Interchanges · , and . rotate</div>
           <div><b>Performance</b> F3 shows FPS, frame time, draw calls and triangles</div>`}
         </div>
-        <div class="sp-row"><button class="chip" id="save-now">💾 Save now</button><button class="chip" id="new-city">🆕 New city</button><small>Autosaves every 30 seconds in this browser.</small></div>
+        <div class="sp-row"><button class="chip" id="save-now">💾 Save now</button><button class="chip" id="save-file">📁 Save city file</button><button class="chip" id="new-city">🆕 New city</button><small>Autosaves every 30 seconds in this browser. A city file is a backup you keep: where downloads are blocked it is copied to the clipboard instead.</small></div>
         <div class="sp-row"><button class="chip on" id="report-bug">🐞 Report a bug</button><small>Playtest build ${BUILD}</small></div>`;
       this.sub.querySelector('#save-now')?.addEventListener('click', () => { const ok = saveGame(g); this.toast(ok ? 'Saved.' : 'Could not save in this browser', !ok); });
+      this.sub.querySelector('#save-file')?.addEventListener('click', async () => {
+        const f = cityFile(g);
+        const r = await saveFile(f.name, f.data);
+        crumb(`city file: ${r}`);
+        this.toast(saveMessage(r, 'City file', 'to load it later: title screen, Load a city file, Paste a copied city'), r === 'failed');
+      });
       this.sub.querySelector('#new-city')?.addEventListener('click', () => { saveGame(g); location.hash = ''; location.reload(); });
       this.sub.querySelector('#report-bug')?.addEventListener('click', () => this.reportBug());
       // buttons, not a native <select>: the playtest recording caught the
@@ -1369,6 +1387,18 @@ export class Hud implements UiSink {
         crumb(`music ${g.audio.musicOn ? 'on' : 'off'}`);
         this.renderPanel();
       });
+      this.sub.querySelector('#sound-toggle')?.addEventListener('click', () => {
+        g.audio.unlock();
+        g.audio.soundOn = !g.audio.soundOn;
+        try { localStorage.setItem('slopmerica.sound', g.audio.soundOn ? '1' : '0'); } catch { /* not remembered */ }
+        crumb(`sound ${g.audio.soundOn ? 'on' : 'off'}`);
+        this.renderPanel();
+      });
+      this.sub.querySelector('#sound-range')?.addEventListener('input', (e) => {
+        g.audio.unlock();
+        g.audio.soundVolume = Number((e.target as HTMLInputElement).value) / 100;
+        try { localStorage.setItem('slopmerica.soundVol', String(g.audio.soundVolume)); } catch { /* not remembered */ }
+      });
       this.sub.querySelector('#music-range')?.addEventListener('input', (e) => {
         g.audio.musicVolume = Number((e.target as HTMLInputElement).value) / 100;
         try { localStorage.setItem('slopmerica.musicVol', String(g.audio.musicVolume)); } catch { /* not remembered */ }
@@ -1382,7 +1412,7 @@ export class Hud implements UiSink {
         const v = Number((e.target as HTMLInputElement).value);
         g.camera.fov = v;
         g.camera.updateProjectionMatrix();
-        this.sub.querySelector('#fov-v')!.textContent = `${v}°`;
+        this.sub.querySelector('#fov-v')!.textContent = this.fovText();
         try { localStorage.setItem('slopmerica.fov', String(v)); } catch { /* not remembered */ }
       });
       this.sub.querySelector('#edge-toggle')?.addEventListener('click', () => {
@@ -1392,6 +1422,12 @@ export class Hud implements UiSink {
         this.renderPanel();
       });
     }
+  }
+
+  /** The slider is the camera's vertical angle; say so, and how wide that is across this window ("110° tall · 137° across"). */
+  private fovText(): string {
+    const c = this.game.camera, across = 2 * Math.atan(Math.tan((c.fov * Math.PI) / 360) * c.aspect) * (180 / Math.PI);
+    return `${Math.round(c.fov)}° tall · ${Math.round(across)}° across`;
   }
 
   private taxFeed(raised: boolean) {
@@ -1447,6 +1483,7 @@ export class Hud implements UiSink {
   // ------------------------------------------------------------------ inspector
   select(sel: Selection) {
     if (!sel) { this.inspector.hidden = true; this.layoutCards(); return; }
+    if (this.inspector.hidden) this.inspectorOpenedAt = performance.now();
     this.inspector.hidden = false;
     queueMicrotask(() => this.layoutCards());
     this.renderInspector();
@@ -1536,7 +1573,7 @@ export class Hud implements UiSink {
           <div><span>Members</span><b>${c.members}</b></div>
           <div><span>Vibe</span><b>${esc(c.vibe)}</b></div>
           <div><span>Stubbornness</span><b>${Math.round(c.stubborn * 100)}%</b></div>
-          <div><span>Status</span><b>${c.forever ? '♾️ Forever' : c.state === 'suing' ? `⚖️ Court in ${Math.max(0, Math.ceil(c.suitDays - g.sim.day))} days` : c.state}</b></div>
+          <div><span>Status</span><b>${c.forever ? '♾️ Forever' : c.state === 'suing' ? courtText(Math.ceil(c.suitDays - g.sim.day)) : c.state}</b></div>
         </div>
         <p class="in-blurb">Demands: “${esc(c.demand)}”</p>
         ${c.forever ? `<p class="in-warn">They've been here since 1969. They're never leaving. Build around them.</p>` : `<p class="in-note">Roads and zoning can't cross their land. <b>Pay off</b>: if they refuse, the money is gone and they dig in harder. <b>Sue</b>: 20 days in court; lose and they dig in.</p>`}
@@ -1740,7 +1777,10 @@ export class Hud implements UiSink {
       if (floor - from < 200 && this.nextBar) { this.nextBar.classList.add('yield'); floor = floorOf(base); }
       max = `${Math.max(180, Math.round(floor - from))}px`;
     }
-    if (!open || phone) this.nextBar?.classList.remove('yield');
+    // a phone's inspector is a sheet as wide as the screen that sits where the Next card does: the card lay across its last rows and its Bulldoze
+    // button (round 8 audit), so it steps aside while the sheet is up
+    if (phone) this.nextBar?.classList.toggle('yield', open);
+    else if (!open) this.nextBar?.classList.remove('yield');
     if (insp.style.top !== top) insp.style.top = top;
     if (insp.style.maxHeight !== max) insp.style.maxHeight = max;
   }

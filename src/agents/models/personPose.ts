@@ -5,7 +5,7 @@ import { POSE_DECLARATIONS, POSE_FRAGMENT, POSE_LIB, POSE_MAIN } from './personS
 // planted feet, two-bone legs and arms, the idle and action poses) costs a few hundred operations including dozens of sines. Worked out
 // per vertex, as the first version did, that is 1000+ times per person and frame and five times the old model's cost on the software
 // GPU. So it is worked out once per person and bone, here: one point per (person, bone) in an instanced draw over the same
-// per-person attributes the figure uses, writing a rigid transform (rotation and translation) into a 14 x N float texture pair. The
+// per-person attributes (the list of the people who are drawn in any way), writing a rigid transform (rotation and translation) into a 14 x N float texture pair. The
 // vertex shader of the figure then only fetches its bone's transform. One extra draw call for the whole population, none per person.
 
 export const POSE_BONES = 14;
@@ -48,12 +48,12 @@ export class PersonPosePass {
     });
   }
 
-  /** Read the per-person motion attribute of the figure's own geometry (shared, not copied: one upload serves both draws). */
-  connect(source: THREE.BufferGeometry): void {
+  /** The people to work out: one instance of `motion` each (action, phase, handle), the handle being the row of the pose texture written. */
+  connect(motion: THREE.InstancedBufferAttribute): void {
     const g = new THREE.InstancedBufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(POSE_BONES * 3), 3));
     g.setAttribute('aBone', new THREE.BufferAttribute(Float32Array.from({ length: POSE_BONES }, (_, i) => i), 1));
-    g.setAttribute('iMotion', source.getAttribute('iMotion'));
+    g.setAttribute('iMotion', motion);
     g.instanceCount = 0;
     const points = new THREE.Points(g, this.material);
     points.frustumCulled = false;
@@ -64,7 +64,7 @@ export class PersonPosePass {
   /** Allocate the textures now, so the first draw of the figure does not sample an incomplete texture. */
   init(renderer: THREE.WebGLRenderer): void { renderer.initRenderTarget(this.target); }
 
-  /** Work out the pose of the first `count` people. Call it outside a render, before the frame that draws them. */
+  /** Work out the pose of the first `count` people of the list given to `connect`. Call it outside a render, before the frame that draws them. */
   update(renderer: THREE.WebGLRenderer, count: number): void {
     if (!this.geometry || count <= 0) return;
     this.geometry.instanceCount = Math.min(count, this.max);

@@ -2791,6 +2791,25 @@ a {
   gap: 4px 18px;
   margin-top: 4px;
 }
+.aaa-paste {
+  display: grid;
+  gap: 6px;
+  max-width: 380px;
+  font-size: 13px;
+  color: var(--aaa-soft);
+}
+.aaa-paste textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.45);
+  color: inherit;
+  font: 12px/1.3 ui-monospace, monospace;
+  padding: 8px;
+}
+.bf-status:empty { display: none; }
+.bf-status { margin-top: 8px; font-size: 13px; font-weight: 700; }
 .aaa-import-msg {
   max-width: 380px;
   padding: 8px 12px;
@@ -2820,6 +2839,8 @@ a {
   left: 0;
   right: 0;
   bottom: 0;
+  /* nothing in it is a control, but on a phone its box rises into the links above it and took the taps meant for the bottom of "Real Slop merch" */
+  pointer-events: none;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -3394,6 +3415,9 @@ a {
   .bug-actions button, .bf-actions button { min-height: 44px; }
   .subpanel summary, .bug summary { padding-block: 14px; }
   input[type='range'] { min-height: 44px; }
+  /* the title screen's text links (Load a city file, Paste a copied city, merch) were 28 px tall, its back arrow 42 */
+  .aaa-link { min-height: 44px; display: inline-flex; align-items: center; padding-inline: 6px; }
+  .aaa-back { width: 44px; height: 44px; }
 
   /* top bar: same look, bigger hit areas */
   .tb-speed button, .tb-stat, .tb-meters, .dbar { position: relative; }

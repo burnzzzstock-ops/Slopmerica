@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { HALF, WATER } from '../config';
 import { clamp } from '../core/math';
 import type { Terrain } from '../world/terrain';
+import type { ViewPose, ViewTarget } from '../contracts';
 
 export interface PointerHandlers {
   /** true if the active tool uses one-finger/left drags (zone brush etc.) */
@@ -36,20 +37,37 @@ export class RTSCamera {
   private edgeT = 0;
   private ray = new THREE.Raycaster();
   private ndc = new THREE.Vector2();
+  private zoomPoint: THREE.Vector3 | null = null;
+  private zoomScreen = new THREE.Vector2();
+  private zoomVelocity = 0; // logarithmic distance per second
+  private zooming = false;
+  private subject: ViewTarget | null = null;
+  private chaseYaw = 0;
+  private chaseEye = new THREE.Vector3();
+  private chaseAim = new THREE.Vector3();
+  get following() { return this.subject; }
   private pointers = new Map<number, { x: number; y: number; sx: number; sy: number }>();
   private mode: 'none' | 'orbit' | 'tool' | 'pan1' | 'multi' = 'none';
   private orbitButton = -1;
   private moved = false;
   private last = { x: 0, y: 0 };
   private multiStart: { d: number; a: number; cx: number; cy: number } | null = null;
-  enabled = true;
+  private inputEnabled = true;
+  get enabled() { return this.inputEnabled; }
+  set enabled(value: boolean) {
+    this.inputEnabled = value;
+    if (!value) { this.keys.clear(); this.mouse = null; this.edgeHold = null; this.pointers.clear(); this.mode = 'none'; }
+  }
   hover: THREE.Vector3 | null = null;
   lastClient = { x: -1, y: -1 };
 
-  constructor(public camera: THREE.PerspectiveCamera, private dom: HTMLElement, private terrain: Terrain, private handlers: PointerHandlers) {
+  constructor(public camera: THREE.PerspectiveCamera, private dom: HTMLElement, private terrain: Terrain, private handlers: PointerHandlers,
+    private poseOf?: (target: ViewTarget) => ViewPose | null) {
     window.addEventListener('keydown', (e) => {
-      if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
-      this.keys.add(e.key.toLowerCase());
+      if (!this.enabled || (e.target as HTMLElement)?.tagName === 'INPUT') return;
+      const key = e.key.toLowerCase();
+      if (this.subject && ['escape','w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','q','e','r','f','=','+','-'].includes(key)) this.follow(null);
+      this.keys.add(key);
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
     window.addEventListener('blur', () => { this.keys.clear(); this.mouse = null; this.edgeHold = null; });
@@ -75,6 +93,10 @@ export class RTSCamera {
   }
 
   setView(x: number, z: number, dist: number, yaw = this.yaw, pitch = this.pitch, instant = false) {
+    this.subject = null;
+    this.zoomPoint = null;
+    this.zooming = false;
+    this.zoomVelocity = 0;
     this.goal.target.set(x, this.terrain.h(x, z), z);
     this.goal.distance = dist;
     this.goal.yaw = yaw;
@@ -87,30 +109,117 @@ export class RTSCamera {
     }
   }
 
-  groundAt(clientX: number, clientY: number): THREE.Vector3 | null {
+  /** Bind to a simulation id. A missing subject releases the rig at its last
+   * position. An explicit orbit/pan/zoom gives control back immediately. */
+  follow(target: ViewTarget | null): boolean {
+    if (!target) {
+      if (this.subject) this.setView(this.target.x, this.target.z, Math.max(25, this.distance), this.yaw, Math.max(0.1, this.pitch));
+      return false;
+    }
+    const pose = this.poseOf?.(target);
+    if (!pose) { this.follow(null); return false; }
+    this.subject = { ...target };
+    this.chaseYaw = pose.yaw; this.zoomPoint = null; this.zooming = false; this.zoomVelocity = 0;
+    return true;
+  }
+
+  private track(dt: number, id: ViewTarget, pose: ViewPose) {
+    // Heading takes the short path through the ±π boundary at junctions.
+    const turn = Math.atan2(Math.sin(pose.yaw - this.chaseYaw), Math.cos(pose.yaw - this.chaseYaw));
+    this.chaseYaw += turn * (1 - Math.exp(-5 * dt));
+    const dx = Math.sin(this.chaseYaw), dz = Math.cos(this.chaseYaw), person = id.kind === 'person';
+    const radius = Math.max(0.5, pose.radius), lead = person ? 1.6 : Math.min(14, 0.26 * pose.speed + radius * 0.45);
+    const behind = person ? 3.5 : Math.max(6, radius * 2.3 + 4 + Math.min(4, pose.speed * 0.12));
+    const lift = person ? 2.15 : 2.8 + radius * 0.6, shoulder = person ? 0.9 : Math.min(2, radius * 0.45);
+    this.chaseAim.set(pose.x + dx * lead, pose.y + (person ? 1.35 : Math.min(8, 0.9 + radius * 0.18)), pose.z + dz * lead);
+    this.chaseEye.set(pose.x - dx * behind + dz * shoulder, pose.y + lift, pose.z - dz * behind - dx * shoulder);
+    const eye = this.camera.position;
+    eye.lerp(this.chaseEye, 1 - Math.exp(-6 * dt));
+    eye.y = Math.max(eye.y, Math.max(WATER, this.terrain.h(eye.x, eye.z)) + 1.5);
+    this.target.lerp(this.chaseAim, 1 - Math.exp(-8 * dt));
+    this.distance = Math.max(0.1, eye.distanceTo(this.target));
+    this.yaw = Math.atan2(eye.x - this.target.x, eye.z - this.target.z);
+    this.pitch = Math.asin(clamp((eye.y - this.target.y) / this.distance, -1, 1));
+    this.camera.lookAt(this.target);
+    this.camera.near = clamp(this.distance * 0.004, 0.2, 8);
+    this.camera.updateProjectionMatrix(); this.camera.updateMatrixWorld();
+  }
+
+  private screenPoint(clientX: number, clientY: number, out: THREE.Vector2) {
     const r = this.dom.getBoundingClientRect();
-    this.ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+    out.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+  }
+
+  groundAt(clientX: number, clientY: number): THREE.Vector3 | null {
+    this.screenPoint(clientX, clientY, this.ndc);
     this.ray.setFromCamera(this.ndc, this.camera);
     return this.terrain.raycast(this.ray.ray.origin, this.ray.ray.direction);
   }
 
   private onWheel(e: WheelEvent) {
     if (!this.enabled) return;
+    if (this.subject) this.follow(null);
     e.preventDefault();
-    const f = Math.exp(Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 120) * 0.0022);
+    const units = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? this.dom.clientHeight : 1;
+    const f = Math.exp(clamp(e.deltaY * units, -120, 120) * 0.0022);
     this.zoomAt(f, e.clientX, e.clientY);
   }
 
   private zoomAt(f: number, cx: number, cy: number) {
-    const before = this.goal.distance;
-    const next = clamp(before * f, 25, 6500);
-    const p = this.groundAt(cx, cy);
-    if (p && next < before) {
-      const k = 1 - next / before;
-      this.goal.target.x += (p.x - this.goal.target.x) * k;
-      this.goal.target.z += (p.z - this.goal.target.z) * k;
-    }
+    if (f === 1) return;
+    this.zoomPoint = this.groundAt(cx, cy);
+    this.zoomScreen.copy(this.ndc);
+    this.zoomBy(f);
+  }
+
+  private zoomBy(f: number) {
+    const before = this.goal.distance, next = clamp(before * f, 25, 6500);
     this.goal.distance = next;
+    // Change the player's chosen pitch by the zoom delta. A steeper overview
+    // gives way to the street as you descend, without resetting a manual orbit.
+    this.goal.pitch = clamp(this.goal.pitch + 0.17 * Math.log(next / before), this.minPitch(), 1.48);
+    this.zooming = true;
+  }
+
+  private stepZoom(dt: number) {
+    // Exact critically damped spring in log distance: a wheel notch has the
+    // same feel at 40 m and 4 km. Bound travel during a burst of wheel events.
+    const omega = 11, maxRate = 1.08;
+    const error = Math.log(this.distance / this.goal.distance);
+    const decay = Math.exp(-omega * dt), impulse = (this.zoomVelocity + omega * error) * dt;
+    const step = (error + impulse) * decay - error;
+    this.distance *= Math.exp(clamp(step, -maxRate * dt, maxRate * dt));
+    this.zoomVelocity = clamp((this.zoomVelocity - omega * impulse) * decay, -maxRate, maxRate);
+    if (Math.abs(error) < 0.00001 && Math.abs(this.zoomVelocity) < 0.0001) {
+      this.distance = this.goal.distance;
+      this.zoomVelocity = 0;
+      this.zooming = false;
+    }
+  }
+
+  private keepZoomPoint() {
+    const point = this.zoomPoint;
+    if (!point) return;
+    this.camera.updateMatrixWorld();
+    this.ray.setFromCamera(this.zoomScreen, this.camera);
+    const { origin, direction } = this.ray.ray;
+    // A ray grazing the horizon has no stable ground anchor.
+    if (direction.y < -0.035) {
+      const t = (point.y - origin.y) / direction.y;
+      if (t > 0) {
+        const dx = clamp(this.target.x + point.x - origin.x - t * direction.x, -HALF - 200, HALF + 200) - this.target.x;
+        const dz = clamp(this.target.z + point.z - origin.z - t * direction.z, -HALF - 200, HALF + 200) - this.target.z;
+        this.target.x += dx; this.target.z += dz;
+        this.goal.target.x += dx; this.goal.target.z += dz;
+        this.clampTarget();
+        const pos = this.camera.position;
+        pos.x += dx; pos.z += dz;
+        const floor = Math.max(WATER, this.terrain.h(pos.x, pos.z)) + 4;
+        if (pos.y < floor) { pos.y = floor; this.camera.lookAt(this.target); }
+        this.camera.updateMatrixWorld();
+      }
+    }
+    if (!this.zooming && this.mode !== 'multi') this.zoomPoint = null;
   }
 
   private isTouch(e: PointerEvent) {
@@ -119,6 +228,7 @@ export class RTSCamera {
 
   private onDown(e: PointerEvent) {
     if (!this.enabled) return;
+    if (this.subject) this.follow(null);
     this.dom.setPointerCapture?.(e.pointerId);
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY });
     this.moved = false;
@@ -142,6 +252,7 @@ export class RTSCamera {
   }
 
   private onMove(e: PointerEvent) {
+    if (!this.enabled) return;
     if (e.pointerType === 'mouse') { this.mouse = { x: e.clientX, y: e.clientY, overMap: e.target === this.dom }; this.edgeHold = null; }
     const pt = this.pointers.get(e.pointerId);
     if (e.target === this.dom || pt) this.lastClient = { x: e.clientX, y: e.clientY };
@@ -158,6 +269,7 @@ export class RTSCamera {
     if (Math.hypot(e.clientX - pt.sx, e.clientY - pt.sy) > 6) this.moved = true;
 
     if (this.mode === 'orbit') {
+      this.zoomPoint = null;
       this.goal.yaw -= dx * 0.005;
       this.goal.pitch = clamp(this.goal.pitch + dy * 0.004, this.minPitch(), 1.48);
     } else if (this.mode === 'pan1') {
@@ -172,10 +284,12 @@ export class RTSCamera {
       const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
       if (!this.multiStart) {
         this.multiStart = { d, a: ang, cx, cy };
+        this.zoomPoint = this.groundAt(cx, cy);
+        this.zoomScreen.copy(this.ndc);
         return;
       }
       const s = this.multiStart;
-      if (d > 10) this.zoomAt(s.d / d, cx, cy);
+      if (d > 10 && s.d > 10 && d !== s.d) this.zoomBy(s.d / d);
       let da = ang - s.a;
       if (da > Math.PI) da -= Math.PI * 2;
       if (da < -Math.PI) da += Math.PI * 2;
@@ -184,6 +298,11 @@ export class RTSCamera {
       // two-finger vertical drag with fingers level = tilt; otherwise pan
       if (Math.abs(a.y - b.y) < 60 && Math.abs(mdy) > Math.abs(mdx) * 1.5) {
         this.goal.pitch = clamp(this.goal.pitch + mdy * 0.005, this.minPitch(), 1.48);
+      } else if (this.zoomPoint) {
+        // Update the pan goal immediately, including while a tool holds the
+        // frame loop. The next draw corrects the remaining perspective drift.
+        this.panScreen(mdx, mdy, true);
+        this.screenPoint(cx, cy, this.zoomScreen);
       } else {
         this.panScreen(mdx, mdy);
       }
@@ -223,7 +342,8 @@ export class RTSCamera {
     return this.goal.distance < 180 ? 0.1 : 0.28;
   }
 
-  private panScreen(dx: number, dy: number) {
+  private panScreen(dx: number, dy: number, keepAnchor = false) {
+    if (!keepAnchor && (dx || dy)) this.zoomPoint = null;
     const k = this.distance * 0.0017 * (1 / Math.max(0.35, Math.sin(this.pitch)));
     const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
     // drag moves the ground with the finger: right = (fz, -fx), forward = (-fx, -fz)
@@ -234,6 +354,8 @@ export class RTSCamera {
 
   /** Slide the view by a world offset (smoothly, like a pan). */
   nudge(dx: number, dz: number) {
+    if (this.subject) this.follow(null);
+    this.zoomPoint = null;
     this.goal.target.x += dx;
     this.goal.target.z += dz;
     this.clampTarget();
@@ -263,6 +385,7 @@ export class RTSCamera {
     if (!ex && !ey) { this.edgeT = 0; return; }
     this.edgeT += dt;
     if (this.edgeT < 0.1) return;
+    this.zoomPoint = null;
     // ease in over the first half second, then full speed
     const ramp = Math.min(1, (this.edgeT - 0.1) / 0.4);
     const sp = Math.max(120, this.distance) * 1.1 * dt * ramp * (this.keys.has('shift') ? 2.5 : 1);
@@ -280,6 +403,11 @@ export class RTSCamera {
   }
 
   update(dt: number) {
+    if (this.subject) {
+      const pose = this.poseOf?.(this.subject);
+      if (pose) { this.track(dt, this.subject, pose); return; }
+      this.follow(null);
+    }
     const k = this.keys;
     const sp = Math.max(120, this.distance) * 1.1 * dt * (k.has('shift') ? 2.5 : 1);
     const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
@@ -289,6 +417,7 @@ export class RTSCamera {
     if (k.has('a') || k.has('arrowleft')) { mx -= fz; mz += fx; }
     if (k.has('d') || k.has('arrowright')) { mx += fz; mz -= fx; }
     if (mx || mz) {
+      this.zoomPoint = null;
       this.goal.target.x += mx * sp;
       this.goal.target.z += mz * sp;
       this.clampTarget();
@@ -298,13 +427,15 @@ export class RTSCamera {
     if (k.has('e')) this.goal.yaw -= dt * 1.4;
     if (k.has('r')) this.goal.pitch = clamp(this.goal.pitch + dt, this.minPitch(), 1.48);
     if (k.has('f')) this.goal.pitch = clamp(this.goal.pitch - dt, this.minPitch(), 1.48);
-    if (k.has('=') || k.has('+')) this.goal.distance = clamp(this.goal.distance * (1 - dt * 1.5), 25, 6500);
-    if (k.has('-')) this.goal.distance = clamp(this.goal.distance * (1 + dt * 1.5), 25, 6500);
+    if (k.has('q') || k.has('e') || k.has('r') || k.has('f') || k.has('=') || k.has('+') || k.has('-')) this.zoomPoint = null;
+    if (k.has('=') || k.has('+')) this.zoomBy(Math.exp(-dt * 1.5));
+    if (k.has('-')) this.zoomBy(Math.exp(dt * 1.5));
 
     const s = 1 - Math.pow(0.0001, dt);
     this.goal.target.y = Math.max(WATER, this.terrain.h(this.goal.target.x, this.goal.target.z));
     this.target.lerp(this.goal.target, s);
-    this.distance += (this.goal.distance - this.distance) * s;
+    if (this.zooming) this.stepZoom(dt);
+    else this.distance += (this.goal.distance - this.distance) * s;
     this.yaw += (this.goal.yaw - this.yaw) * s;
     this.pitch += (this.goal.pitch - this.pitch) * s;
 
@@ -317,5 +448,6 @@ export class RTSCamera {
     this.camera.near = clamp(this.distance * 0.004, 0.5, 8);
     this.camera.far = 50000;
     this.camera.updateProjectionMatrix();
+    this.keepZoomPoint();
   }
 }

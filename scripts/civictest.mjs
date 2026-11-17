@@ -1,9 +1,10 @@
 // Civic Foundry in the game: the asset pack streams in, commercial streets
 // get street trees in grates, benches, bike racks and planters, homes get
 // street trees on the verge, bus stops get the library's shelter (and the
-// box shelter steps aside), and it all draws as instanced LODs. Low quality
-// never loads it. SHOTS=prefix saves pictures. Exits nonzero on failure.
+// box shelter steps aside), and it all draws as instanced LODs. Low keeps
+// about half the sites with vertex-coloured LOD2. SHOTS=prefix saves pictures.
 import { launch } from './lib/browser.mjs';
+import { seededInit, seededRandom } from './refblock.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const browser = await launch();
 let bad = 0;
@@ -12,6 +13,7 @@ const open = async (quality) => {
   const page = await browser.newPage({ viewport: { width: 1200, height: 720 } });
   const errs = [];
   page.on('pageerror', (e) => errs.push(e.message));
+  await page.addInitScript(seededInit, { seed: Number(process.env.SEED ?? 271828), rng: seededRandom.toString() });
   await page.addInitScript((q) => { localStorage.setItem('slopmerica.quality', q); localStorage.setItem('slopmerica.onboarded', '1'); localStorage.setItem('slopmerica.firstSteps', '1'); }, quality);
   await page.goto(`${base}/#skip&map=florida&mode=sandbox`, { waitUntil: 'load', timeout: 120000 });
   await page.waitForFunction(() => window.__game?.transit && window.__dbg, null, { timeout: 180000 });
@@ -67,10 +69,35 @@ if (process.env.SHOTS) {
   }
 }
 check('no page errors', errs.length === 0, errs.slice(0, 3));
+const switched = await page.evaluate(({ cx, cz }) => {
+  const g = window.__game, c = g.civic;
+  const propCount = () => Object.entries(c.counts).reduce((n, [id, count]) => n + (id === 'street-bus-shelter' ? 0 : count), 0);
+  g.sim.speed = 0;
+  const full = propCount();
+  g.rts.setView(cx, cz, 75, 2.4, 0.42, true);
+  g.frame(0.016);
+  g.requestQuality('low');
+  c.update(2);
+  const reduced = propCount();
+  const meshes = c.group.children.filter(m => m.visible && m.count);
+  const cheap = meshes.length > 0 && meshes.every(m => m.name.endsWith('-lod2') && !m.castShadow && !m.material.map);
+  const allStops = c.counts['street-bus-shelter'] === g.transit.stops.size;
+  g.requestQuality('high');
+  c.update(2);
+  return { full, reduced, ratio: reduced / full, cheap, allStops, restored: propCount() };
+}, r);
+check('live Low keeps approximately half the same street sites', switched.ratio > 0.25 && switched.ratio < 0.75, switched);
+check('Low uses vertex-coloured LOD2 and skips furniture shadow draws', switched.cheap, switched);
+check('all stops retain their shelter at Low', switched.allStops, switched);
+check('switching back restores all high-detail sites', switched.full === switched.restored, switched);
 await page.close();
 
 const low = await open('low');
-const lr = await low.page.evaluate(async () => { await new Promise((res) => setTimeout(res, 1500)); return window.__game.civic.status; });
-check(`low quality never loads it (${lr})`, lr === 'off', lr);
+await low.page.waitForFunction(() => window.__game.civic.status !== 'loading', null, { timeout: 60000 });
+const lr = await low.page.evaluate(() => ({
+  status: window.__game.civic.status,
+  textures: performance.getEntriesByType('resource').filter(e => e.name.includes('/civic/textures/')).length,
+}));
+check('Low streams geometry with zero civic texture requests', lr.status === 'ready' && lr.textures === 0, lr);
 await browser.close();
 process.exit(bad ? 1 : 0);

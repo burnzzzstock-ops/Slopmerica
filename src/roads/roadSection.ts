@@ -104,6 +104,11 @@ export function curbOffset(t: RoadType): number {
   return t.sidewalk > 0 ? carriageHalf(t) + GUTTER : t.width / 2;
 }
 
+/** Drawn dead-end bulb radius, shared with surface-state sampling. */
+export function endCapRadius(t: RoadType): number {
+  return t.width / 2 * (t.id === 'twoLane' || t.id === 'gravel' ? 1.55 : 1.0);
+}
+
 /** how far into the walk a driveway's ramp reaches from the curb */
 export function driveRamp(t: RoadType): number {
   return Math.min(0.9, t.sidewalk * 0.6);

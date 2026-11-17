@@ -7,6 +7,8 @@ import { launch } from '../lib/browser.mjs';
 const urls=[process.env.BASE_URL||'http://127.0.0.1:5173'];
 if(process.env.NEXT_URL)urls.push(process.env.NEXT_URL);
 const out=process.env.OUT||'shots/roads';
+const condition=Number(process.env.CONDITION??1),wet=Number(process.env.WET??0);
+if(![condition,wet].every(value=>Number.isFinite(value)&&value>=0&&value<=1))throw Error('CONDITION and WET must be between0 and1');
 mkdirSync(out,{recursive:true});
 const browser=await launch();
 let failed=0;
@@ -18,7 +20,7 @@ try {
     page.on('console',m=>{if(/Shader Error|VALIDATE_STATUS|GL_INVALID/.test(m.text()))errors.push(m.text());});
     await page.goto(base,{waitUntil:'networkidle',timeout:180000});
     await page.evaluate(()=>document.fonts.ready);
-    const report=await page.evaluate(async () => {
+    const report=await page.evaluate(async ({condition,wet}) => {
       const THREE=await import('/node_modules/three/build/three.module.js');
       const {RoadNetwork}=await import('/src/roads/network.ts');
       const {RoadRenderer}=await import('/src/roads/roadMesh.ts');
@@ -42,6 +44,8 @@ try {
       let randomState=1776;
       Math.random=()=>{randomState=(Math.imul(randomState,1664525)+1013904223)>>>0;return randomState/4294967296;};
       const rr=new RoadRenderer(net,renderer);
+      rr.setConditionProvider?.(()=>condition);
+      rr.setWet(wet);
       rr.update();
       scene.add(rr.group);
       const drawn=[...rr.typeMeshes.values(),rr.junctionMesh,rr.crosswalkMesh,rr.concMesh];
@@ -87,8 +91,8 @@ try {
         blades.push(renderer.domElement.toDataURL().split(',')[1]);
       }
       renderer.dispose();
-      return {png,blades,seams,calls,triangles,gpu};
-    });
+      return {png,blades,seams,calls,triangles,gpu,condition,wet};
+    },{condition,wet});
     const toLab=rgb=>{
       const [r,g,b]=rgb.map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;});
       const f=v=>v>216/24389?Math.cbrt(v):24389/27*v/116+16/116;

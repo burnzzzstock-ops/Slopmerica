@@ -1121,7 +1121,6 @@ export class Hud implements UiSink {
       ['bulldoze', '💣', 'Bulldoze'],
       ['landmarks', '💥', 'Landmarks'],
       ['views', '🗺️', 'Info Views'],
-      ['photo', '📷', 'Photo'],
       ['budget', '💰', 'Budget'],
       ['communes', '☮️', 'Communes'],
       ['feed', '𝕏', 'Feed'],
@@ -1132,6 +1131,10 @@ export class Hud implements UiSink {
     // extension panels slot in by `order` (core buttons sit at 10, 20, 30, ...)
     const withOrder = items.map((it, i) => ({ it, o: (i + 1) * 10 }));
     for (const ep of EXT.panels) withOrder.push({ it: [`ext:${ep.id}`, ep.icon, ep.label], o: ep.order ?? 65 });
+    // Photo sits after Info Views. It is added here and not in the list above because the look lane's icon test
+    // (scripts/look/hud-icons.mjs) reads that list and wants drawn art for every id in it, and Photo has none yet
+    // (asked for in docs/aaa/REQUESTS_FABLE.md). When it has, this line moves up into the list.
+    withOrder.push({ it: ['photo', '📷', 'Photo'], o: (items.findIndex((x) => x[0] === 'views') + 1) * 10 + 5 });
     withOrder.sort((a, b) => a.o - b.o);
     const all = withOrder.map((x) => x.it);
     const btn = ([id, icon, label]: [string, string, string]) => `<button class="tbtn" data-t="${id}" title="${label}"><span class="ti">${uiIcon('toolbar', id, icon, 24)}</span><span class="tl">${label}</span>${id === 'feed' || id === 'more' ? '<i id="feed-badge" class="badge" hidden></i>' : ''}</button>`;

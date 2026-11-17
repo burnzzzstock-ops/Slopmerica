@@ -29,7 +29,7 @@ try {
           const THREE=await import('/node_modules/three/build/three.module.js');
           const g=window.__game;
           g.hour=state==='wet-night'?23:12.5;
-          g.weather.wet=state==='dry'?0:1;
+          const weatherSurface = await window.__weatherFixture(g.weather.kind, { surface: state === 'dry' ? 'dry' : 'wet', keepKind: true });
           g.env.envT=-Infinity;g.env.envKey='';
           // Step the renderer clock across its normal mirror refresh cadence.
           // frame(0) keeps the simulation, traffic and exact lot data stationary.
@@ -96,7 +96,7 @@ try {
               for(const query of queries){gpuMs.push(gl.getQueryParameter(query,gl.QUERY_RESULT)/1e6);gl.deleteQuery(query);}
             }
           }
-          return {png,population:g.sim.population,buildings:g.buildings.list.size,roads:g.net.segs.size,day:g.sim.day,
+          return {png,weatherSurface,population:g.sim.population,buildings:g.buildings.list.size,roads:g.net.segs.size,day:g.sim.day,
             calls,triangles,geometryHash:hash(geometry),environmentHash,buffer:buffer.toArray(),
             target:target?[target.width,target.height]:null,enabled:mirror?.uniforms.uRoadReflectionOn.value??0,
             plane:target?mirror.uniforms.uRoadReflectionPlane.value.toArray():null,center:mirror?.selected?.center.toArray()??null,candidates:mirror?.planes.length??0,

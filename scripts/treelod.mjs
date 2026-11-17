@@ -73,7 +73,7 @@ const frame = async (mode, dist, pitch, shadows = true) => {
     };
     const sprite = t.far[0].material.map;
     return {spot:s, camera:g.camera.matrixWorld.toArray(), projection:g.camera.projectionMatrix.toArray(),
-      time:g.time, hour:g.hour, day:g.sim.day, weather:g.weather.kind, wind:g.weather.cur.wind,
+      time:g.time, hour:g.hour, day:g.sim.day, weather:g.weather.kind, wind:g.weather.wind.length() / .9,
       trees:hash([t.X,t.Y,t.Z,t.S,t.Rt,t.K,t.Vr,t.Asp,t.A]),
       matrices:hash([...t.near,...t.far].map(mesh=>mesh.instanceMatrix.array)),
       alpha:hash(sprite.mipmaps.map(mip=>new Uint8Array(mip.data.filter((_,i)=>i%4===3))))};

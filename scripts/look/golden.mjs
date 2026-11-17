@@ -138,7 +138,7 @@ try {
     writeFileSync(join(out, 'results.json'), JSON.stringify(results, null, 2) + '\n');
     if (options.update) {
       manifest.shots[shot.id] = { sha256: result.sha256, camera: result.camera, conditions: shot.conditions,
-        renderBuffer: result.buffer, replayVerified: true, replay: replayScore };
+        weatherSurface: result.weatherSurface, renderBuffer: result.buffer, replayVerified: true, replay: replayScore };
       writeFileSync(manifestPath + '.tmp', JSON.stringify(manifest, null, 2) + '\n');
       renameSync(manifestPath + '.tmp', manifestPath);
     }

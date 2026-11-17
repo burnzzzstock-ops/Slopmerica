@@ -26,7 +26,7 @@ try {
             const g=window.__game, old=state.startsWith('old'), wet=state.includes('wet');
             for(const segment of g.net.segs.values())segment.builtDay=g.sim.day-(old?365*22:0);
             g.hour=state.endsWith('night')?23:12.5;
-            g.weather.wet=wet?1:0;
+            const weatherSurface = await window.__weatherFixture(g.weather.kind, { surface: wet ? 'wet' : 'dry', keepKind: true });
             // The sky's normal 1.2s wall-clock throttle must not retain a
             // previous state's environment while this test freezes time.
             g.env.envT=-Infinity;
@@ -95,7 +95,7 @@ try {
             return {png,calls:g.perf.calls,triangles:g.perf.triangles,pixelProbe,
               population:g.sim.population,buildings:g.buildings.list.size,roads:g.net.segs.size,environmentFingerprint,
               conditionMin:Math.min(...conditions),conditionMax:Math.max(...conditions),vertices,dips,minCondition,maxCondition,
-              wet:g.roads.wetWas,environment:!!g.scene.environment,geometryFingerprint:fingerprint.toString(16)};
+              weatherSurface,wet:g.roads.wetWas,environment:!!g.scene.environment,geometryFingerprint:fingerprint.toString(16)};
           },state);
           writeFileSync(join(out,`${label}-${quality}-${state}.png`),Buffer.from(png,'base64'));
           results.push({label,quality,state,...data});

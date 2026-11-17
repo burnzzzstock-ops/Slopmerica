@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 import { SAVE, seededInit, seededRandom } from '../refblock.mjs';
 import { readSave, REFBLOCK_CENTER } from '../lib/fixtures.mjs';
+import { installWeatherFixture } from './weather-fixture.mjs';
 
 export const seed = 1776;
 const times = {
@@ -101,7 +102,8 @@ export async function capture(browser, shot, base, probeMaterial = false, afterC
     if (save) await page.locator('#continue').click({ timeout: 180000 });
     await page.waitForFunction(() => window.__dbg && window.__game && window.__game.civic.status !== 'loading', null, { timeout: 300000 });
     await page.waitForLoadState('networkidle', { timeout: 120000 });
-    const result = await page.evaluate(({ quality, scene, camera, conditions, seed, probeMaterial, viewport, backend, centre }) => {
+    await page.evaluate(installWeatherFixture);
+    const result = await page.evaluate(async ({ quality, scene, camera, conditions, seed, probeMaterial, viewport, backend, centre }) => {
       const g = window.__game;
       cancelAnimationFrame(g.raf);
       if (innerWidth !== viewport.width || innerHeight !== viewport.height || devicePixelRatio !== (quality === 'low' ? 3 : 1)) {
@@ -128,9 +130,7 @@ export async function capture(browser, shot, base, probeMaterial = false, afterC
       // concurrent asset loads. Pin its origin independently of their completion order.
       g.weather.cloudOff.set(0.31, 0.73);
       window.__dbg.hour(hour);
-      g.weather.force(weather, 30);
-      g.weather.settle();
-      g.weather.snowCover = 0;
+      const weatherSurface = await window.__weatherFixture(weather);
       g.rts.setView(x, z, distance, yaw, pitch, true);
       if (probeMaterial) g.terrain.group.traverse(mesh => { if (mesh.material?.color) mesh.material.color.set(0x733c66); });
       for (let i = 0; i < 4; i++) {
@@ -152,7 +152,7 @@ export async function capture(browser, shot, base, probeMaterial = false, afterC
       const samples = s.getImageData(0, 0, 16, 16).data;
       const red = samples.filter((_, i) => i % 4 === 0);
       if (Math.max(...red) - Math.min(...red) < 4) throw Error('Blank or uniform frame');
-      return { png: canvas.toDataURL().split(',')[1], renderer, camera: [x, z, distance, yaw, pitch],
+      return { weatherSurface, png: canvas.toDataURL().split(',')[1], renderer, camera: [x, z, distance, yaw, pitch],
         viewport, dpr: devicePixelRatio, buffer: [gl.drawingBufferWidth, gl.drawingBufferHeight],
         calls: g.perf.calls, triangles: g.perf.triangles };
     }, { quality, scene, camera, conditions, seed, probeMaterial, viewport, backend, centre });

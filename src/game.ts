@@ -1280,7 +1280,7 @@ export class Game {
     P.lap('zones+roads');
     // moving things are drawn between their last two steps (smooth at any frame rate), or where they are after stepping by hand
     const alpha = this.snap ? 1 : this.owed / STEP_SECONDS;
-    this.traffic.renderer.observeTraffic(this.traffic.cars, this.camera, alpha, this.q.name === 'low' ? 'low' : 'high');
+    this.traffic.renderer.observeTraffic(this.traffic.cars, this.camera, alpha, this.pendingQuality ?? this.q.name);
     this.traffic.draw(alpha, dt, this.rts.target);
     this.parkView.setFromProjectionMatrix(this.parkMat.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
     this.parking.update(dt, this.hour, this.rts.target.x, this.rts.target.z, this.rts.distance, () => this.traffic.renderer.stats().active);

@@ -4,6 +4,7 @@
 // of window bays / floors fits each face.
 import * as THREE from 'three';
 import { T, Tile } from '../art';
+import { contactAO } from './contactAO';
 
 export type RGB = readonly [number, number, number];
 export type V3 = [number, number, number];
@@ -75,6 +76,8 @@ export class MB {
   private N: number[] = [];
   private UV: number[] = [];
   private C: number[] = [];
+  private cornerAO: boolean[] = [];
+  private baseAO: number[] = [];
   private m = new THREE.Matrix4();
   private nm = new THREE.Matrix3();
   private stack: THREE.Matrix4[] = [];
@@ -178,7 +181,9 @@ export class MB {
       const h = (wy - this.groundY) / this.aoH;
       if (h < 1) k = 1 - this.aoK * (1 - Math.max(0, h)) * (1 - Math.max(0, h));
     }
-    this.C.push(c[0] * k, c[1] * k, c[2] * k);
+    this.C.push(c[0], c[1], c[2]);
+    this.cornerAO.push(ao);
+    this.baseAO.push(k);
   }
 
   /** Emit a triangle with explicit per-vertex data. */
@@ -663,7 +668,10 @@ export class MB {
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.P), 3));
     g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(this.N), 3));
     g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(this.UV), 2));
-    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(this.C), 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(this.C, 3));
+    const occlusion = contactAO(this.P, this.N, undefined, this.cornerAO);
+    for (let i = 0; i < occlusion.length; i++) occlusion[i] *= this.baseAO[i];
+    g.setAttribute('ambientVisibility', new THREE.BufferAttribute(occlusion, 1));
     g.computeBoundingBox();
     g.computeBoundingSphere();
     return g;

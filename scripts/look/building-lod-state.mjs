@@ -16,6 +16,10 @@ try {
     const geometry = main.instances.get(inst).original;
     const matrix = new THREE.Matrix4(); mesh.getMatrixAt(inst, matrix); const beforeMatrix = matrix.toArray();
     const original = new THREE.Vector4(); mesh.getColorAt(inst, original);
+    // This check owns the test alpha while exercising LOD. The separate
+    // material-state check proves the live field writer and reload behavior.
+    const finishUpdate = g.finishes?.update;
+    if (g.finishes) g.finishes.update = () => {};
     const wanted = new THREE.Vector4(0.23, 0.41, 0.67, 0.19); mesh.setColorAt(inst, wanted);
     const values = [];
     const pose = distance => { g.rts.setView(b.x, b.z, distance, .7, .56, true); g.frame(0, true); };
@@ -29,6 +33,7 @@ try {
     const infoTint = new THREE.Vector4(); mesh.getColorAt(inst, infoTint);
     const infoTintKept = infoTint.toArray().every((v, i) => Math.abs(v - [.7, .3, .2, .19][i]) < 1e-6);
     mesh.setColorAt(inst, original);
+    if (g.finishes) g.finishes.update = finishUpdate;
     const stateKept = state === JSON.stringify(blds.serialize());
     // GPU query covers the ENTIRE frame, interleaved within one context.
     g.rts.setView(center.x, center.z, 1600, .7, .56, true);

@@ -131,6 +131,10 @@ class Batch {
   }
   addGeometry(g: THREE.BufferGeometry, allowLod = true): number {
     addBuildingClipAttribute(g);
+    // Imported vault geometry predates the baked ambient-visibility channel.
+    if (!g.hasAttribute('ambientVisibility')) {
+      g.setAttribute('ambientVisibility', new THREE.BufferAttribute(new Float32Array(g.getAttribute('position').count).fill(1), 1));
+    }
     const n = g.getAttribute('position').count;
     const ni = g.getIndex()?.count ?? n;
     if (this.usedVerts + n > this.maxVerts || this.usedIndices + ni > this.maxIndices) {

@@ -1511,6 +1511,10 @@ export class Traffic {
         }
         // going through a drive-thru with its lane full: wait at the driveway, on the road
         // (the line spills onto the stroad and blocks this lane until there's room)
+        // (a drive-thru that is not there any more, its shop rebuilt without one or shut, holds nobody: the car pulls into
+        // the lot like any other visit. It used to wait at the kerb for a place in a line that did not exist, for good, with
+        // the lane behind it: three such cars locked a town's main street.)
+        if (last && c.thruB && !this.thruAt(c.thruB)) { c.thruB = null; c.thruWait = 0; }
         if (last && c.thruB && !this.thruRoom(c.thruB)) {
           const g8 = exitS - 1 - c.s;
           if (g8 < gap) { gap = g8; dv = c.v; hold = 'drive-thru'; }

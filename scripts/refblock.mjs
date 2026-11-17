@@ -151,13 +151,14 @@ export function testSeed() {
  * test. `town` fingerprints the buildings as loaded (printed with a seed): a
  * run whose asset pack timed out builds other models, and isn't a replay.
  */
-export async function openBlock(browser, { base, quality = 'high', width = 1280, height = 720, phone = false, dpr = 1, seed }) {
-  if (!existsSync(SAVE)) {
+export async function openBlock(browser, { base, quality = 'high', width = 1280, height = 720, phone = false, dpr = 1, seed, save: other, center: otherCenter }) {
+  // (save and center: another saved town to open the same way, for a test about one particular town)
+  if (!other && !existsSync(SAVE)) {
     if (OLD_TOWN) throw new Error(`refblock: REFTOWN=v1 asks for the old reference town and ${SAVE} is missing (it is a committed file; it is never grown again)`);
     await grow(browser, base);
   }
-  const save = readSave(SAVE);
-  const center = JSON.parse(readFileSync(REFBLOCK_CENTER, 'utf8'));
+  const save = readSave(other ?? SAVE);
+  const center = other ? otherCenter ?? { x: 0, z: 0 } : JSON.parse(readFileSync(REFBLOCK_CENTER, 'utf8'));
   // phone: a real touch context (3x screen, touch, mobile UA), which is what makes the game pick the phone's pixel ratio and MSAA
   const page = await browser.newPage(phone ? { viewport: { width, height }, deviceScaleFactor: 3, isMobile: true, hasTouch: true } : { viewport: { width, height }, deviceScaleFactor: dpr });
   const errs = [], vault = [];

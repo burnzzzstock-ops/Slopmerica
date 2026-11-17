@@ -18,6 +18,7 @@ import { PhotoMode } from './render/photo';
 import { applyLowGrade, lowExposure } from './render/lowGrade';
 import { Particles } from './render/particles';
 import { AudioEngine } from './audio/audio';
+import type { SoundscapeMix } from './audio/ambience';
 import { COUNTY_ROAD, RoadNetwork, RSeg, Plan } from './roads/network';
 import { RoadRenderer } from './roads/roadMesh';
 import { ROAD_TYPES, RoadTypeId } from './roads/roadTypes';
@@ -187,6 +188,11 @@ export class Game {
   private raf = 0;
   private waterT = 0;
   private waterNear = 0;
+  private soundMix: SoundscapeMix = {
+    zoom: 0, nature: 1, water: 0, surf: 0, pollution: 0, traffic: 0, construction: 0, people: 0,
+    night: 0, weather: 'clear', weatherIntensity: 0, season: 'spring',
+  };
+  private soundTreeSample = { x: NaN, z: NaN, count: 0 };
   private ray = new THREE.Raycaster();
   private nightWas = false;
   /** pools of light from street lamps, shopfronts, entrances and yards after dark */
@@ -1211,20 +1217,53 @@ export class Game {
     this.post.aoRadius = THREE.MathUtils.clamp(this.rts.distance * 0.011, 2.2, 16);
     wu.uPollution.value = Math.min(0.7, (1 - this.sim.naturePct) * 0.6 + this.buildings.counts().active / 4000);
 
-    // water around the view, for the creek (sampled twice a second)
+    // Camera-local soundscape inputs, sampled twice a second into one reused mix.
     this.waterT -= dt;
     if (this.waterT <= 0) {
       this.waterT = 0.5;
       const T = this.rts.target, r = Math.max(60, this.rts.distance * 0.35);
-      let wet = 0;
-      for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) if (this.terrain.h(T.x + i * r / 2, T.z + j * r / 2) < WATER) wet++;
+      let wet = 0, shore = 0;
+      for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
+        const x = T.x + i * r / 2, z = T.z + j * r / 2, h = this.terrain.h(x, z);
+        if (h < WATER) wet++;
+        if (Math.abs(h - WATER) < 6) shore += this.map.sand?.(x, z) ?? 0;
+      }
       this.waterNear = Math.min(1, wet / 6);
+      const mix = this.soundMix;
+      mix.water = this.waterNear;
+      mix.surf = this.map.def.id === 'appalachia' ? 0 : Math.min(1, shore / 4) * Math.min(1, wet / 3);
+      mix.nature = this.fields.naturePct();
+      mix.pollution = this.fields.pollutionAt(T.x, T.z);
+      const treeX = Math.round(T.x / 32) * 32, treeZ = Math.round(T.z / 32) * 32;
+      const treeCount = this.trees.countIn(treeX, treeZ, 200), previousTrees = this.soundTreeSample;
+      mix.habitat = Math.min(1, treeCount / 160);
+      mix.clearing = previousTrees.x === treeX && previousTrees.z === treeZ ? Math.min(1, Math.max(0, previousTrees.count - treeCount) / 12) : 0;
+      previousTrees.x = treeX; previousTrees.z = treeZ; previousTrees.count = treeCount;
+      let cars = 0, people = 0, construction = 0;
+      for (const car of this.traffic.cars) {
+        if (car.h < 0 || car.crashed !== 0) continue;
+        const dx = car.x - T.x, dz = car.z - T.z;
+        cars += Math.max(0, 1 - (dx * dx + dz * dz) / 40000);
+      }
+      for (const person of this.peds.peds) {
+        if (person.gone) continue;
+        const dx = person.x - T.x, dz = person.z - T.z;
+        people += Math.max(0, 1 - (dx * dx + dz * dz) / 40000);
+      }
+      for (const building of this.buildings.list.values()) {
+        if (building.state !== 'building') continue;
+        const dx = building.x - T.x, dz = building.z - T.z;
+        construction += Math.max(0, 1 - (dx * dx + dz * dz) / 40000);
+      }
+      mix.traffic = Math.min(1, cars / 24);
+      mix.people = Math.min(1, people / 35);
+      mix.construction = Math.min(1, construction / 8);
+      mix.sources = this.ambientLife.soundSources(this.camera);
     }
-    this.audio.update(dt, {
-      zoom: Math.min(1, this.rts.distance / 1500), nature: this.sim.naturePct, water: this.waterNear, traffic: Math.min(1, this.traffic.count / 400),
-      construction: Math.min(1, this.buildings.counts().building / 20), people: Math.min(1, this.peds.peds.length / 150), night: n,
-      weather: this.weather.kind, weatherIntensity: this.weather.intensity, season: this.weather.season,
-    });
+    this.soundMix.zoom = Math.min(1, this.rts.distance / 1500);
+    this.soundMix.night = n; this.soundMix.speed = spd;
+    this.soundMix.weather = this.weather.kind; this.soundMix.weatherIntensity = this.weather.intensity; this.soundMix.season = this.weather.season;
+    this.audio.update(dt, this.soundMix);
     // street sound follows the real cars near the camera (src/audio/streetAudio.ts); re-picks its voices 4x a second
     this.audio.street(dt, this.traffic.cars, this.rts, this.weather.wet, spd);
     P.lap('lighting+audio');

@@ -242,7 +242,9 @@ export class Hud implements UiSink {
       this.closeDemand();
     }, true);
     window.addEventListener('resize', () => { if (this.demandKey) this.placeDemand(); const f = this.sub?.querySelector('#fov-v'); if (f) f.textContent = this.fovText(); });
-    this.actions.innerHTML = `<span class="ta-tip" id="ta-tip"></span><button id="ta-build" class="ta-build">🔨 Build</button><button id="ta-done" class="ta-done">${IS_TOUCH ? '✓ Done' : '✕ Stop'}</button><button id="ta-undo">↶ Undo</button>`;
+    this.actions.innerHTML = `<span class="ta-tip" id="ta-tip"></span><button id="ta-build" class="ta-build"></button><button id="ta-done" class="ta-done"></button><button id="ta-undo">${uiIcon('action', 'undo', '↶', 18)}<span>Undo</span></button>`;
+    this.badge('#ta-build', 'build', '🔨', 'Build');
+    this.badge('#ta-done', IS_TOUCH ? 'done' : 'stop', IS_TOUCH ? '✓' : '✕', IS_TOUCH ? 'Done' : 'Stop');
     this.actions.hidden = true;
     // phones: Done leaves the tool entirely (double-tap ends just the current
     // road); desktop: Stop ends the road being drawn and keeps the tool
@@ -333,6 +335,14 @@ export class Hud implements UiSink {
     });
   }
 
+  /** A tool badge button's icon and words. It is asked for every frame, so it rewrites the button only when they change. */
+  private badge(sel: string, id: string, fallback: string, text: string) {
+    const b = this.actions.querySelector(sel) as HTMLElement, key = `${id}|${text}`;
+    if (b.dataset.k === key) return;
+    b.dataset.k = key;
+    b.innerHTML = `${uiIcon('action', id, fallback, 18)}<span>${esc(text)}</span>`;
+  }
+
   private mk(tag: string, cls: string, parent: HTMLElement = this.root) {
     const el = document.createElement(tag);
     el.className = cls;
@@ -354,14 +364,14 @@ export class Hud implements UiSink {
         <button data-speed="2" title="Speed 2 (2)">▶▶</button>
         <button data-speed="3" title="Speed 3 (3)">▶▶▶</button>
       </div>
-      <div class="tb-stat tb-popstat" role="button" tabindex="0" id="tb-popstat" aria-haspopup="dialog"><span class="tb-lbl">Pop</span><b id="tb-pop">0</b></div>
+      <div class="tb-stat tb-popstat" role="button" tabindex="0" id="tb-popstat" aria-haspopup="dialog"><span class="tb-lbl">Pop</span><span class="tb-ico">${uiIcon('meter', 'population', '👥', 16)}</span><b id="tb-pop">0</b></div>
       <div class="tb-stat tb-money" role="button" tabindex="0" id="tb-treasury"><span class="tb-lbl">Treasury</span><b id="tb-money">$0</b><i id="tb-net"></i><i id="tb-growth" class="tb-growth" hidden></i></div>
       <div class="tb-demand" role="group" aria-label="Demand">
         ${DEMAND_KEYS.map((k) => `<button class="dbar" data-dem="${k}" aria-haspopup="dialog" aria-expanded="false"><span class="dtrack"><span class="dfill" id="d-${k}" style="--c:var(--${k})"></span><em>${DEM[k].letter}</em></span></button>`).join('')}
       </div>
       <div class="tb-meters" role="button" tabindex="0" id="tb-meters" aria-haspopup="dialog" aria-label="Nature and sprawl: show what they mean">
-        <div class="meter" title="Nature remaining"><span>🌲</span><div class="mtrack"><div class="mfill nature" id="m-nature"></div></div><b id="m-nature-t"></b></div>
-        <div class="meter" title="Progress toward Endless Sprawl"><span>🏙️</span><div class="mtrack"><div class="mfill sprawl" id="m-sprawl"></div></div><b id="m-sprawl-t"></b></div>
+        <div class="meter" title="Nature remaining"><span>${uiIcon('meter', 'nature', '🌲', 16)}</span><div class="mtrack"><div class="mfill nature" id="m-nature"></div></div><b id="m-nature-t"></b></div>
+        <div class="meter" title="Progress toward Endless Sprawl"><span>${uiIcon('meter', 'sprawl', '🏙️', 16)}</span><div class="mtrack"><div class="mfill sprawl" id="m-sprawl"></div></div><b id="m-sprawl-t"></b></div>
       </div>
       <div class="tb-weather" id="tb-weather"></div>`;
     this.top.querySelectorAll<HTMLButtonElement>('[data-speed]').forEach((b) =>
@@ -735,9 +745,9 @@ export class Hud implements UiSink {
     if (G.sprawl) goals.push(`🏙️ <b>${fine(G.sprawl)} Endless Sprawl</b> (${fine(s.sprawlPct)} now)`);
     const html = `
       <div class="dp-head"><b>Nature &amp; sprawl</b><button class="dp-x" data-act="close" aria-label="Close">✕</button></div>
-      <div class="dp-title" style="--c:var(--good)"><span class="dp-name">🌲 Nature left</span><span class="dp-val">${pct(s.naturePct)}</span></div>
+      <div class="dp-title" style="--c:var(--good)"><span class="dp-name">${uiIcon('meter', 'nature', '🌲', 18)} Nature left</span><span class="dp-val">${pct(s.naturePct)}</span></div>
       <p class="dp-status">The county's original trees still standing. Roads, buildings and terraforming cut them down, and they don't grow back.</p>
-      <div class="dp-title" style="--c:var(--slop)"><span class="dp-name">🏙️ Endless Sprawl</span><span class="dp-val">${pct(s.sprawlPct)}</span></div>
+      <div class="dp-title" style="--c:var(--slop)"><span class="dp-name">${uiIcon('meter', 'sprawl', '🏙️', 18)} Endless Sprawl</span><span class="dp-val">${pct(s.sprawlPct)}</span></div>
       <p class="dp-status">Your win meter. ${fine(s.coverage)} of buildable land is paved or built on; ${pct(s.maxedPct)} of buildings are maxed out. Pave 90% of it with 98% maxed to win: a long game, so aim for the steps below.</p>
       <div class="dp-title" style="--c:var(--accent, #ffd23f)"><span class="dp-name">🎯 Next goals</span></div>
       <ul class="dp-goals">${goals.map((x) => `<li>${x}</li>`).join('')}</ul>`;
@@ -1617,13 +1627,13 @@ export class Hud implements UiSink {
       html = `<div class="in-kicker" style="--zc:${svc ? 'var(--off)' : '#ff3ea5'}">${svc ? 'CITY SERVICE' : 'LANDMARK'}</div>
         <h3>${esc(b.label)}</h3>
         <div class="in-stats">
-          <div><span>Status</span><b class="${off ? 'in-warn' : ''}">${b.state === 'building' ? `🚧 ${Math.round(b.progress * 100)}%` : off ? '🚧 Not connected' : 'Open'}</b></div>
+          <div><span>Status</span><b class="${off ? 'in-warn' : ''}">${b.state === 'building' ? `${uiIcon('status', 'building', '🚧', 18)} ${Math.round(b.progress * 100)}%` : off ? `${uiIcon('status', 'warning', '🚧', 18)} Not connected` : 'Open'}</b></div>
           <div><span>Road</span><b class="${off ? 'in-warn' : ''}">${off === 'noRoad' ? 'None' : off === 'noLink' ? 'No route to the highway' : 'Connected'}</b></div>
           ${!svc && !off && b.state === 'active' ? `<div><span>Visitors today</span><b>${g.traffic.visitorsToday(b).toLocaleString()}</b></div>` : ''}
         </div>
-        ${off ? `<p class="in-note in-warn" id="in-link">🚧 ${esc(g.roadLinkText?.(b) ?? '')}</p>` : ''}
+        ${off ? `<p class="in-note in-warn" id="in-link">${uiIcon('status', 'warning', '🚧', 18)} ${esc(g.roadLinkText?.(b) ?? '')}</p>` : ''}
         ${!svc && !off ? `<p class="in-note">${landmarkEffects(b.landmark)}</p>` : ''}
-        <div class="in-actions">${off ? '<button id="in-road">🛣️ Draw a road</button>' : ''}<button class="danger" id="in-bulldoze">💣 Bulldoze</button></div>`;
+        <div class="in-actions">${off ? `<button id="in-road">${uiIcon('toolbar', 'roads', '🛣️', 18)} Draw a road</button>` : ''}<button class="danger" id="in-bulldoze">${uiIcon('toolbar', 'bulldoze', '💣', 18)} Bulldoze</button></div>`;
     } else if (sel.kind === 'building' && isZoned(sel.b)) {
       const b = sel.b;
       const brand = brandById(b.brand);
@@ -1637,12 +1647,12 @@ export class Hud implements UiSink {
           <div><span>Level</span><b>${'★'.repeat(b.level)}${'☆'.repeat(Math.max(0, max - b.level))}</b></div>
           <div><span>${isRes ? 'Residents' : 'Workers'}</span><b>${b.occ}/${b.cap}</b></div>
           <div><span>Land value</span><b>${Math.round(b.lv)}</b></div>
-          <div><span>Status</span><b>${b.state === 'building' ? `🚧 ${Math.round(b.progress * 100)}%` : b.abandoned !== undefined ? '🏚️ Abandoned' : 'Open'}</b></div>
+          <div><span>Status</span><b>${b.state === 'building' ? `${uiIcon('status', 'building', '🚧', 18)} ${Math.round(b.progress * 100)}%` : b.abandoned !== undefined ? `${uiIcon('status', 'abandoned', '🏚️', 18)} Abandoned` : 'Open'}</b></div>
         </div>
         ${bind ? `<div class="in-bind"><span>Holding it back</span><b>${esc(bind)}</b></div>` : ''}
         ${b.level < max && b.state === 'active' ? `<div class="in-prog"><span style="width:${Math.round(b.levelProgress * 100)}%"></span></div><small>Leveling up with land value. Denser neighbors = more value.</small>` : ''}
         ${brand?.merch ? `<a class="in-merch" href="${MERCH_URL}" target="_blank" rel="noopener">Shop the real ${esc(brand.name)} at imaginesupply.co →</a>` : ''}
-        <div class="in-actions"><button class="danger" id="in-bulldoze">💣 Bulldoze</button></div>`;
+        <div class="in-actions"><button class="danger" id="in-bulldoze">${uiIcon('toolbar', 'bulldoze', '💣', 18)} Bulldoze</button></div>`;
     } else if (sel.kind === 'car') {
       const c = sel.c;
       const a = ARCHETYPES[c.driver % ARCHETYPES.length];
@@ -1677,8 +1687,8 @@ export class Hud implements UiSink {
         <p class="in-blurb">Demands: “${esc(c.demand)}”</p>
         ${c.forever ? `<p class="in-warn">They've been here since 1969. They're never leaving. Build around them.</p>` : `<p class="in-note">Roads and zoning can't cross their land. <b>Pay off</b>: if they refuse, the money is gone and they dig in harder. <b>Sue</b>: 20 days in court; lose and they dig in.</p>`}
         <div class="in-actions">
-          <button id="in-bribe" ${c.forever || c.state !== 'active' ? 'disabled' : ''}>💸 Pay off ${money(g.communes.bribeCost(c))} <small>${Math.round(g.communes.bribeOdds(c) * 100)}%</small></button>
-          <button id="in-sue" ${c.forever || c.state !== 'active' ? 'disabled' : ''}>⚖️ Sue ${money(g.communes.suitCost(c))} <small>${Math.round(g.communes.suitOdds(c) * 100)}%</small></button>
+          <button id="in-bribe" ${c.forever || c.state !== 'active' ? 'disabled' : ''}>${uiIcon('action', 'bribe', '💸', 18)} Pay off ${money(g.communes.bribeCost(c))} <small>${Math.round(g.communes.bribeOdds(c) * 100)}%</small></button>
+          <button id="in-sue" ${c.forever || c.state !== 'active' ? 'disabled' : ''}>${uiIcon('action', 'court', '⚖️', 18)} Sue ${money(g.communes.suitCost(c))} <small>${Math.round(g.communes.suitOdds(c) * 100)}%</small></button>
         </div>`;
     } else if (sel.kind === 'lot') {
       const c = sel.cell, z = c.zone;
@@ -1688,7 +1698,7 @@ export class Hud implements UiSink {
       const st = g.lotStatus(c);
       html = `<div class="in-kicker">ZONED LOT · EMPTY</div><h3>${ZONE_ICON[z]} ${esc(ZONE_LABEL[z])}</h3>
         <p class="in-blurb"><b>${esc(st.primary)}</b></p>
-        <div class="in-actions">${st.demand ? `<button id="in-why">📊 ${DEM[st.demand.key].name} demand ${signed(st.demand.v)}: why?</button>` : ''}<button id="in-dezone">🧽 Dezone</button></div>`;
+        <div class="in-actions">${st.demand ? `<button id="in-why">📊 ${DEM[st.demand.key].name} demand ${signed(st.demand.v)}: why?</button>` : ''}<button id="in-dezone">${uiIcon('zone', 'none', '🧽', 18)} Dezone</button></div>`;
     } else if (sel.kind === 'road') {
       const s = sel.s;
       const t = ROAD_TYPES[s.type];
@@ -1703,7 +1713,7 @@ export class Hud implements UiSink {
           const q = g.quoteUpgrade([s], t.next);
           const short = q.net > g.sim.spendable();
           return `<button id="in-lane" class="one-more-lane" ${short ? 'disabled title="Not enough money"' : ''}>${uiIcon('toolbar', 'upgrade', '➕', 22)} ONE MORE LANE · ${money(q.net)}${q.grant > 0 ? ` <small>feds pay ${money(q.grant)}</small>` : ''}</button>`;
-        })() : '<button disabled>MAX LANES</button>'}${t.oneWay ? '<button id="in-flip" title="The arrows point the other way">⇅ Flip direction</button>' : ''}<button class="danger" id="in-bulldoze">💣 Bulldoze</button></div>`;
+        })() : '<button disabled>MAX LANES</button>'}${t.oneWay ? '<button id="in-flip" title="The arrows point the other way">⇅ Flip direction</button>' : ''}<button class="danger" id="in-bulldoze">${uiIcon('toolbar', 'bulldoze', '💣', 18)} Bulldoze</button></div>`;
     }
     let extra = '';
     for (const f of EXT.inspector) extra += f(sel, g) ?? '';
@@ -1945,14 +1955,12 @@ export class Hud implements UiSink {
       tipEl.hidden = IS_TOUCH ? !tip : !badge;
       const done = this.actions.querySelector('#ta-done') as HTMLElement;
       done.hidden = IS_TOUCH ? false : !t.drawing && !placingLabel;
-      const doneLabel = IS_TOUCH ? '✓ Done' : placingLabel ? '✕ Cancel' : '✕ Stop';
-      if (done.textContent !== doneLabel) done.textContent = doneLabel;
+      this.badge('#ta-done', IS_TOUCH ? 'done' : 'stop', IS_TOUCH ? '✓' : '✕', IS_TOUCH ? 'Done' : placingLabel ? 'Cancel' : 'Stop');
       const build = this.actions.querySelector('#ta-build') as HTMLButtonElement;
       const plan = t.active === 'ext' ? t.extPending : t.pending ? { cost: t.pendingCost } : null;
       build.hidden = !plan;
       build.disabled = !plan || plan.cost === null;
-      const label = plan && plan.cost !== null ? `🔨 Build $${plan.cost.toLocaleString()}` : '🔨 Build';
-      if (build.textContent !== label) build.textContent = label;
+      this.badge('#ta-build', 'build', '🔨', plan && plan.cost !== null ? `Build $${plan.cost.toLocaleString()}` : 'Build');
       const undo = this.actions.querySelector('#ta-undo') as HTMLButtonElement;
       undo.hidden = t.active !== 'road' && t.active !== 'upgrade' && !placingLabel;
       undo.disabled = !this.game.canUndo;

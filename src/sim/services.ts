@@ -2363,13 +2363,14 @@ registerInspector((sel, g) => {
   if (!isZoned(b)) return null;
   const bs = S.b.get(b.id);
   if (!bs) return null;
-  const yes = (v: boolean) => (v ? '<b class="pos">✓</b>' : '<b class="neg">✗</b>');
+  // a utility and whether it reaches this building: two drawn signs (the shape says it without the colour) and the words for a screen reader
+  const util = (u: 'power' | 'water' | 'sewage' | 'garbage', glyph: string, name: string, ok: boolean, bad: string, extra = '') => `<span role="img" aria-label="${name}: ${ok ? 'connected' : bad}" title="${name}: ${ok ? 'connected' : bad}">${uiIcon('utility', u, glyph, 20)}${ok ? uiIcon('status', 'ok', '✓', 18) : uiIcon('status', 'missing', '✗', 18)}${extra}</span>`;
   const bar = (q: number) => { const v = Math.max(0, Math.min(1, q)); return `<i class="svc-q"><i style="width:${Math.round(v * 100)}%;background:${v > 0.6 ? '#4fd05a' : v > 0.25 ? '#f2b01e' : '#e0302a'}"></i></i>`; };
   const td = trashDaysOf(b, bs);
-  return `<div class="svc-util"><span>⚡ ${yes(bs.pw)}</span><span>🚰 ${yes(bs.wa)}${bs.dirty ? ' <small class="neg">dirty</small>' : ''}</span><span>🚽 ${yes(bs.se)}</span><span>🗑️ ${td > TRASH_ICON ? `<b class="neg">${Math.round(td)}d</b>` : '<b class="pos">ok</b>'}</span></div>
+  return `<div class="svc-util">${util('power', '⚡', 'Power', bs.pw, 'cut off')}${util('water', '🚰', 'Water', bs.wa, 'cut off', bs.dirty ? ' <small class="neg">dirty</small>' : '')}${util('sewage', '🚽', 'Sewage', bs.se, 'cut off')}${util('garbage', '🗑️', 'Garbage', td <= TRASH_ICON, `not collected for ${Math.round(td)} days`, td > TRASH_ICON ? ` <b class="neg">${Math.round(td)}d</b>` : '')}</div>
     <div class="svc-covs">
-      <div><span>🚒 Fire</span>${bar(bs.cov.fire)}</div><div><span>🚓 Police</span>${bar(bs.cov.police)}</div>
-      <div><span>🏥 Health</span>${bar(bs.cov.health)}</div><div><span>🎓 Educ.</span>${bar(bs.edu)}</div>
+      <div><span>${uiIcon('category', 'fire', '🚒', 16)} Fire</span>${bar(bs.cov.fire)}</div><div><span>${uiIcon('category', 'police', '🚓', 16)} Police</span>${bar(bs.cov.police)}</div>
+      <div><span>${uiIcon('category', 'health', '🏥', 16)} Health</span>${bar(bs.cov.health)}</div><div><span>${uiIcon('category', 'education', '🎓', 16)} Educ.</span>${bar(bs.edu)}</div>
       <div><span>🦹 Safety</span>${bar(1 - bs.crime / 100)}</div><div><span>🤒 Wellness</span>${bar(1 - bs.sick / 0.35)}</div>
     </div>`;
 });

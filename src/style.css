@@ -2293,10 +2293,6 @@ a {
   .tb-weather small {
     display: none;
   }
-  #tb-pop::before {
-    content: '👥 ';
-    font-size: 11px;
-  }
   .tb-stat b {
     font-size: 13px;
   }
@@ -3577,6 +3573,17 @@ a {
    placed against it still clears it (overlaptest: 3 px of drawer over the bar); the drawing itself is 1.4em and overhangs */
 .ti .ui-icon { height: 1.1em; align-items: center; }
 .ti .ui-icon svg { width: 1.4em; height: 1.4em; flex: none; }
+/* the tool badge is an icon and its words in a row; a building's utility row is a sign for the utility and one for yes or no */
+.tool-actions button { display: inline-flex; align-items: center; gap: 5px; }
+.svc-util > span { display: inline-flex; align-items: center; gap: 2px; }
+.in-actions button .ui-icon, .in-stats b .ui-icon, .in-note .ui-icon, .dp-name .ui-icon, .svc-covs .ui-icon { margin-right: 3px; vertical-align: -0.25em; }
+/* the phone's one-row bar has no room for the word "Pop": the stat leads with its drawn icon (the emoji that stood there
+   was a different width in every font, and one left the stat too narrow for a finger) */
+.tb-ico { display: none; }
+@media (max-width: 760px) {
+  .tb-popstat { flex-direction: row; align-items: center; }
+  .tb-ico { display: inline-flex; margin-right: 3px; }
+}
 
 /* ---- a phone's map stays in view (scripts/phonefree.mjs measures the share of the screen that is free map) ---- */
 @media (pointer: coarse) and (max-width: 760px) {

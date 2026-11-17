@@ -1,6 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 import { SAVE, seededInit, seededRandom } from '../refblock.mjs';
-import { readSave } from '../lib/fixtures.mjs';
+import { readSave, REFBLOCK_CENTER } from '../lib/fixtures.mjs';
 
 export const seed = 1776;
 const times = {
@@ -49,11 +50,14 @@ export async function capture(browser, shot, base, probeMaterial = false, afterC
   const { scene, quality, camera, conditions } = shot;
   const phone = quality === 'low';
   let save = null;
+  let centre = { x: 0, z: 0 };
   if (scene === 'block') {
     if (!resolve(SAVE).startsWith(resolve('scripts/fixtures') + sep)) {
       throw new Error('The reference-block harness must point SAVE at its committed fixture before capturing the block');
     }
     save = readSave(SAVE);
+    centre = JSON.parse(readFileSync(REFBLOCK_CENTER, 'utf8'));
+    if (!Number.isFinite(centre.x) || !Number.isFinite(centre.z)) throw Error('Invalid reference-block centre');
   }
   const viewport = phone ? { width: 390, height: 844 } : { width: 1280, height: 720 };
   const page = await browser.newPage({
@@ -97,7 +101,7 @@ export async function capture(browser, shot, base, probeMaterial = false, afterC
     if (save) await page.locator('#continue').click({ timeout: 180000 });
     await page.waitForFunction(() => window.__dbg && window.__game && window.__game.civic.status !== 'loading', null, { timeout: 300000 });
     await page.waitForLoadState('networkidle', { timeout: 120000 });
-    const result = await page.evaluate(({ quality, scene, camera, conditions, seed, probeMaterial, viewport, backend }) => {
+    const result = await page.evaluate(({ quality, scene, camera, conditions, seed, probeMaterial, viewport, backend, centre }) => {
       const g = window.__game;
       cancelAnimationFrame(g.raf);
       if (innerWidth !== viewport.width || innerHeight !== viewport.height || devicePixelRatio !== (quality === 'low' ? 3 : 1)) {
@@ -118,7 +122,6 @@ export async function capture(browser, shot, base, probeMaterial = false, afterC
       if (g.post.aaMode === 'taa') g.post.setAA('msaa4');
       const [hour, moon, weather] = conditions;
       const [dx, dz, distance, yaw, pitch] = camera;
-      const centre = scene === 'block' ? g.startView() : { x: 0, z: 0 };
       const x = Math.round(centre.x) + dx, z = Math.round(centre.z) + dz;
       g.env.moonPhaseOverride = moon;
       // The initial cloud deck consumes the global RNG during construction, after
@@ -152,7 +155,7 @@ export async function capture(browser, shot, base, probeMaterial = false, afterC
       return { png: canvas.toDataURL().split(',')[1], renderer, camera: [x, z, distance, yaw, pitch],
         viewport, dpr: devicePixelRatio, buffer: [gl.drawingBufferWidth, gl.drawingBufferHeight],
         calls: g.perf.calls, triangles: g.perf.triangles };
-    }, { quality, scene, camera, conditions, seed, probeMaterial, viewport, backend });
+    }, { quality, scene, camera, conditions, seed, probeMaterial, viewport, backend, centre });
     if (errors.length) throw Error(errors.join('\n'));
     const frame = { ...result, png: Buffer.from(result.png, 'base64') };
     if (afterCapture) frame.measurement = await afterCapture(page, frame);

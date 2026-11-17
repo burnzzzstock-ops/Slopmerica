@@ -1,55 +1,55 @@
 {
-  "fixture": "51ed9258a3ddc5d276ad66d8404a38eb11eaf0d41f6ec3b8ca176d9a0fde0fe5",
+  "fixture": "600dee76f57a4efea7c31455ca17d5761518bbd66bfddf60f2be82d0d1710085",
   "seed": 271828,
   "framesPerView": 12,
   "limits": {
     "low/street": {
-      "calls": 162,
-      "triangles": 647213
+      "calls": 192,
+      "triangles": 827929
     },
     "low/middle": {
-      "calls": 144,
-      "triangles": 849475
+      "calls": 165,
+      "triangles": 843742
     },
     "low/overview": {
-      "calls": 143,
-      "triangles": 1072214
+      "calls": 156,
+      "triangles": 850384
     },
     "medium/street": {
-      "calls": 302,
-      "triangles": 1154825
+      "calls": 353,
+      "triangles": 1213898
     },
     "medium/middle": {
-      "calls": 240,
-      "triangles": 1215093
+      "calls": 265,
+      "triangles": 1160838
     },
     "medium/overview": {
-      "calls": 218,
-      "triangles": 1353009
+      "calls": 236,
+      "triangles": 1146957
     },
     "high/street": {
-      "calls": 310,
-      "triangles": 1272443
+      "calls": 362,
+      "triangles": 1319249
     },
     "high/middle": {
-      "calls": 425,
-      "triangles": 2473156
+      "calls": 272,
+      "triangles": 1309984
     },
     "high/overview": {
-      "calls": 224,
-      "triangles": 1571100
+      "calls": 242,
+      "triangles": 1415599
     },
     "ultra/street": {
-      "calls": 309,
-      "triangles": 1358532
+      "calls": 362,
+      "triangles": 1453972
     },
     "ultra/middle": {
-      "calls": 423,
-      "triangles": 2648889
+      "calls": 272,
+      "triangles": 1427968
     },
     "ultra/overview": {
-      "calls": 248,
-      "triangles": 1901766
+      "calls": 267,
+      "triangles": 1666656
     }
   },
   "targetFrameMs": {

@@ -32,6 +32,7 @@ export interface CivicItem { asset: string; x: number; y: number; z: number; yaw
 
 /** LOD1 inside this range (m), LOD2 out to the cull range. */
 const NEAR = 150, FAR = 720;
+const ULTRA_NEAR = 240, ULTRA_FAR = 960;
 const LOW_FAR = 245;
 
 // Mean sRGB albedo of the pack's material swatches. At phone scale the slats,
@@ -96,6 +97,7 @@ export class CivicLayer {
   status: 'off' | 'loading' | 'ready' | 'failed' = 'off';
   private source?: { pack: Pack; bin: ArrayBuffer; base: URL };
   private low = false;
+  private ultra = false;
   private qualityBatches = new Map<boolean, Map<string, AssetBatch>>();
   private batches = new Map<string, AssetBatch>();
   private dirty = true;
@@ -204,7 +206,12 @@ export class CivicLayer {
 
   update(dt: number) {
     if (this.status !== 'ready') return;
-    if (this.low !== ((this.g.pendingQuality ?? this.g.q.name) === 'low')) this.selectQuality();
+    const quality = this.g.pendingQuality ?? this.g.q.name;
+    if (this.low !== (quality === 'low')) this.selectQuality();
+    if (this.ultra !== (quality === 'ultra')) {
+      this.ultra = quality === 'ultra';
+      this.lastCam.set(Infinity, 0, 0);
+    }
     this.t -= dt;
     // the town changes under the furniture: re-place when buildings come and go (and now and then)
     this.refreshT -= dt;
@@ -318,12 +325,14 @@ export class CivicLayer {
 
   // ------------------------------------------------------------------ LOD + instance upload
   private relod(cam: THREE.Vector3) {
+    const near = this.ultra ? ULTRA_NEAR : NEAR;
+    const far = this.low ? LOW_FAR : this.ultra ? ULTRA_FAR : FAR;
     for (const b of this.batches.values()) {
       if (!b.meshes.length) continue;
       const n = [0, 0];
       for (const it of b.items) {
         const d = this.low ? Math.hypot(it.x - cam.x, it.y - cam.y, it.z - cam.z) : Math.hypot(it.x - cam.x, it.z - cam.z);
-        if (d > (this.low ? LOW_FAR : FAR)) continue;
+        if (d > far) continue;
         if (this.low) {
           const sphere = b.geos[0][0].geo.boundingSphere!;
           // Enclose the yaw-rotated asset about its placement, including its crown.
@@ -331,7 +340,7 @@ export class CivicLayer {
           this.lowBounds.radius = sphere.radius + Math.hypot(sphere.center.x, sphere.center.z) + 6;
           if (!this.lowFrustum.intersectsSphere(this.lowBounds)) continue;
         }
-        const li = d < NEAR || b.meshes.length < 2 ? 0 : 1;
+        const li = d < near || b.meshes.length < 2 ? 0 : 1;
         this.q.setFromAxisAngle(this.up, it.yaw);
         this.m4.compose(this.v.set(it.x, it.y, it.z), this.q, this.one);
         for (const m of b.meshes[li]) m.setMatrixAt(n[li], this.m4);

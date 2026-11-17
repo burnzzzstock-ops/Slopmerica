@@ -53,8 +53,12 @@ try {
       const events = [];
       for (const kind of ['construction', 'levelUp', 'demolished']) g.sim.events.on(kind, data => { if (data.bldId === b.id) events.push({ kind, ...data }); });
       g.buildings.levelUp(b);
+      // This regression owns a diagnostic RGBA value. The live finish writer is
+      // covered by material-state; keep it from replacing this injected wear.
+      const finishUpdate = g.finishes.update;
+      g.finishes.update = () => {};
       g.buildings.mesh.setColorAt(b.inst, new THREE.Vector4(.21, .33, .57, .18));
-      window.__construction = { THREE, b, events, handle: b.inst, model: b.model, position: Array.from(b.model.geometry.getAttribute('position').array) };
+      window.__construction = { THREE, b, events, finishUpdate, handle: b.inst, model: b.model, position: Array.from(b.model.geometry.getAttribute('position').array) };
       return { id: b.id, zone: b.zone, level: b.level, height: b.model.height, buildHeight: b.buildH };
     });
     const stages = [];
@@ -126,6 +130,7 @@ try {
       && effects[0].ghosts === 1 && effects[1].ghosts === 0 && effects[1].rubble === 6 && effects[2].rubble === 0;
     results.push({ quality, town, setup, stages, demolition, effects, errors: errs, pass });
     console.log(pass ? 'OK' : 'FAIL', quality, JSON.stringify({ setup, stages, demolition, effects }));
+    await page.evaluate(() => { window.__game.finishes.update = window.__construction.finishUpdate; });
     await page.close();
   }
   const pass = results.every(r => r.pass) && !consoleErrors.length;

@@ -272,7 +272,7 @@ class Lab {
     this.audio.update(dt, m);
 
     wu.uReflOn.value = this.water.reflection?.shouldRender(this.camera) ? 1 : 0;
-    this.post.render(n);
+    this.post.render(n, this.rts.distance);
     // Render the main pass first so three.js has created the sun shadow texture.
     // The reflection can safely reuse the previous frame while it refreshes.
     this.water.reflection?.render(this.renderer, this.scene, this.camera, [this.water.mesh]);

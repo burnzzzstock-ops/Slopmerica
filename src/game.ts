@@ -333,7 +333,7 @@ export class Game {
     this.fields = makeFields(this);
     this.tools = new Tools(this);
 
-    this.rts = new RTSCamera(this.camera, this.renderer.domElement, this.terrain, this.tools as PointerHandlers);
+    this.rts = new RTSCamera(this.camera, this.renderer.domElement, this.terrain, this.tools as PointerHandlers, this.fields.poseOf);
     try { this.rts.edgeScroll = localStorage.getItem('slopmerica.edgeScroll') !== '0'; } catch { /* private mode: default on */ }
     try { if (localStorage.getItem('slopmerica.resolution') === 'full') this.resolutionMode = 'full'; } catch { /* default auto */ }
     try {
@@ -1234,7 +1234,7 @@ export class Game {
       this.renderer.toneMappingExposure = 0.95 * (this.post.active ? 1 : lowExposure(this.env, this.post.look));
       // ... and its tint rides on the two lights that carry the ambient and the key (render/lowGrade.ts)
       if (!this.post.active) applyLowGrade(this.env, this.post.look);
-      this.post.render(n);
+      this.post.render(n, this.rts.distance);
       P.lap('render');
       if (this.blackChecks.length && performance.now() >= this.blackChecks[0] && !document.hidden) {
         this.blackChecks.shift();

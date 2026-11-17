@@ -625,6 +625,11 @@ export class Sim {
   }
 
   private landValueAndLevels(days: number) {
+    // the landmarks a road reaches (a handful): asked directly below. The pass used to search 300 m round every building
+    // for one, 200 buildings a search on a 14,000-person county, and that search was over half of a 29 ms pass that all
+    // lands in one step every third day.
+    const landmarks: Bld[] = [];
+    for (const o of this.b.list.values()) if (o.zone === 'landmark' && !o.offNet) landmarks.push(o);
     for (const bld of this.b.list.values()) {
       if (!isZoned(bld)) continue;
       const near = this.b.near(bld.x, bld.z, 140);
@@ -642,7 +647,7 @@ export class Sim {
       }
       lv += Math.min(40, dense * 1.1);
       lv += Math.min(30, lm * 15);
-      for (const o of this.b.near(bld.x, bld.z, 300)) if (o.zone === 'landmark' && !o.offNet) { lv += 6; break; }
+      for (const o of landmarks) if (Math.hypot(o.x - bld.x, o.z - bld.z) <= 300) { lv += 6; break; }
       if (bld.zone !== 'industry') lv -= Math.min(30, ind * (bld.zone.startsWith('res') ? 4 : 1.5));
       if (bld.zone.startsWith('res')) lv += Math.min(10, com * 1.2);
       lv += Math.min(10, slop * 5);

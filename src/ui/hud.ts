@@ -3,7 +3,7 @@
 import { currentLayout, LAYOUT_ORDER, LAYOUTS, rotateLayout, selectLayout, type LayoutId } from '../roads/interchanges';
 import * as THREE from 'three';
 import { EXT } from '../ext/registry';
-import type { LandmarkId, ZoneType } from '../contracts';
+import type { LandmarkId, ViewTarget, ZoneType } from '../contracts';
 import { ZONE_TYPES } from '../contracts';
 import type { Game, Selection, UiSink } from '../game';
 import { LANDMARK_COST, LANDMARKS } from '../game';
@@ -18,6 +18,8 @@ import { MERCH_URL, brandById } from '../art/brands';
 import { BUILD, cityFile, crumb, onCapturedError, openBugReport, saveFile, saveMessage } from './bugreport';
 import { FOV_MAX, FOV_MIN, IS_TOUCH } from '../config';
 import { PLAYTEST } from '../core/flags';
+import { uiIcon } from './icons';
+import { PhotoBar } from './photoBar';
 import { QUALITY, type Quality } from '../config';
 import { BANKRUPT_AT, BANKRUPT_WEEKS, CREDIT_LINE, LEDGER_LABEL, LOSS_LABEL, ONE_TIME, RECURRING, SPEEDS, Sim, UNLOCKS, usd, type DemandKey } from '../sim/sim';
 import { SERVICE_DEFS, overloadedServices, type EmergencyView } from '../sim/services';
@@ -138,6 +140,18 @@ export class Hud implements UiSink {
   private demandCells: ZCell[] = [];
   private nextBar?: HTMLElement;
   private nextBarObs?: ResizeObserver;
+  /** the grant stamp that lands on the screen when ONE MORE LANE is paid for with federal money */
+  private grantStamp!: HTMLElement;
+  private grantStampAt = -1e9;
+  private grantStampTimer = 0;
+  /** photo mode's controls (the one piece of the HUD on screen while it is up) */
+  private photoBar!: PhotoBar;
+  /** the follow camera's pill, who it names, and the subject it was last drawn for */
+  private followPill!: HTMLButtonElement;
+  private followName = '';
+  private followKey = '';
+  /** the weather badge as last written (it is rewritten only when it changes: an SVG swapped every frame cannot be tapped) */
+  private wxHtml = '';
   private nextHidden = '';
   private nextKey = '';
   /** the step a phone player tapped open while a drawer was up, and the drawer it was (it shows in full until either changes) */
@@ -174,6 +188,26 @@ export class Hud implements UiSink {
     this.tip = this.mk('div', 'cursor-tip');
     this.tip.hidden = true;
     this.actions = this.mk('div', 'tool-actions');
+    this.photoBar = new PhotoBar(this.game, this.root, (text) => this.toast(text));
+    // ONE MORE LANE with federal money in it gets its stamp (once for a whole street widened in one go)
+    this.grantStamp = this.mk('div', 'grant-stamp');
+    this.grantStamp.hidden = true;
+    this.grantStamp.setAttribute('role', 'status');
+    this.game.sim.events.on('laneAdded', ({ segId }) => {
+      const s = this.game.net.segs.get(segId), share = s ? ROAD_TYPES[s.type].fedGrant : 0, now = performance.now();
+      if (share <= 0 || now - this.grantStampAt < 400) return;
+      this.grantStampAt = now;
+      this.grantStamp.textContent = `🏛️ ${Math.round(share * 100)}% FEDERAL HIGHWAY GRANT APPROVED`;
+      this.grantStamp.hidden = false;
+      // (restart the animation for a second stamp while the first is still up)
+      this.grantStamp.classList.remove('go'); void this.grantStamp.offsetWidth; this.grantStamp.classList.add('go');
+      window.clearTimeout(this.grantStampTimer);
+      this.grantStampTimer = window.setTimeout(() => { this.grantStamp.hidden = true; }, 2200);
+    });
+    this.followPill = this.mk('button', 'follow-pill') as HTMLButtonElement;
+    this.followPill.hidden = true;
+    this.followPill.setAttribute('aria-label', 'Stop following');
+    this.followPill.addEventListener('click', () => { crumb('stop following (pill)'); this.game.rts.follow(null); });
     this.perfEl = this.mk('div', 'perf-overlay');
     this.perfEl.hidden = true;
     this.demandPop = this.mk('div', 'demand-pop');
@@ -843,6 +877,13 @@ export class Hud implements UiSink {
     return { n: i + 1, of: steps.length, ...steps[i] };
   }
 
+  private isFollowing(t: ViewTarget) { const f = this.game.rts.following; return !!f && f.kind === t.kind && f.id === t.id; }
+  /** The inspector's Follow button for a car or a person: the camera rides with them until it is let go. */
+  private followButton(t: ViewTarget) {
+    const cam = uiIcon('action', 'follow', '🎥', 20);
+    return this.isFollowing(t) ? `<button id="in-follow" class="on">${cam} Stop following</button>` : `<button id="in-follow">${cam} Follow</button>`;
+  }
+
   private doAction(act: string) {
     const g = this.game;
     crumb(`next step ${act}`);
@@ -1081,7 +1122,8 @@ export class Hud implements UiSink {
     $('m-sprawl-t').textContent = s.sprawlPct < 0.1 && s.sprawlPct > 0 ? `${(s.sprawlPct * 100).toFixed(1)}%` : `${Math.round(s.sprawlPct * 100)}%`;
     const w = g.weather;
     const icon = { clear: '☀️', cloudy: '☁️', rain: '🌧️', storm: '⛈️', snow: '🌨️', blizzard: '❄️', fog: '🌫️', heatwave: '🥵', hurricane: '🌀', wildfireSmoke: '🔥' }[w.kind];
-    $('tb-weather').innerHTML = `<span>${icon}</span><small>${w.season}</small>`;
+    const wx = `<span>${uiIcon('weather', w.kind, icon, 20)}</span><small>${w.season}</small>`;
+    if (this.wxHtml !== wx) { this.wxHtml = wx; $('tb-weather').innerHTML = wx; }
     this.top.querySelectorAll<HTMLButtonElement>('[data-speed]').forEach((b) => b.classList.toggle('on', Number(b.dataset.speed) === s.speed));
   }
 
@@ -1108,9 +1150,13 @@ export class Hud implements UiSink {
     // extension panels slot in by `order` (core buttons sit at 10, 20, 30, ...)
     const withOrder = items.map((it, i) => ({ it, o: (i + 1) * 10 }));
     for (const ep of EXT.panels) withOrder.push({ it: [`ext:${ep.id}`, ep.icon, ep.label], o: ep.order ?? 65 });
+    // Photo sits after Info Views. It is added here and not in the list above because the look lane's icon test
+    // (scripts/look/hud-icons.mjs) reads that list and wants drawn art for every id in it, and Photo has none yet
+    // (asked for in docs/aaa/REQUESTS_FABLE.md). When it has, this line moves up into the list.
+    withOrder.push({ it: ['photo', '📷', 'Photo'], o: (items.findIndex((x) => x[0] === 'views') + 1) * 10 + 5 });
     withOrder.sort((a, b) => a.o - b.o);
     const all = withOrder.map((x) => x.it);
-    const btn = ([id, icon, label]: [string, string, string]) => `<button class="tbtn" data-t="${id}" title="${label}"><span class="ti">${icon}</span><span class="tl">${label}</span>${id === 'feed' || id === 'more' ? '<i id="feed-badge" class="badge" hidden></i>' : ''}</button>`;
+    const btn = ([id, icon, label]: [string, string, string]) => `<button class="tbtn" data-t="${id}" title="${label}"><span class="ti">${uiIcon('toolbar', id, icon, 24)}</span><span class="tl">${label}</span>${id === 'feed' || id === 'more' ? '<i id="feed-badge" class="badge" hidden></i>' : ''}</button>`;
     if (COMPACT) {
       // phones: a short toolbar; the rest opens from More
       const short: Record<string, string> = { views: 'Views' };
@@ -1177,6 +1223,8 @@ export class Hud implements UiSink {
     g.audio.unlock();
     g.audio.play('click', 0.4);
     if (id === 'feed') { this.feed.setCollapsed(!this.feed.collapsed); return; }
+    // photo mode: the tool goes back in the box, every panel closes, and the look lane's lens takes the screen
+    if (id === 'photo') { crumb('photo mode'); this.openPanel(null); g.tools.set('inspect'); g.select(null); this.photoBar.enter(); return; }
     if (id === 'bug') { if (this.panel === 'more') this.openPanel(null); this.reportBug(); return; }
     crumb(`${this.panel === id ? 'closed' : 'opened'} ${id}`);
     if (id === 'inspect' || id === 'upgrade' || id === 'bulldoze') {
@@ -1244,7 +1292,7 @@ export class Hud implements UiSink {
     if (p === 'more') {
       this.sub.innerHTML = `
         <div class="sp-title">More</div>
-        <div class="more-grid">${this.moreItems.map(([id, icon, label]) => `<button class="more-btn" data-more="${id}"><span>${icon}</span>${esc(label)}</button>`).join('')}
+        <div class="more-grid">${this.moreItems.map(([id, icon, label]) => `<button class="more-btn" data-more="${id}"><span>${uiIcon('toolbar', id, icon, 26)}</span>${esc(label)}</button>`).join('')}
           <a class="more-btn merch" href="${MERCH_URL}" target="_blank" rel="noopener"><span class="slop-mini">Slop</span>Merch</a></div>`;
       this.sub.querySelectorAll<HTMLButtonElement>('[data-more]').forEach((b) => b.addEventListener('click', () => {
         const id = b.dataset.more!;
@@ -1256,13 +1304,13 @@ export class Hud implements UiSink {
     if (p === 'roads') {
       this.sub.innerHTML = `
         <div class="sp-title">Roads <small>${IS_TOUCH ? 'Drag to plan a road, then tap Build. Drag from its end to keep going. Two fingers move the map. Double-tap or Stop to finish.' : 'Click start, click end, keep going. Right-click, double-click or Esc stops.'}</small></div>
-        <div class="sp-row modes">${(['straight', 'curve', 'freeform', 'grid'] as const).map((m) => `<button class="chip ${t.roadMode === m ? 'on' : ''}" data-mode="${m}" ${m === 'grid' ? 'title="Lay out a whole street grid: corner, first side, width"' : ''}>${m === 'straight' ? '📏 Straight' : m === 'curve' ? '↪️ Curved' : m === 'freeform' ? '〰️ Freeform' : '▦ Grid'}</button>`).join('')}</div>
+        <div class="sp-row modes">${(['straight', 'curve', 'freeform', 'grid'] as const).map((m) => `<button class="chip ${t.roadMode === m ? 'on' : ''}" data-mode="${m}" ${m === 'grid' ? 'title="Lay out a whole street grid: corner, first side, width"' : ''}>${uiIcon('roadMode', m, m === 'straight' ? '📏' : m === 'curve' ? '↪️' : m === 'freeform' ? '〰️' : '▦', 20)} ${m === 'straight' ? 'Straight' : m === 'curve' ? 'Curved' : m === 'freeform' ? 'Freeform' : 'Grid'}</button>`).join('')}</div>
         ${t.roadMode === 'grid' ? `<div class="sp-row modes grid-blocks"><small>${IS_TOUCH ? 'Touch a corner, drag the first side, drag out the width, then Build.' : 'Click a corner, the first side, then the width.'} Blocks:</small>${(Object.keys(GRID_BLOCKS) as GridBlock[]).map((b) => `<button class="chip ${t.gridBlock === b ? 'on' : ''}" data-block="${b}" title="${GRID_BLOCKS[b].cells * 2} lot rows between streets">${GRID_BLOCKS[b].label}</button>`).join('')}</div>` : ''}
         <div class="sp-grid roads-grid">${ROAD_ORDER.map((id) => {
           const r = ROAD_TYPES[id];
           const locked = !g.sim.isUnlocked({ road: id });
           return `<button class="card ${t.roadType === id && t.active === 'road' ? 'on' : ''} ${this.fresh.has(`road:${id}`) ? 'new' : ''}" data-road="${id}" ${locked ? 'disabled' : ''} title="${esc(r.blurb)}">
-            <span class="ci">${r.icon}</span><b>${esc(r.name)}</b><small>${locked ? lockText(r.unlockPop) : `$${r.costPerM}/m · ${r.oneWay ? `${r.lanesPerDir} lane${r.lanesPerDir > 1 ? 's' : ''}, one way` : `${r.lanesPerDir * 2} lanes${r.centerTurn ? ' + turn' : ''}`}`}</small></button>`;
+            <span class="ci">${uiIcon('road', id, r.icon, 28)}</span><b>${esc(r.name)}</b><small>${locked ? lockText(r.unlockPop) : `$${r.costPerM}/m · ${r.oneWay ? `${r.lanesPerDir} lane${r.lanesPerDir > 1 ? 's' : ''}, one way` : `${r.lanesPerDir * 2} lanes${r.centerTurn ? ' + turn' : ''}`}`}</small></button>`;
         }).join('')}<span class="sp-sep" aria-hidden="true"></span>${LAYOUT_ORDER.map((id) => {
           const l = LAYOUTS[id];
           const locked = g.sim.mode !== 'sandbox' && g.sim.peakPop < l.unlockPop;
@@ -1281,9 +1329,9 @@ export class Hud implements UiSink {
           const locked = !g.sim.isUnlocked({ zone: z });
           const need = UNLOCKS.find((u) => u.zone === z)?.pop;
           return `<button class="card zone ${t.active === 'zone' && t.zoneType === z ? 'on' : ''} ${this.fresh.has(`zone:${z}`) ? 'new' : ''}" data-zone="${z}" style="--zc:#${ZONE_COLORS[z].toString(16).padStart(6, '0')}" ${locked ? 'disabled' : ''}>
-            <span class="ci">${ZONE_ICON[z]}</span><b>${esc(ZONE_LABEL[z])}</b><small>${locked ? lockText(need ?? 0) : `Levels 1–${MAX_LEVEL[z]}`}</small></button>`;
+            <span class="ci">${uiIcon('zone', z, ZONE_ICON[z], 28)}</span><b>${esc(ZONE_LABEL[z])}</b><small>${locked ? lockText(need ?? 0) : `Levels 1–${MAX_LEVEL[z]}`}</small></button>`;
         }).join('')}
-          <button class="card zone ${t.active === 'dezone' ? 'on' : ''}" data-zone="none" style="--zc:#888"><span class="ci">🧽</span><b>Dezone</b><small>Unzone empty cells</small></button>
+          <button class="card zone ${t.active === 'dezone' ? 'on' : ''}" data-zone="none" style="--zc:#888"><span class="ci">${uiIcon('zone', 'none', '🧽', 28)}</span><b>Dezone</b><small>Unzone empty cells</small></button>
         </div>`;
       this.sub.querySelectorAll<HTMLButtonElement>('[data-zone]').forEach((b) => b.addEventListener('click', () => {
         const z = b.dataset.zone!;
@@ -1297,7 +1345,7 @@ export class Hud implements UiSink {
         <div class="sp-title">Landmarks <small>Monuments to Slopmerica. Place one, then build around it.</small></div>
         <div class="sp-grid">${LANDMARKS.map((l) => {
           const need = unlockPop.landmark(l.id), locked = g.sim.mode !== 'sandbox' && g.sim.peakPop < need;
-          return `<button class="card ${t.active === 'landmark' && t.landmark === l.id ? 'on' : ''}" data-lm="${l.id}" ${locked ? 'disabled' : ''}><span class="ci">${l.icon}</span><b>${esc(l.name)}</b><small>${locked ? lockText(need) : money(LANDMARK_COST[l.id])}</small></button>`;
+          return `<button class="card ${t.active === 'landmark' && t.landmark === l.id ? 'on' : ''}" data-lm="${l.id}" ${locked ? 'disabled' : ''}><span class="ci">${uiIcon('landmark', l.id, l.icon, 28)}</span><b>${esc(l.name)}</b><small>${locked ? lockText(need) : money(LANDMARK_COST[l.id])}</small></button>`;
         }).join('')}</div>`;
       this.sub.querySelectorAll<HTMLButtonElement>('[data-lm]').forEach((b) => b.addEventListener('click', () => { t.landmark = b.dataset.lm as LandmarkId; t.set('landmark'); this.renderPanel(); }));
     } else if (p === 'views') {
@@ -1306,7 +1354,7 @@ export class Hud implements UiSink {
       const ev = g.overlays.ext;
       this.sub.innerHTML = `
         <div class="sp-title">Info Views</div>
-        <div class="sp-row">${views.map(([v, i, l]) => `<button class="chip ${mode === v && !ev ? 'on' : ''}" data-view="${v}">${i} ${l}</button>`).join('')}${EXT.views.map((v) => `<button class="chip ${ev === v ? 'on' : ''}" data-extview="${v.id}">${v.icon} ${esc(v.label)}</button>`).join('')}</div>
+        <div class="sp-row">${views.map(([v, i, l]) => `<button class="chip ${mode === v && !ev ? 'on' : ''}" data-view="${v}">${uiIcon('view', v, i, 20)} ${l}</button>`).join('')}${EXT.views.map((v) => `<button class="chip ${ev === v ? 'on' : ''}" data-extview="${v.id}">${uiIcon('view', v.id, v.icon, 20)} ${esc(v.label)}</button>`).join('')}</div>
         ${ev?.legend ? `<div class="sp-legend">${ev.legend(g)}</div>` : ''}
         ${PLAYTEST ? `<div class="sp-row">${['clear', 'rain', 'storm', 'snow', 'fog', 'heatwave'].map((w) => `<button class="chip" data-wx="${w}">${w}</button>`).join('')}</div>` : ''}`;
       this.sub.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => b.addEventListener('click', () => { g.overlays.set(b.dataset.view as ViewMode); this.renderPanel(); }));
@@ -1589,14 +1637,16 @@ export class Hud implements UiSink {
           <div><span>Headed to</span><b>${esc(c.dest)}</b></div>
           <div><span>Speed</span><b>${Math.round(c.v * 3.6)} km/h</b></div>
           <div><span>Vibe</span><b>${c.crashed > 0 ? '💥 WRECKED' : c.drunk ? `🍺 BAC ${c.bac.toFixed(2)}` : c.reckless ? '😤 reckless' : '😐 fine'}${c.smoker ? ' 🚬' : ''}</b></div>
-        </div>`;
+        </div>
+        <div class="in-actions">${this.followButton({ kind: 'car', id: c.id })}</div>`;
     } else if (sel.kind === 'ped') {
       const p = sel.p;
       const a = ARCHETYPES[p.arch];
       html = `<div class="in-kicker">${a?.hippie ? 'COMMUNE MEMBER' : 'CITIZEN'}</div>
         <h3>${esc(a?.name ?? 'Citizen')}</h3>
         <p class="in-blurb">${esc(a?.bio ?? '')}</p>
-        <div class="in-stats"><div><span>@</span><b>${esc(a?.handle ?? 'anon')}</b></div><div><span>Doing</span><b>${esc(p.action)}</b></div><div><span>Near</span><b>${esc(p.label)}</b></div><div><span>Leans</span><b>${esc(a?.lean ?? '?')}</b></div></div>`;
+        <div class="in-stats"><div><span>@</span><b>${esc(a?.handle ?? 'anon')}</b></div><div><span>Doing</span><b>${esc(p.action)}</b></div><div><span>Near</span><b>${esc(p.label)}</b></div><div><span>Leans</span><b>${esc(a?.lean ?? '?')}</b></div></div>
+        <div class="in-actions">${this.followButton({ kind: 'person', id: p.id })}</div>`;
     } else if (sel.kind === 'commune') {
       const c = sel.c;
       html = `<div class="in-kicker hippie">HIPPIE COMMUNE · EST. ${c.founded}</div>
@@ -1635,7 +1685,7 @@ export class Hud implements UiSink {
         <div class="in-actions">${t.next ? (() => {
           const q = g.quoteUpgrade([s], t.next);
           const short = q.net > g.sim.spendable();
-          return `<button id="in-lane" ${short ? 'disabled title="Not enough money"' : ''}>➕ ONE MORE LANE · ${money(q.net)}</button>`;
+          return `<button id="in-lane" class="one-more-lane" ${short ? 'disabled title="Not enough money"' : ''}>${uiIcon('toolbar', 'upgrade', '➕', 22)} ONE MORE LANE · ${money(q.net)}${q.grant > 0 ? ` <small>feds pay ${money(q.grant)}</small>` : ''}</button>`;
         })() : '<button disabled>MAX LANES</button>'}${t.oneWay ? '<button id="in-flip" title="The arrows point the other way">⇅ Flip direction</button>' : ''}<button class="danger" id="in-bulldoze">💣 Bulldoze</button></div>`;
     }
     let extra = '';
@@ -1646,6 +1696,19 @@ export class Hud implements UiSink {
     }
     this.inspector.innerHTML = `<button class="in-close" id="in-close" aria-label="Close">×</button>${html}`;
     this.inspector.querySelector('#in-close')?.addEventListener('click', () => g.select(null));
+    this.inspector.querySelector('#in-follow')?.addEventListener('click', () => {
+      const target: ViewTarget | null = sel.kind === 'car' ? { kind: 'car', id: sel.c.id } : sel.kind === 'ped' ? { kind: 'person', id: sel.p.id } : null;
+      if (!target) return;
+      const on = this.isFollowing(target);
+      crumb(on ? 'stop following' : `follow ${target.kind}`);
+      if (on) g.rts.follow(null);
+      else if (g.rts.follow(target)) {
+        this.followName = sel.kind === 'car' ? `${ARCHETYPES[sel.c.driver % ARCHETYPES.length]?.name ?? 'a driver'} (${VEHICLE_SPECS[sel.c.kind].label})` : sel.kind === 'ped' ? ARCHETYPES[sel.p.arch]?.name ?? 'a citizen' : '';
+        // a phone's inspector is a sheet over the lower half of the screen: it goes away so the ride can be seen
+        if (IS_TOUCH) { g.select(null); return; }
+      }
+      this.renderInspector();
+    });
     this.inspector.querySelector('#in-road')?.addEventListener('click', () => { crumb('draw a road (inspector: not connected)'); g.tools.roadMode = 'straight'; if (this.panel !== 'roads') this.onTool('roads'); g.tools.set('road'); });
     this.inspector.querySelector('#in-bulldoze')?.addEventListener('click', () => {
       if (sel.kind === 'building') { crumb(`bulldozed ${sel.b.label} (inspector)`); g.buildings.demolish(sel.b, 'bulldozed'); g.audio.play('bulldoze'); }
@@ -1907,7 +1970,19 @@ export class Hud implements UiSink {
     }
     // follow selected car
     const sel = this.game.selection;
-    if (sel?.kind === 'car' && sel.c.crashed !== -1 && this.game.rts.distance < 200) this.game.rts.setView(sel.c.x, sel.c.z, this.game.rts.distance);
+    const riding = this.game.rts.following;
+    if (!riding && sel?.kind === 'car' && sel.c.crashed !== -1 && this.game.rts.distance < 200) this.game.rts.setView(sel.c.x, sel.c.z, this.game.rts.distance);
+    // the follow camera: a pill says who it is riding with, and a tap on it lets go (so does moving the camera, or the
+    // subject driving off the map). A tool in hand lets go too: nobody draws a road from a moving car.
+    if (riding && this.game.tools.active !== 'inspect') this.game.rts.follow(null);
+    const key = riding ? `${riding.kind}:${riding.id}` : '';
+    if (key !== this.followKey) {
+      this.followKey = key;
+      this.followPill.hidden = !riding;
+      if (riding) this.followPill.innerHTML = `<span>${uiIcon('action', 'follow', '🎥', 20)} Following <b>${esc(this.followName || (riding.kind === 'car' ? 'a car' : riding.kind === 'person' ? 'a citizen' : 'a building'))}</b></span><small>${IS_TOUCH ? 'tap to let go' : 'click or Esc to let go'}</small>`;
+      else this.followName = '';
+      if (sel && (sel.kind === 'car' || sel.kind === 'ped')) this.renderInspector();
+    }
   }
 }
 

@@ -35,6 +35,7 @@ import { frontageCandidates, frontageOn, inRect, rectCorners, specialAt, type Fr
 import { pointAt, tangentAt } from '../core/math';
 import { PlacementGhost } from '../tools/placementGhost';
 import { lockText, milestoneAt, nameUnlock, unlockPop } from './milestones';
+import { uiIcon } from '../ui/icons';
 
 type ZB = Bld & { zone: ZoneType };
 
@@ -2254,7 +2255,7 @@ registerPanel({
     const sel = SERVICE_DEFS.get(placing);
     el.innerHTML = `
       <div class="sp-title">City Services <small>Power, water and sewage flow along roads. Services reach buildings by drive time.</small></div>
-      <div class="sp-row svc-cats">${CATS.map((c) => `<button class="chip ${c.id === panelCat ? 'on' : ''}" data-cat="${c.id}">${c.icon} ${c.label}</button>`).join('')}</div>
+      <div class="sp-row svc-cats">${CATS.map((c) => `<button class="chip ${c.id === panelCat ? 'on' : ''}" data-cat="${c.id}">${uiIcon('category', c.id, c.icon, 20)} ${c.label}</button>`).join('')}</div>
       <div class="svc-live">${statusLine(panelCat, g)}</div>
       <div class="svc-board">${panelCat === 'garbage' ? garbageBoard(g) : ''}</div>
       <div class="sp-grid">${list.map((d) => {
@@ -2264,7 +2265,7 @@ registerPanel({
         const does = d.power ? fmt(d.power, 'power') : d.water ? fmt(d.water, 'water') : d.sewage ? fmt(d.sewage, 'sewage') : d.collect ? `${d.collect} t/day` : d.reach ? `${(d.reach / 60).toFixed(1)} min reach` : '';
         // the unlock rule, said where it matters: earned once, kept for good
         const rule = !d.unlock || g.sim.mode === 'sandbox' ? '' : locked ? ` Unlocks at ${unlockAt(d.unlock)}, and stays unlocked even if the city shrinks.` : pop < d.unlock ? ` Earned at ${unlockAt(d.unlock)}: yours to keep while the city is smaller.` : '';
-        return `<button class="card ${on ? 'on' : ''}" data-svc="${d.id}" ${locked ? 'disabled' : ''} title="${esc(d.blurb + rule)}${d.run ? ` Costs $${d.upkeep}/wk plus ${esc(runText(d))}.` : ''}"><span class="ci">${d.icon}</span><b>${esc(d.name)}</b><small>${locked ? lockText(d.unlock) : `$${d.cost.toLocaleString()} · $${d.upkeep}/wk${d.run ? '+' : ''}${does ? ` · ${does}` : ''}`}</small></button>`;
+        return `<button class="card ${on ? 'on' : ''}" data-svc="${d.id}" ${locked ? 'disabled' : ''} title="${esc(d.blurb + rule)}${d.run ? ` Costs $${d.upkeep}/wk plus ${esc(runText(d))}.` : ''}"><span class="ci">${uiIcon('facility', d.id, d.icon, 28)}</span><b>${esc(d.name)}</b><small>${locked ? lockText(d.unlock) : `$${d.cost.toLocaleString()} · $${d.upkeep}/wk${d.run ? '+' : ''}${does ? ` · ${does}` : ''}`}</small></button>`;
       }).join('')}</div>
       <div class="svc-blurb">${esc(sel && sel.cat === panelCat ? sel.blurb : list[0]?.blurb ?? '')}</div>
       ${vaultReady() ? `<div class="sp-row svc-look">Looks: <button class="chip ${svcLook() === 'vault' ? 'on' : ''}" data-look="vault" title="The Asset Vault's versions: the Very Clean Coal Plant, the County Water Tower, Copay Castle...">🏛️ Asset Vault</button><button class="chip ${svcLook() === 'classic' ? 'on' : ''}" data-look="classic">Classic</button></div>` : ''}`;

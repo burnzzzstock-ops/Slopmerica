@@ -373,6 +373,7 @@ export class Game {
     this.vaultScenery = new VaultScenery(this);
     this.overlays = new Overlays(this);
     this.fields = makeFields(this);
+    this.roads.setConditionProvider(id => this.fields.roadCondition(id));
     this.tools = new Tools(this);
 
     this.rts = new RTSCamera(this.camera, this.renderer.domElement, this.terrain, this.tools as PointerHandlers, this.fields.poseOf);

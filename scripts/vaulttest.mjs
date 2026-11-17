@@ -131,7 +131,8 @@ const sv = await page.evaluate(async () => {
     if (b) { b.state = 'active'; b.progress = 1; g.buildings.dropScaffold(b); g.buildings.writeMatrix(b, 1); }
     out[id] = b ? { main: !!b.onMain, smoke: b.model.emitters.filter((e) => e.kind === 'smoke').length, label: b.label } : { why: spot?.reason };
   }
-  g.ui.openPanel?.('ext:services');
+  // (the two looks are chosen in Settings now, not in the Services drawer)
+  g.ui.openPanel?.('help');
   await new Promise((r) => setTimeout(r, 150));
   const lookChip = !!document.querySelector('[data-look="vault"].on');
   document.querySelector('[data-look="classic"]')?.click();

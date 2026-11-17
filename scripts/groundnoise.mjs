@@ -26,9 +26,9 @@
 //        GN_IMAGES=shots/gfx/gn-old GN_OUT=shots/gfx/gn-old.json node scripts/groundnoise.mjs
 //        BASE_URL=http://127.0.0.1:5179 GN_BASE=shots/gfx/gn-old.json node scripts/groundnoise.mjs [quality]
 // Exits nonzero on failure (with GN_BASE).
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { ARGS, EXE, openBlock, shoot } from './refblock.mjs';
+import { openBlock, shoot } from './refblock.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const quality = process.argv[2] || 'high';
 let bad = 0;
@@ -73,7 +73,7 @@ const out = {};
 let errs = [];
 let browser;
 if (process.env.GN_IMAGES) {
-  browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+  browser = await launch();
   const page = await browser.newPage();
   for (const name of NAMES) {
     out[name] = await page.evaluate(new Function('b64', `return (${measure.toString()})(b64);`), readFileSync(`${process.env.GN_IMAGES}/${name}.png`).toString('base64'));
@@ -83,7 +83,7 @@ if (process.env.GN_IMAGES) {
   const CAMS = JSON.parse(readFileSync(process.env.CAMS || 'shots/gfx/cams.json', 'utf8'));
   const VIEWS = { near: CAMS.lotedge, street: CAMS.street, overview: CAMS.overview, wide: CAMS.wide };
   if (!VIEWS.near) throw new Error('shots/gfx/cams.json has no lotedge camera: run scripts/gfxshots.mjs lotedge once first');
-  browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+  browser = await launch();
   const opened = await openBlock(browser, { base, quality });
   const { page, center } = opened;
   errs = opened.errs;

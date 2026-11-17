@@ -4,15 +4,14 @@
 // usage: BASE_URL=http://127.0.0.1:5175 node scripts/lineup.mjs <tag> [ids, comma list or 'all'] [dists, default 8,40,150] [times, default day,night]
 //   OUT=shots/lineup (default)   writes <OUT>/<tag>/<id>-<dist>-<time>.jpg, sheet-<dist>-<time>.jpg contact sheets and index.html
 //   COLORS=f2f2f2,1a1a1a (one shot per flat colour)   AZ=35 EL=18 (camera)   W=960 H=540 (frame)   CROP=1 (crop each shot to the car, default on)   WET=1 (rain wet)
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { ARGS, EXE } from './refblock.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const [tag = 'run', idsArg = 'all', distsArg = '8,40,150', timesArg = 'day,night'] = process.argv.slice(2);
 const out = `${process.env.OUT || 'shots/lineup'}/${tag}`;
 mkdirSync(out, { recursive: true });
 const W = Number(process.env.W || 960), H = Number(process.env.H || 540);
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

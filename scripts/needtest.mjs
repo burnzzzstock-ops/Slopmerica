@@ -1,9 +1,9 @@
 // Hovering a need icon over a building says what it needs and how to fix it
 // (the review saw rows of yellow icons with no explanation). Exits nonzero
 // on failure.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1100, height: 650 } });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

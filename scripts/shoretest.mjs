@@ -13,8 +13,7 @@
 //
 // usage: BASE_URL=http://127.0.0.1:5194 MAP=appalachia node scripts/shoretest.mjs   (COAST=1 for the beach)
 // Exits nonzero on failure of the checks that apply to the new code (set SHORE_OLD=1 to only print, for the old snapshot).
-import { chromium } from 'playwright-core';
-import { ARGS, EXE } from './refblock.mjs';
+import { launch } from './lib/browser.mjs';
 import { bankTools } from './bankfind.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const MAP = process.env.MAP || 'appalachia';
@@ -22,7 +21,7 @@ const oldCode = !!process.env.SHORE_OLD;
 const coast = !!process.env.COAST; // the bank is the beach (the map's sand function above 0.4) instead of the nearest bank
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 500)); if (!ok && !oldCode) bad++; };
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 900, height: 500 } });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

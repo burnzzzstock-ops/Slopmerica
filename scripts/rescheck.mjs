@@ -3,11 +3,11 @@
 // resolution lowers it when frames are slow). Defaults to the playtest's
 // screen: 1268x595 CSS px at 2x. Usage: node scripts/rescheck.mjs [quality...]
 // (W=, H=, DPR=, SECONDS=). Prints a table; exits nonzero on page errors.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const W = Number(process.env.W || 1268), H = Number(process.env.H || 595), DPR = Number(process.env.DPR || 2), SECONDS = Number(process.env.SECONDS || 14);
 const qs = process.argv.slice(2).length ? process.argv.slice(2) : ['low', 'high', 'ultra'];
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 let errs = 0;
 for (const q of qs) {
   const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: DPR });

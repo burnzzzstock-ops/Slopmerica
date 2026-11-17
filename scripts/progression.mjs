@@ -6,10 +6,10 @@
 // with CHECK=1 exits nonzero if the pacing is off (a milestone never
 // reached, or reached absurdly fast, or the town can build every service in
 // its first month).
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const DAYS = Number(process.env.DAYS || 720);
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 800, height: 500 } });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

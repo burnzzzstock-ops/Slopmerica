@@ -1,5 +1,5 @@
-import { chromium } from 'playwright-core';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+import { launch } from './lib/browser.mjs';
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 800, height: 500 } });
 page.on('pageerror', (e) => console.log('pageerror', e.message));
 await page.goto(`http://127.0.0.1:5173/#skip&map=florida&mode=sandbox`, { waitUntil: 'load' });

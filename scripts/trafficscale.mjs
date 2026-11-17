@@ -15,8 +15,8 @@
 // Exits 1 if a step at the largest count takes over 4 ms (median), the roads
 // can't hold the cars, or the page throws.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { chromium } from 'playwright-core';
-import { ARGS, EXE, seededInit, seededRandom } from './refblock.mjs';
+import { launch } from './lib/browser.mjs';
+import { seededInit, seededRandom } from './refblock.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const counts = (process.argv[2] || '250,500,1000').split(',').map(Number);
@@ -25,7 +25,7 @@ const TOWN = process.env.TOWN || 'shots/scale/town.json';
 const LIMIT = 4;
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 600)); if (!ok) bad++; };
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const boot = async (page, url) => {
   await page.addInitScript(() => { try { localStorage.setItem('slopmerica.quality', 'low'); localStorage.setItem('slopmerica.onboarded', '1'); localStorage.setItem('slopmerica.firstSteps', '1'); } catch { /* */ } });
   await page.goto(url, { waitUntil: 'load', timeout: 300000 });

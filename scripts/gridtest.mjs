@@ -5,9 +5,9 @@
 // reported, one-ways alternate, one Undo takes the whole grid back (and not a
 // road that was there first), and the touch flow plans it for the Build
 // button. SHOTS=prefix saves pictures. Exits nonzero on failure.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra)); if (!ok) bad++; };
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });

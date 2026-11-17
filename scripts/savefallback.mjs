@@ -12,12 +12,11 @@
 // usage: node scripts/savefallback.mjs                      builds dist-single first (npm run build:single), then tests it
 //   DIST=/path/to/dist-single  test another build (e.g. the old code's: it fails 1, which is the point)   BUILD=0  do not build
 //   The browser opens through the slot lock when you run it as scripts/withslot.sh node scripts/savefallback.mjs
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { createServer } from 'node:http';
 import { execSync } from 'node:child_process';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
-import { ARGS, EXE } from './refblock.mjs';
 
 const dist = process.env.DIST || 'dist-single';
 if (!process.env.DIST && process.env.BUILD !== '0') execSync('npm run build:single', { stdio: 'inherit' });
@@ -39,7 +38,7 @@ const base = `http://127.0.0.1:${server.address().port}`;
 
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 400)); if (!ok) bad++; };
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const newCtx = async () => {
   const ctx = await browser.newContext({ viewport: { width: 1100, height: 700 }, acceptDownloads: true });
   await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base });

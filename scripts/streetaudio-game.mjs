@@ -4,13 +4,13 @@
 // put every voice back to sleep, and the old random honks and pass-bys are switched off once cars are fed.
 // Drives the game with g.frame() (no rendering) on the reference block. Exits nonzero on failure.
 // usage: scripts/withslot.sh env BASE_URL=http://127.0.0.1:5182 node scripts/streetaudio-game.mjs
-import { chromium } from 'playwright-core';
-import { ARGS, EXE, openBlock } from './refblock.mjs';
+import { launch } from './lib/browser.mjs';
+import { openBlock } from './refblock.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 600)); if (!ok) bad++; };
-const browser = await chromium.launch({ executablePath: EXE, args: [...ARGS, '--autoplay-policy=no-user-gesture-required'] });
+const browser = await launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
 const { page, errs } = await openBlock(browser, { base, quality: process.env.QUALITY || 'low' });
 const r = await page.evaluate(async () => {
   const g = window.__game, tr = g.traffic, au = g.audio;

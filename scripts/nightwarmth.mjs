@@ -7,16 +7,16 @@
 // signs, lamp heads; the cars' lights stay on in both), the difference summed in linear light ("added").
 // usage: node scripts/nightwarmth.mjs [quality, default high]   OUT=dir saves JPEGs (<dir>/<night>-<view>.jpg)
 //        MAX_CCT=3400 makes it a check: exits nonzero if the added light of any frame is cooler than that.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { ARGS, EXE, openBlock, shoot } from './refblock.mjs';
+import { openBlock, shoot } from './refblock.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const quality = process.argv[2] || 'high';
 const VIEWS = { street: [-40, -30, 110, 2.4, 0.38], overview: [0, 0, 320, 0.7, 0.6], houses: [-170, -130, 120, 4.0, 0.42] };
 const NIGHTS = [['moonless', 23, 0], ['fullmoon', 23, 0.5]];
 const OUT = process.env.OUT;
 if (OUT) mkdirSync(OUT, { recursive: true });
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const { page, errs, center } = await openBlock(browser, { base, quality });
 const measure = (b64) => page.evaluate(async (b64) => {
   const img = new Image(); img.src = 'data:image/png;base64,' + b64; await img.decode();

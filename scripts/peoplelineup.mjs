@@ -12,7 +12,7 @@
 //        BASES=old=url,base=url#q=low&near=64&lite=0,new=url compares builds (and single knobs of a preset: #q=low&near=&max=&shadow=&lite=) in one run, alternately
 //        lists: the draw lists against the preset's knobs, OK/FAIL lines (PRESETS=low,medium,high,ultra for each on its own page)
 //        crowd60, crowd24 (with BASES, one JPEG per build): 40 people on the pavement seen from the game's camera at 60 m / 24 m
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 const base = process.env.BASE_URL || (process.env.BASES ? process.env.BASES.split(',')[0].split('=').slice(1).join('=').split('#')[0] : 'http://127.0.0.1:5173');
 const out = process.env.OUT || 'shots/people/out';
@@ -21,7 +21,7 @@ const jpeg = !!process.env.JPEG;
 mkdirSync(out, { recursive: true });
 const want = new Set(process.argv.slice(2));
 const on = (n) => want.size === 0 || want.has(n);
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 const errs = [];
 const noise = (t) => /WebSocket|\[vite\]|Vite server|status of 404/.test(t); // a frozen snapshot has no HMR socket, and the page has no favicon

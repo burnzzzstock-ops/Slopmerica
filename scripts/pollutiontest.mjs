@@ -1,8 +1,8 @@
 // Pollution field mass balance: transfers move pollution, only decay and the
 // map edge remove it. Exits nonzero on failure.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--no-sandbox'] });
+const browser = await launch({ gl: false });
 const page = await browser.newPage();
 await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
 const r = await page.evaluate(async () => {

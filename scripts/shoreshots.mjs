@@ -11,9 +11,8 @@
 //
 // usage: BASE_URL=http://127.0.0.1:5175 MAP=appalachia node scripts/shoreshots.mjs <outdir> [quality]
 //   COAST=1 picks the beach instead (the map's sand function above 0.4), PHONE=1 shoots a 390x780 @3x touch context; DAY=<0-364> and HOUR=<h> set the date and the hour; SHOTS=mid,top only those.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { ARGS, EXE } from './refblock.mjs';
 import { bankTools } from './bankfind.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const MAP = process.env.MAP || 'appalachia';
@@ -23,7 +22,7 @@ mkdirSync(outDir, { recursive: true });
 const phone = !!process.env.PHONE;
 const coast = !!process.env.COAST; // the beach: the nearest gentle bank where the map's own sand function says beach
 const tag = MAP + (coast ? '-coast' : '');
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const ctx = phone ? await browser.newContext({ viewport: { width: 390, height: 780 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true }) : await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 const page = await ctx.newPage();
 const errs = [];

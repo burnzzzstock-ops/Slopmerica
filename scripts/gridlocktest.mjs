@@ -20,8 +20,8 @@
 // TOWN=save.json, default shots/florida2800.json, grown once with the bot if missing; DAYS, default 120;
 // SOAK, default 1800). Exits 1 on failure.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { chromium } from 'playwright-core';
-import { ARGS, EXE, seededInit, seededRandom, testSeed } from './refblock.mjs';
+import { launch } from './lib/browser.mjs';
+import { seededInit, seededRandom, testSeed } from './refblock.mjs';
 import { installLatePlayer } from './lib/latePlayer.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
@@ -30,7 +30,7 @@ const TOWN = process.env.TOWN || 'shots/florida2800.json';
 const DAYS = Number(process.env.DAYS || 120), SOAK = Number(process.env.SOAK || 1800);
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 600)); if (!ok) bad++; };
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 
 /** a page with Math.random seeded and the game's own loop never started (refblock.mjs seededInit) */
 async function seededPage(seed, save) {

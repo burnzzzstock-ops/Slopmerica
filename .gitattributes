@@ -1,3 +1,17 @@
+# Every text file is LF in the repo and in the checkout, on every OS (a CRLF checkout made the test suite find no tests).
+* text=auto eol=lf
+*.sh text eol=lf
+*.mjs text eol=lf
+*.ts text eol=lf
+*.md text eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.glb binary
+*.bin binary
+*.woff2 binary
+
 # Geometry buffers must never undergo Windows newline conversion, even when
 # their first 8 KiB happen to contain no NUL bytes.
 public/asset-library/models/*.bin binary

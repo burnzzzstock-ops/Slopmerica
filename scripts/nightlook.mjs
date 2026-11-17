@@ -18,9 +18,9 @@
 //   SWEEP_TREE=0,0.5,1  SWEEP_CAR=0/0/0,0.6/0.3/0.1 (a number, or top/rim/side for the car sheen) also draw the close-up at each value of the build's tuning uniform
 //   COLORS=e0e0e0,9aa0a6,b3202a  paint of the three cars in the cars case (hex; default three dark ones)
 //   MIN_TREE / MIN_CAR: exit 1 when the last build's median luma is under the number (a gate once a fix is in)
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
-import { ARGS, EXE, openBlock, shoot } from './refblock.mjs';
+import { openBlock, shoot } from './refblock.mjs';
 const quality = process.argv[2] || 'high';
 const cases = (process.env.CASES || 'trees,cars').split(',');
 const moon = Number(process.env.MOON ?? 0);
@@ -30,7 +30,7 @@ const phone = !!process.env.PHONE;
 const builds = process.env.URLS ? process.env.URLS.split(',').map((x) => x.split(/=(.*)/s).slice(0, 2)) : [[process.env.TAG || 'run', process.env.BASE_URL || 'http://127.0.0.1:5173']];
 // SWEEP_TREE=0,0.4,0.8 / SWEEP_CAR=0,0.2,0.4: also render the close-up at each value of the build's tuning uniform (TREE_LAMP (FOREST_LAMP on Low), CAR_SHEEN in src/world/nightLights.ts)
 const sweeps = { trees: process.env.SWEEP_TREE ? { uniform: quality === 'low' ? 'FOREST_LAMP' : 'TREE_LAMP', values: process.env.SWEEP_TREE.split(',') } : null, cars: process.env.SWEEP_CAR ? { uniform: 'CAR_SHEEN', values: process.env.SWEEP_CAR.split(',') } : null };
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const results = [];
 let bad = 0;
 

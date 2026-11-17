@@ -6,9 +6,8 @@
 // calls, so the price of a wide view is on record.
 // usage: scripts/withslot.sh env BASE_URL=http://127.0.0.1:5173 node scripts/fovtest.mjs [phone|desk]      exits 1 on failure
 //   env: ANGLES=35,50,75,110   MAP=appalachia   QUALITY=low|medium|high|ultra (desktop; the phone is always the touch default)
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdirSync } from 'node:fs';
-import { ARGS, EXE } from './refblock.mjs';
 
 const kind = process.argv[2] || 'phone';
 const phone = kind === 'phone';
@@ -19,7 +18,7 @@ mkdirSync('shots/r8/fov', { recursive: true });
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 500)); if (!ok) bad++; };
 const info = (s) => console.log('info', s);
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const ctx = await browser.newContext(phone
   ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }
   : { viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });

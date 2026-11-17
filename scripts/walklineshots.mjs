@@ -6,8 +6,8 @@
 //   SECONDS of cars and people before the shots (default 120)
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { chromium } from 'playwright-core';
-import { ARGS, EXE, openBlock, testSeed } from './refblock.mjs';
+import { launch } from './lib/browser.mjs';
+import { openBlock, testSeed } from './refblock.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const tag = process.env.TAG || 'shot';
@@ -17,7 +17,7 @@ const SECONDS = Number(process.env.SECONDS || 120);
 process.env.SEED ??= '1234';
 const SEED = testSeed();
 mkdirSync(dirname(out), { recursive: true });
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const { page, errs } = await openBlock(browser, { base, seed: SEED, quality: 'low', width: 900, height: 600 });
 await page.evaluate(({ SECONDS, nodes }) => {
   const g = window.__game, tr = g.traffic, P = g.peds;

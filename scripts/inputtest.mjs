@@ -1,6 +1,6 @@
 // Right-click / double-click ends a road; zoning doesn't paint over other zones.
-import { chromium } from 'playwright-core';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+import { launch } from './lib/browser.mjs';
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

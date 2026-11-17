@@ -2,9 +2,9 @@
 // road joins it (the playtest had a capped dead end sitting unconnected on a
 // through road), roads can't meet nearly parallel (a long sliver of crossed
 // lane lines), and street junctions get crosswalks. Exits nonzero on failure.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1000, height: 600 } });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

@@ -3,14 +3,14 @@
 // usage: node scripts/keyart.mjs [map] [town|land] [w] [h]
 //   town = build and grow a town first (the hero shot); land = just the county
 // Writes shots/keyart/<map>-<n>.png; encode picks with scripts/encodeart.mjs.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 const map = process.argv[2] || 'norcal';
 const mode = process.argv[3] || 'town';
 const W = Number(process.argv[4]) || 1920, H = Number(process.argv[5]) || 1080;
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 mkdirSync('shots/keyart', { recursive: true });
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 page.on('pageerror', (e) => console.log('pageerror', e.message));
 const savePath = `shots/keyart/${map}-town-save.json`;

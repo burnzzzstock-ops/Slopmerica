@@ -5,14 +5,14 @@
 //  - the bubble drawn on the screen is within 80-125% of its width at 50°;
 //  - so is how far from its middle a tap still picks it (pick(), which sizes it by the same rule).
 // usage: node scripts/bubblefov.mjs   (BASE_URL, default http://127.0.0.1:5173; SEED=n replays a run). Exits 1 on failure.
-import { chromium } from 'playwright-core';
-import { ARGS, EXE, openBlock, testSeed } from './refblock.mjs';
+import { launch } from './lib/browser.mjs';
+import { openBlock, testSeed } from './refblock.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const SEED = testSeed();
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 600)); if (!ok) bad++; };
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const { page, errs } = await openBlock(browser, { base, seed: SEED, quality: 'low', width: 390, height: 844, phone: true });
 const r = await page.evaluate(() => {
   const g = window.__game, I = window.__services.S.icons, cam = g.camera, R = g.renderer;

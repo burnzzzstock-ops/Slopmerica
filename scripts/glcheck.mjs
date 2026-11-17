@@ -2,9 +2,9 @@
 // getError after each, and records the active program's three.js name + stack.
 // usage: BASE_URL=http://127.0.0.1:5173 node scripts/glcheck.mjs [map]   (GL_JS='...' runs in the page first)
 // Exits 1 when any draw call raised a GL error (it used to print "total hits N" and exit 0 whatever N was), or the page threw.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const map = process.argv[2] || 'appalachia';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
 await page.addInitScript(() => {
   window.__glPageErrors = [];

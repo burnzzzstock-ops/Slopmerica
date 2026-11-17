@@ -16,15 +16,15 @@
 // lights.
 // usage: node scripts/lightstest.mjs   (BASE_URL, default http://127.0.0.1:5173; SEED=n replays a run;
 // NODE, default 45; SECONDS, default 240; HOUR, default 17.5). Exits 1 on failure.
-import { chromium } from 'playwright-core';
-import { ARGS, EXE, openBlock, testSeed } from './refblock.mjs';
+import { launch } from './lib/browser.mjs';
+import { openBlock, testSeed } from './refblock.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const SEED = testSeed();
 const NODE = Number(process.env.NODE || 45), SECONDS = Number(process.env.SECONDS || 240), HOUR = Number(process.env.HOUR || 17.5);
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 600)); if (!ok) bad++; };
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 
 async function run(actuated, lead) {
   const { page, errs } = await openBlock(browser, { base, seed: SEED, quality: 'low' });

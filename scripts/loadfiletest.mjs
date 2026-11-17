@@ -7,13 +7,13 @@
 //   playtest 6 / triage r03 "load froze": roads: {} got past the title check.
 //
 //   BASE_URL=http://127.0.0.1:5173 node scripts/loadfiletest.mjs
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
-const browser = await chromium.launch({ executablePath: process.env.CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const fails = [];
 const check = (ok, msg) => { console.log(ok ? '  ok ' : '  ✗  ', msg); if (!ok) fails.push(msg); };
 const dir = mkdtempSync(join(tmpdir(), 'slop-cities-'));

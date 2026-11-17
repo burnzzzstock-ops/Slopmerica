@@ -5,10 +5,10 @@
 // left the "finger down" flag stuck). Real touch events (CDP), iPhone size.
 //
 //   BASE_URL=http://127.0.0.1:5173 node scripts/gesturetest.mjs
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
-const browser = await chromium.launch({ executablePath: process.env.CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
 const page = await ctx.newPage();
 const errs = [];

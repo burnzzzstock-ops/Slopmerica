@@ -1,11 +1,11 @@
 // Playtest plumbing on a phone: title stamp, onboarding note, bug report
 // sheet (copy + contents), crash toast, WebGL context loss banner, and the
 // boot rescue screen for a save that won't load.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdirSync } from 'node:fs';
 mkdirSync('shots/playtest', { recursive: true });
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, permissions: ['clipboard-read', 'clipboard-write'] });
 const page = await ctx.newPage();
 // (a frame takes seconds on the software GPU when the machine is busy, and a tap waits for the page to take it: 30 s timed taps out for no reason)

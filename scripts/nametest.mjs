@@ -5,11 +5,11 @@
 // and on roads actually built in the running game (Florida and Appalachia).
 // Lists with nothing tagged for a map come back as the same array, so their
 // draws are exactly as before. Exits nonzero on failure.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 600)); if (!ok) bad++; };
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const errs = [];
 const WRONG = { florida: /Sequoia|Golden Hills|Trout Run|Hickory Hollow|Holler Rd|Bluebonnet|Prairie Wind/, appalachia: /Bayou|Sawgrass|Sequoia|Golden Hills|Bluebonnet|Prairie Wind/, norcal: /Bayou|Sawgrass|Trout Run|Hickory Hollow|Holler Rd|Bluebonnet|Prairie Wind/ };
 

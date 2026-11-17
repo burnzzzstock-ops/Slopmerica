@@ -16,15 +16,15 @@
 // usage: node scripts/parkingtest.mjs [low,high]   (BASE_URL, default http://127.0.0.1:5173; SEED=n
 // replays a run: it prints its seed, and the town it was built from)
 // Exits 1 on failure.
-import { chromium } from 'playwright-core';
-import { ARGS, EXE, openBlock, testSeed } from './refblock.mjs';
+import { launch } from './lib/browser.mjs';
+import { openBlock, testSeed } from './refblock.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const SEED = testSeed();
 const presets = (process.argv[2] || 'low,high').split(',');
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 600)); if (!ok) bad++; };
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const pct = (x) => `${Math.round(x * 100)}%`;
 
 // ---- behaviour (once, on the first preset)

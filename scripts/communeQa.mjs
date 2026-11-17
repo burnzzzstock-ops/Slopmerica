@@ -1,6 +1,6 @@
 // Capture repeatable commune views from a running Vite dev server.
 // PORT=5174 MAPS=appalachia,norcal,florida MODES=day,night,rain,snow node scripts/communeQa.mjs
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 const port = process.env.PORT || '5173';
@@ -8,10 +8,9 @@ const maps = (process.env.MAPS || 'appalachia,norcal,florida').split(',');
 const modes = (process.env.MODES || 'day,night,rain,snow').split(',');
 const distances = (process.env.DISTS || '15,40,150').split(',').map(Number);
 const out = process.env.OUT || 'shots/communes';
-const chrome = process.env.CHROME || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const swiftshader = process.env.SWIFTSHADER !== '0';
 await mkdir(out, { recursive: true });
-const browser = await chromium.launch({ executablePath: chrome, args: swiftshader
+const browser = await launch({ gl: false, args: swiftshader
   ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-sandbox']
   : ['--use-angle=d3d11', '--enable-gpu-rasterization', '--ignore-gpu-blocklist', '--disable-software-rasterizer', '--no-sandbox'] });
 const errors = [];

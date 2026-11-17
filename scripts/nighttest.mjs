@@ -9,14 +9,14 @@
 //   the day capture is unchanged by the night lighting (pools off by day).
 // usage: node scripts/nighttest.mjs [quality]   (OUT=dir saves the captures; ONLY=moonless,rain runs just those nights)
 // Exits nonzero on failure.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { ARGS, EXE, openBlock, shoot } from './refblock.mjs';
+import { openBlock, shoot } from './refblock.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const quality = process.argv[2] || 'high';
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 500)); if (!ok) bad++; };
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const { page, errs, center } = await openBlock(browser, { base, quality });
 const VIEW = [-40, -30, 150, 2.4, 0.45];
 const ALL_CONDS = [['day', 14, 0.5, 'clear'], ['moonless', 23, 0, 'clear'], ['full moon', 23, 0.5, 'clear'], ['rain', 23, 0.25, 'rain']];

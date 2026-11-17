@@ -1,8 +1,8 @@
 // Screenshots: service buildings, problem icons, info views, and the panel UI.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { writeFileSync } from 'node:fs';
 const [map = 'florida', prefix = 'shots/svc'] = process.argv.slice(2);
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-sandbox'] });
+const browser = await launch({ args: ['--ignore-gpu-blocklist'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

@@ -4,10 +4,10 @@
 // texel edges). Renders bare ground with AO on and off at a few window sizes
 // and zooms and measures how much AO darkens / mottles it. Exits nonzero on
 // failure. `--shots` saves the frames to /tmp.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const shots = process.argv.includes('--shots');
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra)); if (!ok) bad++; };
 const errs = [];

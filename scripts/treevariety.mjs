@@ -17,9 +17,8 @@
 //        TV_NEW=shots/gfx/tv-new.json TV_BASE=shots/gfx/tv-old.json node scripts/treevariety.mjs   (compare two saved runs)
 //        BASE_URL=http://127.0.0.1:5191 MAP=appalachia TV_BASE=shots/gfx/tv-old.json node scripts/treevariety.mjs
 // Exits nonzero on failure (with TV_BASE).
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { ARGS, EXE } from './refblock.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const MAP = process.env.MAP || 'appalachia';
 let bad = 0;
@@ -27,7 +26,7 @@ const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, o
 
 // TV_NEW=<json> compares a saved run against TV_BASE without loading the game
 const fromFile = process.env.TV_NEW;
-const browser = fromFile ? null : await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = fromFile ? null : await launch();
 const page = fromFile ? null : await browser.newPage({ viewport: { width: 900, height: 500 } });
 const errs = [];
 if (page) {

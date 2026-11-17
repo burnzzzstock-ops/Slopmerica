@@ -6,8 +6,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 export const SAVE = 'shots/lookbook/town.json';
-export const EXE = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
-export const ARGS = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'];
+export { EXE, ARGS } from './lib/browser.mjs';
 
 async function grow(browser, base) {
   const page = await browser.newPage({ viewport: { width: 800, height: 500 } });

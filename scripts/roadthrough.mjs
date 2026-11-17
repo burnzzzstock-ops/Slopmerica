@@ -2,9 +2,9 @@
 // says how many first), services and landmarks refuse the road and say which
 // is in the way. From a playtest bug report: "connected a road and it went
 // through a house and didn't demo the house". Exits nonzero on failure.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1000, height: 600 } });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

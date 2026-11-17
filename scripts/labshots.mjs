@@ -6,9 +6,8 @@
 //   shots  comma list of  <sub>@<dist>@<az>@<el>  (az 0 = looking at the front (+z) face, 1.57 = from +x; el in radians),
 //          default: the buildings item 4 changes, two views each (front three-quarter, side three-quarter)
 //   NIGHT=1 lights the lab at night; W= H= set the viewport (1280x720)
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdirSync } from 'node:fs';
-import { ARGS, EXE } from './refblock.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const outDir = process.argv[2] || 'shots/gfx/lab';
 const view = process.argv[3] || 'services';
@@ -22,7 +21,7 @@ const DEFAULT = [
 const shots = (process.argv[4] ? process.argv[4].split(',') : DEFAULT).map((s) => { const [sub, dist, az, el] = s.split('@'); return { sub, dist: +dist, az: +az, el: +el }; });
 mkdirSync(outDir, { recursive: true });
 const W = +(process.env.W || 1280), H = +(process.env.H || 720);
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

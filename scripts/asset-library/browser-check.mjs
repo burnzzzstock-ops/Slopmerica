@@ -1,14 +1,13 @@
 import { access, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
-import { chromium } from 'playwright-core';
+import { EXE, launch } from '../lib/browser.mjs';
 
 const DEFAULT_URL = 'http://127.0.0.1:5174/asset-library.html';
-const DEFAULT_CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const pageUrl = process.argv.find((value, index) => index > 1 && !value.startsWith('-'))
   ?? process.env.ASSET_LIBRARY_URL
   ?? DEFAULT_URL;
-const executablePath = process.env.CHROME_PATH ?? DEFAULT_CHROME;
+const executablePath = EXE;
 const shotsDir = path.resolve(process.env.ASSET_LIBRARY_SHOTS ?? 'shots/asset-library');
 
 function check(condition, message) {
@@ -45,14 +44,10 @@ async function selectById(page, id) {
 }
 
 async function main() {
-  check(await exists(executablePath), `Chrome executable not found: ${executablePath}. Set CHROME_PATH to override it.`);
+  check(await exists(executablePath), `Chrome executable not found: ${executablePath}. Set CHROME to override it.`);
   await mkdir(shotsDir, { recursive: true });
 
-  const browser = await chromium.launch({
-    executablePath,
-    headless: true,
-    args: ['--enable-webgl', '--ignore-gpu-blocklist'],
-  });
+  const browser = await launch({ gl: false, args: ['--enable-webgl', '--ignore-gpu-blocklist'] });
   const context = await browser.newContext({
     viewport: { width: 1600, height: 1000 },
     deviceScaleFactor: 1,

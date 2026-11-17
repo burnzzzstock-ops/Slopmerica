@@ -24,7 +24,7 @@ import { COUNTY_ROAD, RoadNetwork, RSeg, Plan } from './roads/network';
 import { RoadRenderer } from './roads/roadMesh';
 import { ROAD_TYPES, RoadTypeId } from './roads/roadTypes';
 import { Zoning, type ZCell } from './zones/zoning';
-import { Buildings, Bld, isZoned } from './sim/buildings';
+import { Buildings, Bld, demolishCause, isZoned } from './sim/buildings';
 import { footprintHitsBuilding, footprintHitsRoad, frontageCandidates, rectCorners, type Frontage } from './sim/frontage';
 import { Sim, Mode, SPEEDS, DAY_SECONDS, usd } from './sim/sim';
 import { Traffic, Car } from './agents/traffic';
@@ -518,8 +518,11 @@ export class Game {
       orig?.(b); // (a system's own, e.g. the College's first graduates)
       if (fx.float() < 0.25) this.feed.push('buildingLeveled', { building: b.label, brand: brandName(b.brand), count: b.level });
       if (this.near(b.x, b.z, 400)) this.particles.emit('confetti', b.x, b.y + b.model.height, b.z, { count: 20, spread: 4 });
+      this.sim.events.emit('levelUp', { bldId: b.id, level: b.level });
     })(this.buildings.onLevel);
+    this.buildings.onProgress = (b, progress) => this.sim.events.emit('construction', { bldId: b.id, progress });
     this.buildings.onDemolish = (b, reason) => {
+      this.sim.events.emit('demolished', { bldId: b.id, x: b.x, z: b.z, w: 2 * b.hw, d: 2 * b.hd, height: b.model.height, cause: demolishCause(reason) });
       this.traffic.forget(b);
       if (reason === 'road' && fx.float() < 0.6) this.feed.push('buildingDemolished', { building: b.label });
       if (this.selection?.kind === 'building' && this.selection.b === b) this.select(null);

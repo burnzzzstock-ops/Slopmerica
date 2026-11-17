@@ -122,6 +122,19 @@ class Batch {
 /** A zoned (growable) building, not a landmark or city service. */
 export const isZoned = (b: Bld): b is Bld & { zone: ZoneType } => b.zone !== 'landmark' && b.zone !== 'service';
 
+/**
+ * Why a building came down, as the world events name it (src/contracts.ts `demolished`), from the reason passed to
+ * Buildings.demolish. A road through a lot, an undo and the bulldozer are all the player clearing it; a storm surge is
+ * the disaster's. A reason not in the table is the player's too: every other caller is a tool or a test.
+ */
+const DEMOLISH_CAUSE: Record<string, 'bulldoze' | 'fire' | 'abandoned' | 'disaster' | 'collapse'> = {
+  bulldozed: 'bulldoze', road: 'bulldoze', undone: 'bulldoze',
+  fire: 'fire', wildfire: 'fire',
+  abandoned: 'abandoned',
+  'storm surge': 'disaster',
+};
+export const demolishCause = (reason: string) => DEMOLISH_CAUSE[reason] ?? 'bulldoze';
+
 /** Player-placed non-zoned buildings (power plants, schools, ...). Systems register their kinds here. */
 export interface CustomBuildingDef {
   label: string;
@@ -178,6 +191,10 @@ export class Buildings {
   onDemolish?: (b: Bld, reason: string) => void;
   onComplete?: (b: Bld) => void;
   onLevel?: (b: Bld) => void;
+  /** construction moved past a tenth (0.1 .. 0.9), and 1 once when it opens; for whatever shows or sounds the site */
+  onProgress?: (b: Bld, progress: number) => void;
+  /** trees came down under a building's lot (count > 0 only); (x, z) the lot's centre, r its reach in metres */
+  onTreesCut?: (x: number, z: number, r: number, count: number) => void;
   day = 0;
 
   constructor(scene: THREE.Scene, private terrain: Terrain, private trees: Trees, private zones: Zoning, private net: RoadNetwork) {
@@ -753,11 +770,19 @@ export class Buildings {
   tickConstruction(days: number, buildMul: number) {
     for (const b of this.list.values()) {
       if (b.state !== 'building') continue;
+      const was = b.progress;
       b.progress = Math.min(1, b.progress + (days / b.buildDays) * buildMul);
       this.writeMatrix(b, easeGrow(b.progress));
+      // a site is told about once per tenth it passes, not every step (a step moves it a few thousandths);
+      // the tenth it reaches by opening is said by the 1 below instead
+      if (this.onProgress) {
+        const top = Math.min(9, Math.floor(b.progress * 10));
+        for (let k = Math.floor(was * 10) + 1; k <= top; k++) this.onProgress(b, k / 10);
+      }
       if (b.progress >= 1) {
         b.state = 'active';
         this.dropScaffold(b);
+        this.onProgress?.(b, 1);
         this.onComplete?.(b);
       }
     }

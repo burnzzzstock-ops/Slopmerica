@@ -350,7 +350,9 @@ registerSystem({
       policiesFor: (b: Bld) => [...activePolicyIdsFor(b)], save: () => saveState(s), load: (v: unknown) => loadState(s, v), stats: (id: number) => districtStats(s, id),
     };
   },
-  frame(g) { const s = STATES.get(g)!; if (s.boundSize !== g.buildings.list.size) bindBuildings(s); if (s.group.visible) rebuildVisual(s); },
+  frame(g) { const s = STATES.get(g)!; if (s.group.visible) rebuildVisual(s); },
+  // new buildings join their district on the simulation's clock, not the screen's
+  step(g) { const s = STATES.get(g)!; if (s.boundSize !== g.buildings.list.size) bindBuildings(s); },
   daily(g, day) {
     const s = STATES.get(g)!; bindBuildings(s);
     let tripWeight = 0, tripTotal = 0;

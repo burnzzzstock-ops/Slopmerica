@@ -3,9 +3,10 @@
 import { MAPS, MapId } from '../world/maps';
 import type { Mode } from '../sim/sim';
 import { MERCH_URL } from '../art/brands';
-import { loadSave, saveProblem, type SaveData } from '../sim/save';
+import { loadSave, readSaveText, type SaveData } from '../sim/save';
 import { BUILD } from './bugreport';
 import { IS_TOUCH } from '../config';
+import { PLAYTEST } from '../core/flags';
 import heroArt from '../art/keyart/hero.webp';
 import appalachiaArt from '../art/keyart/appalachia.webp';
 import norcalArt from '../art/keyart/norcal.webp';
@@ -22,13 +23,16 @@ export interface StartChoice {
 
 /** A city file someone saved from the bug report sheet (or a backup). */
 function parseCityFile(text: string): SaveData | string {
-  let d: SaveData;
-  try { d = JSON.parse(text); } catch { return "That file isn't a Slopmerica city (not JSON)."; }
-  if (!d || typeof d !== 'object' || d.v !== 1) return "That file isn't a Slopmerica city file.";
-  if (!MAPS.some((m) => m.id === d.map)) return 'That city is on a county this build does not have.';
-  // the sections must be there in the shape the loader walks, or the file would get past this screen and die while loading
-  if (saveProblem(d)) return 'That city file is incomplete or damaged, so it was not loaded. Your own city is untouched.';
-  return d;
+  // (a file from any version this build knows is brought up to date; the sections must be there in the shape the loader walks,
+  // or the file would get past this screen and die while loading)
+  const r = readSaveText(text);
+  if (r.problem === 'not JSON') return "That file isn't a Slopmerica city (not JSON).";
+  if (r.problem === 'not a Slopmerica city') return "That file isn't a Slopmerica city file.";
+  if (r.problem === 'made by a newer version of the game') return 'That city was saved by a newer version of the game. Update the game, then load it. Your own city is untouched.';
+  if (!r.save) return 'That city file is incomplete or damaged, so it was not loaded. Your own city is untouched.';
+  const save = r.save;
+  if (!MAPS.some((m) => m.id === save.map)) return 'That city is on a county this build does not have.';
+  return save;
 }
 
 const MODES: { id: Mode; name: string; blurb: string }[] = [
@@ -124,11 +128,11 @@ export function showTitle(parent: HTMLElement): Promise<StartChoice> {
           </div>
         </div>
       </section>
-      <footer class="aaa-foot">
+      ${PLAYTEST ? `<footer class="aaa-foot">
         <span class="aaa-badge">Playtest</span>
         <span>Things will break. Tap <b>🐞 Report bug</b> in the game${IS_TOUCH ? ' (under More)' : ''}.</span>
         <span class="aaa-build">Build ${esc(BUILD)}</span>
-      </footer>`;
+      </footer>` : ''}`;
     parent.appendChild(el);
     const img = el.querySelector('.aaa-art img') as HTMLImageElement;
     const ready = () => el.classList.add('art-ready');

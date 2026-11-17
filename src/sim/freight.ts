@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import type { Game, Selection } from '../game';
 import type { Car } from '../agents/traffic';
+import { decode, encode, type Json, type Refs } from '../core/snapshot';
 import type { Bld } from './buildings';
 import { POLICY_MOBILITY } from './policyEffects';
 import { NO_GOODS } from './sim';
@@ -93,7 +94,7 @@ function launch(g: Game, kind: FreightKind, qty: number, from: Bld | 'edge', to:
   const vehicle = qty >= 24 ? 'semi' : 'boxTruck';
   const purpose = kind === 'local' ? 'delivering conserved goods' : kind === 'import' ? 'importing emergency shelf filler' : 'exporting surplus slop';
   const car = g.traffic.dispatch(vehicle, from, to, purpose, to === 'edge' ? 'the interstate' : to.label, g.hour, {
-    sober: true, local: kind !== 'import', onDone: (_car, arrived) => finishShipment(g, id, arrived),
+    sober: true, local: kind !== 'import', done: ['freight', id],
   });
   if (!car) return false;
   shipments.set(id, { id, kind, qty, fromId, toId, car }); recordRoute(car); return true;
@@ -277,6 +278,21 @@ function saveState(g: Game): FreightSave {
   return { version: 1, factories: facRows, shops: savedStocks(g, shops), totals: { ...totals, factoryLost: totals.factoryLost + orphaned }, routes: [...truckRoutes], pending: { exportIncome, importCosts } };
 }
 
+/** Stock, loads on the road (each with its truck), routes and the week's books, exactly. */
+function saveExact(refs: Refs): Json {
+  return encode({ factories, shops, shipments, truckRoutes, nextShipment, exportIncome, importCosts, lastWeek, totals, weekStart }, refs);
+}
+function loadExact(data: Json, refs: Refs) {
+  const d = decode<{ factories: typeof factories; shops: typeof shops; shipments: typeof shipments; truckRoutes: typeof truckRoutes; nextShipment: number; exportIncome: number; importCosts: number; lastWeek: typeof lastWeek; totals: typeof totals; weekStart: typeof weekStart }>(data, refs);
+  factories.clear(); shops.clear(); shipments.clear(); truckRoutes.clear();
+  for (const [k, v] of d.factories) factories.set(k, v);
+  for (const [k, v] of d.shops) shops.set(k, v);
+  for (const [k, v] of d.shipments) if (v.car) shipments.set(k, v);
+  for (const [k, v] of d.truckRoutes) truckRoutes.set(k, v);
+  nextShipment = d.nextShipment; exportIncome = d.exportIncome; importCosts = d.importCosts; lastWeek = d.lastWeek; totals = d.totals; weekStart = d.weekStart;
+  routesDirty = true;
+}
+
 function loadState(g: Game, raw: unknown) {
   const data = raw as Partial<FreightSave>; factories.clear(); shops.clear(); shipments.clear(); truckRoutes.clear();
   totals = { ...zeroTotals(), ...(data.totals ?? {}) }; weekStart = { ...totals };
@@ -290,7 +306,11 @@ function loadState(g: Game, raw: unknown) {
 
 registerSystem({
   id: 'freight',
+  saveExact: (_g, refs) => saveExact(refs),
+  loadExact: (_g, data, refs) => loadExact(data, refs),
   init(g) {
+    // how a freight truck finishes its trip: by name, so a load on the road survives a save (Traffic.handlers)
+    g.traffic.handlers.set('freight', (_car, arrived, id) => finishShipment(g, id, arrived));
     game = g; syncBuildings(g);
     routeMaterial = new THREE.LineDashedMaterial({ color: 0xffb62e, dashSize: 10, gapSize: 7, transparent: true, opacity: 0.95, depthWrite: false });
     routeLines = new THREE.LineSegments(new THREE.BufferGeometry(), routeMaterial); routeLines.visible = false; routeLines.renderOrder = 7; routeLines.frustumCulled = false; g.scene.add(routeLines);

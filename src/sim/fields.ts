@@ -69,11 +69,11 @@ export function makeFields(g: Game): WorldFields {
   const poseOf = (t: ViewTarget): ViewPose | null => {
     if (t.kind === 'car') {
       const c = g.traffic.cars.find((c) => c.id === t.id);
-      return c ? { x: c.x, y: c.y, z: c.z, yaw: c.yaw, speed: c.v, radius: c.len / 2 } : null;
+      return c ? { x: c.shown[0], y: c.shown[1], z: c.shown[2], yaw: c.shown[3], speed: c.v, radius: c.len / 2 } : null;
     }
     if (t.kind === 'person') {
       const p = g.peds.peds.find((p) => p.id === t.id && !p.gone);
-      return p ? { x: p.x, y: p.y, z: p.z, yaw: p.yaw, speed: p.kind === 'walk' ? p.speed : 0, radius: 0.5 } : null;
+      return p ? (p.shown ? { x: p.shown[0], y: p.shown[1], z: p.shown[2], yaw: p.shown[3], speed: p.kind === 'walk' ? p.speed : 0, radius: 0.5 } : { x: p.x, y: p.y, z: p.z, yaw: p.yaw, speed: p.kind === 'walk' ? p.speed : 0, radius: 0.5 }) : null;
     }
     const b = g.buildings.list.get(t.id);
     return b ? { x: b.x, y: b.y, z: b.z, yaw: b.yaw, speed: 0, radius: Math.max(b.hw, b.hd) } : null;

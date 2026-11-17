@@ -70,7 +70,8 @@ function brush(g: Game, x: number, z: number) {
   g.sim.spend(cost, 'Terraforming', 'construction');
   runningCost += cost;
   g.terrain.editHeights(next);
-  g.trees.cut(x - radius, z - radius, x + radius, z + radius, (tx, tz) => Math.hypot(tx - x, tz - z) < radius);
+  const count = g.trees.cut(x - radius, z - radius, x + radius, z + radius, (tx, tz) => Math.hypot(tx - x, tz - z) < radius);
+  if (count) g.sim.events.emit('treesCleared', { x, z, r: radius, count, cause: 'tool' });
   message = `${next.length} ground samples moved`;
 }
 

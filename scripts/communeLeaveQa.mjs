@@ -16,6 +16,7 @@ const result = await page.evaluate(() => {
   document.querySelector('#ob-go')?.click(); g.stop(); g.sim.speed = 0;
   document.querySelector('.hud').style.display = 'none';
   c.state = 'leaving';
+  g.communes.step(4.1 * 4);   // (a leaving commune goes on the simulation's clock)
   g.communes.update(4.1, 0, 0, g.camera.position);
   window.__dbg.view(c.x, c.z, 30, 0.7, 0.5);
   g.frame(0.016);

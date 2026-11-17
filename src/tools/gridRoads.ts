@@ -126,6 +126,11 @@ export function planGrid(game: Game, g: GridShape, type: RoadTypeId) {
  * streets built, kept and skipped, and what it cost.
  */
 export function buildGrid(game: Game, g: GridShape, type: RoadTypeId) {
+  // a grid is one build action: its streets are said as one new road (RoadNetwork.together)
+  return game.net.together(() => buildStreets(game, g, type));
+}
+
+function buildStreets(game: Game, g: GridShape, type: RoadTypeId) {
   const net = game.net, sim = game.sim;
   const lines = gridLines(g, !!ROAD_TYPES[type].oneWay);
   const firstSeg = Math.max(0, ...net.segs.keys()) + 1;

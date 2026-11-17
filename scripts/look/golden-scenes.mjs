@@ -1,6 +1,6 @@
-import { readFileSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 import { SAVE, seededInit, seededRandom } from '../refblock.mjs';
+import { readSave } from '../lib/fixtures.mjs';
 
 export const seed = 1776;
 const times = {
@@ -53,7 +53,7 @@ export async function capture(browser, shot, base, probeMaterial = false, afterC
     if (!resolve(SAVE).startsWith(resolve('scripts/fixtures') + sep)) {
       throw new Error('The reference-block harness must point SAVE at its committed fixture before capturing the block');
     }
-    save = readFileSync(SAVE, 'utf8');
+    save = readSave(SAVE);
   }
   const viewport = phone ? { width: 390, height: 844 } : { width: 1280, height: 720 };
   const page = await browser.newPage({

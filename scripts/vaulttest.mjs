@@ -161,6 +161,8 @@ const sc = await page.evaluate(() => {
   let depot = false;
   for (const [dx, dz] of [[60, 25], [60, -25], [120, 25], [120, -25], [260, 25], [260, -25], [-280, 25]]) if (!depot) depot = g.transit.placeDepot(cx + dx, cz + dz);
   for (const b of g.buildings.list.values()) if (b.kind === 'busDepot') { b.state = 'active'; b.progress = 1; }
+  // a power plant with open ground beside it: the one placed above can be hemmed in by lots (it depends on which lots grew), and a substation needs room
+  { const SV = window.__services; let p = null; for (const [dx, dz] of [[300, -40], [300, 40], [-300, -40], [-300, 40]]) { if (p) break; const s = SV.findSpot(g, 'coalPlant', cx + dx, cz + dz); p = s && !s.reason ? SV.place(g, 'coalPlant', s.x, s.z, s.yaw) : null; } if (p) { p.state = 'active'; p.progress = 1; } }
   for (let i = 0; i < 80; i++) g.frame(0.05, false);
   const V = g.vaultScenery, items = V.items;
   const segs = [...g.net.segs.values()];

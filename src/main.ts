@@ -1,3 +1,5 @@
+// first: it decides whether the debug hooks exist before any other module installs one
+import { DEBUG } from './core/flags';
 import './fonts';
 import './style.css';
 import { crumb, installErrorCapture, openBugReport, showBootFailure, showContextLost } from './ui/bugreport';
@@ -44,8 +46,11 @@ async function boot() {
     autosave(game);
     const hud = new Hud(game, app);
     game.onFrame.push((dt) => hud.update(dt));
-    (window as any).__game = game;
-    (window as any).__dbg = debugApi(game);
+    // the hooks the browser tests drive the game through; a player's build has none
+    if (DEBUG) {
+      (window as any).__game = game;
+      (window as any).__dbg = debugApi(game);
+    }
     game.start();
   } catch (err) {
     loading.done();

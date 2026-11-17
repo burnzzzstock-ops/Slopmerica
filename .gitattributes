@@ -11,6 +11,7 @@
 *.glb binary
 *.bin binary
 *.woff2 binary
+*.gz binary
 
 # Geometry buffers must never undergo Windows newline conversion, even when
 # their first 8 KiB happen to contain no NUL bytes.

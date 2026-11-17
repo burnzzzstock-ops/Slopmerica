@@ -1,32 +1,46 @@
 import { execSync } from 'node:child_process';
 import { defineConfig } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
-import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Plugin } from 'vite';
 
 /**
  * public/ isn't copied (the asset catalogs are big): ship only the packs the
- * game streams in beside the page (Civic Foundry street furniture, the Asset
- * Vault's buildings). The single-file build is published where .bin isn't
- * served, so its geometry goes as base64 text (pack.json names it).
+ * game streams in (Civic Foundry street furniture, the Asset Vault's
+ * buildings). The normal build puts them beside the page. The single-file
+ * build is one HTML file that must work opened from disk, where nothing
+ * beside it can be fetched: each pack goes inside the page, its geometry as
+ * base64 text and the textures it names as data URIs (src/core/pack.ts
+ * reads them there first).
  */
-function gamePacks(outDir: string, text: boolean): Plugin {
+function gamePacks(outDir: string, single: boolean): Plugin {
+  const IMAGE: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' };
+  const inline = (dir: string, v: unknown): unknown => {
+    if (typeof v === 'string') {
+      const type = IMAGE[v.split('.').pop()!.toLowerCase()], f = resolve(dir, v);
+      return type && existsSync(f) ? `data:${type};base64,${readFileSync(f).toString('base64')}` : v;
+    }
+    if (Array.isArray(v)) return v.map((x) => inline(dir, x));
+    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, inline(dir, x)]));
+    return v;
+  };
   return {
     name: 'slop-game-packs',
     apply: 'build',
     closeBundle() {
+      let tags = '';
       for (const name of ['civic', 'vault']) {
         const src = resolve('public', name);
         if (!existsSync(src)) continue;
-        const out = resolve(outDir, name);
-        cpSync(src, out, { recursive: true });
-        if (!text) continue;
-        writeFileSync(resolve(out, 'pack.b64.txt'), readFileSync(resolve(out, 'pack.bin')).toString('base64'));
-        rmSync(resolve(out, 'pack.bin'));
-        const json = JSON.parse(readFileSync(resolve(out, 'pack.json'), 'utf8'));
-        writeFileSync(resolve(out, 'pack.json'), JSON.stringify({ ...json, bin64: 'pack.b64.txt' }));
+        if (!single) { cpSync(src, resolve(outDir, name), { recursive: true }); continue; }
+        const json = inline(src, JSON.parse(readFileSync(resolve(src, 'pack.json'), 'utf8')));
+        tags += `<script type="application/json" id="slop-pack-${name}">${JSON.stringify(json).replace(/</g, '\\u003c')}</script>`;
+        tags += `<script type="text/plain" id="slop-pack-${name}-bin">${readFileSync(resolve(src, 'pack.bin')).toString('base64')}</script>`;
       }
+      if (!tags) return;
+      const page = resolve(outDir, 'index.html');
+      writeFileSync(page, readFileSync(page, 'utf8').replace('</body>', () => `${tags}</body>`));
     },
   };
 }

@@ -1,6 +1,14 @@
 import * as THREE from 'three';
 import { T, tileNames, type Tile } from '../art';
+import { withVisualRandom } from './visualRandom';
 export { withVisualRandom as withBuildingLodRandom } from './visualRandom';
+
+/** Renderer telemetry measures proxy preparation, including its buffer upload. */
+export function timeBuildingLod(build: () => void): number {
+  const started = performance.now();
+  withVisualRandom(build);
+  return performance.now() - started;
+}
 
 let tiles: Tile[] | undefined;
 const tileCache = new Map<string, string>();

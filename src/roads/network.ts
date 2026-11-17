@@ -3,6 +3,7 @@
 // intersections, upgrades (ONE MORE LANE) and removal.
 import { WATER } from '../config';
 import { Emitter } from '../core/events';
+import { fromBase64, toBase64 } from '../core/snapshot';
 import {
   bezPoint, clamp, closestOnSampled, Cubic, dist, lerp, lineCubic, norm, Sampled, sampleCubic, segIntersect,
   smoothstep, SpatialHash, splitCubic, sub, tAt, tangentAt, V2,
@@ -86,7 +87,14 @@ type Events = {
   changed: void;
 };
 
-type SegRow = [number, number, number, RoadTypeId, [number, number][], string, number, number, number?];
+/**
+ * A road as saved: id, its two nodes, type, the curve's four points, name, street, the day it was built, the overpass height (0 for
+ * none), then what makes a reload exact (saves from before had none of it): the surface and ground profiles as the bytes of
+ * Float32Arrays (base64), congestion, the seconds a lane is still blocked and the cars on it each way.
+ */
+type SegRow = [number, number, number, RoadTypeId, [number, number][], string, number, number, number?, string?, string?, number?, number?, number?, number?];
+const f32 = (a: readonly number[]) => toBase64(new Float32Array(a));
+const unf32 = (s: string) => Array.from(new Float32Array(fromBase64(s).buffer));
 
 const MAX_PIECE = 110; // long strokes are split into pieces this long
 const BRIDGE_DECK = WATER + 5.5;
@@ -109,6 +117,14 @@ export class RoadNetwork {
   buildingsUnder?: (pts: V2[], halfWidth: number) => { reason?: string; demolish: number; ids?: number[] };
   /** land the player may build on (null = everywhere); see sim/land.ts */
   allowed: ((x: number, z: number) => boolean) | null = null;
+  /** new road pieces went down: once per build(), or once for everything built inside together() */
+  onBuilt?: (segIds: number[]) => void;
+  /** ONE MORE LANE widened a piece in place; lanes = its lanes now, both ways together */
+  onLaneAdded?: (seg: RSeg, lanes: number) => void;
+  /** trees came down for a road (count > 0 only): (x, z) the middle of the piece's box, r the box's half diagonal (m) */
+  onTreesCut?: (x: number, z: number, r: number, count: number) => void;
+  /** ids built so far inside together(), or null outside it */
+  private held: number[] | null = null;
 
   constructor(public terrain: Terrain, public trees: Trees) {}
 
@@ -334,6 +350,22 @@ export class RoadNetwork {
     return this.addNode(s.x, s.z);
   }
 
+  /**
+   * Several build() calls that are one action (a street grid): onBuilt is said once, at the end, with every piece they
+   * made that still stands (a later street splitting an earlier one is followed to the two new pieces).
+   */
+  together<T>(fn: () => T): T {
+    if (this.held) return fn();
+    this.held = [];
+    try {
+      return fn();
+    } finally {
+      const ids = this.held.filter((id) => this.segs.has(id));
+      this.held = null;
+      if (ids.length) this.onBuilt?.(ids);
+    }
+  }
+
   /** Build a road. Returns the created segments (possibly several). */
   build(start: Snap, end: Snap, curve: Cubic, typeId: RoadTypeId, streetName?: string, opts: { over?: number } = {}): RSeg[] {
     const street = this.nextStreet++;
@@ -417,6 +449,10 @@ export class RoadNetwork {
     for (const s of created) { touched.add(s.a); touched.add(s.b); }
     for (const id of touched) this.updateTrims(id);
     this.events.emit('changed', undefined);
+    if (created.length) {
+      if (this.held) for (const s of created) this.held.push(s.id);
+      else if (this.onBuilt) this.onBuilt(created.map((s) => s.id));
+    }
     return created;
   }
 
@@ -425,8 +461,9 @@ export class RoadNetwork {
   // ------------------------------------------------------------------ save / load
   serialize() {
     return {
-      nodes: [...this.nodes.values()].map((n): [number, number, number, number] => [n.id, +n.x.toFixed(2), +n.z.toFixed(2), +n.y.toFixed(2)]),
-      segs: [...this.segs.values()].map((s): SegRow => [s.id, s.a, s.b, s.type, [s.curve.p0, s.curve.p1, s.curve.p2, s.curve.p3].map((p) => [+p.x.toFixed(2), +p.z.toFixed(2)] as [number, number]), s.name, s.street, Math.round(s.builtDay), ...(s.over ? [s.over] : [])] as SegRow),
+      // (every number whole: a curve rounded to the centimetre comes back a slightly different length, and every car on it is elsewhere)
+      nodes: [...this.nodes.values()].map((n): [number, number, number, number] => [n.id, n.x, n.z, n.y]),
+      segs: [...this.segs.values()].map((s): SegRow => [s.id, s.a, s.b, s.type, [s.curve.p0, s.curve.p1, s.curve.p2, s.curve.p3].map((p) => [p.x, p.z] as [number, number]), s.name, s.street, s.builtDay, s.over ?? 0, f32(s.hs), f32(s.ground), s.vc, s.blocked, s.load[0], s.load[1]]),
       next: [this.nextNode, this.nextSeg, this.nextStreet] as [number, number, number],
     };
   }
@@ -434,16 +471,23 @@ export class RoadNetwork {
   restore(data: ReturnType<RoadNetwork['serialize']>) {
     for (const [id, x, z, y] of data.nodes) this.nodes.set(id, { id, x, z, y, segs: [] });
     const made: RSeg[] = [];
-    for (const [id, a, b, type, pts, name, street, built, over] of data.segs) {
+    for (const [id, a, b, type, pts, name, street, built, over, hs, ground, vc, blocked, load0, load1] of data.segs) {
       const A = this.nodes.get(a), B = this.nodes.get(b);
       if (!A || !B) continue;
       this.nextSeg = id;
       const curve = { p0: { x: pts[0][0], z: pts[0][1] }, p1: { x: pts[1][0], z: pts[1][1] }, p2: { x: pts[2][0], z: pts[2][1] }, p3: { x: pts[3][0], z: pts[3][1] } };
-      const s = this.addSeg(A, B, curve, type, name, street, over);
-      if (s) { s.builtDay = built; made.push(s); }
+      const s = this.addSeg(A, B, curve, type, name, street, over || undefined);
+      if (!s) continue;
+      s.builtDay = built;
+      // the profile it was built with (the ground has changed since: worked out again today it would come out different)
+      if (hs && ground) { const H = unf32(hs), G = unf32(ground); if (H.length === s.hs.length && G.length === s.ground.length) { s.hs = H; s.ground = G; } }
+      if (vc !== undefined) s.vc = vc;
+      if (blocked !== undefined) s.blocked = blocked;
+      if (load0 !== undefined && load1 !== undefined) s.load = [load0, load1];   // (cars on it at the last step: the next step's routing reads it before it is counted again)
+      made.push(s);
     }
     [this.nextNode, this.nextSeg, this.nextStreet] = data.next;
-    for (const s of made) this.finalizeSeg(s);
+    for (const s of made) this.finalizeSeg(s, true);
     for (const id of this.nodes.keys()) this.updateTrims(id);
     this.events.emit('changed', undefined);
   }
@@ -533,18 +577,20 @@ export class RoadNetwork {
     }
     y[0] = A.y;
     y[n - 1] = B.y;
-    seg.hs = y;
-    seg.ground = ground;
+    // (single precision, as the terrain is: a save holds them as they are, in half the room)
+    seg.hs = y.map(Math.fround);
+    seg.ground = ground.map(Math.fround);
   }
 
-  private finalizeSeg(seg: RSeg) {
+  /** `restoring`: a save coming back, where the trees it clears were cleared long ago (nothing is said) */
+  private finalizeSeg(seg: RSeg, restoring = false) {
     const t = this.type(seg.type);
     // an overpass keeps its air: only a short fill at its ends
     this.terrain.gradeRoad(seg.samp.pts, seg.hs, t.width / 2, seg.over ? 4.5 : 14);
     // clear far enough that crowns (about 4 m across) don't hang over the pavement
     const hw = t.width / 2 + 4;
     const pts = seg.samp.pts;
-    this.trees.cut(seg.minX, seg.minZ, seg.maxX, seg.maxZ, (x, z) => {
+    const felled = this.trees.cut(seg.minX, seg.minZ, seg.maxX, seg.maxZ, (x, z) => {
       for (let i = 0; i < pts.length - 1; i += 1) {
         const a = pts[i], b = pts[i + 1];
         const abx = b.x - a.x, abz = b.z - a.z;
@@ -554,7 +600,12 @@ export class RoadNetwork {
       }
       return false;
     });
+    if (felled && !restoring) this.treesCut(seg, felled);
     this.events.emit('segAdded', seg);
+  }
+
+  private treesCut(seg: RSeg, count: number) {
+    this.onTreesCut?.((seg.minX + seg.maxX) / 2, (seg.minZ + seg.maxZ) / 2, Math.hypot(seg.maxX - seg.minX, seg.maxZ - seg.minZ) / 2, count);
   }
 
   /** Id of the segment being split right now (its removal is a split, not a demolition). */
@@ -577,6 +628,8 @@ export class RoadNetwork {
     const s1 = this.addSeg(A, node, { ...c1, p3: { x: node.x, z: node.z } }, seg.type, seg.name, seg.street)!;
     const s2 = this.addSeg(node, B, { ...c2, p0: { x: node.x, z: node.z } }, seg.type, seg.name, seg.street)!;
     s1.builtDay = s2.builtDay = seg.builtDay;
+    // a piece built earlier in the same together() action: it is the two halves now
+    if (this.held) { const i = this.held.indexOf(seg.id); if (i >= 0) this.held.splice(i, 1, s1.id, s2.id); }
     this.events.emit('segAdded', s1);
     this.events.emit('segAdded', s2);
     this.events.emit('segSplit', { old: seg.id, into: [s1, s2] });
@@ -635,7 +688,8 @@ export class RoadNetwork {
   upgrade(id: number, to?: RoadTypeId): RSeg | null {
     const seg = this.segs.get(id);
     if (!seg) return null;
-    const next = to ?? this.type(seg.type).next;
+    const was = this.type(seg.type);
+    const next = to ?? was.next;
     if (!next) return null;
     this.hash.remove(seg.id, seg.minX, seg.minZ, seg.maxX, seg.maxZ);
     seg.type = next;
@@ -646,6 +700,8 @@ export class RoadNetwork {
     this.updateTrims(seg.a);
     this.updateTrims(seg.b);
     this.events.emit('changed', undefined);
+    // a step up the One More Lane chain is a lane added; an undo stepping back down is not
+    if (next === was.next) { const t = this.type(next); this.onLaneAdded?.(seg, t.lanesPerDir * (t.oneWay ? 1 : 2)); }
     return seg;
   }
 
@@ -655,7 +711,8 @@ export class RoadNetwork {
     // clear far enough that crowns (about 4 m across) don't hang over the pavement
     const hw = t.width / 2 + 4;
     const pts = seg.samp.pts;
-    this.trees.cut(seg.minX, seg.minZ, seg.maxX, seg.maxZ, (x, z) => closestOnSampled({ x, z }, seg.samp).d < hw);
+    const felled = this.trees.cut(seg.minX, seg.minZ, seg.maxX, seg.maxZ, (x, z) => closestOnSampled({ x, z }, seg.samp).d < hw);
+    if (felled) this.treesCut(seg, felled);
     void pts;
     this.events.emit('segChanged', seg);
   }

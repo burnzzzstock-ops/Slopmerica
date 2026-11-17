@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { launch as launchBrowser } from '../lib/browser.mjs';
 import { SAVE, openBlock, seededInit, seededRandom, shoot } from '../refblock.mjs';
+import { REFBLOCK, readSave } from '../lib/fixtures.mjs';
 
 export const presets = ['low', 'medium', 'high', 'ultra'];
 export const scenes = ['reference', 'appalachia', 'norcal', 'florida'];
@@ -24,9 +25,9 @@ export function selection(name, options) {
 }
 
 export function fixtureHash() {
-  const path = 'scripts/fixtures/refblock-town.json';
+  const path = REFBLOCK;
   if (resolve(SAVE) !== resolve(path) || !existsSync(path)) throw Error(`Reference loader must use committed town: ${path}`);
-  return createHash('sha256').update(readFileSync(path)).digest('hex');
+  return createHash('sha256').update(readSave(path)).digest('hex');
 }
 
 export function saveReport(path, value) {

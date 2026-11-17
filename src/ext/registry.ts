@@ -3,6 +3,7 @@
 // editing game.ts / hud.ts / tools.ts. Everything is optional.
 import type * as THREE from 'three';
 import type { Game, Selection } from '../game';
+import type { Json, Refs } from '../core/snapshot';
 
 export interface ToolTipLike {
   text: string;
@@ -73,12 +74,26 @@ export type ExtInspector = (sel: NonNullable<Selection>, g: Game) => string | nu
 export interface ExtSystem {
   id: string;
   init?(g: Game): void;
-  /** every rendered frame; simDays = game days advanced this frame */
+  /**
+   * every rendered frame; simDays = game days advanced this frame. For what is drawn and heard only: anything that changes
+   * the county belongs in step (or daily / weekly), or the same county comes out different at another frame rate.
+   */
   frame?(g: Game, dt: number, simDays: number): void;
+  /** every fixed step of the simulation: `dt` game seconds on */
+  step?(g: Game, dt: number): void;
   daily?(g: Game, day: number): void;
   weekly?(g: Game): void;
+  /** the county's dice were started again from g.seed: do the same with this system's own stream (streamSeed(g.seed, name)) */
+  reseed?(g: Game): void;
   /** JSON-serializable state for saves */
   save?(g: Game): unknown;
+  /**
+   * Everything save() rounds off or leaves out, exactly (src/core/snapshot.ts: encode, with `refs` naming buildings, roads and
+   * cars). With it a reload carries on as the same county; without it the system starts afresh from what save() kept.
+   * loadExact runs after load() and after the cars are back.
+   */
+  saveExact?(g: Game, refs: Refs): Json;
+  loadExact?(g: Game, data: Json, refs: Refs): void;
   /** restore before roads and buildings are rebuilt (e.g. terrain edits they sit on) */
   preload?(g: Game, data: unknown): void;
   load?(g: Game, data: unknown): void;

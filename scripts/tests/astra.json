@@ -1,4 +1,6 @@
 [
+  {"name":"street-blades","command":"node scripts/look/street-blades.mjs","tier":"gate","timeout":120,"needsBrowser":false,"needsKey":false,"env":{},"what":"Street names read left-to-right from both sides at four yaws, road lettering faces up and speed plates have blank backs"},
+  {"name":"road-surface","command":"node scripts/look/road-surface.mjs","tier":"full","timeout":180,"needsBrowser":true,"needsKey":false,"env":{},"pixels":true,"what":"Unpainted asphalt across each of four mixed-junction approach seams averages less than 3 CIE Lab deltaE"},
   {"name":"vehicle-pools","command":"node scripts/look/vehicle-pools.mjs","tier":"full","timeout":180,"needsBrowser":true,"needsKey":false,"env":{},"pixels":true,"what":"Masked pale paint, dark paint, livery panels and stainless steel each respond to a sodium lamp pool"},
   {"name":"vehicle-beacons","command":"node scripts/look/beacons.mjs","tier":"full","timeout":180,"needsBrowser":true,"needsKey":false,"env":{},"what":"Tow, garbage and work-pickup warning lens and halo state agree across 40 flash frames and explicit overrides"},
   {"name":"street-handles","command":"node scripts/look/street-handles.mjs","tier":"full","timeout":180,"needsBrowser":true,"needsKey":false,"env":{},"what":"Unavailable live car handles get no street voice while allocated handles and existing offline fixtures remain audible"},

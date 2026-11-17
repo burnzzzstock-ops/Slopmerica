@@ -469,7 +469,7 @@ function asphaltTexture(maxAniso: number) {
   const ctx = c.getContext('2d')!;
   noiseFill(ctx, 256, 256, [84, 84, 88], 22);
   // the same wear as the roads' own canvases (linear-light tone put back, so it meets them without a seam in tone); the tile
-  // is 8 m across and repeats in both directions, so the stains wrap and the seam wanders to match
+  // is 14 m across and repeats in both directions, so the stains wrap and the seam wanders to match
   const rnd = mulberry32(seedOf('junction'));
   const tone = linearTone(ctx, 0, 0, 256, 256);
   mottle(ctx, 256, 256, true, 0, 256, 10, 62, rnd, 0.8);
@@ -481,6 +481,36 @@ function asphaltTexture(maxAniso: number) {
   tex.anisotropy = maxAniso;
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
+}
+
+/** All paved surfaces project the same asphalt and wear in world metres.
+ * The road maps still supply lane markings, medians, gutters and sidewalks.
+ * White crossing bars keep their alpha test and use the shared asphalt between bars. */
+function sharedAsphalt(mat: THREE.MeshStandardMaterial, texture: THREE.Texture, road?: RoadType) {
+  const previous = mat.onBeforeCompile;
+  const junction = mat.map === texture;
+  const span = road ? carriageHalf(road) / road.width : 1;
+  const median = road && road.median > 0 ? road.median / (2 * road.width) : 0;
+  mat.onBeforeCompile = (shader, renderer) => {
+    previous.call(mat, shader, renderer);
+    shader.uniforms.uRoadAsphalt = { value: texture };
+    shader.uniforms.uAsphaltSpan = { value: new THREE.Vector2(span, median) };
+    shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', junction
+      ? 'diffuseColor *= texture2D(map, vLampW.xz / 14.0);'
+      : `
+        vec4 roadDecal = texture2D(map, vMapUv);
+        float lateral = abs(vMapUv.x - 0.5);
+        float carriage = ${road ? 'step(lateral, uAsphaltSpan.x) * step(uAsphaltSpan.y, lateral)' : '1.0'};
+        float marking = smoothstep(0.16, 0.32, max(roadDecal.r, max(roadDecal.g, roadDecal.b)));
+        vec3 asphalt = texture2D(uRoadAsphalt, vLampW.xz / 14.0).rgb;
+        diffuseColor *= vec4(mix(roadDecal.rgb, asphalt, carriage * (1.0 - marking)), roadDecal.a);
+      `);
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>',
+      '#include <common>\nuniform sampler2D uRoadAsphalt;\nuniform vec2 uAsphaltSpan;');
+  };
+  const key = mat.customProgramCacheKey.bind(mat);
+  const variant = junction ? 'junction' : road ? 'road' : 'crosswalk';
+  mat.customProgramCacheKey = () => key() + '|world-asphalt-' + variant;
 }
 
 /** Zebra bars for crosswalks: u runs across the road in metres (one bar per metre). */
@@ -560,10 +590,15 @@ export class RoadRenderer {
     this.junctionMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ map: jt, roughness: 0.92, metalness: 0, envMapIntensity: 0.5, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 }));
     this.junctionMesh.receiveShadow = true;
     litByLamps(this.junctionMesh.material as THREE.MeshStandardMaterial);
+    sharedAsphalt(this.junctionMesh.material as THREE.MeshStandardMaterial, jt);
+    for (const [id, material] of this.typeMats) {
+      if (id !== 'gravel') sharedAsphalt(material, jt, ROAD_TYPES[id]);
+    }
     this.group.add(this.junctionMesh);
     this.crosswalkMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ map: crosswalkTexture(aniso), alphaTest: 0.5, roughness: 0.8, metalness: 0, envMapIntensity: 0.5, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 }));
     this.crosswalkMesh.receiveShadow = true;
     litByLamps(this.crosswalkMesh.material as THREE.MeshStandardMaterial);
+    sharedAsphalt(this.crosswalkMesh.material as THREE.MeshStandardMaterial, jt);
     this.group.add(this.crosswalkMesh);
     this.concMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, side: THREE.DoubleSide }));
     this.concMesh.castShadow = true;

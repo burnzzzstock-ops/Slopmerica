@@ -541,8 +541,8 @@ export class Tools implements PointerHandlers {
     const segs = net.build(this.start, end, curve, this.roadType);
     const trees = this.game.trees.takeCuts();
     if (segs.length) {
-      sim.spend(plan.cost, 'Road construction');
-      if (plan.grant > 0) sim.earn(plan.grant, 'grants');
+      sim.spend(plan.cost, 'Road construction', 'construction', p);
+      if (plan.grant > 0) sim.earn(plan.grant, 'grants', undefined, p);
       if (plan.grant > 0) this.game.floatText(`+$${plan.grant.toLocaleString()} Federal Slop Grant`, p, '#9dff3c');
       this.game.onRoadBuilt(segs, plan);
       this.game.pushUndo({ kind: 'build', segIds: segs.map((x) => x.id), refund: plan.cost - plan.grant, label: ROAD_TYPES[this.roadType].name, trees });

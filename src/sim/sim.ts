@@ -1,6 +1,6 @@
 // The simulation: calendar, RCI(O) demand ratios, growth, move-ins, jobs,
 // land value, level-ups, the Growth Ponzi budget, and the endless-sprawl ending.
-import { MAX_LEVEL, ZONE_TYPES, type GameTime, type WorldEvents, type ZoneType } from '../contracts';
+import { MAX_LEVEL, ZONE_TYPES, type GameTime, type MoneyKind, type WorldEvents, type ZoneType } from '../contracts';
 import { Emitter } from '../core/events';
 import { clamp } from '../core/math';
 import { Rng } from '../core/rng';
@@ -62,6 +62,17 @@ export const LEDGER_LABEL: Record<LedgerKind, string> = {
   roads: 'Road upkeep', services: 'Services & utility imports', transit: 'Transit', policies: 'Policies', freight: 'Freight', loans: 'Loan payments',
   construction: 'Construction', impact: 'Impact fees', grants: 'Federal grants', communes: 'Communes & lawyers', disasters: 'Disaster recovery',
   refunds: 'Refunds', loanIn: 'Loans taken', other: 'Other',
+};
+/**
+ * What each ledger line is as the world events colour and sound it (src/contracts.ts MoneyKind). Taxes are 'tax'; road and
+ * policy running costs are 'upkeep'; services and transit (fares and operations) are 'service'; impact fees
+ * are the 'fee' a new building pays; loans in and loan payments are 'loan'; freight and the communes' lawyers fit no
+ * kind of their own and are 'other'.
+ */
+export const MONEY_KIND: Record<LedgerKind, MoneyKind> = {
+  resTax: 'tax', comTax: 'tax', indTax: 'tax', offTax: 'tax',
+  roads: 'upkeep', policies: 'upkeep', services: 'service', transit: 'service', freight: 'other', loans: 'loan',
+  construction: 'build', impact: 'fee', grants: 'grant', communes: 'other', disasters: 'disaster', refunds: 'refund', loanIn: 'loan', other: 'other',
 };
 /** how far below zero the treasury may go before purchases are refused */
 export const CREDIT_LINE = 20000;
@@ -248,17 +259,21 @@ export class Sim {
   spendable() {
     return this.money === Infinity ? Infinity : Math.max(0, this.money + CREDIT_LINE);
   }
-  private record(label: string, amount: number, kind: LedgerKind) {
+  /** every movement of money comes through here (spend, refund, earn, and so the weekly close): it is logged and told */
+  private record(label: string, amount: number, kind: LedgerKind, at?: { x: number; z: number }) {
     if (!amount) return;
     this.transactions.push({ day: Math.round(this.day * 10) / 10, label: label || LEDGER_LABEL[kind], amount, kind });
     if (this.transactions.length > 200) this.transactions.splice(0, this.transactions.length - 200);
     this.fcCache = null;
+    // (sandbox money is endless: nothing moved, so nothing is said)
+    if (this.money !== Infinity) this.events.emit('moneyTick', at ? { delta: amount, kind: MONEY_KIND[kind], x: at.x, z: at.z } : { delta: amount, kind: MONEY_KIND[kind] });
   }
-  spend(amount: number, label: string, kind: LedgerKind = 'construction') {
+  /** `at`: where the money went, when it went somewhere (a road, a building), for the tick shown there */
+  spend(amount: number, label: string, kind: LedgerKind = 'construction', at?: { x: number; z: number }) {
     if (this.money === Infinity) return true;
     this.money -= amount;
     this.ledger[kind] -= amount;
-    this.record(label, -amount, kind);
+    this.record(label, -amount, kind, at);
     return true;
   }
   refund(amount: number, label = 'Refund') {
@@ -266,10 +281,10 @@ export class Sim {
     this.ledger.refunds += amount;
     this.record(label, amount, 'refunds');
   }
-  earn(amount: number, kind: LedgerKind, label = LEDGER_LABEL[kind]) {
+  earn(amount: number, kind: LedgerKind, label = LEDGER_LABEL[kind], at?: { x: number; z: number }) {
     if (this.money !== Infinity) this.money += amount;
     this.ledger[kind] += amount;
-    this.record(label, amount, kind);
+    this.record(label, amount, kind, at);
   }
   takeLoan(amount: number) {
     const weeks = 52;
@@ -773,7 +788,7 @@ export class Sim {
   private onBuildingComplete(bld: Bld) {
     if (!isZoned(bld) || bld.level > 1) return;
     const perCell = { resLow: 75, resHigh: 90, comLow: 130, comHigh: 150, industry: 110, office: 170 }[bld.zone];
-    this.earn(Math.round(perCell * bld.w * bld.d), 'impact');
+    this.earn(Math.round(perCell * bld.w * bld.d), 'impact', undefined, bld);
   }
 
   private weekly() {

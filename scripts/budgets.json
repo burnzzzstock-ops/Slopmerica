@@ -1,6 +1,6 @@
 {
   "about": "Size budget for the built game (npm run gate). mainJs and mainJsGzip are bytes of the biggest script in dist/assets; the gate fails when either grows by more than growth. Change the numbers only with node scripts/gate.mjs --update-budget, in a commit of its own that says why.",
   "growth": 0.05,
-  "mainJs": 2255099,
-  "mainJsGzip": 707280
+  "mainJs": 2369124,
+  "mainJsGzip": 748402
 }

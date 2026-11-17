@@ -4,22 +4,23 @@
 // that ask the Jev model and need a key); a new README line is therefore a new test without touching this file.
 //
 // usage: BASE_URL=http://127.0.0.1:5210 node scripts/suite.mjs [--dir shots/suite/<name>] [--only a,b] [--skip c] [--retry-failed] [--lint] [--list]
-//   env: PAR=2 (tests at a time; each also takes a slot from scripts/withslot.sh, which is two across everybody), TIMEOUT=1800 (seconds, per test)
+//   env: PAR (tests at a time, default SLOTS; a browser test also takes a slot from scripts/lib/slots.mjs, which is SLOTS=4 across this checkout), TIMEOUT=1800 (seconds, per test)
 //   --dir     where the summary (summary.tsv) and one log per test go (default shots/suite/run); the same dir resumes, a new dir starts over
 //   --retry-failed  run again the tests that failed or timed out in this dir (the passes stay)
 //   --lint    do not run anything: check every README script exists, the browser ones honour BASE_URL, and list scripts missing from the README
 //   --list    print what would run and what is skipped, and why
-// Exits 1 when any test failed or timed out (skipped ones do not count).
-import { spawn } from 'node:child_process';
+// Exits 1 when any test failed or timed out (skipped ones do not count), and when the list came out empty.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { killTree, start } from './lib/proc.mjs';
+import { SLOTS } from './lib/slots.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (name) => { const i = argv.indexOf(name); return i < 0 ? null : (argv[i + 1] ?? true); };
 const flag = (name) => argv.includes(name);
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const dir = opt('--dir') || 'shots/suite/run';
-const PAR = Number(process.env.PAR || 2);
+const PAR = Number(process.env.PAR || SLOTS);
 const TIMEOUT = Number(process.env.TIMEOUT || 1800) * 1000;
 const only = (opt('--only') || '').split(',').filter(Boolean), skipArg = (opt('--skip') || '').split(',').filter(Boolean);
 
@@ -45,8 +46,11 @@ const ENV = { 'streetaudio-game': { QUALITY: 'low' } };
 // tests that legitimately take long (seconds)
 const SLOW = { soak: 3600, yellowflash: 5400, nighttest: 2400, uisweep: 1800, presetlight: 7200 };
 
+// a script that opens a browser (it launches one itself, or opens the reference block, which does)
+const BROWSER = /\blaunch\(|openBlock\(/;
+
 // ---- the list: README lines `node scripts/<name>.mjs <args>   # <what>`
-const readme = readFileSync('README.md', 'utf8').split('\n');
+const readme = readFileSync('README.md', 'utf8').split(/\r?\n/);   // (a CRLF checkout once made this list empty, and the suite passed with 0 tests)
 const tests = [];
 for (const line of readme) {
   const m = line.match(/^node scripts\/([\w-]+)\.mjs((?: [^#]*?)?)\s*(?:#\s*(.*))?$/);
@@ -56,6 +60,7 @@ for (const line of readme) {
   if (tests.some((t) => t.label === label)) continue;
   tests.push({ name, label, args, what: (m[3] || '').trim(), skip: SKIP[name] ?? null });
 }
+if (!tests.length) { console.error('suite: no tests found in README.md (expected lines like `node scripts/x.mjs   # what it checks`)'); process.exit(1); }
 
 if (flag('--lint')) {
   let bad = 0;
@@ -64,7 +69,7 @@ if (flag('--lint')) {
     const f = `scripts/${t.name}.mjs`;
     if (!existsSync(f)) { say(`MISSING ${f} is in the README but not on disk`); continue; }
     const src = readFileSync(f, 'utf8');
-    const browser = /chromium\.launch|openBlock\(/.test(src) && !t.skip;   // (a tool that takes pictures is not a test, and may take other arguments)
+    const browser = BROWSER.test(src) && !t.skip;   // (a tool that takes pictures is not a test, and may take other arguments)
     if (browser && !SELF_HOSTED.has(t.name) && !/BASE_URL/.test(src)) say(`NO BASE_URL ${f} drives a browser but never reads BASE_URL`);
     if (!t.what) say(`NO DESCRIPTION ${f} has a README line without a "# what it checks"`);
   }
@@ -99,20 +104,21 @@ const run = (t) => new Promise((resolve) => {
   const secsLimit = (SLOW[t.name] ?? 0) * 1000 || TIMEOUT;
   const env = { ...process.env, BASE_URL: base, ...(ENV[t.name] ?? {}) };
   // a test that opens no browser (the offline ones) does not wait for a browser slot
-  const browser = SELF_HOSTED.has(t.name) || /chromium\.launch|openBlock\(/.test(readFileSync(`scripts/${t.name}.mjs`, 'utf8'));
-  const cmd = [...(browser ? ['scripts/withslot.sh'] : []), 'node', `scripts/${t.name}.mjs`, ...(t.args ? t.args.split(/\s+/) : [])];
+  // (a browser test takes its slot itself, in scripts/lib/browser.mjs's launch(), and says so on stderr)
+  const browser = SELF_HOSTED.has(t.name) || BROWSER.test(readFileSync(`scripts/${t.name}.mjs`, 'utf8'));
+  const cmd = ['node', `scripts/${t.name}.mjs`, ...(t.args ? t.args.split(/\s+/) : [])];
   writeFileSync(log, `$ ${cmd.join(' ')}\n`);
   const t0 = Date.now();
-  const p = spawn(cmd[0], cmd.slice(1), { env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const p = start(cmd[0], cmd.slice(1), { env });
   const out = (b) => appendFileSync(log, b);
   p.stdout.on('data', out); p.stderr.on('data', out);
   let timedOut = false, timer = null, t1 = t0;
-  // the limit counts from the moment the test has its browser slot (scripts/withslot.sh says so on stderr), not from the wait for one
-  const arm = () => { t1 = Date.now(); timer = setTimeout(() => { timedOut = true; try { process.kill(-p.pid, 'SIGKILL'); } catch { /* gone */ } }, secsLimit); };
+  // the limit counts from the moment the test has its browser slot (launch() says so on stderr), not from the wait for one
+  const arm = () => { t1 = Date.now(); timer = setTimeout(() => { timedOut = true; killTree(p); }, secsLimit); };
   if (!browser) arm();
   let armed = !browser;
   p.stderr.on('data', (b) => { if (!armed && /\[slot \d acquired\]/.test(String(b))) { armed = true; arm(); } });
-  const waitCap = setTimeout(() => { if (!armed) { timedOut = true; try { process.kill(-p.pid, 'SIGKILL'); } catch { /* gone */ } } }, 6 * 3600 * 1000);
+  const waitCap = setTimeout(() => { if (!armed) { timedOut = true; killTree(p); } }, 6 * 3600 * 1000);
   p.on('close', (code) => {
     clearTimeout(timer); clearTimeout(waitCap);
     const secs = Math.round((Date.now() - t1) / 1000);

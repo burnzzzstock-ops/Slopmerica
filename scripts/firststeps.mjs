@@ -5,7 +5,7 @@
 // building"; the road preview gives the weekly balance change; H (or the
 // town's name) flies back to town; the desktop toolbar leads with the
 // building tools and keeps the rest under More; notices stack at the right;
-// the feed peeks at one post. Exits nonzero on failure.
+// the feed peeks at one post; the last step, a look at the Budget, ends by itself on day 15. Exits nonzero on failure.
 import { launch } from './lib/browser.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const browser = await launch();
@@ -89,6 +89,26 @@ const ui = await page.evaluate(() => {
 check(`the desktop toolbar leads with the building tools and puts the rest under More (${ui.ids.length}: ${ui.ids.join(' ')})`, ui.ids.length <= 12 && ['roads', 'zones', 'ext:services', 'more'].every((x) => ui.ids.includes(x)) && !ui.ids.includes('communes'), ui.ids);
 check(`notices stack at the right (${ui.toastRight} px from the right edge)`, ui.toastRight !== null && ui.toastRight < 40 && ui.toastLeft > ui.W / 2, ui);
 check(`the feed opens as a peek at the newest post (${ui.shown} shown)`, ui.peek === true && ui.shown <= 1, ui);
+// ---- the last step ends by itself: a second town, its first four steps done by script and its Budget never opened
+const p2 = await browser.newPage({ viewport: { width: 1400, height: 800 } });
+p2.on('pageerror', (e) => errs.push(e.message));
+await p2.goto(`${base}/#skip&map=norcal&mode=sandbox`, { waitUntil: 'load', timeout: 120000 });
+await p2.waitForFunction(() => window.__game && window.__dbg, null, { timeout: 180000 });
+const look = () => p2.evaluate(() => { const g = window.__game; for (let i = 0; i < 3; i++) g.frame(0.05, false); g.time += 2; g.ui.update(0.5); const b = document.querySelector('.next-bar'); return { step: b?.querySelector('.nb-step b')?.textContent ?? '', day: g.sim.day, opened: g.ui.budgetSeen }; });
+const homeDay = await p2.evaluate(() => {
+  const g = window.__game, d = window.__dbg, S = g.startView();
+  cancelAnimationFrame(g.raf);
+  d.road(S.x - 150, S.z, S.x + 150, S.z, 'twoLane'); d.zone(S.x, S.z + 40, 60, 'resLow'); d.zone(S.x, S.z - 40, 50, 'comLow');
+  for (let i = 0; i < 40 && ![...g.buildings.list.values()].some((b) => b.zone === 'resLow' && b.state === 'active'); i++) d.run(1);
+  return g.sim.day;
+});
+let last = await look();
+if (homeDay < 15) check(`a street, homes, a first home (day ${Math.floor(homeDay)}) and shops: the card asks for step 5, the money ("${last.step}")`, last.step === 'Step 5/5', last);
+else console.log(`(the first home came on day ${Math.floor(homeDay)}: step 5 was never due)`);
+await p2.evaluate(() => { const g = window.__game, d = window.__dbg; while (g.sim.day < 15.5) d.run(1); });
+last = await look();
+check(`on day ${Math.floor(last.day)} the first steps are over without the Budget having been opened (the card reads "${last.step}")`, !last.opened && last.step === 'Next', last);
+
 check('no page errors', errs.length === 0, errs.slice(0, 3));
 await browser.close();
 process.exit(bad ? 1 : 0);

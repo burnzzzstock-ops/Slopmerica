@@ -62,6 +62,9 @@ const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
 /** how close a landfill forecast is to biting: 0 none, 1 within two months, 2 a month, 3 a week, 4 already full */
 const soonness = (d: number | null) => (d === null ? 0 : d <= 0 ? 4 : d < 7 ? 3 : d < 30 ? 2 : 1);
 
+/** the day the first-steps card stops asking for a look at the Budget: the second weekly close has gone by (the owner's roadmap of 17 Nov) */
+const FIRST_STEPS_DAYS = 15;
+
 type PanelId = 'roads' | 'zones' | 'landmarks' | 'views' | 'budget' | 'communes' | 'help' | 'more' | `ext:${string}` | null;
 
 /** Phones get these in the toolbar; everything else lives in the More drawer. */
@@ -893,7 +896,9 @@ export class Hud implements UiSink {
       { done: res, text: 'Zone homes along your street: paint the lots beside it.', act: 'zone:resLow', label: '🏡 Zone homes' },
       { done: home, text: 'Let builders finish the first home. Speed up while they work.', act: 'speed', label: '▶▶▶ Speed up' },
       { done: jobs, text: 'Give people jobs: zone shops or industry nearby.', act: 'zone:comLow', label: '🛒 Zone shops' },
-      { done: this.budgetSeen, text: 'Check the money: taxes in, upkeep out, and how long it lasts.', act: 'budget', label: '💰 Budget' },
+      // the last step is a look, not a job: it ends when the Budget is opened, or by itself once two weekly closes have gone by
+      // (a card that asked for it for the rest of the game was on every screen of the round 8 phone audit)
+      { done: this.budgetSeen || s.day >= FIRST_STEPS_DAYS, text: 'Check the money: taxes in, upkeep out, and how long it lasts.', act: 'budget', label: '💰 Budget' },
     ];
     const i = steps.findIndex((x) => !x.done);
     if (i < 0) { this.firstStepsDone = true; try { localStorage.setItem('slopmerica.firstSteps', '1'); } catch { /* not remembered */ } return null; }

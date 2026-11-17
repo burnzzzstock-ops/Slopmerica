@@ -113,6 +113,8 @@ try {
     getActiveMipmapLevel: () => 0,
     getScissorTest: () => true,
     getViewport: (out) => out.set(0, 0, 2400, 1200),
+    getCurrentViewport: (out) => out.set(0, 0, 2400, 1200),
+    getPixelRatio: () => 1,
     getScissor: (out) => out.set(1, 2, 100, 200),
     setViewport() {},
     setScissor() {},
@@ -157,14 +159,16 @@ try {
       if (fail === "copy") throw new Error("copy");
     };
     let threw = false;
+    let errorMessage;
     try {
       refraction.render(rt, camera, () => {
         if (fail === "opaque") throw new Error("opaque");
       });
-    } catch {
+    } catch (error) {
       threw = true;
+      errorMessage = error.message;
     }
-    check(`refraction restores all state after ${fail}`, threw === (fail !== "none") && w.mesh.visible && camera.layers.mask === 5 && w.mesh.layers.mask === 9 && w.fire.mesh.layers.mask === 7 && scene.background === background && fake.autoClear && fake.shadowMap.autoUpdate && fake.shadowMap.needsUpdate && target === rt && w.mat.uniforms.uRefractionOn.value === 0);
+    check(`refraction restores all state after ${fail}`, threw === (fail !== "none") && (!threw || errorMessage === fail) && w.mesh.visible && camera.layers.mask === 5 && w.mesh.layers.mask === 9 && w.fire.mesh.layers.mask === 7 && scene.background === background && fake.autoClear && fake.shadowMap.autoUpdate && fake.shadowMap.needsUpdate && target === rt && w.mat.uniforms.uRefractionOn.value === 0);
   }
   check("refraction owns distinct color/depth copies", refraction.size.width === 2400 && w.mat.uniforms.uSceneColor.value !== rt.texture && w.mat.uniforms.uSceneDepth.value !== rt.depthTexture);
   refraction.setQuality("low");

@@ -13,6 +13,7 @@ import { bindLamps, FOREST_LAMP, LAMP_PARS, lampAdd } from './nightLights';
 import { newSeasonLook, sampleSeason } from './seasons';
 import type { MapId } from './maps';
 import { Shore } from './shore';
+import { withVisualRandom } from '../render/visualRandom';
 
 /** The densest preset's tree density: every tree that any preset can draw. */
 const MAX_DENSITY = 1.15;
@@ -25,18 +26,8 @@ const VARIANTS = 3;
 const CELL = 64;
 const GRID_N = Math.ceil(WORLD / CELL);
 const SPRITE_W = 256, SPRITE_H = 512;
-/** average of the canopy's own shading baked into impostors (1 = as bright as fully lit) */
-const IMPOSTOR_SHADE = 0.66;
-/** how much darker the foot of a far tree's picture is than the whole, and how much brighter its top. On average this
- *  darkens the far pictures by about a fifth: they cast no shadow on the ground and the detailed trees do, and in Florida
- *  (scripts/treelod.mjs) they read 18-23% lighter than the detailed trees they stand in for without it (ratio 1.23 and 1.18,
- *  now inside the test's 0.85-1.15) */
+/** Lower crowns retain their occlusion gradient when represented by a billboard. */
 const FAR_FOOT = 0.61, FAR_TOP = 1.07;
-// Broadleaf crowns shade themselves far more than conifers or open oaks (the
-// shadow map darkens their inner and lower cards), so their impostors, lit as
-// one sunny face, were ~40% too bright and read as a lime carpet past the
-// detailed ring. Measured by scripts/treelod.mjs on each map.
-const IMPOSTOR_SHADE_KIND: Partial<Record<string, number>> = { decid: 0.4, mangrove: 0.46, cypress: 0.52 };
 
 const BASE_COLOR: Record<TreeKind, number> = {
   decid: 0x6f9a45, pine: 0x557f48, redwood: 0x527a45, oak: 0x7f9852, palm: 0x7aa84a, cypress: 0x7a9a50, mangrove: 0x55803e, shrub: 0x7a9448,
@@ -546,125 +537,120 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
 
   // ------------------------------------------------------------------ impostor sprites
   private bakeSprites(renderer: THREE.WebGLRenderer, geos: THREE.BufferGeometry[], atlas: THREE.Texture): THREE.Texture {
-    // two rows: the side view (bottom) and the view from 55 degrees up (top)
-    const rt = new THREE.WebGLRenderTarget(SPRITE_W * KINDS.length, SPRITE_H * 2);
-    rt.texture.generateMipmaps = true;
-    rt.texture.minFilter = THREE.LinearMipmapLinearFilter;
-    rt.texture.colorSpace = THREE.SRGBColorSpace;
-    const scene = new THREE.Scene();
-    // Two passes: lit (for the canopy's own light and shade) and unlit (its
-    // albedo). The impostor is lit again in the scene, so the stored picture is
-    // the albedo times the canopy's *relative* shading (average IMPOSTOR_SHADE),
-    // which keeps far trees as bright as the detailed models they replace.
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x6a6a5a, 2.6));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-    sun.position.set(0.4, 1, 0.8);
-    scene.add(sun);
-    const leafAlpha = (m: THREE.Material) => {
-      m.onBeforeCompile = (sh) => {
-        sh.uniforms.uLeaf = { value: 1 };
-        sh.fragmentShader = sh.fragmentShader
-          .replace('#include <common>', '#include <common>\nuniform float uLeaf;\nconst float vCanopy = 0.0;')
-          // photographed small, the leaf texture is read at a coarse mip: the
-          // detailed trees' own boost there keeps the picture's crown as full
-          // as the tree it stands in for (without it distant forest covered
-          // ~40% of the ground the detailed trees did; scripts/treelod.mjs)
-          .replace('#include <alphatest_fragment>', LEAF_BOOST + LEAF_ALPHA);
-      };
-      return m;
-    };
-    const litMat = leafAlpha(new THREE.MeshLambertMaterial({ map: atlas, vertexColors: true, alphaTest: 0.42, side: THREE.DoubleSide }));
-    const albMat = leafAlpha(new THREE.MeshBasicMaterial({ map: atlas, vertexColors: true, alphaTest: 0.42, side: THREE.DoubleSide }));
-    let mat: THREE.Material = litMat;
-    const prevTarget = renderer.getRenderTarget();
-    const prevClear = renderer.getClearColor(new THREE.Color());
-    const prevAlpha = renderer.getClearAlpha();
-    const prevTone = renderer.toneMapping;
-    renderer.toneMapping = THREE.NoToneMapping;
-    renderer.setClearColor(0x000000, 0);
-    const W = SPRITE_W * KINDS.length, H = SPRITE_H * 2;
-    const passes: Uint8Array[] = [];
-    for (const m of [litMat, albMat]) {
-    mat = m;
-    rt.scissorTest = true;
-    geos.forEach((g, i) => {
-      g.computeBoundingBox();
-      const bb = g.boundingBox!;
-      const w = Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z, (bb.max.y - bb.min.y) / 2) * 1.04;
-      const h = w * 2;
-      const y0 = bb.min.y;
-      const yc = (bb.min.y + bb.max.y) / 2;
-      this.spriteSize[i] = { w, h, y0, yc };
-      const mesh = new THREE.Mesh(g, mat);
-      scene.add(mesh);
-      // side view: the frame stands on the base
-      const side = new THREE.OrthographicCamera(-w / 2, w / 2, y0 + h, y0, 0.1, 400);
-      side.position.set(0, 0, 150);
-      side.lookAt(0, 0, 0);
-      // from above (55 deg): the frame is centred on the canopy
-      const el = THREE.MathUtils.degToRad(55);
-      const top = new THREE.OrthographicCamera(-w / 2, w / 2, h / 2, -h / 2, 0.1, 400);
-      top.position.set(0, yc + Math.sin(el) * 150, Math.cos(el) * 150);
-      top.lookAt(0, yc, 0);
-      [side, top].forEach((cam, row) => {
-        // the tile goes on the target itself: renderer.setViewport/setScissor
-        // are scaled by the screen's pixel ratio, so on a 2-3x phone every
-        // tile came out 2-3x too big and the whole from-above row fell off the
-        // sheet (no distant trees on mobile when looking down)
-        rt.viewport.set(i * SPRITE_W, row * SPRITE_H, SPRITE_W, SPRITE_H);
-        rt.scissor.copy(rt.viewport);
-        renderer.setRenderTarget(rt);
-        renderer.clear();
-        renderer.render(scene, cam);
-      });
-      scene.remove(mesh);
-    });
-    rt.scissorTest = false;
-    rt.viewport.set(0, 0, W, H);
-    rt.scissor.set(0, 0, W, H);
-    renderer.setRenderTarget(rt);
-    const buf = new Uint8Array(W * H * 4);
-    renderer.readRenderTargetPixels(rt, 0, 0, W, H, buf);
-    passes.push(buf);
-    }
-    renderer.setRenderTarget(prevTarget);
-    renderer.setClearColor(prevClear, prevAlpha);
-    renderer.toneMapping = prevTone;
-    rt.dispose();
-    litMat.dispose();
-    albMat.dispose();
-    // albedo x relative shading, per species and view
-    const [lit, alb] = passes;
-    const px = lit;
-    for (let row = 0; row < 2; row++)
-      for (let k = 0; k < KINDS.length; k++) {
-        let sl = 0, sa = 0;
-        const each = (fn: (i: number) => void) => {
-          for (let y = row * SPRITE_H; y < (row + 1) * SPRITE_H; y++)
-            for (let x = k * SPRITE_W; x < (k + 1) * SPRITE_W; x++) { const i = (y * W + x) * 4; if (lit[i + 3] > 128) fn(i); }
+    return withVisualRandom(() => {
+      // two rows: the side view (bottom) and the view from 55 degrees up (top)
+      const rt = new THREE.WebGLRenderTarget(SPRITE_W * KINDS.length, SPRITE_H * 2);
+      rt.texture.generateMipmaps = true;
+      rt.texture.minFilter = THREE.LinearMipmapLinearFilter;
+      rt.texture.colorSpace = THREE.LinearSRGBColorSpace;
+      const scene = new THREE.Scene();
+      // Store albedo with the crown's relative irradiance. Runtime lighting uses
+      // an upward billboard normal, so divide this photograph by the irradiance
+      // of that same normal under the bake lights. Species retain the shading
+      // produced by their actual leaf normals instead of a separate colour gain.
+      const hemisphere = new THREE.HemisphereLight(0xffffff, 0x6a6a5a, 2.6);
+      scene.add(hemisphere);
+      const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+      sun.position.set(0.4, 1, 0.8);
+      scene.add(sun);
+      const upwardIrradiance = hemisphere.intensity + sun.intensity * sun.position.clone().normalize().y;
+      const gain = Math.PI / upwardIrradiance;
+      const leafAlpha = (m: THREE.Material) => {
+        m.onBeforeCompile = (sh) => {
+          sh.uniforms.uLeaf = { value: 1 };
+          sh.vertexShader = sh.vertexShader
+            .replace('#include <common>', '#include <common>\nattribute float canopy;\nvarying float vCanopy;')
+            .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCanopy = canopy;');
+          sh.fragmentShader = sh.fragmentShader
+            .replace('#include <common>', '#include <common>\nuniform float uLeaf;\nvarying float vCanopy;')
+            // photographed small, the leaf texture is read at a coarse mip: the
+            // detailed trees' own boost there keeps the picture's crown as full
+            // as the tree it stands in for (without it distant forest covered
+            // ~40% of the ground the detailed trees did; scripts/treelod.mjs)
+            .replace('#include <alphatest_fragment>', LEAF_BOOST + LEAF_ALPHA)
+            .replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', 'normal *= mix(faceDirection, 1.0, step(0.5, vCanopy));'));
         };
-        each((i) => { sl += lit[i] + lit[i + 1] + lit[i + 2]; sa += alb[i] + alb[i + 1] + alb[i + 2]; });
-        const gain = sl > 0 ? ((IMPOSTOR_SHADE_KIND[KINDS[k]] ?? IMPOSTOR_SHADE) * sa) / sl : 1;
-        // shaded leaves take the sky's blue: a touch cooler than the sunlit picture
-        const tint = [0.96, 1, 1.25];
-        each((i) => { for (let c = 0; c < 3; c++) px[i + c] = Math.min(255, Math.round(lit[i + c] * gain * tint[c])); });
+        return m;
+      };
+      const litMat = leafAlpha(new THREE.MeshLambertMaterial({ map: atlas, vertexColors: true, alphaTest: 0.42, side: THREE.DoubleSide }));
+      const prevTarget = renderer.getRenderTarget();
+      const prevClear = renderer.getClearColor(new THREE.Color());
+      const prevAlpha = renderer.getClearAlpha();
+      const prevTone = renderer.toneMapping;
+      renderer.toneMapping = THREE.NoToneMapping;
+      renderer.setClearColor(0x000000, 0);
+      const W = SPRITE_W * KINDS.length, H = SPRITE_H * 2;
+      const px = new Uint8Array(W * H * 4);
+      try {
+        rt.scissorTest = true;
+        geos.forEach((g, i) => {
+          g.computeBoundingBox();
+          const bb = g.boundingBox!;
+          const w = Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z, (bb.max.y - bb.min.y) / 2) * 1.04;
+          const h = w * 2;
+          const y0 = bb.min.y;
+          const yc = (bb.min.y + bb.max.y) / 2;
+          this.spriteSize[i] = { w, h, y0, yc };
+          const mesh = new THREE.Mesh(g, litMat);
+          scene.add(mesh);
+          // side view: the frame stands on the base
+          const side = new THREE.OrthographicCamera(-w / 2, w / 2, y0 + h, y0, 0.1, 400);
+          side.position.set(0, 0, 150);
+          side.lookAt(0, 0, 0);
+          // from above (55 deg): the frame is centred on the canopy
+          const el = THREE.MathUtils.degToRad(55);
+          const top = new THREE.OrthographicCamera(-w / 2, w / 2, h / 2, -h / 2, 0.1, 400);
+          top.position.set(0, yc + Math.sin(el) * 150, Math.cos(el) * 150);
+          top.lookAt(0, yc, 0);
+          [side, top].forEach((cam, row) => {
+            // the tile goes on the target itself: renderer.setViewport/setScissor
+            // are scaled by the screen's pixel ratio, so on a 2-3x phone every
+            // tile came out 2-3x too big and the whole from-above row fell off the
+            // sheet (no distant trees on mobile when looking down)
+            rt.viewport.set(i * SPRITE_W, row * SPRITE_H, SPRITE_W, SPRITE_H);
+            rt.scissor.copy(rt.viewport);
+            renderer.setRenderTarget(rt);
+            renderer.clear();
+            renderer.render(scene, cam);
+          });
+          scene.remove(mesh);
+        });
+        rt.scissorTest = false;
+        rt.viewport.set(0, 0, W, H);
+        rt.scissor.set(0, 0, W, H);
+        renderer.setRenderTarget(rt);
+        renderer.readRenderTargetPixels(rt, 0, 0, W, H, px);
+      } finally {
+        renderer.setRenderTarget(prevTarget);
+        renderer.setClearColor(prevClear, prevAlpha);
+        renderer.toneMapping = prevTone;
+        rt.dispose();
+        litMat.dispose();
       }
-    // Pad the transparent texels so mips don't halo the impostors black; a data
-    // texture also survives render-target churn.
-    padTransparent(px, W, H, 8);
-    const tex = new THREE.DataTexture(px, W, H, THREE.RGBAFormat);
-    // each tree picture keeps its silhouette at every size (see coverageMipmaps)
-    tex.mipmaps = coverageMipmaps(px, W, H, SPRITE_W, SPRITE_H, 0.3);
-    // three renders into a target in linear (working) space: the pixels read
-    // back are linear. Tagging them sRGB decoded them a second time and made
-    // every distant tree ~3x too dark (the dark flat silhouettes at the edge
-    // of the detailed-tree radius).
-    tex.colorSpace = THREE.LinearSRGBColorSpace;
-    tex.generateMipmaps = false;
-    tex.magFilter = THREE.LinearFilter;
-    tex.minFilter = THREE.LinearMipmapLinearFilter;
-    tex.needsUpdate = true;
-    return tex;
+      // Lambert's 1/pi appears once in the bake and once at runtime. Removing
+      // the bake's reference response leaves linear albedo times relative shade.
+      for (let i = 0; i < px.length; i += 4) {
+        if (px[i + 3] <= 128) continue;
+        for (let channel = 0; channel < 3; channel++) {
+          px[i + channel] = Math.min(255, Math.round(px[i + channel] * gain));
+        }
+      }
+      // Pad the transparent texels so mips don't halo the impostors black; a data
+      // texture also survives render-target churn.
+      padTransparent(px, W, H, 8);
+      const tex = new THREE.DataTexture(px, W, H, THREE.RGBAFormat);
+      // each tree picture keeps its silhouette at every size (see coverageMipmaps)
+      tex.mipmaps = coverageMipmaps(px, W, H, SPRITE_W, SPRITE_H, 0.3);
+      // The render target and readback are both explicitly linear. An sRGB
+      // attachment encodes framebuffer writes even when the shader is linear,
+      // so declaring those bytes linear would brighten and flatten the crown.
+      tex.colorSpace = THREE.LinearSRGBColorSpace;
+      tex.generateMipmaps = false;
+      tex.magFilter = THREE.LinearFilter;
+      tex.minFilter = THREE.LinearMipmapLinearFilter;
+      tex.needsUpdate = true;
+      return tex;
+    });
   }
 
   // ------------------------------------------------------------------ seasons

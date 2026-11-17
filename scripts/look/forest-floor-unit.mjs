@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'vite';
+import { resolve } from 'node:path';
 
-const server = await createServer({ root: process.cwd(), configFile: false, server: { middlewareMode: true, watch: null, hmr: false, ws: false }, appType: 'custom', logLevel: 'error' });
+const server = await createServer({ root: process.env.SOURCE_ROOT || process.cwd(), configFile: false,
+  cacheDir: resolve('shots/tmp/forest-floor-unit-' + process.pid),
+  server: { middlewareMode: true, watch: null, hmr: false, ws: false }, appType: 'custom', logLevel: 'error' });
 try {
   const { ForestFloor } = await server.ssrLoadModule('/src/world/forestFloor.ts');
   const { RedFormat } = await import('three');
@@ -46,6 +49,7 @@ try {
   assert.equal(floor.densityAt(6, 6), 0);
   assert.equal(floor.clearedAt(6, 6), 0);
   console.log('OK saturated stands retain unsaturated counts; empty and outside samples stay clear');
+
 } finally {
   await server.close();
 }

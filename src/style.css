@@ -3558,6 +3558,8 @@ a {
   display: flex;
   align-items: center;
   gap: 10px;
+  /* (left: 50% leaves a shrink-to-fit box half the screen: on a phone the name was cut off at about 130 px) */
+  width: max-content;
   max-width: calc(100vw - 24px);
   min-height: 44px;
   padding: 6px 16px;
@@ -3573,6 +3575,14 @@ a {
 .follow-pill[hidden] { display: none; }
 .follow-pill span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .follow-pill b { color: var(--lime); }
+/* where a followed bus is on its line: after the name on a wide screen, on a line of its own under it on a phone (beside the
+   name it was the part that got cut off) */
+.follow-pill .fp-where { font-style: normal; color: var(--ink-2); }
+.follow-pill .fp-where:not(:empty)::before { content: ' · '; }
+@media (max-width: 760px) {
+  .follow-pill .fp-where { display: block; font-size: 12px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; }
+  .follow-pill .fp-where:not(:empty)::before { content: none; }
+}
 .follow-pill small { flex: none; color: var(--ink-2); font-size: 11px; }
 .in-actions button.on { background: var(--lime); color: #111; border-color: var(--lime); }
 

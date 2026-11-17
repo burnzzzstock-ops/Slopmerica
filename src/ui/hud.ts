@@ -159,6 +159,10 @@ export class Hud implements UiSink {
   /** the follow camera's pill, who it names, and the subject it was last drawn for */
   private followPill!: HTMLButtonElement;
   private followName = '';
+  /** riding a bus: the car of the leg whose card is open (the card moves to the next leg's car as it sets off), or null */
+  private busCar: number | null = null;
+  /** riding a bus: where on its line the pill last said it was */
+  private busSaid = '';
   private followKey = '';
   /** the weather badge as last written (it is rewritten only when it changes: an SVG swapped every frame cannot be tapped) */
   private wxHtml = '';
@@ -925,6 +929,19 @@ export class Hud implements UiSink {
 
   private isFollowing(t: ViewTarget) { const f = this.game.rts.following; return !!f && f.kind === t.kind && f.id === t.id; }
   /** The inspector's Follow button for a car or a person: the camera rides with them until it is let go. */
+  /** What Follow rides for a car: the bus it is driving a leg for, so that the ride lasts across the line's stops, or the car itself. */
+  private rideOf(c: { id: number }): ViewTarget {
+    const bus = this.game.fields.busOf(c.id);
+    return bus !== null ? { kind: 'bus', id: bus } : { kind: 'car', id: c.id };
+  }
+
+  /** Where a bus is on its line, for the pill: "at stop 2 of 3", "next stop 3 of 3", or on its way home. */
+  private busWhere(id: number): string {
+    const b = this.game.fields.bus(id);
+    if (!b) return '';
+    return b.returning ? 'going back to the depot' : b.atStop !== null ? `at stop ${b.atStop} of ${b.stops}` : b.nextStop !== null ? `next stop ${b.nextStop} of ${b.stops}` : '';
+  }
+
   private followButton(t: ViewTarget) {
     const cam = uiIcon('action', 'follow', '🎥', 20);
     return this.isFollowing(t) ? `<button id="in-follow" class="on">${cam} Stop following</button>` : `<button id="in-follow">${cam} Follow</button>`;
@@ -1716,7 +1733,7 @@ export class Hud implements UiSink {
           <div><span>Speed</span><b>${Math.round(c.v * 3.6)} km/h</b></div>
           <div><span>Vibe</span><b>${c.crashed > 0 ? '💥 WRECKED' : c.drunk ? `🍺 BAC ${c.bac.toFixed(2)}` : c.reckless ? '😤 reckless' : '😐 fine'}${c.smoker ? ' 🚬' : ''}</b></div>
         </div>
-        <div class="in-actions">${this.followButton({ kind: 'car', id: c.id })}</div>`;
+        <div class="in-actions">${this.followButton(this.rideOf(c))}</div>`;
     } else if (sel.kind === 'ped') {
       const p = sel.p;
       const a = ARCHETYPES[p.arch];
@@ -1775,13 +1792,16 @@ export class Hud implements UiSink {
     this.inspector.innerHTML = `<button class="in-close" id="in-close" aria-label="Close">×</button>${html}`;
     this.inspector.querySelector('#in-close')?.addEventListener('click', () => g.select(null));
     this.inspector.querySelector('#in-follow')?.addEventListener('click', () => {
-      const target: ViewTarget | null = sel.kind === 'car' ? { kind: 'car', id: sel.c.id } : sel.kind === 'ped' ? { kind: 'person', id: sel.p.id } : null;
+      const target: ViewTarget | null = sel.kind === 'car' ? this.rideOf(sel.c) : sel.kind === 'ped' ? { kind: 'person', id: sel.p.id } : null;
       if (!target) return;
       const on = this.isFollowing(target);
       crumb(on ? 'stop following' : `follow ${target.kind}`);
       if (on) g.rts.follow(null);
       else if (g.rts.follow(target)) {
-        this.followName = sel.kind === 'car' ? `${busLine(sel.c) ?? ARCHETYPES[sel.c.driver % ARCHETYPES.length]?.name ?? 'a driver'} (${VEHICLE_SPECS[sel.c.kind].label})` : sel.kind === 'ped' ? ARCHETYPES[sel.p.arch]?.name ?? 'a citizen' : '';
+        // (a bus in service is named by its line alone: the pill has where it is on the line to say as well)
+        this.followName = target.kind === 'bus' ? g.fields.bus(target.id)?.line ?? 'a bus' : sel.kind === 'car' ? `${busLine(sel.c) ?? ARCHETYPES[sel.c.driver % ARCHETYPES.length]?.name ?? 'a driver'} (${VEHICLE_SPECS[sel.c.kind].label})` : sel.kind === 'ped' ? ARCHETYPES[sel.p.arch]?.name ?? 'a citizen' : '';
+        // (a bus is ridden across its stops, a new car driving each leg: the card open on this leg's car follows it to the next)
+        this.busCar = target.kind === 'bus' && sel.kind === 'car' ? sel.c.id : null;
         // a phone's inspector is a sheet over the lower half of the screen: it goes away so the ride can be seen
         if (IS_TOUCH) { g.select(null); return; }
       }
@@ -2060,9 +2080,21 @@ export class Hud implements UiSink {
     if (key !== this.followKey) {
       this.followKey = key;
       this.followPill.hidden = !riding;
-      if (riding) this.followPill.innerHTML = `<span>${uiIcon('action', 'follow', '🎥', 20)} Following <b>${esc(this.followName || (riding.kind === 'car' ? 'a car' : riding.kind === 'person' ? 'a citizen' : 'a building'))}</b></span><small>${IS_TOUCH ? 'tap to let go' : 'click or Esc to let go'}</small>`;
-      else this.followName = '';
+      if (riding) this.followPill.innerHTML = `<span>${uiIcon('action', 'follow', '🎥', 20)} Following <b>${esc(this.followName || (riding.kind === 'car' ? 'a car' : riding.kind === 'person' ? 'a citizen' : riding.kind === 'bus' ? 'a bus' : 'a building'))}</b><i class="fp-where"></i></span><small>${IS_TOUCH ? 'tap to let go' : 'click or Esc to let go'}</small>`;
+      else { this.followName = ''; this.busCar = null; }
+      this.busSaid = '';
       if (sel && (sel.kind === 'car' || sel.kind === 'ped')) this.renderInspector();
+    }
+    // A bus ridden across its stops: the pill says where on its line it is, and on the desktop the card that was open on the
+    // last leg's car moves to the next leg's as it sets off (the game does not put a card away when its car has arrived).
+    if (riding?.kind === 'bus') {
+      const where = this.busWhere(riding.id);
+      if (where !== this.busSaid) { this.busSaid = where; const el = this.followPill.querySelector('.fp-where'); if (el) el.textContent = where; }
+      const now = this.game.fields.bus(riding.id)?.carId ?? null;
+      if (now !== null && this.busCar !== null && now !== this.busCar && sel?.kind === 'car' && sel.c.id === this.busCar) {
+        const next = this.game.traffic.cars.find((c) => c.id === now);
+        if (next) { this.busCar = now; this.game.select({ kind: 'car', c: next }); }
+      }
     }
   }
 }

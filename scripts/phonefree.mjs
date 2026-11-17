@@ -2,7 +2,8 @@
 // the share of the screen where a finger lands on the map and nothing else (elementFromPoint on a 10 px grid), in the states a
 // player is in during the first minutes: idle, a tool drawer open, a finger drawing a road. The tutorial card, an open drawer
 // and the toolbar used to stack up: 55% free with Roads open, 44% with Services, 71% under a drawing finger with a five-line
-// cost readout across the top. Exits nonzero on failure.
+// cost readout across the top. The step card changes shape the moment a drawer opens or closes or a tool is picked up, not
+// at its next refresh. Exits nonzero on failure.
 //
 //   BASE_URL=http://127.0.0.1:5173 node scripts/phonefree.mjs
 import { launch } from './lib/browser.mjs';
@@ -74,6 +75,24 @@ check(`Services open: ${services.free}% is map (47% or more)`, services.free >= 
 // its nine categories are one row that scrolls sideways
 const cats = await page.evaluate(() => { const row = document.querySelector('.svc-cats'); const tops = new Set([...row.children].map((c) => Math.round(c.getBoundingClientRect().top))); return { rows: tops.size, n: row.children.length, scrolls: row.scrollWidth > row.clientWidth }; });
 check(`the ${cats.n} service categories are one row that scrolls (${cats.rows} row)`, cats.rows === 1 && cats.scrolls, cats);
+
+// ---- the card changes shape with the drawer, at once: no frame goes by between the tap and the look
+await page.keyboard.press('Escape');
+const card = () => page.evaluate(() => { const b = document.querySelector('.next-bar'); return b && !b.hidden && getComputedStyle(b).display !== 'none' ? { compact: b.classList.contains('compact'), h: Math.round(b.getBoundingClientRect().height) } : null; });
+const whole = (await measure()).step, w0 = await card();
+check(`with every drawer closed the step is whole again (${whole?.h} px)`, !!w0 && !w0.compact, w0);
+await page.tap('button.tbtn[data-t="views"]');
+const atOnce = await card();
+check(`Views tapped open: the step is one line before the next frame (${atOnce?.h} px, 50 or less)`, !!atOnce && atOnce.compact && atOnce.h <= 50, atOnce);
+await page.tap('button.tbtn[data-t="views"]');
+const closedAtOnce = await card();
+check(`and whole the moment it is tapped shut (${closedAtOnce?.h} px)`, !!closedAtOnce && !closedAtOnce.compact && closedAtOnce.h === w0?.h, closedAtOnce);
+await page.tap('button.tbtn[data-t="bulldoze"]');
+const inHand = await card();
+check(`a tool picked up with no drawer (Bulldoze): one line before the next frame too (${inHand?.h} px)`, !!inHand && inHand.compact && inHand.h <= 50, inHand);
+await page.tap('button.tbtn[data-t="inspect"]');
+const putDown = await card();
+check('and whole when it is put down', !!putDown && !putDown.compact, putDown);
 
 check('no page errors', errs.length === 0, errs.slice(0, 3));
 await browser.close();

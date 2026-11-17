@@ -1,7 +1,10 @@
 // The drawn HUD icons are on the controls. Opens the game on a desktop window and on a 390 x 844 phone, opens the toolbar,
 // the More grid and the Roads, Zoning, Services and Views drawers, and checks that every control with a drawn icon in
 // src/art/hudIcons.ts (HUD_CONTROLS) shows it as inline SVG, that each such control still has its name in text, and that a
-// control with no drawn icon still shows something. Exits nonzero on failure.
+// control with no drawn icon still shows something. Then the places that are not a list of controls: the tool badge (Build,
+// Done or Stop, Undo), the top bar's nature and sprawl meters and the phone's population stat, and a home's inspector (its
+// utility row is a sign for the utility and a sign for yes or no, with the words for a screen reader; its service rows; its
+// Bulldoze button). Exits nonzero on failure.
 //
 //   BASE_URL=http://127.0.0.1:5173 node scripts/hudicons.mjs
 import { launch } from './lib/browser.mjs';
@@ -62,6 +65,36 @@ for (const [name, opts] of [['desktop', { viewport: { width: 1280, height: 720 }
   }
   const wx = await page.evaluate(() => !!document.querySelector('#tb-weather svg'));
   check(`${name}: the weather badge is drawn`, wx);
+
+  // ---- the places that are not a list of controls: each is a drawing 14 px or more, with no emoji left beside it
+  const spots = (sel) => page.evaluate((sel) => [...document.querySelectorAll(sel)].filter((el) => el.offsetParent !== null).map((el) => {
+    const svg = el.querySelector('.ui-icon svg'), r = svg?.getBoundingClientRect();
+    return { text: (el.textContent ?? '').replace(/\s+/g, ' ').trim(), svg: !!svg, w: r ? Math.round(r.width) : 0, emoji: /\p{Extended_Pictographic}/u.test(el.textContent ?? '') };
+  }), sel);
+  const drawnAll = (what, rows, n) => check(`${name}: ${what}: ${rows.filter((r) => r.svg).length} of ${rows.length} drawn, 14 px or more, no emoji`, rows.length >= n && rows.every((r) => r.svg && r.w >= 14 && !r.emoji), rows);
+  drawnAll('the top bar\'s nature and sprawl meters', await spots('.tb-meters .meter > span'), 2);
+  if (name === 'phone') drawnAll('the population stat leads with its icon', await spots('#tb-popstat .tb-ico'), 1);
+  await page.keyboard.press('Escape');
+  await page.click('.tbtn[data-t="roads"]'); await settle();
+  await page.evaluate(() => window.__game.ui.update(0.3));
+  const badge = await spots('.tool-actions button');
+  drawnAll('the tool badge', badge, name === 'phone' ? 2 : 1);
+  check(`${name}: the tool badge's words are plain (${badge.map((b) => b.text).join(' | ')})`, badge.every((b) => /^(Build|Done|Stop|Undo)/.test(b.text)), badge);
+  await page.keyboard.press('Escape');
+  // a home, grown by script, and its inspector
+  const home = await page.evaluate(() => {
+    const g = window.__game, d = window.__dbg, S = g.startView();
+    d.road(S.x - 150, S.z, S.x + 150, S.z, 'twoLane'); d.zone(S.x, S.z + 40, 60, 'resLow'); d.run(25);
+    g.tools.set('inspect');
+    const b = [...g.buildings.list.values()].find((x) => x.zone === 'resLow' && x.state === 'active');
+    if (b) g.select({ kind: 'building', b });
+    return !!b;
+  });
+  check(`${name}: a home grew to inspect`, home);
+  const util = await page.evaluate(() => [...document.querySelectorAll('.inspector .svc-util > span')].map((s) => ({ label: s.getAttribute('aria-label'), img: s.getAttribute('role') === 'img', n: s.querySelectorAll('.ui-icon svg').length, emoji: /\p{Extended_Pictographic}/u.test(s.textContent ?? '') })));
+  check(`${name}: the inspector's four utilities are each a utility sign and a yes/no sign, with the words for a screen reader`, util.length === 4 && util.every((u) => u.img && u.n === 2 && !u.emoji && /^(Power|Water|Sewage|Garbage): /.test(u.label ?? '')), util);
+  drawnAll('the inspector\'s fire, police, health and education rows', await spots('.inspector .svc-covs > div:nth-child(-n+4) > span'), 4);
+  drawnAll('the inspector\'s Bulldoze button', await spots('.inspector #in-bulldoze'), 1);
   check(`${name}: no page errors`, errs.length === 0, errs.slice(0, 3));
   await ctx.close();
 }

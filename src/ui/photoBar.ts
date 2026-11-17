@@ -1,13 +1,18 @@
 // Photo mode's controls. The look lane's PhotoMode (src/render/photo.ts) freezes the county, hides the HUD and gives the
 // camera to a free lens; this is the one piece of the HUD left on screen while it is up: a row of buttons along the bottom
-// (Done, Street level, the postcard frame, Save, Save 4K, Adjust) and, behind Adjust, the hour, the weather, the blur and
-// the zoom. On a phone the row scrolls sideways and the sliders stay folded until asked for, so the picture is in view.
+// (Done, Street level, the postcard frame, Save, Save 4K, Adjust) and, behind Adjust, the hour, the weather, the blur, the
+// focus and the zoom. On a phone the row scrolls sideways and the sliders stay folded until asked for, so the picture is in view.
 import { FOV_MAX, FOV_MIN, IS_TOUCH } from '../config';
 import type { Game } from '../game';
 import type { PhotoWeather } from '../render/photo';
 import { uiIcon } from './icons';
 
 const WEATHERS: [PhotoWeather | null, string][] = [[null, 'As it is'], ['clear', 'Clear'], ['cloudy', 'Cloudy'], ['rain', 'Rain'], ['fog', 'Fog']];
+/** the focus slider runs from 2 m to 6.5 km; a step is the same share of the distance everywhere on it */
+const NEAR = 2, FAR = 6500;
+const toFocus = (v: number) => NEAR * (FAR / NEAR) ** (v / 100);
+const fromFocus = (m: number) => (100 * Math.log(Math.max(NEAR, Math.min(FAR, m)) / NEAR)) / Math.log(FAR / NEAR);
+const metres = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`);
 const clock = (h: number) => { const m = Math.round(h * 60) % 1440; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
 
 export class PhotoBar {
@@ -32,6 +37,7 @@ export class PhotoBar {
       const i = e.target as HTMLInputElement, p = this.game.photo, v = Number(i.value);
       if (i.dataset.pbr === 'hour') { p.hour = v; this.el.querySelector('[data-pbo="hour"]')!.textContent = clock(v); }
       else if (i.dataset.pbr === 'tilt') p.tilt = v;
+      else if (i.dataset.pbr === 'focus') { p.focusDistance = toFocus(v); this.el.querySelector('[data-pbo="focus"]')!.textContent = metres(p.focusDistance); }
       else if (i.dataset.pbr === 'fov') p.fov = FOV_MIN + FOV_MAX - v;   // (the slider reads as zoom: right is closer)
     });
   }
@@ -60,7 +66,8 @@ export class PhotoBar {
   private async act(what: string) {
     const p = this.game.photo;
     if (what === 'exit') this.exit();
-    else if (what === 'street') p.street();
+    // (Street level moves the focus to 60 m: the Focus slider, when it is showing, has to say so)
+    else if (what === 'street') { p.street(); if (this.adjust) this.render(); }
     else if (what === 'frame') { this.framed = !this.framed; this.render(); }
     else if (what === 'adjust') { this.adjust = !this.adjust; this.render(); }
     else if (what.startsWith('wx:')) { const w = what.slice(3); p.weather = w === 'none' ? null : (w as PhotoWeather); this.render(); }
@@ -85,6 +92,8 @@ export class PhotoBar {
       ${this.adjust ? `<div class="pb-adjust">
         <label><span>Hour</span><input type="range" data-pbr="hour" min="0" max="24" step="0.25" value="${p.hour}" aria-label="Hour of day"><output data-pbo="hour">${clock(p.hour)}</output></label>
         <label><span>Blur</span><input type="range" data-pbr="tilt" min="0" max="1" step="0.05" value="${p.tilt}" aria-label="Tilt-shift blur"></label>
+        <label><span>Focus</span><input type="range" data-pbr="focus" min="0" max="100" step="1" value="${Math.round(fromFocus(p.focusDistance))}" aria-label="Focus distance"><output data-pbo="focus">${metres(p.focusDistance)}</output></label>
+        ${this.game.post.active ? '' : '<small class="pb-note">Blur and focus show on the Medium graphics preset and up (Settings).</small>'}
         <label><span>Zoom</span><input type="range" data-pbr="fov" min="${FOV_MIN}" max="${FOV_MAX}" step="1" value="${FOV_MIN + FOV_MAX - p.fov}" aria-label="Zoom"></label>
         <div class="pb-row pb-wx" role="group" aria-label="Weather">${WEATHERS.map(([w, label]) => chip(`wx:${w ?? 'none'}`, label, p.weather === w)).join('')}</div>
       </div>` : ''}
@@ -94,7 +103,7 @@ export class PhotoBar {
         ${chip('save4k', '4K', false, 'Save at 3840 pixels on the long side')}
         ${chip('frame', '🖼️ Postcard frame', this.framed, 'Greetings from your county, printed on the picture')}
         ${chip('street', `${uiIcon('action', 'street', '🚶', 20)} Street level`, false, 'Stand in the street at the middle of the view')}
-        ${chip('adjust', '🎚️ Adjust', this.adjust, 'Hour, weather, blur and zoom')}
+        ${chip('adjust', '🎚️ Adjust', this.adjust, 'Hour, weather, blur, focus and zoom')}
       </div>
       <small class="pb-hint">${IS_TOUCH ? 'Drag to look around · two fingers to move' : 'Drag to look · W A S D to move, Q E down and up, Shift faster · wheel to move in and out · Esc to leave'}</small>`;
   }

@@ -6,6 +6,7 @@ import { MERCH_URL } from '../art/brands';
 import { loadSave, readSaveText, type SaveData } from '../sim/save';
 import { BUILD } from './bugreport';
 import { IS_TOUCH } from '../config';
+import { PLAYTEST } from '../core/flags';
 import heroArt from '../art/keyart/hero.webp';
 import appalachiaArt from '../art/keyart/appalachia.webp';
 import norcalArt from '../art/keyart/norcal.webp';
@@ -127,11 +128,11 @@ export function showTitle(parent: HTMLElement): Promise<StartChoice> {
           </div>
         </div>
       </section>
-      <footer class="aaa-foot">
+      ${PLAYTEST ? `<footer class="aaa-foot">
         <span class="aaa-badge">Playtest</span>
         <span>Things will break. Tap <b>🐞 Report bug</b> in the game${IS_TOUCH ? ' (under More)' : ''}.</span>
         <span class="aaa-build">Build ${esc(BUILD)}</span>
-      </footer>`;
+      </footer>` : ''}`;
     parent.appendChild(el);
     const img = el.querySelector('.aaa-art img') as HTMLImageElement;
     const ready = () => el.classList.add('art-ready');

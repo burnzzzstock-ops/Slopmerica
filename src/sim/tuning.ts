@@ -13,6 +13,16 @@ export const TUNING = {
   /** PROPOSED until road wear lands (the Ponzi pass): years for an untouched road to read as fully worn */
   roadWearYears: 22,
 
+  // ---- people on foot (src/agents/pedestrians.ts)
+  /**
+   * PROPOSED. max: the most people on foot the county simulates, on every graphics preset (about 7% of residents are out, up
+   * to this). It used to be the preset's own pool, all of them round the camera: 120 on Low, 250 on Medium, 420 on High, 580
+   * on Ultra, so a desktop on Ultra had cars waiting at more crossings than a phone on Low. 120 is Low's: the county the
+   * owner's phone has always simulated. More costs traffic: at 213 out (a 3,000-person town under a cap of 300), trips
+   * finished fell to 83 to 97% of what they are with nobody on foot, on six seeds (scripts/crosswalktest.mjs).
+   */
+  people: { max: 120 },
+
   // ---- where a trip goes (src/agents/traffic.ts whereTo())
   /**
    * PROPOSED, and OFF (choices: 1). choices: how many jobs or shops come to mind for a household's trip (1 = the first, at

@@ -7,6 +7,7 @@
 //   f144      real frames of 1/144 s at top speed
 //   reload    stepped, with a save and a full page reload from that save every RELOAD days       (MODES=...,reload)
 //   low/ultra stepped on another graphics preset                                              (MODES=...,low,ultra)
+//   away      stepped with the camera 3 km off and high up, looking at empty country           (MODES=...,away)
 // Every mode must agree with `stepped` on every system at every checkpoint. The table shows, per system, the first day a mode
 // disagrees; "-" is agreement to the end.
 // usage: BASE_URL=http://127.0.0.1:5173 node scripts/determinism.mjs [map]
@@ -73,7 +74,7 @@ const layBlock = () => {
   for (const id of ['school', 'clinic', 'fireStation', 'sheriff', 'park']) place(id, [120, 170, 230]);
   for (const id of ['coalPlant', 'wellTower', 'wellTower', 'wellTower', 'treatmentPlant', 'landfill']) { if (place(id, [420, 520, 640])) continue; for (const r of [420, 600, 800]) { const s = SV.findSpot?.(g, id, cx + r, cz); if (s && !s.reason && SV.place(g, id, s.x, s.z)) break; } }
   g.sim.growthMul = 3;
-  g.rts.setView(cx, cz, 420, 0.6, 0.9, true);   // the same camera in every mode: people only exist near it today
+  g.rts.setView(cx, cz, 420, 0.6, 0.9, true);   // (the "away" mode moves it: nothing in the county may depend on where it is)
 };
 
 /**
@@ -121,6 +122,7 @@ for (const mode of MODES) {
   let page = await open(quality);
   if (TOWN === 'player') await page.evaluate(installLatePlayer, {});
   else await page.evaluate(layBlock);
+  if (mode === 'away') await page.evaluate(() => { const g = window.__game, r = g.rts; r.setView(r.target.x + 2200, r.target.z + 2200, 2400, 0.6, 1.1, true); });
   const prints = { 0: await page.evaluate(() => window.__dbg.fingerprint()) };
   let lastReload = 0;
   for (const to of marks) {

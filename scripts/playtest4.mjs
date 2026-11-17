@@ -157,6 +157,10 @@ const acts = await page.evaluate(() => {
   out.selected = g.selection?.kind === 'building' ? g.selection.b.id === h.id : false;
   g.ui.update(0.3);
   out.inspector = document.querySelector('.inspector')?.textContent ?? '';
+  // the inspector's garbage sign: what it is called for a screen reader, and the days it shows beside it
+  // (it was the text "🗑️ 12d" until the row got drawn icons)
+  const bin = document.querySelector('.inspector .svc-util [aria-label^="Garbage"]');
+  out.garbage = bin ? `${bin.getAttribute('aria-label')} | ${bin.textContent.trim()}` : '';
   out.t0 = t0;
   document.querySelector('.emergency [data-em="pause"]')?.click();
   out.paused = g.sim.speed === 0;
@@ -166,7 +170,7 @@ const acts = await page.evaluate(() => {
 });
 check(`"Fix garbage" opens Services → Garbage with its info view on`, acts.panel === 'garbage' && acts.view === 'svc:garbage', acts);
 check(`the Garbage line breaks the piles down by why`, /Why: .*served by a full landfill/.test(acts.line), acts.line);
-check(`"Worst area" flies there and selects the building that empties first`, acts.moved && acts.selected && /🗑️\s*\d+d/.test(acts.inspector), { moved: acts.moved, selected: acts.selected, insp: acts.inspector.slice(0, 200) });
+check(`"Worst area" flies there and selects the building that empties first`, acts.moved && acts.selected && /^Garbage: not collected for \d+ days \| \d+d$/.test(acts.garbage), { moved: acts.moved, selected: acts.selected, garbage: acts.garbage, insp: acts.inspector.slice(0, 200) });
 check('the card can pause the clock', acts.paused, acts);
 
 // ---- icons: merged when zoomed out, one service at a time in its view

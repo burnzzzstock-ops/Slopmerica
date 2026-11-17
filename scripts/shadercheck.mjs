@@ -4,7 +4,8 @@
 // white speckles. Use the sin-free hash instead. Exits nonzero on failure.
 import fs from 'fs';
 import path from 'path';
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../src');
+import { fileURLToPath } from 'url';
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src');
 const files = [];
 const walk = (d) => { for (const f of fs.readdirSync(d)) { const p = path.join(d, f); if (fs.statSync(p).isDirectory()) walk(p); else if (/\.(ts|glsl)$/.test(f)) files.push(p); } };
 walk(root);

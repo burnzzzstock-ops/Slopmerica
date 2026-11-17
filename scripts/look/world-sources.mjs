@@ -1,7 +1,7 @@
 // BASE_URL serves the frozen game through openScene. Real-source A4 wiring:
 // normal frame entry, live traffic and legal landmarks.
 import { launch } from '../lib/browser.mjs';
-import { openScene, identifyRenderer, fixtureHash, saveReport } from './measure.mjs';
+import { openScene, identifyRenderer, fixtureHash, saveReport, seed } from './measure.mjs';
 const browser = await launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
 try {
   const { page, errs, town } = await openScene(browser, { scene: 'reference', quality: 'low', width: 390, height: 844, phone: true });
@@ -17,7 +17,7 @@ try {
     let calendarLock = false;
     const frame = (dt = 0.1) => { if (calendarLock) { g.hour = 10; g.sim.day = 2; } g.frame(dt, false); };
     const focus = async source => { aim(source); for (let i = 0; i < 25; i++) { frame(0.02); await sleep(20); } };
-    const result = { queue: null, reversing: null, radios: {}, siren: null, landmarks: {}, sleep: {}, queueSeen: 0, reverseSeen: 0, departures: 0 };
+    const result = { queue: null, reversing: null, radios: {}, siren: null, landmarks: {}, sleep: {}, queueSeen: 0 };
     P.inView = () => false;
     tr.crosswalkWalkers = undefined;
     let thru = [...g.buildings.list.values()].find(b => tr.thruAt(b));
@@ -52,7 +52,8 @@ try {
     g.sim.speed = 1;
     for (let f = 0; f < 10000; f++) {
       tr.update(0.05, 1, 12.5, g.sim.population, g.sim.jobsFilled, g.rts.target);
-      tr.draw?.(1);
+      // Repose at the same instant. An omitted dt advances selection by wall time.
+      tr.draw?.(1, 0);
       P.update(0.05, 12.5, g.rts.target.x, g.rts.target.z, 500, () => tr.renderer.stats().active);
       if (!result.queue && result.queueSeen < 8) {
         const car = tr.cars.find(c => c.h >= 0 && c.thru?.out === -1 && c.thru.L.q.includes(c));
@@ -61,16 +62,6 @@ try {
           await focus(car.thru.L.slots[0]);
           const source = sampler.sample(g).find(s => s.active && s.kind === 'intercom');
           if (source) result.queue = { ...source, building: car.thru?.L.b.id, queueCars: car.thru?.L.q.length, voice: peek().world.find(s => s.id === source.id) };
-        }
-      }
-      if (!result.reversing && result.reverseSeen < 8) {
-        result.departures += tr.cars.filter(c => c.fromSpot).length;
-        const car = tr.cars.find(c => c.fromSpot && c.h >= 0 && tr.renderer.isReversing(c.h));
-        if (car) {
-          result.reverseSeen++;
-          await focus(car);
-          const voice = peek().street.find(v => v.id === car.id && v.reversing);
-          if (voice) result.reversing = { id: car.id, fromBuilding: car.fromSpot.b.id, handle: car.h, voice };
         }
       }
       for (const kind of ['liftedTruck', 'cyberslop']) if (!result.radios[kind]) {
@@ -93,23 +84,49 @@ try {
     }
     // Guarantee a departure through the actual public dispatcher and actual
     // occupied stall. Camera motion must not decide whether this test gets one.
-    if (!result.reversing && thru) {
+    if (thru) {
       aim(thru);
       for (let i = 0; i < 4; i++) P.update(0.6, 12.5, thru.x, thru.z, 120, () => tr.renderer.stats().active);
       const parked = [...P.parked].find(p => p.spot.b === thru);
       result.parkingFixture = { count: P.parkedAt(thru).cars, kind: parked?.kind ?? null };
+      if (parked) {
+        // Establish a fresh presentation scan before dispatch. The next car
+        // must pass the normal stationary-camera selection interval.
+        g.rts.setView(parked.spot.x, parked.spot.z, 120, 0, 0.5, true);
+        frame(0);
+        aim(parked.spot);
+        frame(0);
+      }
       if (parked) for (const destination of g.buildings.list.values()) {
         if (destination === thru || destination.state !== 'active') continue;
         const car = tr.dispatch(parked.kind, thru, destination, 'leaving a parking spot', destination.label, 12.5, { local: true, sober: true });
         if (!car) continue;
         // One complete fixed step establishes the departure pose before aiming.
-        tr.update(0.1, 1, 12.5, g.sim.population, g.sim.jobsFilled, g.rts.target); tr.draw(1);
-        // Let renderer selection and the old voice's release finish while the
-        // actual departure advances only0.6 game seconds (its reverse phase is short).
+        tr.update(0.1, 1, 12.5, g.sim.population, g.sim.jobsFilled, g.rts.target);
+        tr.draw(1, 0);
+        // A new drawn car can wait for a 0.5-second presentation scan, then a
+        // 0.25-second voice scan and the previous voice's release. Observe the
+        // real reverse voice as soon as it arrives, within a bounded interval.
         aim(car);
-        for (let i = 0; i < 80; i++) { frame(0.0075); await sleep(20); }
-        const voice = peek().street.find(v => v.id === car.id && v.reversing);
-        result.parkingFixture.departure = { id: car.id, dep: car.dep, posed: car.posed, fromSpot: !!car.fromSpot, drawn: tr.renderer.isCarDrawn?.(car.id) ?? car.h >= 0, reverse: tr.renderer.isReversing(car.h), voices: peek().street.map(v => [v.id, v.reversing]) };
+        let voice;
+        let waitingFrames = 0;
+        let firstDrawnFrame = null;
+        while (!voice && waitingFrames < 160) {
+          frame(0.0075);
+          waitingFrames++;
+          if (firstDrawnFrame === null && (tr.renderer.isCarDrawn?.(car.id) ?? car.h >= 0)) {
+            firstDrawnFrame = waitingFrames;
+          }
+          await sleep(20);
+          voice = peek().street.find(v => v.id === car.id && v.reversing);
+        }
+        result.parkingFixture.departure = {
+          id: car.id, dep: car.dep, posed: car.posed, fromSpot: !!car.fromSpot,
+          drawn: tr.renderer.isCarDrawn?.(car.id) ?? car.h >= 0,
+          reverse: tr.renderer.isReversing(car.h),
+          waitingFrames, firstDrawnFrame, elapsedGameSeconds: waitingFrames * 0.0075,
+          voices: peek().street.map(v => [v.id, v.reversing]),
+        };
         if (voice && car.fromSpot) result.reversing = { id: car.id, fromBuilding: car.fromSpot.b.id, handle: car.h, voice, dispatched: true };
         break;
       }
@@ -162,7 +179,7 @@ try {
     }
     return result;
   });
-  result.renderer = renderer; result.browser = browser.version(); result.town = town; result.fixtureHash = fixtureHash(); result.errors = errs;
+  result.renderer = renderer; result.browser = browser.version(); result.town = town; result.fixtureHash = fixtureHash(); result.seed = seed; result.errors = errs;
   const field = result.landmarks.slop69Field, church = result.landmarks.megachurch;
   result.passed = !!(result.queue?.voice && result.reversing?.voice && result.radios.liftedTruck && result.radios.cyberslop && result.siren &&
     field?.voice && !field.closed && church?.voice && !church.monday && !church.closed && [field, church].every(b => !b.undrawn && !b.constructing && !b.disconnected) && result.wreck?.calls.length === 1 &&

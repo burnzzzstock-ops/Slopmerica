@@ -7,10 +7,11 @@ import type { MapId } from '../world/maps';
 import type { Synth } from './synth';
 import { honkVoice } from './sfx';
 import type { AmbientSpecies } from '../agents/models/ambientModels';
+import type { ScoreState } from './score';
 
 /** Reused camera-visible sources, ordered by audibility. Zero level is an empty slot. */
 export interface AmbientSoundSource { kind: AmbientSpecies; level: number; pan: number; speed: number }
-export interface SoundscapeMix extends SoundMix {
+export interface SoundscapeMix extends SoundMix, ScoreState {
   pollution?: number;
   /** Local reference-tree cover, independent of graphics density. */
   habitat?: number;

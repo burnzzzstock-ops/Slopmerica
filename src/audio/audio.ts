@@ -2,7 +2,7 @@
 // synthesized per call (see sfx.ts); the ambience beds and critters live in
 // ambience.ts. Everything goes through a gentle compressor so stacked crashes
 // and thunder never clip.
-import type { SfxKind } from '../contracts';
+import type { SfxKind, WorldEvents } from '../contracts';
 import type { MapId } from '../world/maps';
 import { Synth } from './synth';
 import { SFX } from './sfx';
@@ -10,6 +10,7 @@ import { Ambience, RAIN, type SoundscapeMix } from './ambience';
 import { mulberry32 } from '../core/rng';
 import { StreetAudio, type StreetCar, type StreetEnv, type StreetView } from './streetAudio';
 import { AmbientPiano } from './piano';
+import { AdaptiveScore } from './score';
 
 export class AudioEngine {
   muted = false;
@@ -30,7 +31,12 @@ export class AudioEngine {
   /** Graphics preset name; the street voice pool is sized from it (Low = phone = fewer voices). */
   quality = 'high';
   private piano?: AmbientPiano;
-  /** Settings → Music (remembered): ambient piano on/off and its volume */
+  private score?: AdaptiveScore;
+  private disasterLevels = new Map<string, number>();
+  private disasterLevel = 0;
+  /** The feed can display this copy when a procedural radio jingle starts. */
+  onRadioAd?: (text: string) => void;
+  /** Settings → Music (remembered): procedural score on/off and its volume */
   musicOn = true;
   musicVolume = 0.55;
   private volume = 0.8;
@@ -91,7 +97,9 @@ export class AudioEngine {
     this.applySound();
     this.amb = new Ambience(s, this.ambBus, this.soundRev);
     this.streetVoices = new StreetAudio(s, this.ambBus, StreetAudio.poolFor(this.quality));
-    this.piano = new AmbientPiano(s, this.master, this.revIn);
+    this.score = new AdaptiveScore(new Synth(c, mulberry32(0x6d757369)), this.master, this.revIn);
+    this.score.onRadioAd = text => this.onRadioAd?.(text);
+    this.piano = this.score.piano;
     this.piano.enabled = this.musicOn;
     this.piano.volume = this.musicVolume;
     this.amb.mapId = this.mapId;
@@ -127,7 +135,15 @@ export class AudioEngine {
       started: !!this.ctx, running: this.ctx?.state === 'running', master: this.master?.gain.value ?? null, sound: this.soundBus?.gain.value ?? null,
       soundRev: this.soundRev?.gain.value ?? null, soundOn: this.soundOn_, soundVolume: this.soundVolume_, musicOn: this.musicOn, musicVolume: this.musicVolume,
       streetAwake: this.streetVoices?.awake ?? null, streetVoices: this.streetVoices?.stats.voices ?? null,
+      score: this.score?.weights ?? null, disaster: this.disasterLevel,
     };
+  }
+
+  disaster(event: WorldEvents['disaster']) {
+    if (event.phase === 'end') this.disasterLevels.delete(event.kind);
+    else this.disasterLevels.set(event.kind, Math.max(0, Math.min(1, event.intensity)));
+    this.disasterLevel = 0;
+    for (const level of this.disasterLevels.values()) this.disasterLevel = Math.max(this.disasterLevel, level);
   }
 
   update(dt: number, mix: SoundscapeMix) {
@@ -141,7 +157,7 @@ export class AudioEngine {
     if (this.piano) {
       this.piano.enabled = this.musicOn;
       this.piano.volume = this.musicVolume;
-      this.piano.update(mix.night);
+      this.score?.update(Math.min(dt, 0.1), mix.night, mix, this.disasterLevel);
     }
   }
 

@@ -278,6 +278,8 @@ export class Hud implements UiSink {
     // badge and the cursor tip all follow it
     game.tools.onChange = () => {
       this.syncToolbar();
+      // (a tool in hand makes the Next card one line on a phone, the same as an open drawer does)
+      this.renderNextBar();
       if (this.panel && this.panel !== 'budget' && this.panel !== 'help' && this.panel !== 'more' && this.panel !== 'communes') this.renderPanel();
     };
     window.addEventListener('keydown', (e) => this.hotkey(e));
@@ -1295,10 +1297,12 @@ export class Hud implements UiSink {
     this.panel = p;
     this.sub.hidden = !p;
     this.sub.classList.remove('min');
-    if (!p) { if (this.game.tools.active === 'road' || this.game.tools.active === 'zone' || this.game.tools.active === 'dezone') this.game.tools.set('inspect'); this.syncToolbar(); this.placeNextBar(); return; }
+    // The Next card is looked at again now, not at its next refresh a second of frames away: on a phone it is one line beside
+    // a drawer, and the whole card sat on a newly opened drawer until then (and the one line stayed after the drawer had gone).
+    if (!p) { if (this.game.tools.active === 'road' || this.game.tools.active === 'zone' || this.game.tools.active === 'dezone') this.game.tools.set('inspect'); this.syncToolbar(); this.renderNextBar(); return; }
     this.renderPanel();
     this.syncToolbar();
-    this.placeNextBar();
+    this.renderNextBar();
   }
 
   private renderPanel() {

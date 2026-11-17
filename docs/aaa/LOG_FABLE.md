@@ -15,6 +15,8 @@ A fresh session can take over from this file alone. Read "Where things are", "St
 - **Never pipe the gate through `tail` in a command that then pushes.** The pipe hides the gate's exit code. This pushed one commit past a failing gate on day one.
 - **Long text goes through a file writer, not a shell heredoc.** Git Bash on this PC drops backslashes and trips on apostrophes in long heredocs. Edit scripts live in the session scratchpad; small edits go through a split/join helper that reports a missed match.
 - **A server on a port does not die with `pkill`.** Find the PID with `netstat -ano` and use `taskkill //F //PID`.
+- **NOT PUSHED, waiting on the owner:** from the evening of 17 Nov, GitHub sign-in on this PC stopped working (the credential manager wants a sign-in, and `gh auth status` says the token is invalid). `aaa/integration` and `claude/aaa-play` are both at c17d707 locally (or later for the play branch) and verified; origin has 584ab95 and 699ec0e. When the owner has signed in again: `git push origin aaa/integration` in `Slopmerica-int` and `git push origin claude/aaa-play` in `Slopmerica-fable`. A push that hangs is the credential manager waiting for a window nobody is looking at: run it with `GCM_INTERACTIVE=never GIT_TERMINAL_PROMPT=0` to get the error instead.
+- **Do not wait for a suite with a shell loop that starts a process every few seconds.** Two of those running at once ended with "fork: Resource temporarily unavailable" and took the session down with the suite. Wait on the background task's own notice, or with one process that reads the log.
 - **Keep the machine quiet while an integration suite runs.** Running my own gates and tests beside it made the look lane's frame-cost test (reflecttest) fail; it passes alone.
 - **nightglow is a coin toss.** On one commit it reads the night street at 103 (pass) or 110.1 (fail) from run to run: three runs at bda104b gave fail, pass, fail. Do not chase it as a regression (it cost an hour); it is reported to the look lane.
 - **Do not export a test's setting for a whole suite run.** `DAYS=120`, meant for the determinism test, also reached trashcliff and made it fail (it needs 133 days). The determinism entry in the registry carries its own settings now.
@@ -155,6 +157,10 @@ None of these thresholds was loosened. They are what the traffic does on a town 
 ### Integration at 556917f (the HUD wiring), `--gpu`, seed 1
 
 119 of 128. The nine: hud-icon-art (Photo had no drawn icon; fixed in 5c44154), reflecttest (slowed by my own work running beside the suite; passes alone), nightglow (the coin toss above), photo-reflection and presetlight (the look lane's, failing before), carsolid, crosswalktest, lightstest and landmarktest (the traffic table above).
+
+### Integration at c17d707 (save slots, the held-press fix, the interface session's polish branch), `--gpu`, seed 1
+
+122 of 131 at 699ec0e. The nine: playtest4 (it looked for the garbage emoji the inspector's utility row no longer starts with; fixed in cd31237 and passing on c17d707), people-fov (the browser did not start; passes alone), nightglow (the coin toss; passed on the rerun), and the same six as before: photo-reflection, presetlight, carsolid, crosswalktest, lightstest, landmarktest. Gate passes on c17d707.
 
 ### First integration merge (`codex/aaa-world` 9fd06ea + `claude/aaa-play` ecdc0e6), `--gpu`, seed 1
 

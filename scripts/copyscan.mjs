@@ -205,6 +205,7 @@ const FONTS = new Set(['Bungee', 'Anton', 'Titan One', 'Permanent Marker', 'Yell
 export function copyText(lit) {
   let s = lit.text;
   if (/#ifdef|#include|\b(uniform|varying|attribute)\s|void main|gl_Position|\bvec[234]\(/.test(s)) return null; // GLSL
+  if (/^[Mm]\s*-?[\d.][\d.\s,-]*(?:[MmLlHhVvCcSsQqTtAaZz][\d.\s,-]*)+$/.test(s)) return null; // SVG path data
   if (/<\/?[a-z][\w-]*[\s>\/]/i.test(s)) s = s.replace(/<[^>]*>/g, ' '); // HTML in UI strings: keep the words
   s = s.replace(/&nbsp;|&amp;|&lt;|&gt;|&quot;|&#39;/g, (m) => ({ '&nbsp;': ' ', '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" })[m]);
   s = s.replace(/\s+/g, ' ').trim();

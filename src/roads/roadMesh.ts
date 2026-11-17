@@ -590,7 +590,7 @@ const CONCRETE: [number, number, number] = [0.62, 0.61, 0.58];
 const CURB_FACE: [number, number, number] = [0.5, 0.49, 0.46];
 /** a corner slab's top: the sidewalk texture's average (linear), so it matches the walks it joins */
 const WHITE_TINT: [number, number, number] = [1, 1, 1];
-const BANK_TOP: [number, number, number] = [0.3, 0.255, 0.19], BANK_FOOT: [number, number, number] = [0.235, 0.195, 0.14];
+const BANK_TOP: [number, number, number] = [0.21, 0.15, 0.09], BANK_FOOT: [number, number, number] = [0.24, 0.19, 0.11];
 
 export class RoadRenderer {
   readonly group = new THREE.Group();
@@ -643,6 +643,24 @@ export class RoadRenderer {
     this.concMesh.castShadow = true;
     this.concMesh.receiveShadow = true;
     litByLamps(this.concMesh.material as THREE.MeshStandardMaterial);
+    if (net.terrain.detail) {
+      const material = this.concMesh.material as THREE.MeshStandardMaterial;
+      const previous = material.onBeforeCompile, previousKey = material.customProgramCacheKey.bind(material);
+      material.onBeforeCompile = (shader, renderer) => {
+        previous.call(material, shader, renderer);
+        shader.uniforms.tBankDetail = { value: net.terrain.detail };
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', '#include <common>\nprecision highp sampler2DArray;\nuniform sampler2DArray tBankDetail;')
+          .replace('#include <color_fragment>', `#include <color_fragment>
+            // Brown bank vertices share the terrain's soil grain. Concrete
+            // curbs, bridge decks and pillars have neutral vertex colours.
+            float earthBank = smoothstep(0.06, 0.09, vColor.r - vColor.b);
+            vec3 bankDetail = texture(tBankDetail, vec3(vLampW.xz * 0.23, 1.0)).rgb;
+            diffuseColor.rgb *= mix(vec3(1.0), clamp(bankDetail * 2.0, vec3(0.5), vec3(1.4)), earthBank);
+          `);
+      };
+      material.customProgramCacheKey = () => previousKey() + '|soil-bank-v1';
+    }
     this.group.add(this.concMesh);
 
     const pole = new THREE.CylinderGeometry(0.09, 0.13, 8, 5);
@@ -795,16 +813,29 @@ export class RoadRenderer {
   }
 
   /** Where the earth bank beside a road or corner meets the ground: from the walk's edge (px, pz) outwards along (ox, oz). */
-  private bankFoot(px: number, pz: number, ox: number, oz: number, topY: number, yDefault: number): { run: number; yB: number } {
+  private bankFoot(px: number, pz: number, ox: number, oz: number, topY: number, yDefault: number) {
     const T = this.net.terrain;
-    let run = VERGE_RUN, yB = yDefault;
-    for (let it = 0; it < 3; it++) {
-      const g = T.h(px + ox * run, pz + oz * run) - 0.02;
-      if (g >= yB) break;
-      yB = g;
-      run = clamp(topY - yB, VERGE_RUN, 3.2);
+    const ground = (run: number) => {
+      const y = T.h(px + ox * run, pz + oz * run) - 0.015;
+      return Math.min(topY - 0.015, Number.isFinite(y) ? y : yDefault);
+    };
+    let run = VERGE_RUN;
+    for (let it = 0; it < 4; it++) {
+      const next = clamp((topY - ground(run)) * 2.6, run, 5);
+      if (next - run < 0.01) break;
+      run = next;
     }
-    return { run, yB };
+    const yB = ground(run), drop = topY - yB, length = Math.hypot(drop, run);
+    const normal = [ox * drop / length, run / length, oz * drop / length];
+    // Match the terrain gradient at the foot, then blend into the bank face.
+    const x = px + ox * run, z = pz + oz * run, e = 2;
+    const nx = (T.h(x - e, z) - T.h(x + e, z)) / (2 * e);
+    const nz = (T.h(x, z - e) - T.h(x, z + e)) / (2 * e);
+    const terrainLength = Math.hypot(nx, 1, nz);
+    const footNormal = [nx, 1, nz].map((value, axis) => value / terrainLength * 0.8 + normal[axis] * 0.2);
+    const footLength = Math.hypot(...footNormal);
+    for (let axis = 0; axis < 3; axis++) footNormal[axis] /= footLength;
+    return { run, yB, normal, footNormal };
   }
 
   private buildSeg(seg: RSeg): SegGeo {
@@ -881,13 +912,10 @@ export class RoadRenderer {
         } else {
           // an earth bank from the walk's edge down to the graded ground (terrain.gradeRoad leaves it GROUND_BELOW
           // under the road's height, but only on the grid's vertices: across a hillside it can sit a few tens of
-          // centimetres lower, so the foot is placed on the terrain itself and the bank runs long enough to keep
-          // to about 45 degrees), then a skirt for the times the ground has dropped away since
-          const { run, yB } = this.bankFoot(F.p.x + out.x * hw, F.p.z + out.z * hw, out.x, out.z, topY, F.y - GROUND_BELOW - 0.03);
-          const drop = topY - yB;
-          const ln = Math.hypot(drop, run);
-          const n = [(out.x * drop) / ln, run / ln, (out.z * drop) / ln];
-          S.wedge = [cv(side * hw, topY, n, BANK_TOP), cv(side * (hw + run), yB, n, BANK_FOOT), cv(side * (hw + run), yB - 1.0, [out.x, 0, out.z], BANK_FOOT)];
+          // centimetres lower, so the foot follows the terrain with a gentle
+          // bank and a buried skirt for later ground edits.
+          const { run, yB, normal, footNormal } = this.bankFoot(F.p.x + out.x * hw, F.p.z + out.z * hw, out.x, out.z, topY, F.y - GROUND_BELOW - 0.03);
+          S.wedge = [cv(side * hw, topY, normal, BANK_TOP), cv(side * (hw + run), yB, footNormal, BANK_FOOT), cv(side * (hw + run), yB - 1.0, [out.x, 0, out.z], BANK_FOOT)];
         }
       }
       if (elevated) {
@@ -1145,10 +1173,9 @@ export class RoadRenderer {
       for (let m = 0; m < K; m++) {
         const o = outer[m], d = dir[m], topY = yo[m] + CURB_REVEAL;
         const yDef = (m === 0 ? Lj.y : m === K - 1 ? Li.y : (Li.y + Lj.y) / 2) - GROUND_BELOW - 0.03;
-        const { run, yB } = this.bankFoot(o.x, o.z, d.x, d.z, topY, yDef);
-        const drop = topY - yB, ln = Math.hypot(drop, run), nb = [(d.x * drop) / ln, run / ln, (d.z * drop) / ln];
+        const { run, yB, normal: nb, footNormal } = this.bankFoot(o.x, o.z, d.x, d.z, topY, yDef);
         wt.push(conc.v(o.x, topY, o.z, nb[0], nb[1], nb[2], 0, 0, BANK_TOP));
-        wf.push(conc.v(o.x + d.x * run, yB, o.z + d.z * run, nb[0], nb[1], nb[2], 0, 0, BANK_FOOT));
+        wf.push(conc.v(o.x + d.x * run, yB, o.z + d.z * run, footNormal[0], footNormal[1], footNormal[2], 0, 0, BANK_FOOT));
         ws.push(conc.v(o.x + d.x * run, yB - 1.0, o.z + d.z * run, d.x, 0, d.z, 0, 0, BANK_FOOT));
       }
       for (let m = 0; m + 1 < K; m++) {

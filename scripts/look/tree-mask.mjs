@@ -74,9 +74,15 @@ export async function installTreeMask(page) {
         const key = original.uuid + kind;
         if (cache.has(key)) return cache.get(key);
         const material = original.clone();
-        const before = original.onBeforeCompile;
+        // The live material may already contain ambient/CSM shader patches.
+        // Delegate its render hook with the original identity so the clone
+        // does not install those same patches a second time.
+        material.onBeforeRender = (...args) => {
+          original.onBeforeRender.apply(original, args);
+          if (material.isShaderMaterial) material.uniformsNeedUpdate = true;
+        };
         material.onBeforeCompile = (shader, renderer) => {
-          before.call(original, shader, renderer);
+          original.onBeforeCompile.call(original, shader, renderer);
           let mask = '0.0';
           if (kind === 'near') mask = 'step(0.5, vCanopy)';
           if (kind === 'far') {
@@ -114,6 +120,8 @@ export async function installTreeMask(page) {
         renderer.setRenderTarget(target); renderer.clear();
         renderer.render(g.scene, g.rts.camera);
         renderer.readRenderTargetPixels(target, 0, 0, size.x, size.y, data);
+        const gl = renderer.getContext(), error = gl.getError();
+        if (error !== gl.NO_ERROR) throw Error(`Tree geometry mask failed with WebGL error ${error}`);
         const canvas = document.createElement('canvas'); canvas.width = size.x; canvas.height = size.y;
         const context = canvas.getContext('2d'), pixels = context.createImageData(size.x, size.y);
         for (let y = 0; y < size.y; y++) pixels.data.set(data.subarray(y * size.x * 4, (y + 1) * size.x * 4), (size.y - 1 - y) * size.x * 4);

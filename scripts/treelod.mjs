@@ -22,6 +22,9 @@ const page = await browser.newPage({ viewport: { width: 900, height: 500 } });
 await page.addInitScript(seededInit, { seed: testSeed(), rng: seededRandom.toString() });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));
+page.on('console', message => {
+  if (/Shader Error|GL_INVALID|VALIDATE_STATUS/.test(message.text())) errs.push(message.text());
+});
 await page.addInitScript(() => {
   localStorage.setItem('slopmerica.quality', 'high');
   localStorage.setItem('slopmerica.onboarded', '1');
@@ -114,6 +117,7 @@ const VIEWS = process.env.VIEWS ? JSON.parse(process.env.VIEWS) : [[140, 0.75], 
 for (const [dist, pitch] of VIEWS) {
   const n = await frame('near', dist, pitch), f = await frame('far', dist, pitch), o = await frame('none', dist, pitch);
   const r = await lum(n, f, o);
+  check(`at ${dist} m, both crown masks contain pixels`, r.nearPx > 0 && r.farPx > 0, r);
   const ratio = r.far / r.near;
   // coverage is the canopy's: detailed trees also cast shadows on the ground
   // (impostors don't), and counting shadow pixels made far forest look half as

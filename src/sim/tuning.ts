@@ -13,6 +13,16 @@ export const TUNING = {
   /** PROPOSED until road wear lands (the Ponzi pass): years for an untouched road to read as fully worn */
   roadWearYears: 22,
 
+  // ---- ONE MORE LANE, remembered (src/sim/widening.ts: it watches the traffic and changes nothing)
+  /**
+   * PROPOSED. weeks: how long a widening is followed, one reading a week: the design's "it always works for about 18
+   * months" (78 weeks). minBefore: how full a road must have been for "traffic is back" to mean anything (a third full).
+   * minWeeks: no "back to normal" in the first month, while the cars the works cleared off the road are still returning.
+   * peakDays: a road's "busiest lately" is the most it filled in this stretch of days and the one before: 144, one turn of
+   * the day-and-night clock, so it always holds at least one whole day's rush hours.
+   */
+  widening: { weeks: 78, minBefore: 0.33, minWeeks: 4, peakDays: 144 },
+
   // ---- world events (what the look and the sound are told; nothing in the simulation reads these)
   /** PROPOSED: the crashed cars' speeds added up (m/s) at which a crash reads as a full wreck: two cars at a Freedom Stroad's 20 m/s */
   crashWreckSpeed: 40,

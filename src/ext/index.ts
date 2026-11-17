@@ -5,6 +5,7 @@ import '../sim/districts';
 import '../tools/terraform';
 import '../sim/disasters';
 import '../sim/freight';
+import '../sim/widening';
 import '../transit/system';
 import '../sim/land';
 import '../roads/interchanges';

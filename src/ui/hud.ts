@@ -140,6 +140,10 @@ export class Hud implements UiSink {
   private demandCells: ZCell[] = [];
   private nextBar?: HTMLElement;
   private nextBarObs?: ResizeObserver;
+  /** the grant stamp that lands on the screen when ONE MORE LANE is paid for with federal money */
+  private grantStamp!: HTMLElement;
+  private grantStampAt = -1e9;
+  private grantStampTimer = 0;
   /** photo mode's controls (the one piece of the HUD on screen while it is up) */
   private photoBar!: PhotoBar;
   /** the follow camera's pill, who it names, and the subject it was last drawn for */
@@ -185,6 +189,21 @@ export class Hud implements UiSink {
     this.tip.hidden = true;
     this.actions = this.mk('div', 'tool-actions');
     this.photoBar = new PhotoBar(this.game, this.root, (text) => this.toast(text));
+    // ONE MORE LANE with federal money in it gets its stamp (once for a whole street widened in one go)
+    this.grantStamp = this.mk('div', 'grant-stamp');
+    this.grantStamp.hidden = true;
+    this.grantStamp.setAttribute('role', 'status');
+    this.game.sim.events.on('laneAdded', ({ segId }) => {
+      const s = this.game.net.segs.get(segId), share = s ? ROAD_TYPES[s.type].fedGrant : 0, now = performance.now();
+      if (share <= 0 || now - this.grantStampAt < 400) return;
+      this.grantStampAt = now;
+      this.grantStamp.textContent = `🏛️ ${Math.round(share * 100)}% FEDERAL HIGHWAY GRANT APPROVED`;
+      this.grantStamp.hidden = false;
+      // (restart the animation for a second stamp while the first is still up)
+      this.grantStamp.classList.remove('go'); void this.grantStamp.offsetWidth; this.grantStamp.classList.add('go');
+      window.clearTimeout(this.grantStampTimer);
+      this.grantStampTimer = window.setTimeout(() => { this.grantStamp.hidden = true; }, 2200);
+    });
     this.followPill = this.mk('button', 'follow-pill') as HTMLButtonElement;
     this.followPill.hidden = true;
     this.followPill.setAttribute('aria-label', 'Stop following');
@@ -1666,7 +1685,7 @@ export class Hud implements UiSink {
         <div class="in-actions">${t.next ? (() => {
           const q = g.quoteUpgrade([s], t.next);
           const short = q.net > g.sim.spendable();
-          return `<button id="in-lane" ${short ? 'disabled title="Not enough money"' : ''}>➕ ONE MORE LANE · ${money(q.net)}</button>`;
+          return `<button id="in-lane" class="one-more-lane" ${short ? 'disabled title="Not enough money"' : ''}>${uiIcon('toolbar', 'upgrade', '➕', 22)} ONE MORE LANE · ${money(q.net)}${q.grant > 0 ? ` <small>feds pay ${money(q.grant)}</small>` : ''}</button>`;
         })() : '<button disabled>MAX LANES</button>'}${t.oneWay ? '<button id="in-flip" title="The arrows point the other way">⇅ Flip direction</button>' : ''}<button class="danger" id="in-bulldoze">💣 Bulldoze</button></div>`;
     }
     let extra = '';

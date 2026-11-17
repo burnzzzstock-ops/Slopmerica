@@ -57,7 +57,7 @@ export const DEBUG: boolean = !!import.meta.env?.DEV || on(hash.debug) || on(has
  * them, so when the hooks are off each name becomes a property that reads as undefined and ignores writes:
  * the modules' assignments land nowhere and the game is unchanged. The names stay a public API for tests.
  */
-export const FOREIGN_HOOKS = ['__services', '__land', '__startSite', '__vault', '__genMs'] as const;
+export const FOREIGN_HOOKS = ['__services', '__land', '__startSite', '__vault', '__genMs', '__widening'] as const;
 
 function sealForeignHooks() {
   if (DEBUG || typeof window === 'undefined') return;

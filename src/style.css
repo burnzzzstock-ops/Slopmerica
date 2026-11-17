@@ -3464,6 +3464,66 @@ a {
 /* the toasts say "Postcard saved" while the rest of the HUD is hidden */
 .hud:has(.photo-bar:not([hidden])) .toasts { visibility: visible; }
 
+/* ---- ONE MORE LANE: the button, the grant stamp, and the record in the road's inspector (src/sim/widening.ts) ---- */
+.in-actions button.one-more-lane {
+  position: relative;
+  background: #f7c531;
+  color: #111;
+  border-color: #111;
+  font-weight: 900;
+  padding-block: 12px;
+  overflow: hidden;
+}
+/* hazard tape along its top and bottom edges */
+.in-actions button.one-more-lane::before, .in-actions button.one-more-lane::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; height: 5px;
+  background: repeating-linear-gradient(-45deg, #111 0 8px, #f7c531 8px 16px);
+}
+.in-actions button.one-more-lane::before { top: 0; }
+.in-actions button.one-more-lane::after { bottom: 0; }
+.in-actions button.one-more-lane small { font-weight: 700; opacity: 0.75; margin-left: 4px; }
+.in-actions button.one-more-lane:disabled { filter: grayscale(0.8); opacity: 0.55; }
+.grant-stamp {
+  position: absolute;
+  left: 50%; top: 34%;
+  transform: translate(-50%, -50%) rotate(-7deg);
+  max-width: calc(100vw - 40px);
+  padding: 10px 18px;
+  border: 4px solid #b3202a;
+  border-radius: 8px;
+  color: #b3202a;
+  background: rgba(239, 230, 207, 0.94);
+  font-family: 'Bungee', 'Anton', sans-serif;
+  font-size: clamp(15px, 3.4vw, 30px);
+  line-height: 1.15;
+  text-align: center;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  z-index: 8;
+}
+.grant-stamp[hidden] { display: none; }
+.grant-stamp.go { animation: grantStamp 2.2s ease-out both; }
+@keyframes grantStamp {
+  0% { opacity: 0; transform: translate(-50%, -50%) rotate(-7deg) scale(2.4); }
+  9% { opacity: 1; transform: translate(-50%, -50%) rotate(-7deg) scale(0.94); }
+  14% { transform: translate(-50%, -50%) rotate(-7deg) scale(1); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -50%) rotate(-7deg) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) { .grant-stamp.go { animation: none; } }
+.in-widen { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255, 255, 255, 0.03); }
+.in-widen-head { font-size: 12px; line-height: 1.35; margin-bottom: 4px; }
+.in-widen-head b { color: #f7c531; margin-right: 4px; }
+.in-widen svg { display: block; }
+.in-widen svg .was { stroke: #f7c531; stroke-width: 1.5; stroke-dasharray: 4 3; }
+.in-widen svg .now { fill: none; stroke: var(--lime); stroke-width: 2; stroke-linejoin: round; }
+.in-widen svg .back { fill: #b3202a; stroke: #efe6cf; stroke-width: 1; }
+.in-widen-key { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--ink-2); margin-top: 3px; }
+.in-widen-key .k::before { content: ''; display: inline-block; width: 14px; height: 0; margin-right: 5px; vertical-align: middle; border-top: 2px solid var(--lime); }
+.in-widen-key .k.was::before { border-top: 2px dashed #f7c531; }
+
 /* ---- the follow camera's pill: who the camera is riding with; a tap lets go ---- */
 .follow-pill {
   position: absolute;

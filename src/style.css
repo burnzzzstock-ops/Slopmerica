@@ -3434,6 +3434,36 @@ a {
   .tb-demand { gap: 3px; }
   .mtrack { width: 26px; }
 }
+/* ---- photo mode's bar: the HUD is hidden while photo mode is up, and this stays (src/ui/photoBar.ts) ---- */
+.photo-bar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(10px + var(--safe-b));
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 16px);
+  padding: 8px 10px 6px;
+  background: rgba(10, 9, 16, 0.86);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  pointer-events: auto;
+  visibility: visible;
+  z-index: 6;
+}
+.photo-bar[hidden] { display: none; }
+.photo-bar .pb-row { display: flex; gap: 6px; align-items: center; overflow-x: auto; scrollbar-width: none; }
+.photo-bar .pb-row::-webkit-scrollbar { display: none; }
+.photo-bar .pb-row .chip { flex: none; white-space: nowrap; }
+/* Done is the way out: it stays in view however far the row is scrolled */
+.photo-bar .pb-row .chip[data-pb='exit'] { position: sticky; left: 0; z-index: 1; background: #1a1726; box-shadow: 6px 0 8px rgba(10, 9, 16, 0.9); }
+.photo-bar .pb-adjust { display: grid; gap: 4px; margin-bottom: 8px; }
+.photo-bar .pb-adjust label { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-2); }
+.photo-bar .pb-adjust input[type='range'] { width: 100%; min-width: 180px; }
+.photo-bar .pb-adjust output { color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; }
+.photo-bar .pb-hint { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the toasts say "Postcard saved" while the rest of the HUD is hidden */
+.hud:has(.photo-bar:not([hidden])) .toasts { visibility: visible; }
+
 /* ---- the follow camera's pill: who the camera is riding with; a tap lets go ---- */
 .follow-pill {
   position: absolute;

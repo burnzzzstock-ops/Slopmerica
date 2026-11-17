@@ -19,6 +19,7 @@ import { BUILD, cityFile, crumb, onCapturedError, openBugReport, saveFile, saveM
 import { FOV_MAX, FOV_MIN, IS_TOUCH } from '../config';
 import { PLAYTEST } from '../core/flags';
 import { uiIcon } from './icons';
+import { PhotoBar } from './photoBar';
 import { QUALITY, type Quality } from '../config';
 import { BANKRUPT_AT, BANKRUPT_WEEKS, CREDIT_LINE, LEDGER_LABEL, LOSS_LABEL, ONE_TIME, RECURRING, SPEEDS, Sim, UNLOCKS, usd, type DemandKey } from '../sim/sim';
 import { SERVICE_DEFS, overloadedServices, type EmergencyView } from '../sim/services';
@@ -139,6 +140,8 @@ export class Hud implements UiSink {
   private demandCells: ZCell[] = [];
   private nextBar?: HTMLElement;
   private nextBarObs?: ResizeObserver;
+  /** photo mode's controls (the one piece of the HUD on screen while it is up) */
+  private photoBar!: PhotoBar;
   /** the follow camera's pill, who it names, and the subject it was last drawn for */
   private followPill!: HTMLButtonElement;
   private followName = '';
@@ -181,6 +184,7 @@ export class Hud implements UiSink {
     this.tip = this.mk('div', 'cursor-tip');
     this.tip.hidden = true;
     this.actions = this.mk('div', 'tool-actions');
+    this.photoBar = new PhotoBar(this.game, this.root, (text) => this.toast(text));
     this.followPill = this.mk('button', 'follow-pill') as HTMLButtonElement;
     this.followPill.hidden = true;
     this.followPill.setAttribute('aria-label', 'Stop following');
@@ -1116,6 +1120,7 @@ export class Hud implements UiSink {
       ['bulldoze', '💣', 'Bulldoze'],
       ['landmarks', '💥', 'Landmarks'],
       ['views', '🗺️', 'Info Views'],
+      ['photo', '📷', 'Photo'],
       ['budget', '💰', 'Budget'],
       ['communes', '☮️', 'Communes'],
       ['feed', '𝕏', 'Feed'],
@@ -1195,6 +1200,8 @@ export class Hud implements UiSink {
     g.audio.unlock();
     g.audio.play('click', 0.4);
     if (id === 'feed') { this.feed.setCollapsed(!this.feed.collapsed); return; }
+    // photo mode: the tool goes back in the box, every panel closes, and the look lane's lens takes the screen
+    if (id === 'photo') { crumb('photo mode'); this.openPanel(null); g.tools.set('inspect'); g.select(null); this.photoBar.enter(); return; }
     if (id === 'bug') { if (this.panel === 'more') this.openPanel(null); this.reportBug(); return; }
     crumb(`${this.panel === id ? 'closed' : 'opened'} ${id}`);
     if (id === 'inspect' || id === 'upgrade' || id === 'bulldoze') {

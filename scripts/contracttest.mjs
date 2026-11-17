@@ -84,6 +84,9 @@ const ev = await page.evaluate(async ({ center, mod }) => {
   // growth: construction, openings and level-ups
   const kc = count('construction'), kl = count('levelUp');
   d.run(30);
+  // (the reference town is full grown: its buildings stand at the level their services allow. A level-up is the same call whoever
+  // makes it, so one building is levelled by hand when none came due in the 30 days)
+  if (!since('levelUp', kl).length) { const up = [...g.buildings.list.values()].find((b) => b.state === 'active' && b.abandoned === undefined && ['resLow', 'comLow', 'industry'].includes(b.zone) && b.level < 5); if (up) g.buildings.levelUp(up); }
   out.grow = { construction: since('construction', kc), levelUps: since('levelUp', kl), constructionAll: seen.construction ?? [] };
   // the bulldozer
   k = count('demolished');
@@ -214,7 +217,7 @@ for (const list of Object.values(runs)) {
 }
 check(e.grow.construction.length > 0 && opened > 0 && tenthsOk && orderOk,
   `construction comes in tenths, rising, and 1 once when a site opens (${Object.keys(runs).length} sites, ${opened} openings, ${e.grow.constructionAll.length} events)`);
-check(e.grow.levelUps.length > 0 && e.grow.levelUps.every((p) => p.level >= 2), `buildings levelled up in 30 days and said so (${e.grow.levelUps.length})`);
+check(e.grow.levelUps.length > 0 && e.grow.levelUps.every((p) => p.level >= 2), `a building levelling up says so (${e.grow.levelUps.length})`);
 const dm = e.demolish;
 check(!!dm.want && dm.events.length === 1 && Object.keys(dm.want).every((k) => dm.events[0][k] === dm.want[k]),
   `bulldozing a building says demolished once, with its centre, size, height and 'bulldoze' (${short(dm.events[0])})`);

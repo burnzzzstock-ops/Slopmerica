@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { CELL, WATER } from '../config';
 import { MAX_LEVEL, type BuildingModel, type LandmarkId, type ZoneType } from '../contracts';
 import { closestOnSampled, SpatialHash, V2 } from '../core/math';
-import { Rng } from '../core/rng';
+import { fx, Rng } from '../core/rng';
 import { buildingMaterial, generateBuilding, generateLandmark, landmarkFootprint, setArtMap, variantsFor } from '../buildings/generator';
 import { generateConstruction, kitMaterial } from '../buildings/kitGenerator';
 import { applyAtmosphere } from '../world/seasons';
@@ -17,6 +17,9 @@ import type { Trees } from '../world/trees';
 import type { ZCell, Zoning } from '../zones/zoning';
 import type { RoadNetwork } from '../roads/network';
 import { ROAD_TYPES } from '../roads/roadTypes';
+
+/** a building as saved (see Buildings.serialize) */
+export type BldRow = [string, string, number, number, number, number, number, number, number, string, number, number, number, number, number?, number?, number?, number?, number?, number?, number[]?, number?, string?];
 
 export interface Bld {
   id: number;
@@ -51,6 +54,13 @@ export interface Bld {
   occ: number;
   lv: number; // land value 0..100 (sim writes)
   levelProgress: number;
+  /** which of its zone's models it wears (zoned buildings; rolled when it is built and again at each level) */
+  variant?: number;
+  /**
+   * The brand its model was asked for ('' for none). Not always the brand it has: the generator swaps in one that fits the lot and
+   * says so in the model. Asking again for the brand it ended up with gives another building, so a save keeps what was asked.
+   */
+  ask?: string;
   born: number;
   inst: number; // BatchedMesh instance id
   buildInst: number; // temporary scaffold/crane instance (always in the Kit batch)
@@ -112,6 +122,19 @@ class Batch {
 /** A zoned (growable) building, not a landmark or city service. */
 export const isZoned = (b: Bld): b is Bld & { zone: ZoneType } => b.zone !== 'landmark' && b.zone !== 'service';
 
+/**
+ * Why a building came down, as the world events name it (src/contracts.ts `demolished`), from the reason passed to
+ * Buildings.demolish. A road through a lot, an undo and the bulldozer are all the player clearing it; a storm surge is
+ * the disaster's. A reason not in the table is the player's too: every other caller is a tool or a test.
+ */
+const DEMOLISH_CAUSE: Record<string, 'bulldoze' | 'fire' | 'abandoned' | 'disaster' | 'collapse'> = {
+  bulldozed: 'bulldoze', road: 'bulldoze', undone: 'bulldoze',
+  fire: 'fire', wildfire: 'fire',
+  abandoned: 'abandoned',
+  'storm surge': 'disaster',
+};
+export const demolishCause = (reason: string) => DEMOLISH_CAUSE[reason] ?? 'bulldoze';
+
 /** Player-placed non-zoned buildings (power plants, schools, ...). Systems register their kinds here. */
 export interface CustomBuildingDef {
   label: string;
@@ -159,7 +182,8 @@ export class Buildings {
   readonly mesh: THREE.BatchedMesh;
   readonly kitMesh: THREE.BatchedMesh;
   private geoIds = new Map<string, { id: number; model: BuildingModel }>();
-  private rng = new Rng(4242);
+  /** the dice for what grows where and how (seeded from the county's seed, saved) */
+  readonly rng = new Rng(4242);
   private m4 = new THREE.Matrix4();
   private q = new THREE.Quaternion();
   private v = new THREE.Vector3();
@@ -167,6 +191,10 @@ export class Buildings {
   onDemolish?: (b: Bld, reason: string) => void;
   onComplete?: (b: Bld) => void;
   onLevel?: (b: Bld) => void;
+  /** construction moved past a tenth (0.1 .. 0.9), and 1 once when it opens; for whatever shows or sounds the site */
+  onProgress?: (b: Bld, progress: number) => void;
+  /** trees came down under a building's lot (count > 0 only); (x, z) the lot's centre, r its reach in metres */
+  onTreesCut?: (x: number, z: number, r: number, count: number) => void;
   day = 0;
 
   constructor(scene: THREE.Scene, private terrain: Terrain, private trees: Trees, private zones: Zoning, private net: RoadNetwork) {
@@ -266,7 +294,7 @@ export class Buildings {
     this.hash.insert(b, b.x - pad, b.z - pad, b.x + pad, b.z + pad);
     b.y = this.terrain.h(b.x, b.z);
     this.terrain.flattenLot(this.corners(b), b.y, b.zone === 'resLow' || b.zone === 'resHigh' ? Paint.Lawn : Paint.Paved);
-    this.trees.cut(b.x - pad - 4, b.z - pad - 4, b.x + pad + 4, b.z + pad + 4, (tx, tz) => this.contains(b, tx, tz, 2));
+    this.felled(b, 2, this.trees.cut(b.x - pad - 4, b.z - pad - 4, b.x + pad + 4, b.z + pad + 4, (tx, tz) => this.contains(b, tx, tz, 2)));
     this.claimCells(b);
     if (b.inst >= 0) this.writeMatrix(b, b.state === 'active' ? 1 : easeGrow(b.progress));
   }
@@ -401,17 +429,17 @@ export class Buildings {
     const brand = zone === 'resLow' || zone === 'resHigh' ? undefined : this.brandFor(zone, this.rng)?.id;
     const e = this.modelFor(zone, level, w, d, variant, brand);
     const b: Bld = {
-      id: this.nextId++, zone, level, w, d, x, z, y, yaw, hw: (w * CELL) / 2, hd: (d * CELL) / 2, cells, seg: mid.seg,
-      label: e.model.label, brand: e.model.brand ?? brand, model: e.model, state: 'building', progress: 0,
+      id: this.nextId++, zone, level, w, d, x, z, y, yaw, hw: (w * CELL) / 2, hd: (d * CELL) / 2, cells, seg: mid.seg, variant, ask: brand ?? '',
+      label: e.model.label, brand: (e.model.brand ?? brand) || undefined, model: e.model, state: 'building', progress: 0,
       buildDays: this.rng.range(3, 7) * (1 + level * 0.25), cap: capacityFor(zone, level, w * d), occ: 0, lv: 20, levelProgress: 0,
-      born: this.day, inst: -1, buildInst: -1, buildH: 1, emitT: Math.random() * 5,
+      born: this.day, inst: -1, buildInst: -1, buildH: 1, emitT: fx.float() * 5,
     };
     for (const c of cells) c.bld = b.id;
     this.list.set(b.id, b);
     this.hash.insert(b, x - b.hw - b.hd, z - b.hw - b.hd, x + b.hw + b.hd, z + b.hw + b.hd);
     const corners = this.corners(b);
     this.terrain.flattenLot(corners, y, zone === 'resLow' ? Paint.Lawn : zone === 'resHigh' ? Paint.Lawn : Paint.Paved);
-    this.trees.cut(x - b.hw - b.hd, z - b.hw - b.hd, x + b.hw + b.hd, z + b.hw + b.hd, (tx, tz) => this.contains(b, tx, tz, 1.5));
+    this.felled(b, 1.5, this.trees.cut(x - b.hw - b.hd, z - b.hw - b.hd, x + b.hw + b.hd, z + b.hw + b.hd, (tx, tz) => this.contains(b, tx, tz, 1.5)));
     this.placeInstance(b, e.id);
     this.zones.markOverlayDirty();
     return b;
@@ -457,7 +485,7 @@ export class Buildings {
     this.list.set(b.id, b);
     this.hash.insert(b, x - b.hw - b.hd, z - b.hw - b.hd, x + b.hw + b.hd, z + b.hw + b.hd);
     this.terrain.flattenLot(this.corners(b), y, Paint.Paved);
-    this.trees.cut(x - 80, z - 80, x + 80, z + 80, (tx, tz) => this.contains(b, tx, tz, 2));
+    this.felled(b, 2, this.trees.cut(x - 80, z - 80, x + 80, z + 80, (tx, tz) => this.contains(b, tx, tz, 2)));
     for (const c of this.zones.cellsNear(x, z, b.hw + b.hd + 6)) if (this.contains(b, c.x, c.z, 3)) c.bld = b.id;
     this.placeInstance(b, e.id);
     return b;
@@ -481,7 +509,7 @@ export class Buildings {
     this.list.set(b.id, b);
     this.hash.insert(b, x - b.hw - b.hd, z - b.hw - b.hd, x + b.hw + b.hd, z + b.hw + b.hd);
     this.terrain.flattenLot(this.corners(b), y, def.paint ?? Paint.Paved);
-    this.trees.cut(x - b.hw - b.hd - 4, z - b.hw - b.hd - 4, x + b.hw + b.hd + 4, z + b.hw + b.hd + 4, (tx, tz) => this.contains(b, tx, tz, 2));
+    this.felled(b, 2, this.trees.cut(x - b.hw - b.hd - 4, z - b.hw - b.hd - 4, x + b.hw + b.hd + 4, z + b.hw + b.hd + 4, (tx, tz) => this.contains(b, tx, tz, 2)));
     for (const c of this.zones.cellsNear(x, z, b.hw + b.hd + 6)) if (this.contains(b, c.x, c.z, 3)) c.bld = b.id;
     this.placeInstance(b, e.id);
     this.zones.markOverlayDirty();
@@ -517,18 +545,87 @@ export class Buildings {
   }
 
   // ------------------------------------------------------------------ save / load
+  /**
+   * One row a building. The first 14 entries are what saves have always held (now at full precision); the rest makes a reload
+   * exact: its id, model variant, construction time, land value, the day it was built, whether it is open, the lots it stands on
+   * and how long it has stood abandoned (-1: lived in). A row without them (an older save) is rebuilt the old way.
+   */
   serialize() {
-    return [...this.list.values()].map((b) => [
-      b.zone, b.landmark ?? b.kind ?? '', b.level, b.w, b.d, +b.x.toFixed(2), +b.z.toFixed(2), +b.y.toFixed(2), +b.yaw.toFixed(4), b.brand ?? '', b.occ, b.state === 'active' ? 1 : +b.progress.toFixed(2), b.seg, +b.levelProgress.toFixed(2),
-    ] as const);
+    return [...this.list.values()].map((b) => this.rowOf(b));
+  }
+  rowOf(b: Bld): BldRow {
+    return [
+      b.zone, b.landmark ?? b.kind ?? '', b.level, b.w, b.d, b.x, b.z, b.y, b.yaw, b.brand ?? '', b.occ, b.progress, b.seg, b.levelProgress,
+      b.id, b.variant ?? -1, b.buildDays, b.lv, b.born, b.state === 'active' ? 1 : 0, b.cells.map((c) => c.id), b.abandoned ?? -1, b.ask ?? b.brand ?? '',
+    ];
   }
 
-  restore(rows: ReturnType<Buildings['serialize']>) {
+  /**
+   * A demolished building that something still points at (a car on its way there, a truck leaving it): rebuilt from its row as an
+   * object that stands nowhere. It is not in the list, has no lot, no mesh and no effect on the ground; it only answers what the
+   * car asks of it (where it was, its model's parking spots).
+   */
+  ghostFrom(r: BldRow): Bld | null {
+    const [zone, what, level, w, d, x, z, y, yaw, brand, occ, prog, seg, lp, id, variant, buildDays, lv, born, open, , abandoned, ask] = r;
+    if (id === undefined) return null;
+    let model: BuildingModel, kind: string | undefined, landmark: LandmarkId | undefined, onMain: boolean | undefined;
+    if (zone === 'service') {
+      const def = CUSTOM_BUILDINGS.get(what);
+      if (!def) return null;
+      onMain = !!def.main?.();
+      const key = `custom|${what}|${onMain ? 'main' : 'kit'}`;
+      let e = this.geoIds.get(key);
+      if (!e) { const m = def.model(); this.geoIds.set(key, (e = { id: (onMain ? this.main : this.kit).addGeometry(m.geometry), model: m })); }
+      model = e.model; kind = what;
+    } else if (zone === 'landmark') {
+      const key = `landmark|${what}`;
+      let e = this.geoIds.get(key);
+      if (!e) { const m = generateLandmark(what as LandmarkId, 1); this.geoIds.set(key, (e = { id: this.main.addGeometry(m.geometry), model: m })); }
+      model = e.model; landmark = what as LandmarkId;
+    } else model = this.modelFor(zone as ZoneType, level, w, d, variant ?? 0, ask || undefined).model;
+    const b: Bld = {
+      id, zone: zone as Bld['zone'], level, w, d, x, z, y, yaw, hw: (w * CELL) / 2, hd: (d * CELL) / 2, cells: [], seg, variant: variant !== undefined && variant >= 0 ? variant : undefined, ask,
+      label: model.label, brand: brand || undefined, model, state: open ? 'active' : 'building', progress: prog, buildDays: buildDays ?? 5,
+      cap: isZoned({ zone } as Bld) ? capacityFor(zone as ZoneType, level, w * d) : 0, occ, lv: lv ?? 30, levelProgress: lp, born: born ?? 0, inst: -1, buildInst: -1, buildH: 1, emitT: 0,
+    };
+    if (kind !== undefined) { b.kind = kind; b.onMain = onMain; }
+    if (landmark !== undefined) b.landmark = landmark;
+    if (abandoned !== undefined && abandoned >= 0) b.abandoned = abandoned;
+    return b;
+  }
+  /** what the rows do not hold: the next id to give out and where the dice stand */
+  serializeState() { return { nextId: this.nextId, rng: this.rng.state }; }
+  restoreState(d: { nextId: number; rng: number } | undefined) { if (d) { this.nextId = d.nextId; this.rng.state = d.rng; } }
+
+  /** true while a save is coming back: the trees its lots clear were cleared long ago, so nothing is said */
+  private restoring = false;
+
+  /** trees came down under b's lot (cut within `pad` m of it): say so, unless none did or a save is being restored */
+  private felled(b: Bld, pad: number, count: number) {
+    if (count && !this.restoring) this.onTreesCut?.(b.x, b.z, Math.hypot(b.hw, b.hd) + pad, count);
+  }
+
+  restore(rows: readonly BldRow[]) {
+    this.restoring = true;
+    try { this.restoreRows(rows); } finally { this.restoring = false; }
+  }
+
+  private restoreRows(rows: readonly BldRow[]) {
     for (const r of rows) {
-      const [zone, landmark, level, w, d, x, z, y, yaw, brand, occ, prog, seg, lp] = r;
+      const [zone, landmark, level, w, d, x, z, y, yaw, brand, occ, prog, seg, lp, id, variant, buildDays, lv, born, open, cellIds, abandoned, ask] = r;
+      const exact = id !== undefined;
+      if (exact) this.nextId = id;   // (the id it had: other systems' saves name buildings by it)
+      const settle = (b: Bld) => {
+        if (!exact) return;
+        b.progress = prog; b.state = open ? 'active' : 'building'; b.buildDays = buildDays!; b.lv = lv!; b.born = born!; b.seg = seg; b.occ = occ; b.levelProgress = lp;
+        if (abandoned !== undefined && abandoned >= 0) b.abandoned = abandoned;
+        if (b.state === 'active') this.dropScaffold(b);
+        this.writeMatrix(b, b.state === 'active' ? 1 : easeGrow(b.progress));
+      };
       if (zone === 'service') {
         const b = this.placeCustom(landmark, x, z, yaw, y);
         if (!b) continue;
+        if (exact) { settle(b); continue; }
         b.progress = Math.min(1, prog);
         if (b.progress >= 1) {
           b.state = 'active';
@@ -539,6 +636,7 @@ export class Buildings {
       }
       if (zone === 'landmark') {
         const b = this.placeLandmark(landmark as LandmarkId, x, z, yaw, y);
+        if (exact) { settle(b); continue; }
         b.state = 'active';
         b.progress = 1;
         this.dropScaffold(b);
@@ -546,18 +644,23 @@ export class Buildings {
         continue;
       }
       const zt = zone as ZoneType;
-      const e = this.modelFor(zt, level, w, d, this.rng.int(0, variantsFor(zt) - 1), brand || undefined);
+      // (an older save does not say which model it wore: roll one, as loading always did)
+      const v = exact && variant! >= 0 ? variant! : this.rng.int(0, variantsFor(zt) - 1);
+      const asked = exact && ask !== undefined ? ask : brand;
+      const e = this.modelFor(zt, level, w, d, v, asked || undefined);
       const b: Bld = {
-        id: this.nextId++, zone: zt, level, w, d, x, z, y, yaw, hw: (w * CELL) / 2, hd: (d * CELL) / 2, cells: [], seg,
-        label: e.model.label, brand: e.model.brand ?? (brand || undefined), model: e.model, state: prog >= 1 ? 'active' : 'building', progress: Math.min(1, prog),
-        buildDays: 5, cap: capacityFor(zt, level, w * d), occ, lv: 30, levelProgress: lp, born: this.day, inst: -1, buildInst: -1, buildH: 1, emitT: Math.random() * 5,
+        id: this.nextId++, zone: zt, level, w, d, x, z, y, yaw, hw: (w * CELL) / 2, hd: (d * CELL) / 2, cells: [], seg, variant: v, ask: asked,
+        label: e.model.label, brand: exact ? brand || undefined : e.model.brand ?? (brand || undefined), model: e.model, state: prog >= 1 ? 'active' : 'building', progress: Math.min(1, prog),
+        buildDays: 5, cap: capacityFor(zt, level, w * d), occ, lv: 30, levelProgress: lp, born: this.day, inst: -1, buildInst: -1, buildH: 1, emitT: fx.float() * 5,
       };
       this.list.set(b.id, b);
       this.hash.insert(b, x - b.hw - b.hd, z - b.hw - b.hd, x + b.hw + b.hd, z + b.hw + b.hd);
-      for (const c of this.zones.cellsNear(x, z, b.hw + b.hd + 4)) if (this.contains(b, c.x, c.z, -1)) { c.bld = b.id; b.cells.push(c); }
+      if (exact && cellIds) { for (const cid of cellIds) { const c = this.zones.cells.get(cid); if (c) { c.bld = b.id; b.cells.push(c); } } }
+      else for (const c of this.zones.cellsNear(x, z, b.hw + b.hd + 4)) if (this.contains(b, c.x, c.z, -1)) { c.bld = b.id; b.cells.push(c); }
       this.terrain.flattenLot(this.corners(b), y, zt.startsWith('res') ? Paint.Lawn : Paint.Paved);
       this.trees.cut(x - b.hw - b.hd, z - b.hw - b.hd, x + b.hw + b.hd, z + b.hw + b.hd, (tx, tz) => this.contains(b, tx, tz, 1.5));
       this.placeInstance(b, e.id);
+      if (exact) { b.progress = prog; b.state = open ? 'active' : 'building'; b.buildDays = buildDays!; b.lv = lv!; b.born = born!; if (abandoned! >= 0) b.abandoned = abandoned; this.writeMatrix(b, b.state === 'active' ? 1 : easeGrow(b.progress)); if (b.state === 'active') this.dropScaffold(b); }
     }
     this.zones.markOverlayDirty();
   }
@@ -657,7 +760,9 @@ export class Buildings {
     const max = MAX_LEVEL[b.zone];
     if (b.level >= max) return;
     b.level++;
-    const e = this.modelFor(b.zone, b.level, b.w, b.d, this.rng.int(0, variantsFor(b.zone) - 1), b.brand);
+    b.variant = this.rng.int(0, variantsFor(b.zone) - 1);
+    b.ask = b.brand ?? '';
+    const e = this.modelFor(b.zone, b.level, b.w, b.d, b.variant, b.brand);
     b.model = e.model;
     b.label = e.model.label;
     b.cap = capacityFor(b.zone, b.level, b.w * b.d);
@@ -678,11 +783,19 @@ export class Buildings {
   tickConstruction(days: number, buildMul: number) {
     for (const b of this.list.values()) {
       if (b.state !== 'building') continue;
+      const was = b.progress;
       b.progress = Math.min(1, b.progress + (days / b.buildDays) * buildMul);
       this.writeMatrix(b, easeGrow(b.progress));
+      // a site is told about once per tenth it passes, not every step (a step moves it a few thousandths);
+      // the tenth it reaches by opening is said by the 1 below instead
+      if (this.onProgress) {
+        const top = Math.min(9, Math.floor(b.progress * 10));
+        for (let k = Math.floor(was * 10) + 1; k <= top; k++) this.onProgress(b, k / 10);
+      }
       if (b.progress >= 1) {
         b.state = 'active';
         this.dropScaffold(b);
+        this.onProgress?.(b, 1);
         this.onComplete?.(b);
       }
     }

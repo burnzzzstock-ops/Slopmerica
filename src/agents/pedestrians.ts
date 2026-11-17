@@ -3,6 +3,9 @@
 import * as THREE from 'three';
 import type { PersonAction } from '../contracts';
 import { clamp, closestOnSampled, lerp, locate, norm, sub, type V2 } from '../core/math';
+import { fx, Rng } from '../core/rng';
+import { TOP_SPEED } from '../core/time';
+import { decode, encode, type Json, type Refs } from '../core/snapshot';
 import type { RoadNetwork, RSeg } from '../roads/network';
 import { armCrossing, sidewalkEnds } from '../roads/roadJunction';
 import { carriageHalf, ROAD_TYPES } from '../roads/roadTypes';
@@ -15,9 +18,18 @@ import type { Communes } from './communes';
 /** a person about to be added: add() gives them their number and their place in the draw pool */
 type NewPed = Omit<Ped, 'h' | 'id'>;
 
+/** The people system's fields that are not state: what it is wired to and what it draws with. */
+const PEOPLE_NOT_SAVED = new Set(['renderer', 'net', 'b', 'terrain', 'communes', 'rng', 'rnd', 'max', 'hip', 'merch', 'norm', 'group']);
+
 export interface Ped {
   /** this person's number: unique for the session, never reused (follow-cam targets name people by it) */
   id: number;
+  /** drawn pose now and a step ago (x, y, z, heading, stride phase) and the action shown: draw() puts them between the two */
+  pose?: Float64Array;
+  pose0?: Float64Array;
+  act?: PersonAction;
+  /** where they were last drawn: x, y, z, heading (what a camera following them reads) */
+  shown?: Float64Array;
   h: number;
   arch: number;
   kind: 'walk' | 'loiter' | 'commune' | 'protest' | 'wait';
@@ -209,14 +221,14 @@ export class Pedestrians {
   }
 
   private archFor(kind: Ped['kind'], brand?: string) {
-    if (kind === 'commune' || (kind === 'protest' && Math.random() < 0.8)) return this.hip[Math.floor(Math.random() * this.hip.length)];
-    if (brand === 'slop' && this.merch.length && Math.random() < 0.7) return this.merch[Math.floor(Math.random() * this.merch.length)];
-    return this.norm[Math.floor(Math.random() * this.norm.length)];
+    if (kind === 'commune' || (kind === 'protest' && this.rnd() < 0.8)) return this.hip[Math.floor(this.rnd() * this.hip.length)];
+    if (brand === 'slop' && this.merch.length && this.rnd() < 0.7) return this.merch[Math.floor(this.rnd() * this.merch.length)];
+    return this.norm[Math.floor(this.rnd() * this.norm.length)];
   }
 
   private nextId = 1;
   private add(p: NewPed) {
-    const h = this.renderer.add(p.arch, Math.floor(Math.random() * 1e6));
+    const h = this.renderer.add(p.arch, Math.floor(this.rnd() * 1e6));
     if (h < 0) return;
     this.peds.push({ ...p, h, id: this.nextId++ });
   }
@@ -226,7 +238,38 @@ export class Pedestrians {
   /** when each building last let someone out */
   private lastOut = new Map<number, number>();
 
-  update(dtReal: number, simSpeed: number, cam: THREE.Vector3, camDist: number, time: number) {
+  /** People on their own, for tests and dev pages: real seconds at a speed, then drawn. The game calls step() and draw(). */
+  update(dtReal: number, simSpeed: number, cam: THREE.Vector3, camDist: number) {
+    if (dtReal * simSpeed > 0) this.step(dtReal * simSpeed, cam, camDist);
+    this.draw(1, dtReal);
+  }
+  /** the people's own random stream, seeded from the county's seed */
+  readonly rng = new Rng(0x9ed5);
+
+  /** Everyone out and about, exactly, and the clocks and dice that decide who comes out next (what is only drawn is made again on load). */
+  serialize(refs: Refs): Json {
+    const part: Record<string, unknown> = {};
+    const self = this as unknown as Record<string, unknown>;
+    for (const k of Object.keys(self)) if (!PEOPLE_NOT_SAVED.has(k) && typeof self[k] !== 'function') part[k] = self[k];
+    return { rng: this.rng.state, v: encode(part, refs, { skip: (k, holder) => (k === 'h' || k === 'shown') && 'arch' in holder && 'life' in holder }) };
+  }
+
+  restore(j: Json | undefined, refs: Refs) {
+    const d = j as { rng: number; v: Json } | undefined;
+    if (!d || typeof d !== 'object' || !d.v) return;
+    for (const p of this.peds) this.renderer.remove(p.h);
+    const part = decode<Record<string, unknown>>(d.v, refs);
+    const self = this as unknown as Record<string, unknown>;
+    for (const k of Object.keys(part)) self[k] = part[k];
+    this.rng.state = d.rng;
+    for (const p of this.peds) p.h = this.renderer.add(p.arch, Math.floor(fx.float() * 1e6));
+  }
+  private readonly rnd = () => this.rng.float();
+
+  /** One fixed step of `dt` game seconds. (The clocks below were written in real seconds at a speed; they run at the pace they had at top speed.) */
+  step(dt: number, cam: THREE.Vector3, camDist: number) {
+    const simSpeed = TOP_SPEED, dtReal = dt / TOP_SPEED;
+    for (const p of this.peds) if (p.pose) p.pose0!.set(p.pose);
     this.clock += dtReal;
     this.walkClock += dtReal * Math.max(0.3, Math.min(simSpeed, 3));
     this.onCrosswalk.clear();
@@ -278,7 +321,6 @@ export class Pedestrians {
         }
       }
     }
-    const dt = dtReal * Math.max(0.0001, simSpeed);
     for (const p of this.peds) {
       if (p.kerb) {
         // at the kerb they step off: wait for the walk phase at lights, or for no car close (at a junction without
@@ -287,7 +329,7 @@ export class Pedestrians {
         if (this.canCross && (!this.crossingTurn(K.node, K.segs) || !this.canCross(K.node, K.segs, K.secs, (p.kerbWait ?? 0) >= KERB_PATIENCE))) {
           p.kerbWait = (p.kerbWait ?? 0) + dtReal * Math.max(0.3, Math.min(simSpeed, 3));
           p.action = 'idle';
-          this.renderer.set(p.h, p.x, p.y, p.z, p.ryaw ?? p.yaw, 'idle', p.phase);
+          this.put(p, p.x, p.y, p.z, p.ryaw ?? p.yaw, 'idle', p.phase);
           continue;
         }
         delete p.kerb;
@@ -313,7 +355,7 @@ export class Pedestrians {
         p.z = lerp(g.fz, g.tz, u);
         p.y = this.terrain.h(p.x, p.z) + 0.06;
         if (gd > 0.2) p.yaw = Math.atan2(g.tx - g.fx, g.tz - g.fz);
-        p.ryaw = p.ryaw === undefined ? p.yaw : angEase(p.ryaw, p.yaw, 1 - Math.exp(-dtReal * 9));
+        p.ryaw = p.yaw;
         if (u >= 1) {
           delete p.go;
           delete p.crossing;
@@ -322,7 +364,7 @@ export class Pedestrians {
           if (p.legs?.[0]?.cross) {
             const L = p.legs[0];
             p.kerb = { node: L.cross!.node, segs: L.cross!.segs, secs: Math.hypot(L.x - p.x, L.z - p.z) / Math.max(0.8, p.speed) };
-            this.renderer.set(p.h, p.x, p.y, p.z, p.ryaw ?? p.yaw, 'idle', p.phase);
+            this.put(p, p.x, p.y, p.z, p.ryaw ?? p.yaw, 'idle', p.phase);
             continue;
           }
           // on over the junction: the next leg of the walk
@@ -332,19 +374,19 @@ export class Pedestrians {
             const d = Math.hypot(leg.x - p.x, leg.z - p.z);
             this.goTo(p, p.x, p.z, leg.x, leg.z, false);
             p.go!.T = Math.max(0.4, d / Math.max(0.8, p.speed));
-            this.renderer.set(p.h, p.x, p.y, p.z, p.ryaw ?? p.yaw, 'walk', p.phase);
+            this.put(p, p.x, p.y, p.z, p.ryaw ?? p.yaw, 'walk', p.phase);
             continue;
           }
           // arrived: turn to face the street, the grill, each other
           if (p.face !== undefined && p.kind !== 'walk') p.yaw = p.face;
           if (p.kind === 'walk') this.placeOnSidewalk(p);
         }
-        this.renderer.set(p.h, p.x, p.y, p.z, p.ryaw ?? p.yaw, p.go ? 'walk' : p.action, p.phase);
+        this.put(p, p.x, p.y, p.z, p.ryaw ?? p.yaw, p.go ? 'walk' : p.action, p.phase);
         continue;
       }
       // feet planted: the legs cycle as fast as the body moves (they used to shuffle at 3x)
       const k = Math.max(0.3, Math.min(simSpeed, 3));
-      p.phase += dtReal * k * (p.kind === 'walk' ? p.speed / (p.action === 'run' ? STRIDE.run : STRIDE.walk) : 1);
+      p.phase += p.kind === 'walk' ? (dt * p.speed) / (p.action === 'run' ? STRIDE.run : STRIDE.walk) : dtReal * k;
       if (p.kind === 'walk') {
         const seg = this.net.segs.get(p.seg);
         if (!seg) continue;
@@ -352,12 +394,12 @@ export class Pedestrians {
         if (p.targetS !== undefined && ((p.dir > 0 && p.s >= p.targetS) || (p.dir < 0 && p.s <= p.targetS))) {
           p.s = p.targetS;
           p.kind = 'wait';
-          p.action = Math.random() < 0.55 ? 'phone' : 'idle';
+          p.action = this.rnd() < 0.55 ? 'phone' : 'idle';
           p.speed = 0;
-          p.life = 22 + Math.random() * 30;
+          p.life = 22 + this.rnd() * 30;
           delete p.targetS;
           this.placeOnSidewalk(p);
-          this.renderer.set(p.h, p.x, p.y, p.z, p.yaw, p.action, p.phase);
+          this.put(p, p.x, p.y, p.z, p.yaw, p.action, p.phase);
           continue;
         }
         // (the sidewalk ends at the kerb where the junction box starts: walking on to
@@ -414,7 +456,7 @@ export class Pedestrians {
               continue;
             }
           } else {
-            const nid = opts[Math.floor(Math.random() * opts.length)];
+            const nid = opts[Math.floor(this.rnd() * opts.length)];
             const ns = this.net.segs.get(nid)!;
             // the side is relative to the road's direction: keep the walker on
             // their own hand (they used to pop across the street at corners)
@@ -449,8 +491,35 @@ export class Pedestrians {
         const seg = this.net.segs.get(p.seg);
         if (!seg || seg.blocked <= 0) { p.life = 0; continue; }
       }
-      p.ryaw = p.ryaw === undefined ? p.yaw : angEase(p.ryaw, p.yaw, 1 - Math.exp(-dtReal * 8));
-      this.renderer.set(p.h, p.x, p.y, p.z, p.ryaw, p.action, p.phase);
+      p.ryaw = p.yaw;
+      this.put(p, p.x, p.y, p.z, p.ryaw, p.action, p.phase);
+    }
+  }
+
+  /** where a person is after this step (draw() shows them between this and where they were a step ago) */
+  private put(p: Ped, x: number, y: number, z: number, yaw: number, action: PersonAction, phase: number) {
+    let P = p.pose;
+    const fresh = !P;
+    if (!P) { P = p.pose = new Float64Array(5); p.pose0 = new Float64Array(5); }
+    P[0] = x; P[1] = y; P[2] = z; P[3] = yaw; P[4] = phase;
+    p.act = action;
+    if (fresh) p.pose0!.set(P);
+  }
+
+  /**
+   * Put the people on screen, `alpha` of the way (0..1) from where each was a step ago to where they are now. The body turns toward
+   * its heading over a moment of real time (`dtReal` seconds since the last draw). Changes nothing they do.
+   */
+  draw(alpha: number, dtReal = 0) {
+    const a = Math.max(0, Math.min(1, alpha)), turn = dtReal > 0 ? 1 - Math.exp(-dtReal * 9) : 1;
+    for (const p of this.peds) {
+      const P = p.pose, P0 = p.pose0;
+      if (!P || !P0) continue;
+      const S = (p.shown ??= new Float64Array(4));
+      const fresh = S[1] === 0 && S[0] === 0 && S[2] === 0;
+      if (a >= 1) { S[0] = P[0]; S[1] = P[1]; S[2] = P[2]; } else { S[0] = P0[0] + (P[0] - P0[0]) * a; S[1] = P0[1] + (P[1] - P0[1]) * a; S[2] = P0[2] + (P[2] - P0[2]) * a; }
+      S[3] = fresh ? P[3] : angEase(S[3], P[3], turn);
+      this.renderer.set(p.h, S[0], S[1], S[2], S[3], p.act ?? p.action, a >= 1 ? P[4] : P0[4] + (P[4] - P0[4]) * a);
     }
     this.renderer.flush();
   }
@@ -545,7 +614,7 @@ export class Pedestrians {
     const ok = list.filter((b) => (out.get(b.id) ?? 0) < Math.max(1, Math.ceil(b.occ * 0.12)) && this.clock - (this.lastOut.get(b.id) ?? -1e9) >= DOOR_GAP + (b.id % 5));
     let total = 0;
     for (const b of ok) total += Math.max(1, b.occ);
-    let r = Math.random() * total;
+    let r = this.rnd() * total;
     let pick: Bld | null = ok[ok.length - 1] ?? null;
     for (const b of ok) { r -= Math.max(1, b.occ); if (r <= 0) { pick = b; break; } }
     if (pick) this.lastOut.set(pick.id, this.clock);
@@ -553,7 +622,7 @@ export class Pedestrians {
   }
 
   private trySpawn(cam: THREE.Vector3, R: number, town = true, communeOk = true) {
-    const r = communeOk && !town ? 0.18 : Math.random();
+    const r = communeOk && !town ? 0.18 : this.rnd();
     if (!town && r >= 0.2) return;
     // codex:transit begin - turn simulated boardings into small visible waiting crowds
     if (r < 0.16 && this.transitStops && town) {
@@ -565,13 +634,13 @@ export class Pedestrians {
         const p = seg.samp.pts[Math.min(seg.samp.pts.length - 1, Math.round((s.s / seg.length) * (seg.samp.pts.length - 1)))];
         return Math.abs(p.x - cam.x) < R && Math.abs(p.z - cam.z) < R && (atStop.get(s.id) ?? 0) < Math.min(8, Math.ceil(s.riders / 8));
       });
-      const stop = stops[Math.floor(Math.random() * stops.length)];
+      const stop = stops[Math.floor(this.rnd() * stops.length)];
       const seg = stop && this.net.segs.get(stop.seg);
       if (stop && seg) {
-        const approach = 18 + Math.random() * 34;
+        const approach = 18 + this.rnd() * 34;
         const dir: 1 | -1 = stop.s > seg.length / 2 ? -1 : 1;
         const startS = clamp(stop.s - approach * dir, 0, seg.length);
-        const p: NewPed = { arch: this.archFor('wait'), kind: 'walk', action: 'walk', seg: stop.seg, dir, s: startS, side: stop.side, speed: 1.05 + Math.random() * 0.35, life: 65, x: 0, y: 0, z: 0, yaw: 0, phase: Math.random() * 10, label: stop.label, transitStopId: stop.id, targetS: stop.s };
+        const p: NewPed = { arch: this.archFor('wait'), kind: 'walk', action: 'walk', seg: stop.seg, dir, s: startS, side: stop.side, speed: 1.05 + this.rnd() * 0.35, life: 65, x: 0, y: 0, z: 0, yaw: 0, phase: this.rnd() * 10, label: stop.label, transitStopId: stop.id, targetS: stop.s };
         this.placeOnSidewalk(p as Ped);
         // riders come out of a building on that street when there is one
         const from = this.b.near(p.x, p.z, 70).find((b) => b.seg === stop.seg && b.state === 'active' && isZoned(b));
@@ -585,15 +654,15 @@ export class Pedestrians {
     if (r < 0.2 && communeOk) {
       const c = this.communes.list.find((c) => c.state !== 'gone' && Math.abs(c.x - cam.x) < R && Math.abs(c.z - cam.z) < R && this.peds.filter((p) => p.communeId === c.id).length < Math.min(24, c.members));
       if (c) {
-        const a = Math.random() * Math.PI * 2, d = Math.random() * c.r * 0.7;
+        const a = this.rnd() * Math.PI * 2, d = this.rnd() * c.r * 0.7;
         const x = c.x + Math.cos(a) * d, z = c.z + Math.sin(a) * d;
         const acts: PersonAction[] = ['drum', 'dance', 'yoga', 'smoke', 'idle', 'dance', 'drum', 'sit'];
         // codex:policies begin -- smoke-free districts suppress visible smoking actions
-        let action = acts[Math.floor(Math.random() * acts.length)];
+        let action = acts[Math.floor(this.rnd() * acts.length)];
         if (action === 'smoke' && this.policySmokingAllowedAt?.(x, z) === false) action = 'idle';
         // codex:policies end
-        const hx = c.x + (Math.random() - 0.5) * 6, hz = c.z + (Math.random() - 0.5) * 6;
-        this.addFrom({ arch: this.archFor('commune'), kind: 'commune', action, seg: 0, dir: 1, s: 0, side: 1, speed: 0, life: 60 + Math.random() * 90, x, y: this.terrain.h(x, z), z, yaw: Math.atan2(c.x + 8 - x, c.z - 4 - z), phase: Math.random() * 10, communeId: c.id, label: c.name }, { x: hx, z: hz });
+        const hx = c.x + (this.rnd() - 0.5) * 6, hz = c.z + (this.rnd() - 0.5) * 6;
+        this.addFrom({ arch: this.archFor('commune'), kind: 'commune', action, seg: 0, dir: 1, s: 0, side: 1, speed: 0, life: 60 + this.rnd() * 90, x, y: this.terrain.h(x, z), z, yaw: Math.atan2(c.x + 8 - x, c.z - 4 - z), phase: this.rnd() * 10, communeId: c.id, label: c.name }, { x: hx, z: hz });
         return;
       }
     }
@@ -605,14 +674,14 @@ export class Pedestrians {
         if (seg.blocked <= 0 || !seg.name.startsWith('')) continue;
         const protestors = this.peds.filter((p) => p.kind === 'protest' && p.seg === seg.id).length;
         if (protestors > 14) continue;
-        const { i, f } = locate(seg.samp, seg.length / 2 + (Math.random() - 0.5) * 16);
+        const { i, f } = locate(seg.samp, seg.length / 2 + (this.rnd() - 0.5) * 16);
         const a = seg.samp.pts[i], b = seg.samp.pts[i + 1];
         const tan = norm(sub(b, a));
-        const w = (Math.random() - 0.5) * ROAD_TYPES[seg.type].width * 0.8;
+        const w = (this.rnd() - 0.5) * ROAD_TYPES[seg.type].width * 0.8;
         const x = lerp(a.x, b.x, f) - tan.z * w, z = lerp(a.z, b.z, f) + tan.x * w;
-        const side = Math.random() < 0.5 ? 1 : -1, hw = ROAD_TYPES[seg.type].width / 2 + 1.5;
+        const side = this.rnd() < 0.5 ? 1 : -1, hw = ROAD_TYPES[seg.type].width / 2 + 1.5;
         const curb = { x: lerp(a.x, b.x, f) - tan.z * hw * side, z: lerp(a.z, b.z, f) + tan.x * hw * side };
-        this.addFrom({ arch: this.archFor('protest'), kind: 'protest', action: 'protest', seg: seg.id, dir: 1, s: 0, side: 1, speed: 0, life: 200, x, y: lerp(seg.hs[i], seg.hs[i + 1], f) + 0.1, z, yaw: Math.atan2(tan.x, tan.z) + (Math.random() < 0.5 ? 0 : Math.PI), phase: Math.random() * 10, label: 'Protester' }, curb);
+        this.addFrom({ arch: this.archFor('protest'), kind: 'protest', action: 'protest', seg: seg.id, dir: 1, s: 0, side: 1, speed: 0, life: 200, x, y: lerp(seg.hs[i], seg.hs[i + 1], f) + 0.1, z, yaw: Math.atan2(tan.x, tan.z) + (this.rnd() < 0.5 ? 0 : Math.PI), phase: this.rnd() * 10, label: 'Protester' }, curb);
         return;
       }
     }
@@ -622,7 +691,7 @@ export class Pedestrians {
       const bld = list.length ? this.pickBuilding(list) : null;
       if (bld) {
         const c = Math.cos(bld.yaw), s = Math.sin(bld.yaw);
-        const lx = (Math.random() - 0.5) * bld.hw * 1.6, lz = bld.hd - 2 - Math.random() * 3;
+        const lx = (this.rnd() - 0.5) * bld.hw * 1.6, lz = bld.hd - 2 - this.rnd() * 3;
         const x = bld.x + lx * c + lz * s, z = bld.z - lx * s + lz * c;
         const arch = this.archFor('loiter', bld.brand);
         // codex:policies begin -- smoke-free districts remove smoke/vape loiter actions
@@ -630,7 +699,7 @@ export class Pedestrians {
         if (this.policySmokingAllowedAt?.(x, z) === false) vices = vices.filter((a) => a !== 'smoke' && a !== 'vape');
         if (!vices.length) vices = ['phone'];
         // codex:policies end
-        this.addFrom({ arch, kind: 'loiter', action: vices[Math.floor(Math.random() * vices.length)], seg: 0, dir: 1, s: 0, side: 1, speed: 0, life: 25 + Math.random() * 40, x, y: bld.y + 0.05, z, yaw: bld.yaw + (Math.random() - 0.5) * 1.5, phase: Math.random() * 10, label: bld.label, fromBld: bld.id }, this.door(bld));
+        this.addFrom({ arch, kind: 'loiter', action: vices[Math.floor(this.rnd() * vices.length)], seg: 0, dir: 1, s: 0, side: 1, speed: 0, life: 25 + this.rnd() * 40, x, y: bld.y + 0.05, z, yaw: bld.yaw + (this.rnd() - 0.5) * 1.5, phase: this.rnd() * 10, label: bld.label, fromBld: bld.id }, this.door(bld));
         return;
       }
     }
@@ -640,22 +709,22 @@ export class Pedestrians {
       const bld = yards.length ? this.pickBuilding(yards) : null;
       if (bld) {
         const c = Math.cos(bld.yaw), s = Math.sin(bld.yaw);
-        const back = Math.random() < 0.5;
-        const lx = (Math.random() - 0.5) * bld.hw * 1.3, lz = back ? -bld.hd + 2 + Math.random() * 2.5 : bld.hd - 1.6 - Math.random() * 2;
+        const back = this.rnd() < 0.5;
+        const lx = (this.rnd() - 0.5) * bld.hw * 1.3, lz = back ? -bld.hd + 2 + this.rnd() * 2.5 : bld.hd - 1.6 - this.rnd() * 2;
         const at = (ox: number, oz: number) => ({ x: bld.x + ox * c + oz * s, z: bld.z - ox * s + oz * c });
         const acts: PersonAction[] = back ? ['drink', 'drink', 'phone', 'smoke', 'idle', 'dance', 'drink'] : ['phone', 'idle', 'drink', 'smoke', 'idle'];
         const pick = () => {
-          const a = acts[Math.floor(Math.random() * acts.length)];
+          const a = acts[Math.floor(this.rnd() * acts.length)];
           return (a === 'smoke' || a === 'vape') && this.policySmokingAllowedAt?.(bld.x, bld.z) === false ? 'idle' : a;
         };
         // out back, often two of them facing each other
-        const pals = back && Math.random() < 0.45 ? 2 : 1;
+        const pals = back && this.rnd() < 0.45 ? 2 : 1;
         // they come round the side of the house (the front door for the front yard)
         const from = back ? at(Math.sign(lx || 1) * bld.hw * 0.9, lz) : this.door(bld);
         for (let k = 0; k < pals; k++) {
           const p = at(lx + k * 1.3, lz);
-          const yaw = pals > 1 ? bld.yaw + (k ? -Math.PI / 2 : Math.PI / 2) : bld.yaw + (back ? Math.PI : 0) + (Math.random() - 0.5) * 1.2;
-          this.addFrom({ arch: this.archFor('loiter'), kind: 'loiter', action: pick(), seg: 0, dir: 1, s: 0, side: 1, speed: 0, life: 30 + Math.random() * 45, x: p.x, y: this.terrain.h(p.x, p.z) + 0.05, z: p.z, yaw, phase: Math.random() * 10, label: bld.label, fromBld: bld.id }, from);
+          const yaw = pals > 1 ? bld.yaw + (k ? -Math.PI / 2 : Math.PI / 2) : bld.yaw + (back ? Math.PI : 0) + (this.rnd() - 0.5) * 1.2;
+          this.addFrom({ arch: this.archFor('loiter'), kind: 'loiter', action: pick(), seg: 0, dir: 1, s: 0, side: 1, speed: 0, life: 30 + this.rnd() * 45, x: p.x, y: this.terrain.h(p.x, p.z) + 0.05, z: p.z, yaw, phase: this.rnd() * 10, label: bld.label, fromBld: bld.id }, from);
         }
         return;
       }
@@ -668,17 +737,17 @@ export class Pedestrians {
     if (!seg || seg.type === 'highway') return;
     const c = closestOnSampled({ x: bld.x, z: bld.z }, seg.samp);
     // anywhere along the frontage, not all from the same spot
-    const sAt = clamp(c.s + (Math.random() - 0.5) * Math.min(10, bld.hw * 1.6), 1, seg.length - 1);
+    const sAt = clamp(c.s + (this.rnd() - 0.5) * Math.min(10, bld.hw * 1.6), 1, seg.length - 1);
     const { i, f } = locate(seg.samp, sAt);
     const a = seg.samp.pts[i], b = seg.samp.pts[i + 1];
     const tan = norm(sub(b, a));
     const side: 1 | -1 = (bld.x - lerp(a.x, b.x, f)) * -tan.z + (bld.z - lerp(a.z, b.z, f)) * tan.x >= 0 ? 1 : -1;
-    const p: NewPed = { arch: this.archFor('walk', bld.brand), kind: 'walk', action: Math.random() < 0.1 ? 'run' : 'walk', seg: seg.id, dir: Math.random() < 0.5 ? 1 : -1, s: sAt, side, speed: 1.1 + Math.random() * 0.6, life: 40 + Math.random() * 60, x: 0, y: 0, z: 0, yaw: 0, phase: Math.random() * 10, label: seg.name, fromBld: bld.id, lat: 0 };
+    const p: NewPed = { arch: this.archFor('walk', bld.brand), kind: 'walk', action: this.rnd() < 0.1 ? 'run' : 'walk', seg: seg.id, dir: this.rnd() < 0.5 ? 1 : -1, s: sAt, side, speed: 1.1 + this.rnd() * 0.6, life: 40 + this.rnd() * 60, x: 0, y: 0, z: 0, yaw: 0, phase: this.rnd() * 10, label: seg.name, fromBld: bld.id, lat: 0 };
     if (p.action === 'run') p.speed = 3;
     this.placeOnSidewalk(p as Ped);
     // a quarter walk with someone, side by side, in step-ish
-    if (p.action === 'walk' && (ROAD_TYPES[seg.type].sidewalk > 1.5) && Math.random() < 0.25 && this.peds.length < this.max - 1) {
-      const q: NewPed = { ...p, arch: this.archFor('walk', bld.brand), lat: -0.72, phase: p.phase + 0.45 + Math.random() * 0.1, x: 0, y: 0, z: 0 };
+    if (p.action === 'walk' && (ROAD_TYPES[seg.type].sidewalk > 1.5) && this.rnd() < 0.25 && this.peds.length < this.max - 1) {
+      const q: NewPed = { ...p, arch: this.archFor('walk', bld.brand), lat: -0.72, phase: p.phase + 0.45 + this.rnd() * 0.1, x: 0, y: 0, z: 0 };
       this.placeOnSidewalk(q as Ped);
       const dr = this.door(bld);
       this.goTo(q as Ped, dr.x, dr.z, q.x, q.z, false);

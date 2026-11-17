@@ -5,7 +5,9 @@
 import * as THREE from 'three';
 import type { LandmarkId, VehicleKind } from '../contracts';
 import { clamp, closestOnSampled, lerp, locate, norm, sub, V2 } from '../core/math';
-import { fx } from '../core/rng';
+import { fx, Rng } from '../core/rng';
+import { STEP_SECONDS } from '../core/time';
+import { decode, encode, type Json, type Refs } from '../core/snapshot';
 import type { RNode, RoadNetwork, RSeg } from '../roads/network';
 import { carriageHalf, laneOffset, ROAD_TYPES, type RoadType } from '../roads/roadTypes';
 // where cars stop short of a junction (m before the box): behind the crosswalk at the box's edge, and the paint's too
@@ -16,9 +18,14 @@ import { FIXED_PAINT, randomVehicleKind, VEHICLE_SPECS, VehicleRenderer } from '
 import { LANDMARK_EVENTS, type Parking, type WorldSpot } from './parking';
 import { ARCHETYPES } from './people';
 import { HALF } from '../config';
+import { TUNING } from '../sim/tuning';
 
 /** Cars the simulation runs at once, whatever the graphics preset can draw. */
 const SIM_MAX_CARS = 1000;
+/** Traffic's fields that are not state: what it is wired to, what it draws with, and caches it rebuilds as it goes. */
+const TRAFFIC_NOT_SAVED = new Set(['renderer', 'net', 'b', 'parking', 'rng', 'rnd', 'handlers', 'listPool', 'segDirIndex', 'bendCuts', 'stopBacks', 'maxCars', 'ppA', 'ppB']);
+/** A car's fields that are only how it is drawn (made again on load). */
+const CAR_NOT_SAVED = new Set(['h', 'toSpot', 'fromSpot', 'parked', 'drawn', 'sent', 'shown', 'smokeT']);
 
 interface Step {
   seg: number;
@@ -31,6 +38,8 @@ export type Hold = 'lead' | 'side' | 'box tail' | 'box merge' | 'drive-thru' | '
 export interface Car {
   id: number;
   h: number;
+  /** its colour (a look, kept so a car is the same colour after a reload) */
+  paint: number;
   /** live parking (drawn only): the stall it pulls into, the one it backs out of, and whether parking kept its handle */
   toSpot?: WorldSpot | null;
   fromSpot?: WorldSpot | null;
@@ -84,6 +93,15 @@ export interface Car {
   /** seconds until this driver will change lanes again */
   laneCd: number;
   crashed: number;
+  /** drawn pose now and a step ago: x, y, z, heading, pitch, roll (draw() shows the car between them) */
+  pose: Float64Array;
+  pose0: Float64Array;
+  /** has a pose yet (false until its first step) */
+  posed: boolean;
+  /** how many frames running draw() has sent this standing pose (after STILL_FRAMES it is left alone) */
+  sent: number;
+  /** where it was last drawn: x, y, z, heading (between its last two steps; what a camera following it, or a test of smooth motion, reads) */
+  shown: Float64Array;
   crashYaw: number;
   crashRoll: number;
   x: number;
@@ -114,6 +132,8 @@ export interface Car {
   fromB?: Bld | null;
   /** set when the trip reached its destination */
   arrived?: boolean;
+  /** what to do when the trip ends: [handler name, ...numbers] (Traffic.handlers); unset for an ordinary trip */
+  done?: (string | number)[];
   /** seconds of brake lights left (set when slowing hard) */
   brakeT: number;
   /** last acceleration (m/s²) and the body's lean out of turns / nose dive under braking (radians) */
@@ -138,7 +158,11 @@ export interface DispatchOpts {
   sober?: boolean;
   /** counts as a town car (true) or an out-of-towner (false); default true */
   local?: boolean;
-  onDone?: (c: Car, arrived: boolean) => void;
+  /**
+   * What to do when the trip ends, as a name and numbers: [handler, ...args]. The handler is looked up in Traffic.handlers
+   * and called with (car, arrived, ...args). A name, not a function, so a trip under way can be saved and picked up again.
+   */
+  done?: (string | number)[];
 }
 
 /** Direction of a road between samples i and i+1; repeated samples borrow their neighbours' (a zero-length step has no direction). */
@@ -469,7 +493,7 @@ export class Traffic {
     if (!landmarks.length || hour < 9 || hour >= 21) return null;
     const pull = landmarks.map((b) => (b.landmark && VISIT_PULL[b.landmark]) || 0), total = pull.reduce((a, v) => a + v, 0);
     const cap = Math.min(total, VISIT_MAX);
-    let r = Math.random() * Math.max(total, VISIT_MAX);
+    let r = this.rnd() * Math.max(total, VISIT_MAX);
     if (r >= cap) return null;
     const home = r < cap / 2;
     r *= total / cap;
@@ -505,13 +529,13 @@ export class Traffic {
           plan = [];
           const d = this.anchor(b), n = Math.round(Math.min(EVENT_MAX, this.pop * e.crowd));
           for (let i = 0; d && i < n; i++) {
-            const home = res[Math.floor(Math.random() * res.length)], o = this.anchor(home);
+            const home = res[Math.floor(this.rnd() * res.length)], o = this.anchor(home);
             if (!o) continue;
             const rt = this.route(o.seg, o.s, d.seg, d.s);
             let secs = 0;
             if (rt) for (const x of rt.steps) { const s3 = this.net.segs.get(x.seg); if (s3) secs += this.segCost(s3, x.dir > 0 ? 0 : 1); }
             // (the longest drives set off over the first EVENT_EARLY hours, not all at once)
-            plan.push({ home, at: Math.min(EVENT_ARRIVE - Math.random() * EVENT_EARLY, (secs * EVENT_SLACK) / CLOCK_HOUR + Math.random() * EVENT_EARLY) });
+            plan.push({ home, at: Math.min(EVENT_ARRIVE - this.rnd() * EVENT_EARLY, (secs * EVENT_SLACK) / CLOCK_HOUR + this.rnd() * EVENT_EARLY) });
           }
           plan.sort((x, y) => y.at - x.at);
           this.crowdPlan.set(b, plan);
@@ -520,7 +544,7 @@ export class Traffic {
         // again next step, and the rest don't wait on them (when they did, a queued road kept a third at home)
         for (let i = 0, k = 0, n = 0; i < plan.length && plan[i].at >= until && k < 4 && n < 12 && this.cars.length < SIM_MAX_CARS; n++) {
           const home = plan[i].home, o = this.anchor(home), d = this.anchor(b);
-          if (o && d && !this.launch(o, d, home, b, randomVehicleKind(Math.random), e.purpose, b.label, true, hour)) { i++; continue; }
+          if (o && d && !this.launch(o, d, home, b, randomVehicleKind(this.rnd), e.purpose, b.label, true, hour)) { i++; continue; }
           plan.splice(i, 1);
           k++;
         }
@@ -531,10 +555,10 @@ export class Traffic {
       const crowd = Math.min(EVENT_MAX, this.pop * e.crowd);
       let due = (this.crowdDue.get(b) ?? 0) + (crowd / (EVENT_OUT * CLOCK_HOUR)) * dt;
       for (let k = 0; due >= 1 && k < 4 && this.cars.length < SIM_MAX_CARS; k++) {
-        const home = res[Math.floor(Math.random() * res.length)];
+        const home = res[Math.floor(this.rnd() * res.length)];
         const o = this.anchor(b), d = this.anchor(home);
         // (the lot's exit busy, or its queue full: this one goes next step)
-        if (!o || !d || !this.launch(o, d, b, home, randomVehicleKind(Math.random), 'heading home', home.label, true, hour)) break;
+        if (!o || !d || !this.launch(o, d, b, home, randomVehicleKind(this.rnd), 'heading home', home.label, true, hour)) break;
         due -= 1;
         this.crowdIn.set(b, (this.crowdIn.get(b) ?? 1) - 1);
       }
@@ -616,7 +640,8 @@ export class Traffic {
   totalTrips = 0;
   crashes = 0;
   /** game wiring */
-  onCrash?: (cars: Car[], seg: RSeg | undefined, drunk: boolean) => void;
+  /** a crash: the cars in it, where (the middle of the cars that crashed just now) and how bad, 0..1 (see crash()) */
+  onCrash?: (cars: Car[], seg: RSeg | undefined, drunk: boolean, severity: number, x: number, z: number) => void;
   onJam?: (seg: RSeg) => void;
   onEmit?: (kind: 'cigarette' | 'smoke' | 'spark' | 'fire', x: number, y: number, z: number, n: number) => void;
   // codex:freight begin - real goods scheduler owns freight spawning when set
@@ -725,7 +750,7 @@ export class Traffic {
         phaseOf.set(ang[j].id, phases++);
       }
       for (const e of ang) if (!phaseOf.has(e.id)) phaseOf.set(e.id, phases++);
-      this.signals.set(n.id, { phaseOf, phases, t: old.get(n.id)?.t ?? Math.random() * 20 });
+      this.signals.set(n.id, { phaseOf, phases, t: old.get(n.id)?.t ?? this.rnd() * 20 });
     }
   }
 
@@ -1009,9 +1034,9 @@ export class Traffic {
     let o: { seg: RSeg; s: number } | null = null, d: { seg: RSeg; s: number } | null = null;
     let oB: Bld | null = null, dB: Bld | null = null;
     let local = true;
-    let purpose = 'cruising', dest = 'nowhere in particular', kind: VehicleKind = randomVehicleKind(Math.random);
+    let purpose = 'cruising', dest = 'nowhere in particular', kind: VehicleKind = randomVehicleKind(this.rnd);
     let visit: { b: Bld; purpose: string; home: boolean } | null = null;
-    const pick = <T>(a: T[]) => a[Math.floor(Math.random() * a.length)];
+    const pick = <T>(a: T[]) => a[Math.floor(this.rnd() * a.length)];
     // Out-of-towners arrive and leave by the highway (outside connections).
     // Their share grows with jobs the locals can't fill, plus tourists,
     // freight and through traffic. Locals' cars live in town.
@@ -1019,9 +1044,9 @@ export class Traffic {
     const unfilled = this.jobsNow > 0 ? clamp((this.jobsNow - workers) / this.jobsNow, 0, 0.9) : 0;
     const pOutside = !edges.length ? 0 : list.length < 4 ? 1 : clamp(0.14 + unfilled * 0.6, 0.14, 0.85);
     const inbound = !(evening || hour >= 19.5 || hour < 4);
-    if (Math.random() < pOutside) {
+    if (this.rnd() < pOutside) {
       local = false;
-      const r = Math.random();
+      const r = this.rnd();
       const edgeO = pick(edges);
       if (r < 0.2 && edges.length > 1) {
         // through traffic: in one connection, out another
@@ -1030,21 +1055,21 @@ export class Traffic {
         o = edgeO; d = e2;
         purpose = 'passing through';
         dest = 'the next county';
-        if (Math.random() < 0.3) kind = Math.random() < 0.5 ? 'semi' : 'boxTruck';
+        if (this.rnd() < 0.3) kind = this.rnd() < 0.5 ? 'semi' : 'boxTruck';
       // codex:freight begin - suppress legacy random cargo when real freight is installed
       } else if (!this.freightTrip && r < 0.42 && (shops.length || ind.length)) {
       // codex:freight end
         // freight: imports to shops/industry, exports from industry
-        kind = Math.random() < 0.55 ? 'semi' : 'boxTruck';
-        if (ind.length && (Math.random() < 0.45 || !shops.length)) {
-          if (Math.random() < 0.5) { oB = pick(ind); o = this.anchor(oB); d = edgeO; purpose = 'exporting goods'; dest = 'the interstate'; }
+        kind = this.rnd() < 0.55 ? 'semi' : 'boxTruck';
+        if (ind.length && (this.rnd() < 0.45 || !shops.length)) {
+          if (this.rnd() < 0.5) { oB = pick(ind); o = this.anchor(oB); d = edgeO; purpose = 'exporting goods'; dest = 'the interstate'; }
           else { dB = pick(ind); o = edgeO; d = this.anchor(dB); purpose = 'delivering raw materials'; dest = dB.label; }
         } else {
           dB = pick(shops); o = edgeO; d = this.anchor(dB); purpose = 'importing goods'; dest = dB.label;
         }
       } else if (list.length) {
         // commuters, shoppers, tourists
-        const tgt = jobs.length && Math.random() < 0.7 ? pick(jobs) : pick(list);
+        const tgt = jobs.length && this.rnd() < 0.7 ? pick(jobs) : pick(list);
         if (inbound) { dB = tgt; o = edgeO; d = this.anchor(tgt); purpose = jobs.includes(tgt) && hour < 12 ? 'commuting in from out of town' : 'visiting from out of town'; dest = tgt.label; }
         else { oB = tgt; o = this.anchor(tgt); d = edgeO; purpose = 'heading home out of town'; dest = 'a cheaper county'; }
       } else {
@@ -1052,12 +1077,12 @@ export class Traffic {
         o = edgeO; d = pick(edges); purpose = 'passing through'; dest = 'somewhere with a Waffle Hut';
       }
     // codex:freight begin - local deliveries come from conserved factory stock
-    } else if (!this.freightTrip && ind.length && shops.length && Math.random() < 0.14) {
+    } else if (!this.freightTrip && ind.length && shops.length && this.rnd() < 0.14) {
     // codex:freight end
       oB = pick(ind); dB = pick(shops);
       o = this.anchor(oB);
       d = this.anchor(dB);
-      kind = Math.random() < 0.5 ? 'boxTruck' : 'semi';
+      kind = this.rnd() < 0.5 ? 'boxTruck' : 'semi';
       purpose = 'delivering goods';
       dest = dB.label;
     } else if (res.length && (visit = this.visitTarget(hour, landmarks))) {
@@ -1068,7 +1093,7 @@ export class Traffic {
       d = this.anchor(dB);
       purpose = visit.purpose;
       dest = dB.label;
-    } else if (res.length && this.openings.size && Math.random() < OPENING_SHARE) {
+    } else if (res.length && this.openings.size && this.rnd() < OPENING_SHARE) {
       // a drive-thru's grand opening: half the town goes
       const [open] = [...this.openings.keys()];
       oB = pick(res); dB = open;
@@ -1078,9 +1103,9 @@ export class Traffic {
       dest = dB.label;
     } else if (res.length && jobs.length) {
       const home = pick(res);
-      const other = morning || evening ? pick(jobs) : shops.length && Math.random() < 0.7 ? pick(shops) : pick(jobs);
+      const other = morning || evening ? pick(jobs) : shops.length && this.rnd() < 0.7 ? pick(shops) : pick(jobs);
       if (evening) { oB = other; dB = home; purpose = 'going home'; dest = home.label; }
-      else { oB = home; dB = other; purpose = morning ? 'going to work' : Math.random() < 0.5 ? 'getting drive-thru' : 'shopping'; dest = other.label; }
+      else { oB = home; dB = other; purpose = morning ? 'going to work' : this.rnd() < 0.5 ? 'getting drive-thru' : 'shopping'; dest = other.label; }
       o = this.anchor(oB);
       d = this.anchor(dB);
     } else if (list.length >= 2) {
@@ -1103,11 +1128,11 @@ export class Traffic {
    */
   dispatch(kind: VehicleKind, from: TripEnd, to: TripEnd, purpose: string, dest: string, hour: number, opts: DispatchOpts = {}): Car | null {
     const edges = from === 'edge' || to === 'edge' ? this.edgeAnchors() : [];
-    const end = (e: TripEnd) => e === 'edge' ? (edges.length ? edges[Math.floor(Math.random() * edges.length)] : null) : this.anchor(e);
+    const end = (e: TripEnd) => e === 'edge' ? (edges.length ? edges[Math.floor(this.rnd() * edges.length)] : null) : this.anchor(e);
     const o = end(from), d = end(to);
     if (!o || !d) return null;
     const car = this.launch(o, d, from === 'edge' ? null : from, to === 'edge' ? null : to, kind, purpose, dest, opts.local ?? true, hour, opts.sober);
-    if (car && opts.onDone) car.onDone = opts.onDone;
+    if (car && opts.done) car.done = opts.done;
     return car;
   }
 
@@ -1142,25 +1167,26 @@ export class Traffic {
     const spec = VEHICLE_SPECS[kind];
     // a trip happens whether or not the graphics preset has a free vehicle
     // to draw it: -1 = simulated but not drawn (set/remove ignore it)
-    const h = this.renderer.add(kind, FIXED_PAINT[kind] ?? PAINT[Math.floor(Math.random() * PAINT.length)]);
+    const paint = FIXED_PAINT[kind] ?? PAINT[Math.floor(fx.float() * PAINT.length)];
+    const h = this.renderer.add(kind, paint);
     const night = hour > 21 || hour < 4;
-    const drunk = !sober && Math.random() < (night ? DRUNK_NIGHT : DRUNK_DAY);
+    const drunk = !sober && this.rnd() < (night ? DRUNK_NIGHT : DRUNK_DAY);
     const firstSeg = this.net.segs.get(rt.steps[0].seg)!;
     const car: Car = {
-      id: this.nextId++, h, kind, path: rt.steps, pi: 0, s: rt.startS, startS: rt.startS, endS: rt.endS,
-      lane: Math.floor(Math.random() * ROAD_TYPES[firstSeg.type].lanesPerDir), v: 4, v0mul: (0.9 + Math.random() * 0.25) * (drunk ? 1.25 : 1),
+      id: this.nextId++, h, paint, kind, path: rt.steps, pi: 0, s: rt.startS, startS: rt.startS, endS: rt.endS,
+      lane: Math.floor(this.rnd() * ROAD_TYPES[firstSeg.type].lanesPerDir), v: 4, v0mul: (0.9 + this.rnd() * 0.25) * (drunk ? 1.25 : 1),
       // codex:policies begin -- a smoke-free endpoint disables the visible in-car smoking effect
-      len: spec.length, drunk, reckless: drunk || (!sober && Math.random() < RECKLESS), smoker: !sober && (!oB || this.policySmokingAllowed?.(oB) !== false) && (!dB || this.policySmokingAllowed?.(dB) !== false) && Math.random() < 0.2, redsRun: 0, wob: Math.random() * 10,
+      len: spec.length, drunk, reckless: drunk || (!sober && this.rnd() < RECKLESS), smoker: !sober && (!oB || this.policySmokingAllowed?.(oB) !== false) && (!dB || this.policySmokingAllowed?.(dB) !== false) && this.rnd() < 0.2, redsRun: 0, wob: this.rnd() * 10,
       // codex:policies end
-      junction: null, crashed: 0, crashYaw: 0, crashRoll: 0, x: 0, y: 0, z: 0, yaw: 0, purpose, dest,
-      lat: NaN, latV: 0, ryaw: NaN, turn: 0, turnV: Infinity, turnFor: -1, laneCd: 2 + Math.random() * 3, brakeT: 0, acc: 0, roll: 0, dive: 0,
-      driver: Math.floor(Math.random() * ARCHETYPES.length), smokeT: Math.random() * 2, bac: drunk ? 0.09 + Math.random() * 0.2 : 0,
+      junction: null, crashed: 0, pose: new Float64Array(6), pose0: new Float64Array(6), posed: false, sent: 0, shown: new Float64Array(4), crashYaw: 0, crashRoll: 0, x: 0, y: 0, z: 0, yaw: 0, purpose, dest,
+      lat: NaN, latV: 0, ryaw: NaN, turn: 0, turnV: Infinity, turnFor: -1, laneCd: 2 + this.rnd() * 3, brakeT: 0, acc: 0, roll: 0, dive: 0,
+      driver: Math.floor(this.rnd() * ARCHETYPES.length), smokeT: fx.float() * 2, bac: drunk ? 0.09 + this.rnd() * 0.2 : 0,
       dep: 0, arr: -1, lotO: null, lotD: null, local,
       // (every field a car can get, there from the start: one shape for all of them, so the loops over a thousand cars
       // read one kind of object; added as they came up, they made a dozen, and every read checked which)
       toSpot: undefined, fromSpot: undefined, parked: undefined, destB: undefined, thruB: undefined, thru: undefined, thruWait: undefined,
       drawn: undefined, pedNode: undefined, hold: undefined, boxWait: undefined, boxPath: undefined, prevJ: undefined, prevEntryS: undefined,
-      wait: undefined, committed: undefined, lotLeft: undefined, fromB: undefined, arrived: undefined, onDone: undefined,
+      wait: undefined, committed: undefined, lotLeft: undefined, fromB: undefined, arrived: undefined, done: undefined,
     };
     // pull out of the origin lot / pull into the destination lot
     if (oB) {
@@ -1198,29 +1224,82 @@ export class Traffic {
 
   private dropCarsOn(segId: number) {
     for (const c of this.cars) {
-      if (c.path.some((st, i) => i >= c.pi && st.seg === segId)) c.crashed = -1; // mark for removal
+      if (c.path.some((st, i) => i >= c.pi && st.seg === segId)) {
+        c.crashed = -1; // mark for removal
+        if (!c.parked && c.h >= 0) { this.renderer.remove(c.h); c.h = -1; }
+      }
     }
   }
 
   // ------------------------------------------------------------------ update
-  update(dtReal: number, simSpeed: number, hour: number, population: number, jobs: number, camTarget: THREE.Vector3) {
-    this.pop = population;
-    this.jobsNow = jobs;
-    const total = dtReal * Math.max(0.0001, simSpeed);
-    const steps = Math.min(8, Math.ceil(total / 0.08));
-    for (let k = 0; k < steps; k++) this.step(dtReal / steps, simSpeed, hour, population, jobs, camTarget, k === steps - 1);
+  /**
+   * Traffic on its own, for tests and dev pages: real seconds at a speed, run as whole fixed steps (what is left over waits for the
+   * next call), then drawn. The game itself calls step() from its fixed step and draw() once a frame.
+   */
+  update(dtReal: number, simSpeed: number, hour: number, population: number, jobs: number, camTarget?: THREE.Vector3) {
+    this.owed += dtReal * simSpeed;
+    while (this.owed >= STEP_SECONDS - 1e-9) { this.owed -= STEP_SECONDS; this.step(STEP_SECONDS, hour, population, jobs); }
+    this.draw(this.owed / STEP_SECONDS, dtReal, camTarget);
   }
+  private owed = 0;
+  /** the traffic's own random stream: seeded from the county's seed, saved with the cars */
+  readonly rng = new Rng(0x7a11);
+  /**
+   * A building is gone: stop planning around it (its visit counts, its event crowd, its grand opening). Cars already on their way
+   * keep their destination and finish the trip as before. Its drive-thru lanes go once the last car has left them.
+   */
+  forget(b: Bld) {
+    this.visits.delete(b); this.crowdDue.delete(b); this.crowdPlan.delete(b); this.crowdIn.delete(b); this.openings.delete(b); this.spilledAt.delete(b);
+    const T = this.thruLanes.get(b);
+    if (T === null || (T && T.lanes.every((L) => !L.q.length) && !this.cars.some((c) => c.thruB === b || c.thru?.L.b === b))) this.thruLanes.delete(b);
+  }
+
+  /** what ends a dispatched trip, by name (see DispatchOpts.done): the systems that send vehicles register theirs once */
+  readonly handlers = new Map<string, (c: Car, arrived: boolean, ...args: number[]) => void>();
+
+  /**
+   * All of it, exactly: every car where it is and what it is doing, the signals, the queues, the lists the next step reads from
+   * the last one, the clocks and the dice. Buildings and roads go out as names (refs). What is only drawn is left out and made
+   * again on load (the renderer's handle, the parking stall a car was drawn in).
+   */
+  serialize(refs: Refs): Json {
+    const part: Record<string, unknown> = {};
+    const self = this as unknown as Record<string, unknown>;
+    for (const k of Object.keys(self)) if (!TRAFFIC_NOT_SAVED.has(k) && typeof self[k] !== 'function') part[k] = self[k];
+    return { rng: this.rng.state, v: encode(part, refs, { skip: (k, holder) => CAR_NOT_SAVED.has(k) && 'crashed' in holder && 'path' in holder }) };
+  }
+
+  /** Put back what serialize() wrote (after the roads and buildings it names exist). */
+  restore(j: Json | undefined, refs: Refs) {
+    const d = j as { rng: number; v: Json } | undefined;
+    if (!d || typeof d !== 'object' || !d.v) return;
+    for (const c of this.cars) if (c.h >= 0) this.renderer.remove(c.h);
+    const part = decode<Record<string, unknown>>(d.v, refs);
+    const self = this as unknown as Record<string, unknown>;
+    for (const k of Object.keys(part)) self[k] = part[k];
+    this.rng.state = d.rng;
+    for (const c of this.cars) {
+      c.h = this.renderer.add(c.kind, c.paint);
+      c.toSpot = null; c.fromSpot = null; c.parked = false; c.drawn = undefined;
+      c.sent = 0; c.shown = new Float64Array(4); c.smokeT = fx.float() * 2;
+    }
+    this.listPool.length = 0;
+    this.segDirIndex = null;
+  }
+  private readonly rnd = () => this.rng.float();
 
   /** why blinkers are on (debug tallies) */
   sigWhy = { box: 0, lot: 0, lane: 0, queue: 0, approach: 0, off: 0 };
-  /** sim seconds in the last step (drives the drawn easing) */
-  private lastDt = 0.016;
+  /** game seconds in the last step (drives the drawn easing) */
+  private lastDt = STEP_SECONDS;
 
-  private step(dtReal: number, simSpeed: number, hour: number, population: number, jobs: number, camTarget: THREE.Vector3, last: boolean) {
-    const dt = dtReal * Math.max(0.0001, simSpeed);
-    this.lastDt = Math.max(dtReal, dt);
+  /** One fixed step of dt game seconds. Everything the traffic decides happens here, and nothing here reads the frame, the camera or the graphics preset. */
+  step(dt: number, hour: number, population: number, jobs: number) {
+    this.pop = population;
+    this.jobsNow = jobs;
+    this.lastDt = dt;
     this.stepN++;
-    if (simSpeed > 0) for (const [nodeId, s] of this.signals) {
+    for (const [nodeId, s] of this.signals) {
       // (the buckets are last step's here: who's waiting at each line)
       // a leading green: one road goes alone while the cycle's clock waits, until its lefts are gone or LEAD_T is up
       if (s.lead) {
@@ -1258,7 +1337,7 @@ export class Traffic {
     this.targetCars = Math.min(SIM_MAX_CARS, Math.round((population * perPerson + jobs * 0.05 + edgeBoost) * tod * induced * this.policyTripMul));
     // codex:policies end
     this.segDirIndex = null;
-    if (simSpeed > 0) {
+    {
       let spawns = 0;
       while (this.cars.length < this.targetCars && spawns < 12) {
         spawns++;
@@ -1345,7 +1424,6 @@ export class Traffic {
     }
 
     let flowSum = 0, flowN = 0;
-    const camX = camTarget.x, camZ = camTarget.z;
     for (const arr of this.buckets.values()) {
       for (let i = 0; i < arr.length; i++) {
         const c = arr[i];
@@ -1478,7 +1556,7 @@ export class Traffic {
           // (a left-turner that waited at the line for oncoming traffic goes as the light changes)
           const sneak = c.turn > 0 && exitS - c.s < 4 + extra && !lead && this.clearing(nodeId, seg.id);
           if (!sneak && !this.isGreen(nodeId, seg.id)) {
-            const runIt = c.reckless && Math.random() < 0.004;
+            const runIt = c.reckless && this.rnd() < 0.004;
             if (runIt) c.redsRun++;
             if (!(c.reckless && c.redsRun > 0 && exitS - c.s < 12)) {
               const g2 = exitS - this.stopBack(nodeId, seg.id, c.lane) - c.s;
@@ -1523,13 +1601,13 @@ export class Traffic {
           let want = c.lane;
           if (!last && c.turn !== 0 && toExit < 140) want = c.turn > 0 ? 0 : lanes - 1;
           else if (lead && gap < 35 && lead.v < v0 * 0.75 && toExit > 50) {
-            const side = c.lane === 0 ? 1 : c.lane === lanes - 1 ? -1 : Math.random() < 0.6 ? 1 : -1;
+            const side = c.lane === 0 ? 1 : c.lane === lanes - 1 ? -1 : this.rnd() < 0.6 ? 1 : -1;
             if (this.laneGap(st, c.lane + side, c) > gap + 12) want = c.lane + side;
           }
           want = clamp(want, 0, lanes - 1);
           if (want !== c.lane) {
             const to = c.lane + Math.sign(want - c.lane);
-            if (this.laneFree(st, to, c)) { c.lane = to; c.laneCd = 2.5 + Math.random() * 3; }
+            if (this.laneFree(st, to, c)) { c.lane = to; c.laneCd = 2.5 + this.rnd() * 3; }
             else c.laneCd = 0.4;
           }
         }
@@ -1560,12 +1638,7 @@ export class Traffic {
         if (lead && gap < 0.2 && gap > -1 && dv > 6 && c.drunk && lead.crashed === 0) { this.crashCause.rear++; this.crash([c, lead], seg, c.drunk); }
         else {
           const p = CRASH_HAZARD * this.crashMul * (c.drunk ? 30 : 1) * (c.reckless ? 5 : 1) * (T.centerTurn ? 1.5 : 1) * (0.3 + c.v / 25) * dt;
-          if (Math.random() < p) { this.crashCause.random++; this.crash(lead && lead.s - c.s < 12 ? [c, lead] : [c], seg, c.drunk); }
-        }
-        // smoking out the window
-        if (c.smoker && Math.abs(c.x - camX) < 300 && Math.abs(c.z - camZ) < 300) {
-          c.smokeT -= dtReal;
-          if (c.smokeT < 0) { c.smokeT = 1.2 + Math.random() * 2; this.onEmit?.('cigarette', c.x, c.y + 1.4, c.z, 1); }
+          if (this.rnd() < p) { this.crashCause.random++; this.crash(lead && lead.s - c.s < 12 ? [c, lead] : [c], seg, c.drunk); }
         }
         if (c.s >= exitS) {
           if (last) {
@@ -1573,7 +1646,7 @@ export class Traffic {
             if (lane) {
               // into the drive-thru lane, to the back of the line
               lane.q.push(c);
-              c.thru = { L: lane, serve: THRU_SERVE + Math.random() * THRU_SERVE_VAR, out: -1, x: c.x, z: c.z, yaw: Number.isFinite(c.ryaw) ? c.ryaw : c.yaw };
+              c.thru = { L: lane, serve: THRU_SERVE + this.rnd() * THRU_SERVE_VAR, out: -1, x: c.x, z: c.z, yaw: Number.isFinite(c.ryaw) ? c.ryaw : c.yaw };
               c.v = 0; c.thruWait = 0;
             } else if (c.lotD) {
               // pull into the lot, then park (in a free stall or the driveway, where there is one)
@@ -1712,7 +1785,7 @@ export class Traffic {
         if (c.toSpot) this.parking?.release(c.toSpot);
         if (!c.parked) this.renderer.remove(c.h);
         else (this.renderer as { setReversing?: (h: number, on: boolean) => void }).setReversing?.(c.h, false);
-        c.onDone?.(c, !!c.arrived);
+        if (c.done) this.handlers.get(String(c.done[0]))?.(c, !!c.arrived, ...(c.done.slice(1) as number[]));
         this.cars[i] = this.cars[this.cars.length - 1];
         this.cars.pop();
       }
@@ -1729,7 +1802,7 @@ export class Traffic {
         if (t > 40) { this.jamTimer.set(seg.id, -200); this.onJam?.(seg); }
       } else if ((this.jamTimer.get(seg.id) ?? 0) > 0) this.jamTimer.set(seg.id, 0);
     }
-    if (last) this.place(dtReal);
+    this.place(dt);
   }
 
   private addMergeBlock(c: Car, courtesy: boolean) {
@@ -2163,11 +2236,17 @@ export class Traffic {
     return { x: F.x + F.r.x * c.lat, z: F.z + F.r.z * c.lat, y: F.y, tx: F.t.x, tz: F.t.z };
   }
 
-  private place(dtReal: number) {
+  /**
+   * Where every car is after this step: its pose (position, heading, pitch, roll), its lights and blinkers. The pose it had a step
+   * ago is kept beside it, and draw() shows the car between the two.
+   */
+  private place(dt: number) {
     const R = this.renderer;
     const ease = 1 - Math.exp(-this.lastDt * 14);
     for (const c of this.cars) {
       if (c.crashed === -1) continue;
+      const P = c.pose, P0 = c.pose0;
+      if (c.posed) { P0[0] = P[0]; P0[1] = P[1]; P0[2] = P[2]; P0[3] = P[3]; P0[4] = P[4]; P0[5] = P[5]; }
       if (c.thru) {
         // in a drive-thru lane: where the line has it, on the lot
         const T = c.thru, gy = this.groundAt ? this.groundAt(T.x, T.z) + 0.1 : T.L.b.y;
@@ -2175,12 +2254,12 @@ export class Traffic {
         // snapped at each one; motiontest caught it)
         c.ryaw = Number.isFinite(c.ryaw) ? angLerp(c.ryaw, T.yaw, ease) : T.yaw;
         c.x = T.x; c.y = gy; c.z = T.z; c.yaw = c.ryaw;
-        R.set(c.h, T.x, gy, T.z, c.ryaw);
+        this.setPose(c, T.x, gy, T.z, c.ryaw, 0, 0);
         R.setBraking(c.h, c.v < 0.5);
         R.setTurn(c.h, 0);
         continue;
       }
-      c.wob += dtReal * (c.drunk ? 1.6 : 0);
+      c.wob += dt * (c.drunk ? 1.6 : 0);
       const D = c.drawn;
       if (D && D.s === c.s && D.pi === c.pi && D.lane === c.lane && D.dep === c.dep && D.arr === c.arr && D.j === c.junction && D.turn === c.turn && c.crashed === 0 && !c.drunk && c.latV === 0 && c.v === 0) {
         if (++D.still >= STILL_FRAMES) { this.sigWhy[D.why]++; continue; }
@@ -2293,8 +2372,8 @@ export class Traffic {
         c.dive = lerp(c.dive, clamp(-c.acc * 0.009, -0.03, 0.045), ease * 0.6);
       }
       c.x = x; c.y = y; c.z = z; c.yaw = c.ryaw;
-      if (c.crashed > 0) R.set(c.h, x, y, z, yaw + c.crashYaw, pitch, c.crashRoll);
-      else R.set(c.h, x, y, z, c.ryaw, pitch + c.dive, c.roll);
+      if (c.crashed > 0) this.setPose(c, x, y, z, yaw + c.crashYaw, pitch, c.crashRoll);
+      else this.setPose(c, x, y, z, c.ryaw, pitch + c.dive, c.roll);
       R.setBraking(c.h, c.v < 3 || (c.crashed === 0 && c.v > 3 && c.brakeT > 0));
       R.setTurn(c.h, c.crashed > 0 ? 0 : signal);
       const why = signal ? (c.junction ? 'box' : lot ? 'lot' : Math.abs(c.latV) > 0.2 ? 'lane' : c.v < 1 ? 'queue' : 'approach') : 'off';
@@ -2302,6 +2381,41 @@ export class Traffic {
       c.drawn!.why = why;
       R.setDamaged(c.h, c.crashed > 0); // AA vehicle shader darkens crumpled cars until cleanup.
       if (c.fromSpot) (R as { setReversing?: (h: number, on: boolean) => void }).setReversing?.(c.h, reversing);
+    }
+  }
+
+  private setPose(c: Car, x: number, y: number, z: number, yaw: number, pitch: number, roll: number) {
+    const P = c.pose;
+    P[0] = x; P[1] = y; P[2] = z; P[3] = yaw; P[4] = pitch; P[5] = roll;
+    if (!c.posed) { c.pose0.set(P); c.posed = true; }
+    c.sent = 0;
+  }
+
+  /**
+   * Put the cars on screen: each one alpha of the way (0..1) from where it was a step ago to where it is now, so motion is smooth
+   * at any frame rate while the traffic itself moves in fixed steps. Drawing never changes what the traffic does. dtReal and
+   * cam only pace effects near the camera (cigarette smoke).
+   */
+  draw(alpha: number, dtReal = 0, cam?: { x: number; z: number }) {
+    const R = this.renderer, a = Math.max(0, Math.min(1, alpha));
+    for (const c of this.cars) {
+      if (c.crashed === -1 || !c.posed) continue;
+      const P = c.pose, P0 = c.pose0;
+      const still = P[0] === P0[0] && P[2] === P0[2] && P[3] === P0[3] && P[1] === P0[1] && P[4] === P0[4] && P[5] === P0[5];
+      const S = c.shown;
+      if (still || a >= 1) {
+        S[0] = P[0]; S[1] = P[1]; S[2] = P[2]; S[3] = P[3];
+        if (!still || c.sent < STILL_FRAMES) { R.set(c.h, P[0], P[1], P[2], P[3], P[4], P[5]); c.sent = still ? c.sent + 1 : 0; }
+      } else {
+        S[0] = P0[0] + (P[0] - P0[0]) * a; S[1] = P0[1] + (P[1] - P0[1]) * a; S[2] = P0[2] + (P[2] - P0[2]) * a; S[3] = angLerp(P0[3], P[3], a);
+        R.set(c.h, S[0], S[1], S[2], S[3], P0[4] + (P[4] - P0[4]) * a, P0[5] + (P[5] - P0[5]) * a);
+        c.sent = 0;
+      }
+      // smoking out the window (an effect: its own clock, its own dice, only near the camera)
+      if (cam && dtReal > 0 && c.smoker && c.crashed === 0 && Math.abs(c.x - cam.x) < 300 && Math.abs(c.z - cam.z) < 300) {
+        c.smokeT -= dtReal;
+        if (c.smokeT < 0) { c.smokeT = 1.2 + fx.float() * 2; this.onEmit?.('cigarette', c.x, c.y + 1.4, c.z, 1); }
+      }
     }
     R.flush();
   }
@@ -2313,19 +2427,28 @@ export class Traffic {
   }
 
   crash(cars: Car[], seg: RSeg | undefined, drunk: boolean) {
+    // How bad it looks: the speeds of the cars that crash now, added up, against TUNING.crashWreckSpeed (two cars at
+    // stroad speed), so severity = min(1, sum of v / crashWreckSpeed). More cars and faster ones both make it worse; a
+    // car that was already wrecked adds nothing. Read before the loop stops them; only numbers, nothing allocated.
+    let n = 0, sumV = 0, mx = 0, mz = 0;
     for (const c of cars) {
       if (c.crashed !== 0) continue;
-      c.crashed = 16 + Math.random() * 12;
-      c.crashYaw = (Math.random() - 0.5) * 1.6;
-      c.crashRoll = Math.random() < 0.15 ? Math.PI : Math.random() < 0.3 ? (Math.random() - 0.5) * 1.2 : 0;
+      n++; sumV += Math.abs(c.v); mx += c.x; mz += c.z;
+    }
+    for (const c of cars) {
+      if (c.crashed !== 0) continue;
+      c.crashed = 16 + this.rnd() * 12;
+      c.crashYaw = (this.rnd() - 0.5) * 1.6;
+      c.crashRoll = this.rnd() < 0.15 ? Math.PI : this.rnd() < 0.3 ? (this.rnd() - 0.5) * 1.2 : 0;
       c.v = 0;
       this.onEmit?.('spark', c.x, c.y + 0.8, c.z, 12);
       this.onEmit?.('smoke', c.x, c.y + 1.2, c.z, 10);
-      if (Math.random() < 0.2) this.onEmit?.('fire', c.x, c.y + 1, c.z, 12);
+      if (this.rnd() < 0.2) this.onEmit?.('fire', c.x, c.y + 1, c.z, 12);
     }
     if (seg) seg.blocked = Math.max(seg.blocked, 8);
     this.crashes++;
-    this.onCrash?.(cars, seg, drunk);
+    const severity = Math.min(1, sumV / TUNING.crashWreckSpeed);
+    this.onCrash?.(cars, seg, drunk, n ? severity : 0, n ? mx / n : cars[0]?.x ?? 0, n ? mz / n : cars[0]?.z ?? 0);
   }
 
   /** Debug: why are cars stopped? */
@@ -2363,7 +2486,7 @@ export class Traffic {
 
   randomCar(): Car | null {
     const moving = this.cars.filter((c) => c.crashed === 0 && !c.junction);
-    return moving.length ? moving[Math.floor(Math.random() * moving.length)] : null;
+    return moving.length ? moving[Math.floor(fx.float() * moving.length)] : null;
   }
 
   driverName(c: Car) {

@@ -3,7 +3,8 @@
 // water, steep ground, communes or other blocks.
 import * as THREE from 'three';
 import { CELL, WATER } from '../config';
-import type { ZoneType } from '../contracts';
+import { ZONE_TYPES, type ZoneType } from '../contracts';
+import { fromBase64, toBase64 } from '../core/snapshot';
 import { clamp, closestOnSampled, locate, lerp, norm, SpatialHash, sub } from '../core/math';
 import type { RoadNetwork, RSeg } from '../roads/network';
 import { ROAD_TYPES } from '../roads/roadTypes';
@@ -30,6 +31,12 @@ export const ZONE_LABEL: Record<ZoneType, string> = {
 };
 
 const DEPTH = 4;
+/**
+ * A lot's id says where it is: its road, the side, how far along and how deep. So the same lot has the same id however the lots
+ * came to be (drawn road by road over a year, or all at once from a save), and anything that goes by id (which of two overlapping
+ * lots wins, the order growth considers them in) comes out the same.
+ */
+const cellId = (segId: number, sideIndex: number, col: number, row: number) => ((segId * 2 + sideIndex) * 2048 + col) * 8 + row;
 
 export interface ZCell {
   id: number;
@@ -149,7 +156,6 @@ export class Zoning {
   cells = new Map<number, ZCell>();
   bySeg = new Map<number, ZCell[][][]>(); // seg -> [sideIdx][col][row]
   private hash = new SpatialHash<ZCell>(24);
-  private nextId = 1;
   private memory = new Map<number, ZoneType>(); // remembered zoning across rebuilds
   private dirtySegs = new Set<number>();
   private revalidate = new Set<number>();
@@ -171,6 +177,11 @@ export class Zoning {
   occupantAt?: (x: number, z: number, segId: number) => number;
   /** A road was rebuilt (widened): its buildings keep their lots unless the new road runs into them. */
   onRelink?: (buildingIds: number[]) => void;
+  /**
+   * Lots changed zone: once per brush stroke (when it ends), or once per paint() made outside a stroke (a click, the
+   * inspector's dezone). zone null = dezoned; (x, z) the middle of what changed and r its reach (m). Never with 0 lots.
+   */
+  onPainted?: (zone: ZoneType | null, cells: number, x: number, z: number, r: number) => void;
   private relink = new Set<number>();
   version = 0;
 
@@ -275,7 +286,7 @@ export class Zoning {
           const off = hw + CELL / 2 + 0.4 + row * CELL;
           const x = p.x + r.x * off, z = p.z + r.z * off;
           const c: ZCell = {
-            id: this.nextId++, seg: seg.id, side, col, row, x, z, y: this.terrain.h(x, z),
+            id: cellId(seg.id, si, col, row), seg: seg.id, side, col, row, x, z, y: this.terrain.h(x, z),
             yaw: Math.atan2(-r.x, -r.z), valid: false, zone: null, bld: 0,
           };
           column.push(c);
@@ -363,16 +374,21 @@ export class Zoning {
   /** true while builders want this zone (the overlay dims zoned lots that are waiting for demand) */
   growable: ((z: ZoneType) => boolean) | null = null;
   /** what the current brush stroke did, by cell (a stroke repaints the same cells many times) */
-  private stroke: { changed: Set<number>; notOwned: Set<number>; otherZone: Set<number>; built: Set<number> } | null = null;
+  private stroke: {
+    changed: Set<number>; notOwned: Set<number>; otherZone: Set<number>; built: Set<number>;
+    /** the zone it painted last, and the box round the lots it changed (for the one onPainted it ends with) */
+    zone: ZoneType | null; x0: number; z0: number; x1: number; z1: number;
+  } | null = null;
 
   beginStroke() {
-    this.stroke = { changed: new Set(), notOwned: new Set(), otherZone: new Set(), built: new Set() };
+    this.stroke = { changed: new Set(), notOwned: new Set(), otherZone: new Set(), built: new Set(), zone: null, x0: Infinity, z0: Infinity, x1: -Infinity, z1: -Infinity };
   }
 
   /** counts for the stroke that just ended: lots changed, and lots refused by reason */
   endStroke() {
     const s = this.stroke;
     this.stroke = null;
+    if (s && s.changed.size) this.onPainted?.(s.zone, s.changed.size, (s.x0 + s.x1) / 2, (s.z0 + s.z1) / 2, Math.hypot(s.x1 - s.x0, s.z1 - s.z0) / 2 + CELL / 2);
     return { changed: s?.changed.size ?? 0, notOwned: s?.notOwned.size ?? 0, otherZone: s?.otherZone.size ?? 0, built: s?.built.size ?? 0 };
   }
 
@@ -388,9 +404,14 @@ export class Zoning {
       if (zone && this.allowed && !this.allowed(c.x, c.z)) { st?.notOwned.add(c.id); continue; }
       // zoned land keeps its zone: dezone it first to change it
       if (zone && c.zone && c.zone !== zone) { this.skipped++; st?.otherZone.add(c.id); continue; }
-      if (c.zone !== zone) { c.zone = zone; n++; st?.changed.add(c.id); }
+      if (c.zone !== zone) {
+        c.zone = zone; n++;
+        if (st) { st.changed.add(c.id); st.zone = zone; st.x0 = Math.min(st.x0, c.x); st.z0 = Math.min(st.z0, c.z); st.x1 = Math.max(st.x1, c.x); st.z1 = Math.max(st.z1, c.z); }
+      }
     }
     if (n) { this.overlayDirty = true; this.version++; }
+    // a stroke says what it did once, when it ends; a paint on its own is a whole action
+    if (n && !st) this.onPainted?.(zone, n, x, z, r);
     return n;
   }
 
@@ -434,7 +455,8 @@ export class Zoning {
   candidates(zone: ZoneType, out: ZCell[] = []): ZCell[] {
     out.length = 0;
     for (const c of this.cells.values()) if (c.row === 0 && c.valid && c.zone === zone && !c.bld) out.push(c);
-    return out;
+    // in id order, not the order the lots were made in (which a reload does not keep): growth draws from this list by index
+    return out.sort((a, b) => a.id - b.id);
   }
 
   counts() {
@@ -455,6 +477,41 @@ export class Zoning {
     return out;
   }
 
+  /**
+   * Every lot's validity and zone, exactly, in id order (what serialize() keeps is enough to redraw the zoning, not to continue the
+   * same county: a lot checked long ago against ground that has since changed would be checked again on load, and could differ).
+   */
+  serializeExact() {
+    // road by road in id order, each road's lots in id order (side, then along, then deep): a byte a lot, and no ids to write
+    const segs = [...this.bySeg.keys()].sort((a, b) => a - b), counts: number[] = [], bytes: number[] = [];
+    for (const id of segs) {
+      const cells = this.bySeg.get(id)!.flat(2).sort((a, b) => a.id - b.id);
+      counts.push(cells.length);
+      for (const c of cells) bytes.push((c.valid ? 128 : 0) | (c.zone ? ZONE_TYPES.indexOf(c.zone) + 1 : 0));
+    }
+    return { segs, counts, state: toBase64(new Uint8Array(bytes)) };
+  }
+
+  /** after restore(): put back each lot's validity and zone as saved (a lot the save does not know is left as rebuilt) */
+  restoreExact(d: { segs: number[]; counts: number[]; state: string } | undefined) {
+    if (!d || !Array.isArray(d.segs)) return;
+    const state = fromBase64(d.state);
+    let at = 0;
+    d.segs.forEach((id, k) => {
+      const n = d.counts[k], cells = this.bySeg.get(id)?.flat(2).sort((a, b) => a.id - b.id);
+      // (a road whose lots do not match the save's count is left as rebuilt)
+      if (cells && cells.length === n) cells.forEach((c, i) => {
+        const v = state[at + i];
+        c.valid = (v & 128) !== 0;
+        c.zone = v & 127 ? ZONE_TYPES[(v & 127) - 1] : null;
+      });
+      at += n;
+    });
+    this.revalidate.clear();
+    this.overlayDirty = true;
+    this.version++;
+  }
+
   restore(rows: [number, number, string][]) {
     this.update();
     for (const [x, z, zone] of rows) {
@@ -470,7 +527,8 @@ export class Zoning {
     for (const segId of this.bySeg.keys()) this.revalidate.add(segId);
   }
 
-  update() {
+  /** The lots catch up with the roads (new roads get lots, neighbours are checked again). No drawing: the simulation's step calls it. */
+  sync() {
     if (this.dirtySegs.size) {
       for (const id of this.dirtySegs) {
         const seg = this.net.segs.get(id);
@@ -494,6 +552,11 @@ export class Zoning {
       this.relink.clear();
       this.onRelink?.(ids);
     }
+  }
+
+  /** sync(), then what is drawn of the lots */
+  update() {
+    this.sync();
     if (this.overlayDirty) this.rebuildOverlay();
     // the beds follow the ground: a building levelling its lot next door moves the height they sit on (checked every half second or so)
     if (this.bedDirty || (this.bedVer !== this.terrain.surfaceVersion && ++this.bedWait > 30)) this.rebuildBeds();

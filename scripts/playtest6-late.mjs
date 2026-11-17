@@ -30,7 +30,8 @@ const probe = () => page.evaluate(() => { const s = window.__game.sim, f = s.for
 const trace = [];
 let savedAt = 0;
 async function saveTown() {
-  const json = await page.evaluate(() => { window.__dbg.save(); return localStorage.getItem('slopmerica.save.v1'); });
+  // (the whole save as text: a big county's is more than localStorage holds)
+  const json = await page.evaluate(() => (window.__dbg.snapshot ? window.__dbg.snapshot() : (window.__dbg.save(), localStorage.getItem('slopmerica.save.v1'))));
   if (json) { writeFileSync(process.env.SAVE, json); console.log(`saved the town to ${process.env.SAVE} (${json.length.toLocaleString()} characters)`); }
 }
 let bad = 0, best = 0, sinceBest = 0;

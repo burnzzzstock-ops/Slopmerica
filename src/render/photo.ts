@@ -118,7 +118,7 @@ export class PhotoMode {
     cam.getWorldDirection(this.target).multiplyScalar(dist).add(cam.position);
     const wet = g.weather.photoLook(this.weather, this.hour, cam, this.target, dist), n = g.env.night;
     GLOW.value = 1 / nightLift(n, g.env.moonLight);
-    setBuildingNight(n); setKitNight(n); g.roads.setNight(n); g.roads.setWet(wet);
+    setBuildingNight(n); setKitNight(n); g.roads.setNight(n); g.roads.setWet(wet, (g.pendingQuality ?? g.q.name) === 'ultra');
     g.zones.setNight(n); g.traffic.setNight(n); g.peds.setNight(n); g.nightLights.update(0, n);
     g.terrain.updateLOD(cam.position); g.trees.update(g.time, this.target, dist);
     g.groundDetail.update(g.time, this.target, dist, { season: g.weather.season, snowCover: g.weather.snowCover, wind: g.weather.wind });
@@ -136,6 +136,7 @@ export class PhotoMode {
       g.post.tiltShift = this.tilt > 0; g.post.tiltStrength = this.tilt;
       g.renderer.info.reset();
       if (wu.uReflOn.value) mirror?.render(g.renderer, g.scene, cam, [g.water.mesh]);
+      g.roads.renderReflection(g.renderer, g.scene, cam);
       g.post.render(n, dist, cam);
       g.perf.calls = g.renderer.info.render.calls; g.perf.triangles = g.renderer.info.render.triangles;
     } finally { g.post.tiltShift = oldTilt; g.post.tiltStrength = oldStrength; }
@@ -154,6 +155,8 @@ export class PhotoMode {
       if (!g.post.active) applyLowGrade(g.env, g.post.look, renderer);
       else renderer.toneMapping = THREE.ACESFilmicToneMapping;
       if (wu.uReflOn.value) mirror?.render(renderer, g.scene, camera, [g.water.mesh]);
+      g.roads.setWet(g.weather.wet, (g.pendingQuality ?? g.q.name) === 'ultra');
+      g.roads.renderReflection(renderer, g.scene, camera);
       g.post.render(g.env.night, g.rts.distance, camera);
     };
     if (!size) return photoPNG(renderer.domElement, draw, g.map.def.name, framed);

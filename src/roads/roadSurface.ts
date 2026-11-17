@@ -6,6 +6,7 @@ import type { RoadNetwork, RSeg } from './network';
 import { carriageHalf, ROAD_TYPES } from './roadTypes';
 import { endCapRadius, SURF_LIFT } from './roadSection';
 import { visualTrim } from './roadJunction';
+import { RoadReflection } from './roadReflection';
 
 type Binding = { state: THREE.BufferAttribute; ids: Uint32Array; weights: Float32Array };
 type Sample = { id: number; weight: number; dip: number; stop: number };
@@ -28,6 +29,7 @@ export function roadDepression(segment: RSeg, distance: number): number {
 
 /** Rendering attributes sampled from roads in 3D, so a bridge keeps its own age and drainage. */
 export class RoadSurfaceState {
+  readonly reflection = new RoadReflection();
   readonly uniforms = {
     uRoadWet: { value: 0 },
     uRoadSky: { value: new THREE.Color(0x74899d) },

@@ -304,7 +304,7 @@ export class ProblemIcons {
       // Water's oblique mirror pass runs after the main scene. Keep the layout
       // and hit targets of the view the player sees when that pass renders.
       const projection = camera.projectionMatrix.elements;
-      if (projection[2] !== 0 || projection[6] !== 0) return;
+      if (camera.userData.isPlanarReflection || projection[2] !== 0 || projection[6] !== 0) return;
       const rect = renderer.domElement.getBoundingClientRect();
       this.layout(camera as THREE.PerspectiveCamera, rect.width, rect.height, sceneViews.get(scene) ?? 'none');
     };

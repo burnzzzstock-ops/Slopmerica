@@ -16,6 +16,7 @@ import {
 import type { SignalStateProvider } from './streetDetails';
 import type { WorldFields } from '../contracts';
 import { RoadSurfaceState, roadWearTexture } from './roadSurface';
+import type { ReflectiveRoad } from './roadReflection';
 
 const REPEAT = 12; // meters per texture repeat along the road
 
@@ -498,6 +499,7 @@ function sharedAsphalt(mat: THREE.MeshStandardMaterial, texture: THREE.Texture, 
     shader.uniforms.uRoadAsphalt = { value: texture };
     shader.uniforms.uRoadWear = { value: wear };
     Object.assign(shader.uniforms, state.uniforms);
+    Object.assign(shader.uniforms, state.reflection.uniforms);
     shader.uniforms.uAsphaltSpan = { value: new THREE.Vector2(span, median) };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec3 aRoadState;\nvarying vec3 vRoadState;')
@@ -525,9 +527,11 @@ function sharedAsphalt(mat: THREE.MeshStandardMaterial, texture: THREE.Texture, 
     `);
     shader.fragmentShader = shader.fragmentShader.replace('#include <common>',
       `#include <common>
-      uniform sampler2D uRoadAsphalt, uRoadWear;
+      uniform sampler2D uRoadAsphalt, uRoadWear, tRoadReflection;
       uniform vec2 uAsphaltSpan;
-      uniform float uRoadWet, uRoadHasEnvironment;
+      uniform float uRoadWet, uRoadHasEnvironment, uRoadReflectionOn;
+      uniform mat4 uRoadReflectionMatrix;
+      uniform vec4 uRoadReflectionPlane;
       uniform vec3 uRoadSky;
       varying vec3 vRoadState;`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
@@ -535,6 +539,18 @@ function sharedAsphalt(mat: THREE.MeshStandardMaterial, texture: THREE.Texture, 
       .replace('#include <opaque_fragment>', `
         float roadFresnel = 0.04 + 0.96 * pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 5.0);
         outgoingLight += uRoadSky * roadFresnel * uRoadWet * carriage * (0.14 + roadPuddle * 0.5) * (1.0 - uRoadHasEnvironment);
+        if (uRoadReflectionOn > 0.5) {
+          vec4 mirrorPoint = uRoadReflectionMatrix * vec4(vLampW, 1.0);
+          vec2 mirrorUv = mirrorPoint.xy / max(mirrorPoint.w, 0.0001);
+          float edge = min(min(mirrorUv.x, mirrorUv.y), min(1.0 - mirrorUv.x, 1.0 - mirrorUv.y));
+          float planeDistance = abs(dot(uRoadReflectionPlane, vec4(vLampW, 1.0)));
+          vec3 roadNormal = inverseTransformDirection(normal, viewMatrix);
+          float alignment = smoothstep(0.995, 0.9995, dot(roadNormal, uRoadReflectionPlane.xyz));
+          float coplanar = (1.0 - smoothstep(0.015, 0.06, planeDistance)) * alignment;
+          float mirrorMask = smoothstep(0.0, 0.025, edge) * step(0.0001, mirrorPoint.w) * coplanar;
+          vec3 reflected = texture2D(tRoadReflection, clamp(mirrorUv, 0.0, 1.0)).rgb;
+          outgoingLight = mix(outgoingLight, reflected, mirrorMask * carriage * roadPuddle * roadFresnel * 0.8);
+        }
         #include <opaque_fragment>`);
   };
   const beforeRender = mat.onBeforeRender;
@@ -546,7 +562,7 @@ function sharedAsphalt(mat: THREE.MeshStandardMaterial, texture: THREE.Texture, 
   };
   const key = mat.customProgramCacheKey.bind(mat);
   const variant = junction ? 'junction' : road ? 'road' : 'crosswalk';
-  mat.customProgramCacheKey = () => key() + '|world-asphalt-wear-' + variant;
+  mat.customProgramCacheKey = () => key() + '|world-asphalt-mirror-' + variant;
 }
 
 /** Zebra bars for crosswalks: u runs across the road in metres (one bar per metre). */
@@ -722,7 +738,11 @@ export class RoadRenderer {
 
   private wetWas = -1;
   /** Rain makes asphalt dark and glossy. */
-  setWet(w: number) {
+  setWet(w: number, planarReflection = false) {
+    const reflection = this.surfaceState.reflection;
+    reflection.enabled = planarReflection && w > .15;
+    if (!reflection.enabled) reflection.uniforms.uRoadReflectionOn.value = 0;
+    if (!planarReflection) reflection.dispose();
     if (Math.abs(w - this.wetWas) < 0.02) return;
     this.wetWas = w;
     this.surfaceState.uniforms.uRoadWet.value = clamp(w, 0, 1);
@@ -732,6 +752,21 @@ export class RoadRenderer {
       m.color.setScalar(1 - w * 0.35);
       if (m !== this.typeMats.get('gravel')) m.envMapIntensity = 0.5 + w * 1.15;
     }
+  }
+
+  /** Refresh after the main scene has produced this frame's shadow maps. */
+  renderReflection(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, seconds?: number) {
+    const reflection = this.surfaceState.reflection;
+    if (!reflection.enabled) return false;
+    const surfaces: ReflectiveRoad[] = [];
+    for (const [id, mesh] of this.typeMeshes) {
+      if (id === 'gravel') continue;
+      const road = ROAD_TYPES[id];
+      surfaces.push({ mesh, span: carriageHalf(road) / road.width, median: road.median / (2 * road.width) });
+    }
+    surfaces.push({ mesh: this.junctionMesh, span: 1, median: 0 });
+    surfaces.push({ mesh: this.crosswalkMesh, span: 1, median: 0, select: false });
+    return reflection.render(renderer, scene, camera, surfaces, seconds);
   }
 
   update() {

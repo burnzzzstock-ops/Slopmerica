@@ -1291,7 +1291,7 @@ export class Game {
       // A mirror pass before the main pass can bind a shadow sampler before
       // three.js has created its shadow texture. Reuse the previous reflection
       // for this frame and refresh it after the main scene has rendered.
-      this.water.reflection?.render(this.renderer, this.scene, this.camera, [this.water.mesh]);
+      this.water.reflection?.render(this.renderer, this.scene, this.camera, [this.water.mesh], this.time);
       P.lap('water reflection');
       this.perf.calls = this.renderer.info.render.calls;
       this.perf.triangles = this.renderer.info.render.triangles;

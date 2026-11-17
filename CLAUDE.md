@@ -58,6 +58,7 @@ npm run suite:gpu   # at every integration merge: every pass/fail test (about 20
 - `GPU=1` (or `--gpu` on the suite) draws with the real graphics card. `SEED=n` sets the county's dice for a seeded test (default 1; `FUZZ=1` picks one and prints it). One run proves nothing for anything with traffic in it: compare several seeds.
 - A Node rig that loads `src/` through Vite in middleware mode must pass `ws: false`, or two rigs at once clash on a port.
 - The reference town every look and traffic test opens is a committed fixture (`scripts/fixtures/refblock-town.json.gz`). Change it only in a commit of its own that says so: every number measured on it moves.
+- `REFTOWN=v1` opens the town it replaced (`scripts/fixtures/refblock-town.json`: no main street, no working utilities). The suite sets it for every test in `astra.json`, because the look lane's numbers were recorded on that town; a test moves to today's town with `"env": {"REFTOWN": "new"}`. Run a look script by hand with `REFTOWN=v1` to get the town its numbers expect.
 
 ## The simulation is deterministic. Keep it so.
 

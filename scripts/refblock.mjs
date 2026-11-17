@@ -7,7 +7,7 @@
 // in the commit). Shared by lookbook.mjs, nighttest.mjs and the traffic tests.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { readSave, REFBLOCK, REFBLOCK_CENTER, writeSave } from './lib/fixtures.mjs';
+import { OLD_TOWN, readSave, REFBLOCK, REFBLOCK_CENTER, writeSave } from './lib/fixtures.mjs';
 
 export const SAVE = REFBLOCK;
 export { EXE, ARGS } from './lib/browser.mjs';
@@ -152,7 +152,10 @@ export function testSeed() {
  * run whose asset pack timed out builds other models, and isn't a replay.
  */
 export async function openBlock(browser, { base, quality = 'high', width = 1280, height = 720, phone = false, dpr = 1, seed }) {
-  if (!existsSync(SAVE)) await grow(browser, base);
+  if (!existsSync(SAVE)) {
+    if (OLD_TOWN) throw new Error(`refblock: REFTOWN=v1 asks for the old reference town and ${SAVE} is missing (it is a committed file; it is never grown again)`);
+    await grow(browser, base);
+  }
   const save = readSave(SAVE);
   const center = JSON.parse(readFileSync(REFBLOCK_CENTER, 'utf8'));
   // phone: a real touch context (3x screen, touch, mobile UA), which is what makes the game pick the phone's pixel ratio and MSAA

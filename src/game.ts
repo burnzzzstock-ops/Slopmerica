@@ -18,6 +18,7 @@ import { WeatherSystem } from './world/weather';
 import { PointerHandlers, RTSCamera } from './render/camera';
 import { PostFX } from './render/post';
 import { PhotoMode } from './render/photo';
+import { BuildingFinishes } from './buildings/finishState';
 import { applyLowGrade, lowExposure } from './render/lowGrade';
 import { Particles } from './render/particles';
 import { ConstructionEffects } from './render/constructionEffects';
@@ -154,6 +155,7 @@ export class Game {
   readonly rts: RTSCamera;
   readonly terrain: Terrain;
   readonly photo = new PhotoMode(this);
+  private readonly finishes = new BuildingFinishes();
   readonly trees: Trees;
   readonly groundDetail: GroundDetail;
   readonly env: Environment;
@@ -1427,6 +1429,7 @@ export class Game {
     if (render) {
       this.applyPendingRatio();
       this.renderer.info.reset();
+      this.finishes.update(this);
       wu.uReflOn.value = this.water.reflection?.shouldRender(this.camera) ? 1 : 0;
       // Low quality renders straight to the canvas: the grade's exposure (the weather's dimming or brightening, times the night lift)
       // rides on the tone map, since there is no grade pass to apply it. (Low used to take only the night lift, so a storm or a

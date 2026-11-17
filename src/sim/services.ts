@@ -2244,6 +2244,20 @@ function garbageBoard(g: Game): string {
   return `<div class="gb"><div class="gb-head">Your garbage sites</div>${rows.join('')}${total}</div>`;
 }
 
+/**
+ * The look of the service buildings, for Settings: the Asset Vault's versions or the classic ones. `get` is null while the
+ * vault's pack has not loaded (there is nothing to choose between). `set` keeps the choice and puts every standing service
+ * building that has a vault version in its other clothes at once: the same building restyled in place, wearing another model.
+ */
+export const serviceLooks = {
+  get: (): 'vault' | 'classic' | null => (vaultReady() ? svcLook() : null),
+  set(g: Game, look: 'vault' | 'classic') {
+    if (look === svcLook()) return;
+    try { localStorage.setItem(LOOK_KEY, look); } catch { /* private mode: this session only */ }
+    for (const x of g.buildings.list.values()) if (x.zone === 'service' && x.kind && VAULT_LOOK[x.kind as ServiceModelId]) g.buildings.restyleCustom(x);
+  },
+};
+
 registerPanel({
   id: 'services',
   icon: '🏛️',
@@ -2267,8 +2281,7 @@ registerPanel({
         const rule = !d.unlock || g.sim.mode === 'sandbox' ? '' : locked ? ` Unlocks at ${unlockAt(d.unlock)}, and stays unlocked even if the city shrinks.` : pop < d.unlock ? ` Earned at ${unlockAt(d.unlock)}: yours to keep while the city is smaller.` : '';
         return `<button class="card ${on ? 'on' : ''}" data-svc="${d.id}" ${locked ? 'disabled' : ''} title="${esc(d.blurb + rule)}${d.run ? ` Costs $${d.upkeep}/wk plus ${esc(runText(d))}.` : ''}"><span class="ci">${uiIcon('facility', d.id, d.icon, 28)}</span><b>${esc(d.name)}</b><small>${locked ? lockText(d.unlock) : `$${d.cost.toLocaleString()} · $${d.upkeep}/wk${d.run ? '+' : ''}${does ? ` · ${does}` : ''}`}</small></button>`;
       }).join('')}</div>
-      <div class="svc-blurb">${esc(sel && sel.cat === panelCat ? sel.blurb : list[0]?.blurb ?? '')}</div>
-      ${vaultReady() ? `<div class="sp-row svc-look">Looks: <button class="chip ${svcLook() === 'vault' ? 'on' : ''}" data-look="vault" title="The Asset Vault's versions: the Very Clean Coal Plant, the County Water Tower, Copay Castle...">🏛️ Asset Vault</button><button class="chip ${svcLook() === 'classic' ? 'on' : ''}" data-look="classic">Classic</button></div>` : ''}`;
+      <div class="svc-blurb">${esc(sel && sel.cat === panelCat ? sel.blurb : list[0]?.blurb ?? '')}</div>`;
     el.querySelectorAll<HTMLButtonElement>('[data-cat]').forEach((b) => b.addEventListener('click', () => {
       // one active tool: switching category puts the other category's
       // building away (ghost, warning and click handler together)
@@ -2285,14 +2298,6 @@ registerPanel({
       g.rts.setView(b.x, b.z, Math.min(g.rts.distance, 420));
       g.select({ kind: 'building', b });
     });
-    el.querySelectorAll<HTMLButtonElement>('[data-look]').forEach((b) => b.addEventListener('click', () => {
-      const look = b.dataset.look === 'classic' ? 'classic' : 'vault';
-      if (look === svcLook()) return;
-      try { localStorage.setItem(LOOK_KEY, look); } catch { /* private mode: this session only */ }
-      // every service with a vault version changes clothes now
-      for (const x of g.buildings.list.values()) if (x.zone === 'service' && x.kind && VAULT_LOOK[x.kind as ServiceModelId]) g.buildings.restyleCustom(x);
-      rerender();
-    }));
     el.querySelectorAll<HTMLButtonElement>('[data-svc]').forEach((b) => b.addEventListener('click', () => {
       placing = b.dataset.svc as SvcId; built = null;
       g.tools.setExt('svcPlace');

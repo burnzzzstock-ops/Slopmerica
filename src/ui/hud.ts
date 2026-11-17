@@ -22,7 +22,7 @@ import { actLabel, uiIcon } from './icons';
 import { PhotoBar } from './photoBar';
 import { QUALITY, type Quality } from '../config';
 import { BANKRUPT_AT, BANKRUPT_WEEKS, CREDIT_LINE, LEDGER_LABEL, LOSS_LABEL, ONE_TIME, RECURRING, SPEEDS, Sim, UNLOCKS, usd, type DemandKey } from '../sim/sim';
-import { SERVICE_DEFS, overloadedServices, type EmergencyView } from '../sim/services';
+import { SERVICE_DEFS, overloadedServices, serviceLooks, type EmergencyView } from '../sim/services';
 import { MILESTONES, lockText, milestoneAt, nameUnlock, unlockNames, unlockPop } from '../sim/milestones';
 import { isZoned } from '../sim/buildings';
 import type { ViewMode } from '../render/overlays';
@@ -1457,6 +1457,7 @@ export class Hud implements UiSink {
           <label class="fov-ctl" for="fov-range">Field of view <input type="range" id="fov-range" min="${FOV_MIN}" max="${FOV_MAX}" step="1" value="${Math.round(g.camera.fov)}"><b id="fov-v">${this.fovText()}</b></label>
         </div>
         <small>Resolution and shadows change immediately. Reload applies scenery, traffic, and post-processing budgets.</small>
+        ${serviceLooks.get() ? `<div class="sp-row svc-look"><span class="ql" id="looks-label">Service buildings</span><span class="seg" role="radiogroup" aria-labelledby="looks-label">${(['vault', 'classic'] as const).map((l) => { const on = serviceLooks.get() === l; return `<button class="chip ${on ? 'on' : ''}" role="radio" aria-checked="${on}" data-look="${l}" ${l === 'vault' ? 'title="The Asset Vault\'s versions: the Very Clean Coal Plant, the County Water Tower, Copay Castle..."' : ''}>${l === 'vault' ? `${uiIcon('toolbar', 'ext:services', '🏛️', 18)} Asset Vault` : 'Classic'}</button>`; }).join('')}</span></div>` : ''}
         <div class="help">${IS_TOUCH ? `
           <div><b>Move</b> drag with one finger (two fingers while a tool is on)</div>
           <div><b>Zoom</b> pinch</div>
@@ -1503,6 +1504,13 @@ export class Hud implements UiSink {
         this.toast(reload ? 'Graphics preset saved. Reload to apply all details.' : 'Graphics preset applied.');
       }));
       this.sub.querySelector('#quality-reload')?.addEventListener('click', () => location.reload());
+      // how the service buildings look: the ones standing change clothes at once (it was a row in the Services drawer, the tallest on a phone)
+      this.sub.querySelectorAll<HTMLButtonElement>('[data-look]').forEach((b) => b.addEventListener('click', () => {
+        const look = b.dataset.look === 'classic' ? 'classic' : 'vault';
+        serviceLooks.set(g, look);
+        crumb(`service buildings: ${look}`);
+        this.renderPanel();
+      }));
       this.sub.querySelector('#perf-toggle')?.addEventListener('click', () => { this.togglePerf(); this.renderPanel(); });
       this.sub.querySelector('#emergency-toggle')?.addEventListener('click', () => {
         const next: EmergencySpeed = ({ slow: 'pause', pause: 'off', off: 'slow' } as const)[emergencySpeed()];

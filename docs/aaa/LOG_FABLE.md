@@ -29,7 +29,7 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 
 ## State of the work (17 Nov 2026)
 
-`aaa/integration` is pushed at `bda104b` (both lanes, with the drive-thru fixes and the regrown town): 119 of 125 on its suite. `claude/aaa-play` holds integration and the HUD wiring on top. Everything below is committed. The registry has 191 entries on this branch (12 gate, 15 smoke, 89 full, 75 measure), 203 on the merge.
+`aaa/integration` is pushed at `584ab95`: 123 of 129 on its suite (the six: photo-reflection and presetlight, the look lane's; carsolid, crosswalktest, lightstest and landmarktest, the traffic table below). `claude/aaa-play` is one commit ahead of it (the save slots), pushed. Everything below is committed. The registry has 191 entries on this branch (12 gate, 15 smoke, 89 full, 75 measure), 203 on the merge.
 
 | Item | State |
 |---|---|
@@ -37,7 +37,7 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 | F0.2 gates | Done, except `noUnusedLocals` / `noUnusedParameters`, a `tsconfig.scripts.json` and a `scripts/worktree.sh` without symlinks |
 | F0.3 determinism | Done for frame rate and for save and reload on the norcal test town. Open: the other two maps, a two-year scripted-player town, the Low and Ultra modes (blocked on F0.4) |
 | F0.4 presets never change the sim | **Open.** People still exist only near the camera and are capped by the preset |
-| F0.5 saves | Exact state, versions and migration, packing, quota fallbacks and IndexedDB slot storage are done. Open: the slots UI, the confirm before New city, the message for an unreadable save, the golden-save test |
+| F0.5 saves | Done but for the golden-save test: exact state, versions and migration, packing, quota fallbacks, slots with their UI on the title screen and in Settings, the question before a new city replaces the one to resume, and the notice for a stored city that cannot be read (1ea4162, `scripts/slotstest.mjs`). Open: three committed golden saves that every build must still load (there are two fixtures to start from: `saves/v1-norcal-block.json` and `saves/v2-drivethru-jam.json.gz`) |
 | F0.6 ship like a game | Done: no debug hooks or playtest tools in a player's build, one-file build with packs inside, README, `shiptest` |
 | F0.7 sim hot spots | Started: `scripts/simperf.mjs` and `docs/aaa/PERF_SIM.md`. On the 14,440-person town a step is 3.85 ms (traffic four fifths), 49% of a core at top speed; the every-third-day hitch is 41 ms, down from 62 (c5a94a8). Left: spread the land value pass over its three days, the daily tick, traffic inside, the save hitch, a 50,000-person town |
 | F0.8 AGENTS.md / CLAUDE.md | Done |
@@ -81,6 +81,7 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 | ab8573e, 2c54bcc | **Roads:** ONE MORE LANE is remembered, stamped and watched for 78 weeks (`src/sim/widening.ts`, `scripts/onemorelane.mjs`) |
 | 4ea05b4 | A household's trip can weigh a few places by today's drive: in the code, switched off (`TUNING.whereTo.choices: 1`) |
 | 7f727f1, c5a94a8 | `scripts/simperf.mjs`; the land value pass no longer searches 300 m round every building for a landmark (the same county, a third less hitch) |
+| 1ea4162 | **Saves:** slots on the title screen and in Settings; Start paving asks before a new city takes the old one's place; an unreadable stored city is said so and kept |
 
 ### How the simulation is built now
 

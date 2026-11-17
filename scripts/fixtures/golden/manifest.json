@@ -1,0 +1,2611 @@
+{
+  "browser": "153.0.8010.12",
+  "revision": "1243",
+  "seed": 1776,
+  "viewport": {
+    "low": [
+      390,
+      844,
+      3
+    ],
+    "high": [
+      1280,
+      720,
+      1
+    ]
+  },
+  "shots": {
+    "block-low-junction-noon": {
+      "sha256": "6685a9f9e156983cbcf1970d6d040a15fa286da99f17ac09029d083055aa80f0",
+      "camera": [
+        155,
+        15,
+        110,
+        2.4,
+        0.38
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "block-low-junction-golden": {
+      "sha256": "441f8c3530374e9db26ab83e03c2589ca55f2e8f77135b70f3617d58551fac1c",
+      "camera": [
+        155,
+        15,
+        110,
+        2.4,
+        0.38
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "block-low-junction-moonless": {
+      "sha256": "469631aafde1b7639d3e8c9ffc03167f56ca5490ecf28a22a9dc07e550cc9c51",
+      "camera": [
+        155,
+        15,
+        110,
+        2.4,
+        0.38
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "block-low-junction-rain": {
+      "sha256": "cf90a02982ab802757ab55cdf6962cc97862d32438f84828db99f421402487e3",
+      "camera": [
+        155,
+        15,
+        110,
+        2.4,
+        0.38
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "block-low-mid-noon": {
+      "sha256": "2a2ea34fc22f123c7f678c5db220111b5bdf750f886f391b33d91c34baed5c81",
+      "camera": [
+        210,
+        55,
+        245,
+        0.95,
+        0.54
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "block-low-mid-golden": {
+      "sha256": "0cf701a3b9f63a6f16276f829dede491e896d85435a24d3b6134fe5c611287c9",
+      "camera": [
+        210,
+        55,
+        245,
+        0.95,
+        0.54
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "block-low-mid-moonless": {
+      "sha256": "3a80269aaaa7beee55061a6c6751aba7628eef929d09e7808ad924e14d5d53af",
+      "camera": [
+        210,
+        55,
+        245,
+        0.95,
+        0.54
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "block-low-mid-rain": {
+      "sha256": "84620993f2240f89f5aad5a02d62d5d5e3faa87a96c178ef62e0e66325ce45ad",
+      "camera": [
+        210,
+        55,
+        245,
+        0.95,
+        0.54
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "block-low-overview-noon": {
+      "sha256": "84622f7c73698a6b2ef6794b978981e7a3eba590c032b5f121000ec33cde9a02",
+      "camera": [
+        195,
+        45,
+        600,
+        0.7,
+        0.63
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "block-low-overview-golden": {
+      "sha256": "cb76535b2cb37f03ae219c22b95c23b441d5905af83df36f37904dc9243f9db4",
+      "camera": [
+        195,
+        45,
+        600,
+        0.7,
+        0.63
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "block-low-overview-moonless": {
+      "sha256": "5b05dc3cef4ff5195934c41611b81a265b1fd0ec32ccb7f22689b64c7affda1a",
+      "camera": [
+        195,
+        45,
+        600,
+        0.7,
+        0.63
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "block-low-overview-rain": {
+      "sha256": "3a3fd44b8112805d7d5133162015b905377f3f3d2dbfa3c308519fb6db5a286d",
+      "camera": [
+        195,
+        45,
+        600,
+        0.7,
+        0.63
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "block-high-junction-noon": {
+      "sha256": "c642932f4bca5b914f681037f85fe2719f3c8f38b42936066f5ce9980bffad48",
+      "camera": [
+        155,
+        15,
+        110,
+        2.4,
+        0.38
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "block-high-junction-golden": {
+      "sha256": "609e7dfa77475a793c19664ef139f6314f1f8cb14b7469af3a24f7600e89a32f",
+      "camera": [
+        155,
+        15,
+        110,
+        2.4,
+        0.38
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": false,
+        "total": 921600,
+        "changed": 65,
+        "exactDifferences": 80,
+        "failed": false
+      }
+    },
+    "block-high-junction-moonless": {
+      "sha256": "d90c99d63c8554b83eee061f2ebb3ed8d91734b5b63b05159d3a5f28c49d8cdf",
+      "camera": [
+        155,
+        15,
+        110,
+        2.4,
+        0.38
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": false,
+        "total": 921600,
+        "changed": 8,
+        "exactDifferences": 57,
+        "failed": false
+      }
+    },
+    "block-high-junction-rain": {
+      "sha256": "fbb475f6c71087be2d8597096bf97ba49fbd08e07d968199a1cabe8ea9d2e965",
+      "camera": [
+        155,
+        15,
+        110,
+        2.4,
+        0.38
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": false,
+        "total": 921600,
+        "changed": 0,
+        "exactDifferences": 3662,
+        "failed": false
+      }
+    },
+    "block-high-mid-noon": {
+      "sha256": "cf2bede6455b451eb4831f861b7efbf4858cb0f663228638db22957b7a395d3b",
+      "camera": [
+        210,
+        55,
+        245,
+        0.95,
+        0.54
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": false,
+        "total": 921600,
+        "changed": 0,
+        "exactDifferences": 1883,
+        "failed": false
+      }
+    },
+    "block-high-mid-golden": {
+      "sha256": "82703d0c1238ebd49a01ee2b6fbf95a7ffbcbde673aea83d9a82d5c2bda8c08d",
+      "camera": [
+        210,
+        55,
+        245,
+        0.95,
+        0.54
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": false,
+        "total": 921600,
+        "changed": 2,
+        "exactDifferences": 2,
+        "failed": false
+      }
+    },
+    "block-high-mid-moonless": {
+      "sha256": "9df42a4e30aa5937cb51b882041b00c769162736a910c62601334219f317d4a3",
+      "camera": [
+        210,
+        55,
+        245,
+        0.95,
+        0.54
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": false,
+        "total": 921600,
+        "changed": 2,
+        "exactDifferences": 8,
+        "failed": false
+      }
+    },
+    "block-high-mid-rain": {
+      "sha256": "c8554faf313fb0427c3c5516ef11723925a7a255413d387116bb9ca7916e15a9",
+      "camera": [
+        210,
+        55,
+        245,
+        0.95,
+        0.54
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": false,
+        "total": 921600,
+        "changed": 16,
+        "exactDifferences": 81,
+        "failed": false
+      }
+    },
+    "block-high-overview-noon": {
+      "sha256": "ddeda2da9bb1fc5fa44b898ecd98bcc4a1d7dda4451a7de691fb864509e8a85c",
+      "camera": [
+        195,
+        45,
+        600,
+        0.7,
+        0.63
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": false,
+        "total": 921600,
+        "changed": 2,
+        "exactDifferences": 753,
+        "failed": false
+      }
+    },
+    "block-high-overview-golden": {
+      "sha256": "4dd6bb15b99c7edc3109e1a9341bd6a6208d40050265ff7a6c02091623c3eff4",
+      "camera": [
+        195,
+        45,
+        600,
+        0.7,
+        0.63
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "total": 921600,
+        "changed": 0,
+        "exactDifferences": 0,
+        "failed": false
+      }
+    },
+    "block-high-overview-moonless": {
+      "sha256": "6b4e65812223a4c58827c098fed16c8d61b3935c4b500c01df9b9875a6233afb",
+      "camera": [
+        195,
+        45,
+        600,
+        0.7,
+        0.63
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": false,
+        "total": 921600,
+        "changed": 2,
+        "exactDifferences": 5,
+        "failed": false
+      }
+    },
+    "block-high-overview-rain": {
+      "sha256": "6002b7c6e735c558a614634c50908e19e12301c1d37cac0eab3cbe9f7b643e71",
+      "camera": [
+        195,
+        45,
+        600,
+        0.7,
+        0.63
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": false,
+        "total": 921600,
+        "changed": 0,
+        "exactDifferences": 167,
+        "failed": false
+      }
+    },
+    "appalachia-low-overview-noon": {
+      "sha256": "9c19b6a65f9ea70f98311cfb782d775e14a0c87a00e43ac2adb1f05df7d7a473",
+      "camera": [
+        10,
+        -170,
+        1440,
+        0.48,
+        0.53
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "appalachia-low-overview-golden": {
+      "sha256": "6ed640d3a4e5f3a37fb0a962651e80f1f9bf1ed8be0d4984d6c4fe49f82a0c73",
+      "camera": [
+        10,
+        -170,
+        1440,
+        0.48,
+        0.53
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "appalachia-low-overview-moonless": {
+      "sha256": "e2debbb519724dd06946f5741e78b2d21ffc10b720b6e1d6cde0a74ead63b085",
+      "camera": [
+        10,
+        -170,
+        1440,
+        0.48,
+        0.53
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "appalachia-low-overview-rain": {
+      "sha256": "dde4ce7ed575c066d6df543e178b796eba25c794485db56fde3edf60d319cf2a",
+      "camera": [
+        10,
+        -170,
+        1440,
+        0.48,
+        0.53
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "appalachia-low-water-noon": {
+      "sha256": "5d06845ab5173a204ca1c9580466a1d6e08a0aca92fa8111d8cffc867f710799",
+      "camera": [
+        7,
+        -170,
+        220,
+        1.26,
+        0.39
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "appalachia-low-water-golden": {
+      "sha256": "3fff05986c01844f368125087a59348311678bf1c876282db094d5318275136e",
+      "camera": [
+        7,
+        -170,
+        220,
+        1.26,
+        0.39
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "appalachia-low-water-moonless": {
+      "sha256": "dcc0bf3f797e1612d7d190f4a601dc4959fdddd1f494e02e6b7b40c7e7bfe2e1",
+      "camera": [
+        7,
+        -170,
+        220,
+        1.26,
+        0.39
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "appalachia-low-water-rain": {
+      "sha256": "b4f3eed66053506940ec106465dac6494979b20168f3e3230a9785a8b5940a18",
+      "camera": [
+        7,
+        -170,
+        220,
+        1.26,
+        0.39
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "appalachia-low-forest-noon": {
+      "sha256": "1e678269854c3d8df1a07a3d298da4cfefae0634b883905f7f9641c58a8c6714",
+      "camera": [
+        140,
+        380,
+        180,
+        3.141592653589793,
+        0.43
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "appalachia-low-forest-golden": {
+      "sha256": "1f01ab4aecf10a25b2ead3b6447d6fd321276625135840505f4c7ea54605a7d6",
+      "camera": [
+        140,
+        380,
+        180,
+        3.141592653589793,
+        0.43
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "appalachia-low-forest-moonless": {
+      "sha256": "f997a55f79db0f0c0ce9e3a9f23810e818a29e7f5970664d2bab3b24cb6bbccc",
+      "camera": [
+        140,
+        380,
+        180,
+        3.141592653589793,
+        0.43
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "appalachia-low-forest-rain": {
+      "sha256": "d2753ef7187eb759db09f3862b1ad10373accfdac1ebedaf5565bb2625ca3e00",
+      "camera": [
+        140,
+        380,
+        180,
+        3.141592653589793,
+        0.43
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "appalachia-high-overview-noon": {
+      "sha256": "40f338e6978e67ee1e79ac413ebac629771e98fdbc9e868523acc156d0ee90ac",
+      "camera": [
+        10,
+        -170,
+        1440,
+        0.48,
+        0.53
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "appalachia-high-overview-golden": {
+      "sha256": "5f4db929df6b52d78c64ca2265dc62abaa1622d4a644a0f6c4943b543d012286",
+      "camera": [
+        10,
+        -170,
+        1440,
+        0.48,
+        0.53
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "appalachia-high-overview-moonless": {
+      "sha256": "68f4333d62230f450e35f8be99effd26501319bbc7e0d20c3bd6d86ec2bfa4a1",
+      "camera": [
+        10,
+        -170,
+        1440,
+        0.48,
+        0.53
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "appalachia-high-overview-rain": {
+      "sha256": "83577b55070159bd39a1e3c025054a5b748e54e79da0998d536e8fb900839140",
+      "camera": [
+        10,
+        -170,
+        1440,
+        0.48,
+        0.53
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "appalachia-high-water-noon": {
+      "sha256": "f6a05030bbf5ec666b68f992233198468e92793b918493fd06b4778136bd211a",
+      "camera": [
+        7,
+        -170,
+        220,
+        1.26,
+        0.39
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "appalachia-high-water-golden": {
+      "sha256": "b25858f4910e1b6fc664349e0f8422e7510d27681158b8f2e91b90debaf8a0a2",
+      "camera": [
+        7,
+        -170,
+        220,
+        1.26,
+        0.39
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "appalachia-high-water-moonless": {
+      "sha256": "2729da9eccf172d1712abffe1580a8275723eb0fb3a399da646a1275c00c5f8d",
+      "camera": [
+        7,
+        -170,
+        220,
+        1.26,
+        0.39
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "appalachia-high-water-rain": {
+      "sha256": "b556ce8967e7c7a78459da068a9bc1379f46a1501ae06efd80845ac730fcf8e2",
+      "camera": [
+        7,
+        -170,
+        220,
+        1.26,
+        0.39
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "appalachia-high-forest-noon": {
+      "sha256": "2c2376b68b873c13e30f988d7286ba33ae3b8e93f530e40c7c4ac58a05addb51",
+      "camera": [
+        140,
+        380,
+        180,
+        3.141592653589793,
+        0.43
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "appalachia-high-forest-golden": {
+      "sha256": "14acfe1a1955227dd3e2a2c7cc5519658c55637604970517a01b60e83b57ccca",
+      "camera": [
+        140,
+        380,
+        180,
+        3.141592653589793,
+        0.43
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "appalachia-high-forest-moonless": {
+      "sha256": "c9d46b8272990d325f103dd4fefca3e64f7d79c61e17d823936d2da7ab376b53",
+      "camera": [
+        140,
+        380,
+        180,
+        3.141592653589793,
+        0.43
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "appalachia-high-forest-rain": {
+      "sha256": "1fe73041e8db6f7391a9acd81db5943291b86138ecc823fb5a09b07b9fb76c3b",
+      "camera": [
+        140,
+        380,
+        180,
+        3.141592653589793,
+        0.43
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "norcal-low-overview-noon": {
+      "sha256": "bd781d26d471047b0bb5249e6d84c4f41bdf37693f3a8a267c56ededbf6f7c03",
+      "camera": [
+        480,
+        100,
+        1670,
+        1.04,
+        0.49
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "norcal-low-overview-golden": {
+      "sha256": "15dfa3140f1f9f40a06fd96f0d35611fc63bd0664ae24310ffb8a598d9e3284d",
+      "camera": [
+        480,
+        100,
+        1670,
+        1.04,
+        0.49
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "norcal-low-overview-moonless": {
+      "sha256": "2311b182c9e671b4285c6b766d0f61f944491ebe1407b98e6d365b85019a5a6d",
+      "camera": [
+        480,
+        100,
+        1670,
+        1.04,
+        0.49
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "norcal-low-overview-rain": {
+      "sha256": "72db76b2d11c0a1fee2759b57e590cf015f4a307c2bea8d67ca065ae600bdd34",
+      "camera": [
+        480,
+        100,
+        1670,
+        1.04,
+        0.49
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "norcal-low-water-noon": {
+      "sha256": "f736c144e16133357c5b740678b0bad66bfc110904f81eb62c430f88f84b23c7",
+      "camera": [
+        -1672,
+        550,
+        240,
+        1.19,
+        0.42
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "norcal-low-water-golden": {
+      "sha256": "e769a47327991dc05efa32e87d50262887ae39d0e4de888fe54538902adc5c44",
+      "camera": [
+        -1672,
+        550,
+        240,
+        1.19,
+        0.42
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "norcal-low-water-moonless": {
+      "sha256": "fc8091b6bf9cdae4fc29b02d847d4c5c7f7af3f4575479146b57bd2eeaa2098d",
+      "camera": [
+        -1672,
+        550,
+        240,
+        1.19,
+        0.42
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "norcal-low-water-rain": {
+      "sha256": "062bc4c9e1f66875eba7bcdf7825b2325ad9916134f740c6c9ea859385bd38d9",
+      "camera": [
+        -1672,
+        550,
+        240,
+        1.19,
+        0.42
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "norcal-low-forest-noon": {
+      "sha256": "95ea9589d3e500bbd38aca44d1dba105fdba481cf05e86233e91b7e554db3b70",
+      "camera": [
+        1540,
+        -220,
+        195,
+        -1.5707963267948966,
+        0.42
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "norcal-low-forest-golden": {
+      "sha256": "18d98619257a52ffded478e1aa81d78bbc5009a4864054cfad4f6fe40908acb1",
+      "camera": [
+        1540,
+        -220,
+        195,
+        -1.5707963267948966,
+        0.42
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "norcal-low-forest-moonless": {
+      "sha256": "3ca853be8ada4844793bff5fd7271053aa25944aa1c7d8ba8add49a090cd8971",
+      "camera": [
+        1540,
+        -220,
+        195,
+        -1.5707963267948966,
+        0.42
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "norcal-low-forest-rain": {
+      "sha256": "36f2b7b495efc48d1fdccbbb66d5d26c9de73a2fcc4e5ce254a62d7168c8df94",
+      "camera": [
+        1540,
+        -220,
+        195,
+        -1.5707963267948966,
+        0.42
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "norcal-high-overview-noon": {
+      "sha256": "958ce2dd6f1eb9edddd5be88c3d09b4142d0f13655e90a743a1eb9a152241d1d",
+      "camera": [
+        480,
+        100,
+        1670,
+        1.04,
+        0.49
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "norcal-high-overview-golden": {
+      "sha256": "48f18a43828c481e71a57d36762000fdc470ba88cf08762c1d07c733c7730146",
+      "camera": [
+        480,
+        100,
+        1670,
+        1.04,
+        0.49
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "norcal-high-overview-moonless": {
+      "sha256": "5c7f0eac8921e632a98edbb077049d7ff121ffc64d73822a366d97dc61145f97",
+      "camera": [
+        480,
+        100,
+        1670,
+        1.04,
+        0.49
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "norcal-high-overview-rain": {
+      "sha256": "8ab5e60e8c74ee3bcff3691d09b7c60c2fad8af2df725e2465ec1843085b582c",
+      "camera": [
+        480,
+        100,
+        1670,
+        1.04,
+        0.49
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "norcal-high-water-noon": {
+      "sha256": "23326dd916372dc59b08e3fbd400eefbc57b7fc5673a5d28b706721f83754656",
+      "camera": [
+        -1672,
+        550,
+        240,
+        1.19,
+        0.42
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "norcal-high-water-golden": {
+      "sha256": "e4b7b16c71c71bacf205ff43d68485e69c1534edcd24c378dc4bd68e418d1d1a",
+      "camera": [
+        -1672,
+        550,
+        240,
+        1.19,
+        0.42
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "norcal-high-water-moonless": {
+      "sha256": "124932a5789898b061ee95139972fde6471a66b3da4eee4f0db12e42dbc34249",
+      "camera": [
+        -1672,
+        550,
+        240,
+        1.19,
+        0.42
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "norcal-high-water-rain": {
+      "sha256": "8292a84fbe1c72b95c306afd0985c399eca1caa93807cec0218a0825696a2560",
+      "camera": [
+        -1672,
+        550,
+        240,
+        1.19,
+        0.42
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "norcal-high-forest-noon": {
+      "sha256": "e52ff5f8b57644ea96a6965d11397a154e521a289cfc1542f8d1be974440e6cd",
+      "camera": [
+        1540,
+        -220,
+        195,
+        -1.5707963267948966,
+        0.42
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "norcal-high-forest-golden": {
+      "sha256": "b2dbbebe4070263a93f41546c0bcfc836adade9e998f77963ce9b089a742c5b3",
+      "camera": [
+        1540,
+        -220,
+        195,
+        -1.5707963267948966,
+        0.42
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "norcal-high-forest-moonless": {
+      "sha256": "663a7836575931cbde6296904a7eaebc997dabfa7d84d73ae6a32e679d9f8f6c",
+      "camera": [
+        1540,
+        -220,
+        195,
+        -1.5707963267948966,
+        0.42
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "norcal-high-forest-rain": {
+      "sha256": "8886d36df1d722e431a0a347f117db6adfa26b8b99452c88b1fe825591403047",
+      "camera": [
+        1540,
+        -220,
+        195,
+        -1.5707963267948966,
+        0.42
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "florida-low-overview-noon": {
+      "sha256": "c2e3aaf5dbedb3c44d868a8ddcbb1c90c3f1d18102d5302134342efe4f0378d9",
+      "camera": [
+        300,
+        950,
+        1440,
+        -2.45,
+        0.57
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "florida-low-overview-golden": {
+      "sha256": "d3d95157d395684bfce3b668c06b6a5cb92755b7bfc8e8dd81ecb639bc4338dc",
+      "camera": [
+        300,
+        950,
+        1440,
+        -2.45,
+        0.57
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "florida-low-overview-moonless": {
+      "sha256": "871b99f889a913de644f2cc71314d53b43f6430ca28117ff4c004efa44827790",
+      "camera": [
+        300,
+        950,
+        1440,
+        -2.45,
+        0.57
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "florida-low-overview-rain": {
+      "sha256": "36d892dc869a0d6bf57aa31b5a356559bc46457fec27cae8884041a0693e9586",
+      "camera": [
+        300,
+        950,
+        1440,
+        -2.45,
+        0.57
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "florida-low-water-noon": {
+      "sha256": "65b31664d7e7d37b1ddfa1f1daf591fc9872fe8c8b8cda1834c48aaeb164d55b",
+      "camera": [
+        450,
+        1552,
+        220,
+        -2.8,
+        0.4
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "florida-low-water-golden": {
+      "sha256": "34bbda444dc819321c44f183e3be8e1b8395b078819903c601fe717afaaf717f",
+      "camera": [
+        450,
+        1552,
+        220,
+        -2.8,
+        0.4
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "florida-low-water-moonless": {
+      "sha256": "b8e93d7d1b5e77e7195448741bfc47c7502aed19b76faecbbc48537e19ef0afd",
+      "camera": [
+        450,
+        1552,
+        220,
+        -2.8,
+        0.4
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "florida-low-water-rain": {
+      "sha256": "ade5848a034864e6d331281d43fad921494389d17eb4cdd2fecb96de322d4240",
+      "camera": [
+        450,
+        1552,
+        220,
+        -2.8,
+        0.4
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "florida-low-forest-noon": {
+      "sha256": "89274b46145f3553422b03cf070ed3a67813793bbe96617e6a2f32f75afb0cd2",
+      "camera": [
+        900,
+        -860,
+        175,
+        3.141592653589793,
+        0.4
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "florida-low-forest-golden": {
+      "sha256": "fea8469def124cab7ea931768d9fa1c5fc79d3466d8e8f2b2c4ca6f0c8160936",
+      "camera": [
+        900,
+        -860,
+        175,
+        3.141592653589793,
+        0.4
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "florida-low-forest-moonless": {
+      "sha256": "fd5c29804e982d06f143f609838a6bdac59b211b5fbebb0dffdd504143f64e25",
+      "camera": [
+        900,
+        -860,
+        175,
+        3.141592653589793,
+        0.4
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "florida-low-forest-rain": {
+      "sha256": "de53155dd5c78c39ce23a49e8c49dc7dc63ad3e90c87f036ce3370ae18038fcc",
+      "camera": [
+        900,
+        -860,
+        175,
+        3.141592653589793,
+        0.4
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        585,
+        1266
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 2962440,
+        "failed": false
+      }
+    },
+    "florida-high-overview-noon": {
+      "sha256": "2780ef57bd90f38341d66d66e3560795d8a83d1d97bd1417b3fe6d0a99739b7b",
+      "camera": [
+        300,
+        950,
+        1440,
+        -2.45,
+        0.57
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "florida-high-overview-golden": {
+      "sha256": "755021bce44299d2c2dd087479cd966acfaa272202086846582901e9f515357a",
+      "camera": [
+        300,
+        950,
+        1440,
+        -2.45,
+        0.57
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "florida-high-overview-moonless": {
+      "sha256": "7ebbb9a17b7b031bd2077ab65ff2682b0756840a18b0c1a851056742b815f7b6",
+      "camera": [
+        300,
+        950,
+        1440,
+        -2.45,
+        0.57
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "florida-high-overview-rain": {
+      "sha256": "bb3180364bc6aa176edacdf199bfd885dd8081938cb60a1e8c738274665a3a67",
+      "camera": [
+        300,
+        950,
+        1440,
+        -2.45,
+        0.57
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "florida-high-water-noon": {
+      "sha256": "359ecb9a0a63091164ff2e942fbd07d14303d7120eb5791e130d8a9785d9dd9e",
+      "camera": [
+        450,
+        1552,
+        220,
+        -2.8,
+        0.4
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "florida-high-water-golden": {
+      "sha256": "e9cb9b4d07b0f09c0689809f753a20494929be507c6dee61beae410e30e189f1",
+      "camera": [
+        450,
+        1552,
+        220,
+        -2.8,
+        0.4
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "florida-high-water-moonless": {
+      "sha256": "5575628ce7e0b090f2285763282d10a124c5fb19edb25acb1c924bbe54cc4255",
+      "camera": [
+        450,
+        1552,
+        220,
+        -2.8,
+        0.4
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "florida-high-water-rain": {
+      "sha256": "774da7c6744de9f86d8ccbe3ad5e754d29997619473f26afbeaf48d198181c1c",
+      "camera": [
+        450,
+        1552,
+        220,
+        -2.8,
+        0.4
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "florida-high-forest-noon": {
+      "sha256": "1ddab740e17e81aef8a2eb2bd3562eb6d17d9cc61ac5775496b6e3ee74f9b16a",
+      "camera": [
+        900,
+        -860,
+        175,
+        3.141592653589793,
+        0.4
+      ],
+      "conditions": [
+        12.5,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "florida-high-forest-golden": {
+      "sha256": "8cc2e6683fdec196a1f8bc6e150ad9be0745571f067c5696f310b19daed214bb",
+      "camera": [
+        900,
+        -860,
+        175,
+        3.141592653589793,
+        0.4
+      ],
+      "conditions": [
+        19.9,
+        0.5,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "florida-high-forest-moonless": {
+      "sha256": "3c4f3219756239763cd861a9b0db816a934a0bda9ec061043b71c5c4c95d4024",
+      "camera": [
+        900,
+        -860,
+        175,
+        3.141592653589793,
+        0.4
+      ],
+      "conditions": [
+        23,
+        0,
+        "clear"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    },
+    "florida-high-forest-rain": {
+      "sha256": "44f8f7a90ea02bb7c941fc01a6e3cdf81f6c3daf56eaf492935435df0cd50d27",
+      "camera": [
+        900,
+        -860,
+        175,
+        3.141592653589793,
+        0.4
+      ],
+      "conditions": [
+        16.5,
+        0.25,
+        "rain"
+      ],
+      "renderBuffer": [
+        1280,
+        720
+      ],
+      "replayVerified": true,
+      "replay": {
+        "exact": true,
+        "changed": 0,
+        "exactDifferences": 0,
+        "total": 921600,
+        "failed": false
+      }
+    }
+  }
+}

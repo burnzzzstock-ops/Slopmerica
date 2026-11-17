@@ -7,6 +7,7 @@ import { GenCtx, lotPad, parkingLot, car, tree, wallSign, sideSign, poleSign, du
 import { FAC, FLOOR, WALL, ROOF, block, roofJunk, neonBlade, capFloors } from './blocks';
 import { hexNum, signTile as sign, store } from './comLow';
 import { pickArch } from './archetypes';
+import { towerForm, setback, fitPlate } from './towerForm';
 
 function chooseArch(g: GenCtx): Archetype {
   const { spec } = g;
@@ -259,6 +260,7 @@ function hotel(g: GenCtx, b: Brand) {
 // ------------------------------------------------------------------ neon high-rise
 function neonTower(g: GenCtx, b: Brand) {
   const { mb, rng, W, D, spec } = g;
+  const form = towerForm(rng.state, W, D);
   lotPad(g, mats.asphalt());
   const L5 = spec.level >= 5;
   const fh = FLOOR.neon;
@@ -280,7 +282,9 @@ function neonTower(g: GenCtx, b: Brand) {
   const fac = FAC.neon(rng);
   block(g, tx0, tx1, tz0, tz1, podH, H1, fac, { roof: ROOF.flat() });
   const inset = Math.min(3, (tx1 - tx0) * 0.15);
-  block(g, tx0 + inset, tx1 - inset, tz0 + inset, tz1 - inset, H1, H2, L5 ? FAC.glassB(rng) : fac, { parapet: 1, cap: M('plain', 2, 2, 0x222222) });
+  const original = { x0: tx0 + inset, x1: tx1 - inset, z0: tz0 + inset, z1: tz1 - inset };
+  const crown = setback({ x0: tx0, x1: tx1, z0: tz0, z1: tz1 }, form, 1.25);
+  block(g, crown.x0, crown.x1, crown.z0, crown.z1, H1, H2, L5 ? FAC.glassB(rng) : fac, { parapet: 1, cap: M('grille', 4, 4, 0x616772) });
   // corner screens climbing the shaft
   if (L5) {
     for (let k = 0; k < 3; k++) {
@@ -293,12 +297,14 @@ function neonTower(g: GenCtx, b: Brand) {
   }
   for (let k = 0; k < (L5 ? 4 : 2); k++) neonBlade(g, tx0 + 0.6 + rng.float() * (tx1 - tx0 - 1.2), podH + 2 + rng.float() * (H1 - podH - 12), tz1, 8 + rng.float() * 6, rng.pick(['neonPink', 'neonCyan', 'neonLime', 'neonRed']));
   // crown sign
+  fitPlate(mb, original, crown);
   const cw = Math.min(tx1 - tx0 - inset * 2, 16);
   mb.box(-cw / 2, cw / 2, H2 + 1, H2 + 1 + cw / 4, tz1 - inset - 0.4, tz1 - inset, { f: S(sign(b)), b: S(sign(b)), side: M('plain', 2, 2, 0x111111), top: M('plain', 2, 2, 0x111111) });
   roofJunk(g, tx0 + inset, tx1 - inset, tz0 + inset, tz1 - inset - 1, H2, 0.3, { masts: 2, billboards: L5 && W >= 16 ? 1 : 0 });
+  mb.pop();
   wallSign(g, (x0 + x1) / 2, podH - 1.4, z1 + 0.3, Math.min(x1 - x0 - 2, 8), sign(rng.pick(['slop', 'waffleHut', 'bitcorn', 'cloudChasers', 'chickFilEh', 'slopEnergy'])), 1.3);
   for (let k = 0; k < 3; k++) g.em.push({ kind: 'cigarette', pos: [(rng.float() - 0.5) * W * 0.8, 1.6, D / 2 - 0.5] });
-  if (b.merch) g.em.push({ kind: 'sparkle', pos: [0, H2 + 2, tz1 - inset] });
+  if (b.merch) g.em.push({ kind: 'sparkle', pos: [(crown.x0 + crown.x1) / 2, H2 + 2, crown.z1] });
   g.label = b.name;
 }
 

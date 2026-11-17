@@ -21,6 +21,7 @@ import { PhotoMode } from './render/photo';
 import { BuildingFinishes } from './buildings/finishState';
 import { applyLowGrade, lowExposure } from './render/lowGrade';
 import { installGradeLite } from './render/gradeLite';
+import { CascadeShadows } from './render/cascadeShadows';
 import { Particles } from './render/particles';
 import { ConstructionEffects } from './render/constructionEffects';
 import { AudioEngine } from './audio/audio';
@@ -160,6 +161,7 @@ export class Game {
   readonly trees: Trees;
   readonly groundDetail: GroundDetail;
   readonly env: Environment;
+  readonly shadows: CascadeShadows;
   readonly water: ReturnType<typeof createWater>;
   readonly weather: WeatherSystem;
   /** the weather the simulation runs on (seeded, saved, in game time); `weather` above is the sky, which follows it */
@@ -300,6 +302,7 @@ export class Game {
     this.scene.add(this.trees.group);
     lap('trees');
     this.env = new Environment(this.scene, this.map.def, this.q, this.q.name === 'high' || this.q.name === 'ultra' ? this.renderer : undefined);
+    this.shadows = new CascadeShadows(this.scene, this.camera, this.env.sun, this.q);
     this.env.hour = this.hour;
     this.seed = (opts.restore?.seed ?? opts.seed ?? seedPick() ?? Math.floor(Math.random() * 2 ** 31)) >>> 0;
     this.climate = new Climate(opts.map, streamSeed(this.seed, 'climate'));
@@ -962,6 +965,7 @@ export class Game {
     saveQuality(name);
     this.pendingQuality = name === this.q.name ? null : name;
     this.post.setQuality(next);
+    this.shadows.setQuality(next);
     this.perf.quality = name;
     this.renderer.shadowMap.enabled = next.shadows;
     this.env.sun.castShadow = next.shadows;

@@ -38,8 +38,8 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 |---|---|
 | F0.1 harness on Windows | Done |
 | F0.2 gates | Done, except `noUnusedLocals` / `noUnusedParameters`, a `tsconfig.scripts.json` and a `scripts/worktree.sh` without symlinks |
-| F0.3 determinism | Done for frame rate and for save and reload on the norcal test town. Open: the other two maps, a two-year scripted-player town, the Low and Ultra modes (blocked on F0.4) |
-| F0.4 presets never change the sim | **Open.** People still exist only near the camera and are capped by the preset |
+| F0.3 determinism | Done on the norcal test town for frame rate, save and reload, the graphics preset and where the camera is (seven modes, 180 days, 18 systems). Open: the other two maps and a two-year scripted-player town |
+| F0.4 presets never change the sim | Done for the simulation (e00bd90): people on foot are all over the town on every preset, capped by `TUNING.people.max`; the renderer draws the ones round the camera. Left, as a look matter: stationary people (loiterers, yard-sitters, commune members, people at bus stops, protesters) should be decoration round the camera, outside the simulation, so far-off communes cost nothing and a wide town does not look emptier |
 | F0.5 saves | Done but for the golden-save test: exact state, versions and migration, packing, quota fallbacks, slots with their UI on the title screen and in Settings, the question before a new city replaces the one to resume, and the notice for a stored city that cannot be read (1ea4162, `scripts/slotstest.mjs`). Open: three committed golden saves that every build must still load (there are two fixtures to start from: `saves/v1-norcal-block.json` and `saves/v2-drivethru-jam.json.gz`) |
 | F0.6 ship like a game | Done: no debug hooks or playtest tools in a player's build, one-file build with packs inside, README, `shiptest` |
 | F0.7 sim hot spots | Started: `scripts/simperf.mjs` and `docs/aaa/PERF_SIM.md`. On the 14,440-person town a step is 3.85 ms (traffic four fifths), 49% of a core at top speed; the every-third-day hitch is 41 ms, down from 62 (c5a94a8). Left: spread the land value pass over its three days, the daily tick, traffic inside, the save hitch, a 50,000-person town |
@@ -85,6 +85,8 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 | 4ea05b4 | A household's trip can weigh a few places by today's drive: in the code, switched off (`TUNING.whereTo.choices: 1`) |
 | 7f727f1, c5a94a8 | `scripts/simperf.mjs`; the land value pass no longer searches 300 m round every building for a landmark (the same county, a third less hitch) |
 | 1ea4162 | **Saves:** slots on the title screen and in Settings; Start paving asks before a new city takes the old one's place; an unreadable stored city is said so and kept |
+| cd31237 | playtest4 reads the inspector's garbage sign, not the emoji the row used to start with |
+| e00bd90 | **People:** who is out on foot no longer depends on the camera or the graphics preset; determinism gains the `away` and `ultra` modes |
 | acc29c5 | A mouse press held on Bulldoze or One More Lane is no longer lost when the inspector redraws (`scripts/presstest.mjs`; from the second play-lane session) |
 | d1f1e09, 94d36e7, de0376d, f9fef47 (merged at 699ec0e) | From the second session's polish branch: drawn icons on the tool badge, the top bar and the inspector; photo mode gets a Focus slider (after Street level the Blur slider did nothing, and nothing could move the focus back) and opens on P; the step card changes shape the moment a drawer opens or closes; the last first step ends by itself on day 15 |
 
@@ -184,7 +186,7 @@ What would do it, in the order I would try them:
 
 ## Findings still to act on
 
-1. People hold cars at crossings and trigger signal phases, and exist only when the camera is within 900 m. This is F0.4. The plan: town-wide seeded walkers in `peds` that do not depend on the camera; camera-local cosmetic extras in a separate list on the `fx` stream; a renderer handle of -1 for a walker not drawn; handles assigned at draw time. Then extend `qualitytest` to fingerprint the whole sim on Low and Ultra.
+1. (Done, e00bd90.) People are simulated town-wide; a handle of -1 is a person not drawn; `draw()` assigns handles round the camera. The second half of the plan is open: a camera-local crowd of stationary people on the `fx` stream, sharing the people renderer, never saved and never in a fingerprint (a second `Pedestrians` that only makes the stationary kinds would do it). Until then, 74 commune members are simulated in the woods on the test county, and a wide town shows fewer people in view than it did.
 2. The interchange tool (`net.together()`) and communes clearing trees do not raise `roadBuilt` / `treesCleared`.
 3. The sky module rolls nothing of its own any more but still owns the look of a spell; it is handed each spell through `weather.force`. It should read `game.climate` (requested).
 4. Traffic, from the tests on the regrown town: cars pass through each other for an instant where a truck pulls out of a lot and where two turning curves cross in a junction; 2 to 5 heading snaps in 120 s; a car can wait in its driveway up to 333 s for a gap on a residential street at rush hour; one car stopped past its stop line on a crosswalk while yielding to a walker and sat there through the red (seed 2); actuated lights help less than the test expects, and leading greens can cost a junction cars.
@@ -203,5 +205,5 @@ The order below follows the owner's "fun first" roadmap of 17 Nov: what a player
 7. **The Growth Ponzi made visible (F2):** real road condition, the unfunded-liabilities curve in the budget, Cousin Dale's Paving LLC, tax abatements.
 8. **The Plat-o-Matic and Old Main** (`GAME_DESIGN.md` 5.2 and 7): a subdivision stamped from one drag; a courthouse square to start beside.
 9. **The Waffle Hut Index and floods the player caused (F4).** Then endings (F3), American roads (F5), parking (F6), citizens (F7), the headless sim (F9).
-10. Foundation still owed, fitted in between: F0.4 (people do not depend on the camera or the preset), the rest of F0.3 (three maps, the scripted-player town, Low and Ultra), F0.5 (slots UI, confirm before New city, the unreadable-save message, golden saves), F0.7 (hot spots on the 10,000-person town).
+10. Foundation still owed, fitted in between: the decorative crowd (the second half of F0.4), the rest of F0.3 (three maps, the scripted-player town), the golden-save test (F0.5), F0.7 (the land value pass spread over its three days, the daily tick, traffic inside, the save hitch, a 50,000-person town).
 11. Phase 3 (writing), Phase 4 (proof).

@@ -28,6 +28,7 @@ const ALLOW = {
   },
   'src/core/rng.ts': { random: [1, 'the seed of fx, the dice for looks and words only'] },
   'src/sim/save.ts': { clock: [4, 'when a save was written, and how often to warn that saving failed'] },
+  'src/sim/slots.ts': { clock: [1, 'when a city was put in a slot (shown in the list of slots)'] },
   'src/sim/buildings.ts': { clock: [2, 'a counter of model-building time for the performance overlay'] },
   'src/sim/services.ts': { clock: [1, 'a counter of the daily tick cost for the performance overlay'] },
   'src/sim/sim.ts': { clock: [2, 'the calendar label (day 0 is March 20): arithmetic on a fixed date, not the clock'] },

@@ -1,6 +1,7 @@
 // BASE_URL serves source; this controlled WebGL scene validates real color/depth copies.
 import { launch, saveReport } from "./measure.mjs";
-const base = process.env.BASE_URL ?? "http://127.0.0.1:5173", browser = await launch();
+const base = process.env.BASE_URL ?? "http://127.0.0.1:5173";
+const browser = await launch(process.env.GPU !== '1');
 try {
   const page = await browser.newPage({ viewport: {
     width: 640,

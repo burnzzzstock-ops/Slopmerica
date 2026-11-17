@@ -2,7 +2,8 @@
 import { launch, openScene, identifyRenderer, saveReport } from "./measure.mjs";
 import { timePasses } from "./pass-times.mjs";
 import { writeFileSync } from "node:fs";
-const browser = await launch();
+const hardware = process.env.GPU === '1';
+const browser = await launch(!hardware);
 try {
   const { page, errs } = await openScene(browser, {
     scene: "norcal",
@@ -40,15 +41,17 @@ try {
   const proof = await page.evaluate(() => {
     const g = window.__game, gl = g.renderer.getContext(), w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
     const off = new Uint8Array(w * h * 4), on = new Uint8Array(w * h * 4);
+    // Compare the post effect against the same already-drawn world. A second
+    // Game frame can refresh throttled sky/reflection resources between reads.
     g.godRays.enabled = false;
     g.post.gradeM.uniforms.uTime.value = 0;
-    g.frame(0);
+    g.post.render(0, g.rts.distance);
     gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, off);
     const offImage = g.renderer.domElement.toDataURL("image/png");
     const before = g.godRays.passes;
     g.godRays.enabled = true;
     g.post.gradeM.uniforms.uTime.value = 0;
-    g.frame(0);
+    g.post.render(0, g.rts.distance);
     gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, on);
     let sum = 0, max = 0, changed = 0;
     for (let i = 0; i < off.length; i += 4) {
@@ -69,7 +72,7 @@ try {
   writeFileSync("shots/water/god-rays-high-off.png", Buffer.from(proof.offImage.split(",")[1], "base64"));
   delete proof.offImage;
   await page.screenshot({ path: "shots/water/god-rays-high.png" });
-  const gpu = await page.evaluate(timePasses, 8);
+  const gpu = hardware ? await page.evaluate(timePasses, 8) : null;
   const quality = await page.evaluate(() => {
     const g = window.__game;
     g.hour = 13;
@@ -105,7 +108,7 @@ try {
       rows
     };
   });
-  const renderer = await page.evaluate(identifyRenderer, true);
+  const renderer = await page.evaluate(identifyRenderer, hardware);
   const low = quality.rows[0], medium = quality.rows[1], ultra = quality.rows[2];
   const result = {
     setup,

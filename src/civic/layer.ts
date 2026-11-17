@@ -190,7 +190,7 @@ export class CivicLayer {
       const geos = a.lods.map((lod) => lod.prims.map((p) => {
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(bin, p.pos, p.count * 3), 3));
-        geo.setAttribute('normal', new THREE.BufferAttribute(new Int8Array(bin, p.nrm, p.count * 4), 3, true));
+        geo.setAttribute('normal', new THREE.InterleavedBufferAttribute(new THREE.InterleavedBuffer(new Int8Array(bin, p.nrm, p.count * 4), 4), 3, 0, true));
         geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(bin, p.uv, p.count * 2), 2));
         geo.computeBoundingSphere();
         return { geo, mat: mats.get(p.mat) ?? new THREE.MeshStandardMaterial({ color: 0x888888 }) };

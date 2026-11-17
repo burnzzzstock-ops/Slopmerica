@@ -1,4 +1,5 @@
 [
+  {"name":"civic-normals","command":"node scripts/look/civic-normals.mjs","tier":"full","timeout":600,"needsBrowser":true,"needsKey":false,"env":{},"what":"Civic geometry attributes read the packed XYZ normals with stride four for every vertex and LOD"},
   {"name":"postcards","command":"node scripts/look/postcards.mjs","tier":"full","timeout":1200,"needsBrowser":true,"needsKey":false,"env":{},"what":"Native-resolution county postcards on all three maps restore clock, weather, camera and HUD"},
   {"name":"photo-resolution","command":"node scripts/look/photo-resolution.mjs","tier":"measure","timeout":600,"needsBrowser":true,"needsKey":false,"env":{},"what":"True 4K scene export and target restoration on success and failure","why":"Large GPU render target and machine-specific hardware proof"},
   {"name":"camera-zoom","command":"node scripts/look/camera-zoom.mjs","tier":"full","timeout":600,"needsBrowser":true,"needsKey":false,"env":{},"what":"Sixty-frame zoom sequence keeps distance steps below two percent and anchors the cursor"},

@@ -113,6 +113,102 @@ function bubbleSize(dist: number, n: number, p?: Problem, wide = 1) {
   return Math.min(140, Math.max(3.2, dist * 0.035)) * Math.min(2, 1.25 + 0.12 * Math.log2(n)) * wide;
 }
 
+const MAX_VISIBLE = 25;
+const SEVERITY: readonly Problem[] = ['fire', 'road', 'power', 'water', 'sewage', 'garbage', 'sick', 'abandoned', 'crime', 'education', 'pollution'];
+const VIEW_PROBLEMS: Readonly<Record<string, readonly Problem[]>> = {
+  power: ['power'], water: ['water'], sewage: ['sewage'], garbage: ['garbage'], fire: ['fire'],
+  police: ['crime'], health: ['sick'], education: ['education'], pollution: ['pollution'],
+  traffic: ['road'], landValue: ['abandoned', 'pollution'],
+};
+const sceneViews = new WeakMap<THREE.Scene, string>();
+
+/** The active view filters only problems supplied by the simulation. Unknown views have no service bubbles. */
+export function setProblemView(scene: THREE.Scene, view: string) {
+  sceneViews.set(scene, view.replace(/^svc:/, ''));
+}
+
+type ProjectedProblem = { item: ProblemItem; x: number; y: number; depth: number; half: number };
+
+/** Screen-space layout shared by rendering, picking and the regression checks. Counts always come from the input. */
+export function clusterProblemItems(
+  source: readonly ProblemItem[], camera: THREE.PerspectiveCamera, width: number, height: number,
+  view = 'none', time = 0,
+): ProblemItem[] {
+  if (width <= 0 || height <= 0) return [];
+  const filter = view === 'none' ? null : VIEW_PROBLEMS[view] ?? [];
+  const point = new THREE.Vector3();
+  const wide = 1 / (camera.projectionMatrix.elements[5] * TAN25);
+  const pixelsPerMetre = height * camera.projectionMatrix.elements[5] / 2;
+  const project = (item: ProblemItem): ProjectedProblem => {
+    const phase = (Math.abs(item.id) * 1.7) % 6.28;
+    point.set(item.x, item.y + Math.sin(time * 2.4 + phase) * 0.6, item.z).applyMatrix4(camera.matrixWorldInverse);
+    const depth = -point.z;
+    point.applyMatrix4(camera.projectionMatrix);
+    const half = bubbleSize(depth, item.n ?? 1, item.p, wide) * pixelsPerMetre / depth / 2 + 3;
+    return { item, depth, x: (point.x + 1) * width / 2, y: (1 - point.y) * height / 2, half };
+  };
+  const dominant = (mix: Partial<Record<Problem, number>>) => SEVERITY.reduce((best, problem) =>
+    (mix[problem] ?? 0) > (mix[best] ?? 0) ? problem : best, SEVERITY[0]);
+  const merge = (first: ProjectedProblem, second: ProjectedProblem): ProjectedProblem => {
+    const a = first.item, b = second.item, na = a.n ?? 1, nb = b.n ?? 1, n = na + nb;
+    const mix = { ...(a.mix ?? { [a.p]: na }) };
+    for (const problem of PROBLEMS) {
+      const count = b.mix?.[problem] ?? (b.p === problem && !b.mix ? nb : 0);
+      if (count) mix[problem] = (mix[problem] ?? 0) + count;
+    }
+    return project({
+      x: (a.x * na + b.x * nb) / n, y: (a.y * na + b.y * nb) / n, z: (a.z * na + b.z * nb) / n,
+      id: -Math.max(1, Math.min(Math.abs(a.id), Math.abs(b.id))), p: dominant(mix), n, mix,
+    });
+  };
+  let projected: ProjectedProblem[] = [];
+  for (const original of source) {
+    let item = original;
+    if (filter) {
+      const mix: Partial<Record<Problem, number>> = {};
+      let n = 0;
+      for (const problem of filter) {
+        const count = original.mix?.[problem] ?? (original.p === problem && !original.mix ? original.n ?? 1 : 0);
+        if (count > 0) { mix[problem] = count; n += count; }
+      }
+      if (!n) continue;
+      item = { ...original, n, mix, p: dominant(mix) };
+    }
+    const p = project(item);
+    const far = (item.n ?? 1) > 1 ? 4400 : 1900;
+    if (p.depth <= camera.near || p.depth >= far || p.x < 0 || p.x > width || p.y < 0 || p.y > height) continue;
+    projected.push(p);
+  }
+  // Stable input order also keeps ties independent of the building map's insertion order.
+  projected.sort((a, b) => a.item.id - b.item.id || SEVERITY.indexOf(a.item.p) - SEVERITY.indexOf(b.item.p));
+  if (projected.length > MAX_VISIBLE) {
+    const columns = Math.max(1, Math.min(MAX_VISIBLE, Math.floor(Math.sqrt(MAX_VISIBLE * width / height))));
+    const rows = Math.max(1, Math.floor(MAX_VISIBLE / columns));
+    const cells = new Map<number, ProjectedProblem>();
+    for (const p of projected) {
+      const column = Math.min(columns - 1, Math.floor(p.x / width * columns));
+      const row = Math.min(rows - 1, Math.floor(p.y / height * rows));
+      const key = row * columns + column, previous = cells.get(key);
+      cells.set(key, previous ? merge(previous, p) : p);
+    }
+    projected = [...cells.values()];
+  }
+  // Merge across cell boundaries too. Recheck the enlarged badge after every merge.
+  for (let i = 0; i < projected.length; i++) {
+    for (let j = i + 1; j < projected.length; j++) {
+      const a = projected[i], b = projected[j], half = a.half + b.half;
+      if (Math.abs(a.x - b.x) >= half || Math.abs(a.y - b.y) >= half * 1.4) continue;
+      projected[i] = merge(a, b);
+      projected.splice(j, 1);
+      i = -1;
+      break;
+    }
+  }
+  // A single instanced transparent draw needs its own back-to-front ordering.
+  projected.sort((a, b) => b.depth - a.depth || a.item.id - b.item.id);
+  return projected.map(p => p.item);
+}
+
 export class ProblemIcons {
   readonly mesh: THREE.Mesh;
   private geo: THREE.InstancedBufferGeometry;
@@ -200,6 +296,18 @@ export class ProblemIcons {
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 20;
     scene.add(this.mesh);
+    const before = scene.onBeforeRender;
+    scene.onBeforeRender = (...args) => {
+      before.apply(scene, args);
+      const [renderer, , camera] = args;
+      if (!(camera as THREE.PerspectiveCamera).isPerspectiveCamera) return;
+      // Water's oblique mirror pass runs after the main scene. Keep the layout
+      // and hit targets of the view the player sees when that pass renders.
+      const projection = camera.projectionMatrix.elements;
+      if (projection[2] !== 0 || projection[6] !== 0) return;
+      const rect = renderer.domElement.getBoundingClientRect();
+      this.layout(camera as THREE.PerspectiveCamera, rect.width, rect.height, sceneViews.get(scene) ?? 'none');
+    };
   }
 
   private grow(n: number) {
@@ -216,6 +324,7 @@ export class ProblemIcons {
   }
 
   private items: ProblemItem[] = [];
+  private source: ProblemItem[] = [];
   private v = new THREE.Vector3();
 
   /** the bubbles shown right now (tests, the hover tip) */
@@ -230,13 +339,15 @@ export class ProblemIcons {
   pick(camera: THREE.PerspectiveCamera, rect: DOMRect, cx: number, cy: number): ProblemItem | null {
     if (!this.mesh.visible) return null;
     let best: ProblemItem | null = null, bd = Infinity;
-    const k = rect.height / (2 * Math.tan((camera.fov * Math.PI) / 360)), wide = 1 / (camera.projectionMatrix.elements[5] * TAN25);
+    const k = rect.height * camera.projectionMatrix.elements[5] / 2, wide = 1 / (camera.projectionMatrix.elements[5] * TAN25);
     for (const it of this.items) {
       const n = it.n ?? 1;
-      this.v.set(it.x, it.y, it.z);
-      const dist = this.v.distanceTo(camera.position);
+      const phase = (Math.abs(it.id) * 1.7) % 6.28;
+      this.v.set(it.x, it.y + Math.sin(this.mat.uniforms.uTime.value * 2.4 + phase) * 0.6, it.z).applyMatrix4(camera.matrixWorldInverse);
+      const dist = -this.v.z;
+      if (dist <= camera.near) continue;
       if (dist > (n > 1 ? 4400 : 1900)) continue;
-      this.v.project(camera);
+      this.v.applyMatrix4(camera.projectionMatrix);
       if (this.v.z > 1) continue;
       const sx = rect.left + ((this.v.x + 1) / 2) * rect.width, sy = rect.top + ((1 - this.v.y) / 2) * rect.height;
       const half = (bubbleSize(dist, n, it.p, wide) * k) / dist / 2 + 3;
@@ -247,6 +358,16 @@ export class ProblemIcons {
 
   /** Replace all icons. */
   set(items: ProblemItem[]) {
+    this.source = items.slice();
+    this.upload(items);
+  }
+
+  /** Called before Three uploads the instance attributes for this view. */
+  layout(camera: THREE.PerspectiveCamera, width: number, height: number, view = 'none') {
+    this.upload(clusterProblemItems(this.source, camera, width, height, view, this.mat.uniforms.uTime.value));
+  }
+
+  private upload(items: ProblemItem[]) {
     this.items = items.slice();
     if (items.length > this.cap) this.grow(Math.ceil(items.length * 1.5));
     const P = this.pos.array as Float32Array, I = this.icon.array as Float32Array, N = this.count.array as Float32Array;

@@ -27,6 +27,8 @@ import {
 /** What the street needs to know about a car. `traffic.cars` (agents/traffic.ts) satisfies this as it is. */
 export interface StreetCar {
   id: number;
+  /** Renderer handle, when supplied by the live traffic simulation. */
+  h?: number;
   kind: VehicleKind;
   x: number;
   y: number;
@@ -716,7 +718,7 @@ export class StreetAudio {
   }
 
   private alive(c: StreetCar) {
-    return c.crashed === 0 && !c.parked && c.yaw === c.yaw && c.x === c.x && c.z === c.z;
+    return (c.h === undefined || c.h >= 0) && c.crashed === 0 && !c.parked && c.yaw === c.yaw && c.x === c.x && c.z === c.z;
   }
 
   // ------------------------------------------------------------ 4 Hz: who gets a voice, who honks

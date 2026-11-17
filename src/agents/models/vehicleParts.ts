@@ -14,10 +14,11 @@ export function lightBar(mb: ModelBuilder, y: number, z: number, halfW: number, 
     const zone = opts.amber ? ZONE.BEACON : left ? (opts.red !== false ? ZONE.SIREN_RED : ZONE.SIREN_BLUE) : (opts.blue !== false ? ZONE.SIREN_BLUE : ZONE.SIREN_RED);
     mb.add(boxG(seg * 0.92, 0.085, 0.27, x, y + 0.06, z), zone === ZONE.SIREN_RED ? 0xd0141f : zone === ZONE.SIREN_BLUE ? 0x1a5cff : 0xffb020, zone, 0);
     const lamp: V3 = [x, y + 0.1, z];
-    mb.lamps.siren.push(lamp);
+    if (opts.amber) mb.lamps.beacon.push(lamp);
+    else mb.lamps.siren.push(lamp);
     if (zone === ZONE.SIREN_BLUE) mb.lamps.sirenBlue.push(lamp);
   }
-  mb.lamps.beacon.push([0, y + 0.1, z]);
+  if (!opts.amber) mb.lamps.beacon.push([0, y + 0.1, z]);
 }
 
 /** Ladder rack / roof rack: two rails and cross bars, at the given height over a z range. */

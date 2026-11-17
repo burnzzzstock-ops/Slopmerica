@@ -268,22 +268,25 @@ metalnessFactor = vMetal;`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 totalEmissiveRadiance += lampEmit * uGlow;
 // a dark car at night still reads: at grazing angles the clearcoat mirrors the town's glow on the horizon (a thin bluish rim, not a lamp) ...
-if (zn < 3.5) {
+if (zn < 5.0 || (zn > 12.0 && zn < 13.0) || (zn > 15.0 && zn < 16.0)) {
+  vec3 vPool = lampPool(vVehWorld);
+  vec3 vWn = normalize(vVehWorldNormal);
+  totalEmissiveRadiance += diffuseColor.rgb * vPool * (0.12 + 0.38 * max(vWn.y, 0.0)) * (1.0 - vMetal * 0.8);
   float vFres = 1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0);
   totalEmissiveRadiance += vec3(0.30, 0.36, 0.50) * pow(vFres, 3.0) * uVehicleNight * 0.12 * uGlow;
   // ... and in a street lamp's pool the gloss of the paint and glass throws the light back: a warm highlight on the panels that face up
   // (where the camera sees the lamp overhead mirrored), along the grazing edges, and a faint one on the sides (the lit road mirrored).
-  // The paint's own colour fades it out (vDark): black and charcoal paint read, white and silver stay as they were. The pool is 0 by day.
-  vec3 vWn = normalize(vVehWorldNormal);
+  // Dark paint and brushed metal reflect the pool along panels and grazing edges.
   vec3 vRefl = reflect(-normalize(cameraPosition - vVehWorld), vWn);
   float vUp = smoothstep(0.3, 0.9, vWn.y) * pow(clamp(vRefl.y, 0.0, 1.0), 1.5);
   float vSide = (1.0 - smoothstep(0.3, 0.9, vWn.y)) * clamp(-vRefl.y, 0.0, 1.0);
   float vDark = 1.0 - smoothstep(0.04, 0.35, dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)));
-  totalEmissiveRadiance += lampPool(vVehWorld) * vGloss * vDark * (uCarSheen.x * vUp + uCarSheen.y * pow(vFres, 3.0) + uCarSheen.z * vSide);
+  float vReflect = max(vGloss * vDark, zn > 14.5 ? 0.65 : 0.0);
+  totalEmissiveRadiance += vPool * vReflect * (uCarSheen.x * vUp + uCarSheen.y * pow(vFres, 3.0) + uCarSheen.z * vSide);
 }`)
       .replace('#include <lights_fragment_end>', cloudShadowChunk('vVehWorld'));
   };
-  material.customProgramCacheKey = () => 'aa-vehicle-unified-v4';
+  material.customProgramCacheKey = () => 'aa-vehicle-unified-v5';
   return material;
 }
 
@@ -619,9 +622,16 @@ export class VehicleRenderer {
   }
 
   private lampCode(b: KindBatch, i: number): number {
-    const kindSiren = b.kind === 'police' || b.kind === 'ambulance' || b.kind === 'firetruck' || b.kind === 'towTruck';
-    const siren = b.siren[i] === 2 ? 1 : b.siren[i] === 1 ? 0 : kindSiren && !b.parked[i] ? 1 : 0;
+    const siren = this.warningOn(b, i, this.lampsOf(b.handleByInstance[i])) ? 1 : 0;
     return (b.braking[i] && !b.parked[i] ? 1 : 0) + (b.turn[i] + 1) * 2 + (b.parked[i] ? 1 : b.headlights[i]) * 6 + (!b.parked[i] && (b.reversing[i] || b.reverseTimer[i] > 0) ? 18 : 0) + siren * 36;
+  }
+
+  /** Solid lenses and their halos share the same warning-light state. */
+  private warningOn(b: KindBatch, i: number, lamps?: LampSet): boolean {
+    if (b.siren[i]) return b.siren[i] === 2;
+    if (b.parked[i]) return false;
+    if (b.kind === 'police' || b.kind === 'ambulance' || b.kind === 'firetruck' || b.kind === 'towTruck') return true;
+    return !!lamps?.beacon.length && b.speed[i] > 0.5;
   }
 
   /** Spring the body on its wheels: road-height changes kick it, gravity and damping settle it. Purely a drawing effect. */
@@ -698,8 +708,7 @@ export class VehicleRenderer {
       for (const p of turn > 0 ? lamps.turnLeft : lamps.turnRight) this.world(p, 0.36, 1.0, 0.55, 0.06, 1.0 * (0.4 + 0.6 * night));
     }
     // emergency lights: red and blue flashes with a tint on the ground round the vehicle
-    const kindSiren = b.kind === 'police' || b.kind === 'ambulance' || b.kind === 'firetruck';
-    const sirenOn = b.siren[i] === 2 || (b.siren[i] !== 1 && kindSiren && !parked);
+    const sirenOn = this.warningOn(b, i, lamps);
     if (sirenOn && lamps.siren.length) {
       let redOn = false, blueOn = false;
       for (const p of lamps.siren) {
@@ -714,9 +723,9 @@ export class VehicleRenderer {
         fx.disc(c.x, c.y, c.z, 7.5, redOn ? 1.0 : 0.1, redOn ? 0.06 : 0.3, redOn ? 0.08 : 1.0, (0.1 + 0.6 * night) * (redOn && blueOn ? 1 : 0.85));
       }
     }
-    if (lamps.beacon.length && !lamps.siren.length && !parked && b.speed[i] > 0.5) {
+    if (sirenOn && lamps.beacon.length && !lamps.siren.length) {
       // an amber work beacon (tow truck, garbage truck) turning slowly
-      if (Math.sin(t * 8 + seed * 5) > 0.1) for (const p of lamps.beacon) this.world(p, 0.9, 1.0, 0.55, 0.05, 1.0);
+      if (Math.sin(t * 8 + seed * 13 + 1.6) > 0.15) for (const p of lamps.beacon) this.world(p, 0.9, 1.0, 0.55, 0.05, 1.0);
     }
     if (dist > 75 || parked) return;
     // ---- puffs

@@ -181,9 +181,9 @@ export class CivicLayer {
       });
       mat.name = `civic-${m.id}`;
       applyAtmosphere(mat);
-      // the street trees take the street lamps' pools of light like the roads and facades do (a crown and trunk under a lamp read at
-      // night instead of black); furniture is left as it was
+      // Trees and street furniture receive the same practical light as the sidewalk.
       if (m.id === 'foliage' || m.id === 'bark') litByLamps(mat, { name: 'uTreeLamp', u: TREE_LAMP });
+      else litByLamps(mat);
       mats.set(m.id, mat);
     }
     for (const [id, a] of Object.entries(pack.assets)) {

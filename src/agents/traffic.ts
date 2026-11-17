@@ -474,7 +474,12 @@ export class Traffic {
   /** game wiring: live parking (drawn only; see parking.ts) */
   parking?: Parking;
   /** drive-thru lanes by building (null: none), built from the building model's spots */
-  private thruLanes = new Map<Bld, { model: Bld['model']; lanes: ThruLane[] } | null>();
+  /**
+   * Each building's drive-thru lanes, worked out once for the model it wears and whether it is open: no lanes is an answer too.
+   * (An answer of "none" used to be kept for good, whatever the building became: every trip asks its destination, so a shop
+   * was marked "none" long before it levelled up into a drive-thru, and then never got its lane or its grand opening.)
+   */
+  private thruLanes = new Map<Bld, { model: Bld['model']; open?: boolean; lanes: ThruLane[] } | null>();
   /** when cars arrived at each landmark (sim clock), for the inspector's visitors today */
   private visits = new Map<Bld, number[]>();
   /** an event's crowd not yet sent home (a fraction of a car), by landmark */
@@ -576,10 +581,15 @@ export class Traffic {
 
   /** The drive-thru lanes at a building (from its model's spots), or null. */
   thruAt(b: Bld): ThruLane[] | null {
-    const hit = this.thruLanes.get(b);
-    if (hit !== undefined && (!hit || hit.model === b.model)) return hit ? hit.lanes : null;
+    const hit = this.thruLanes.get(b), open = b.state === 'active';
+    if (hit && hit.model === b.model && hit.open === open) return hit.lanes.length ? hit.lanes : null;
     const sp = b.model.spots?.filter((p) => p.kind === 'thru' || p.kind === 'out');
-    if (!sp || !sp.some((p) => p.kind === 'thru') || b.state !== 'active') { this.thruLanes.set(b, null); return null; }
+    if (!sp || !sp.some((p) => p.kind === 'thru') || !open) {
+      // (whoever was in the lanes of what stood here is let go: the lane is gone)
+      for (const car of hit?.lanes.flatMap((L) => L.q) ?? []) if (car.thru) { car.arrived = true; car.crashed = -1; }
+      this.thruLanes.set(b, { model: b.model, open, lanes: [] });
+      return null;
+    }
     const c = Math.cos(b.yaw), sn = Math.sin(b.yaw);
     const w = (p: { x: number; z: number; yaw: number }) => ({ x: b.x + p.x * c + p.z * sn, z: b.z - p.x * sn + p.z * c, yaw: b.yaw + p.yaw });
     const lanes: ThruLane[] = [];
@@ -590,7 +600,7 @@ export class Traffic {
     // (a rebuilt lot: whoever was in the old lanes carries on in the new first one)
     const old = hit?.lanes.flatMap((L) => L.q) ?? [];
     for (const car of old) if (lanes[0] && lanes[0].q.length < lanes[0].slots.length && car.thru) { car.thru.L = lanes[0]; lanes[0].q.push(car); } else if (car.thru) { car.arrived = true; car.crashed = -1; }
-    this.thruLanes.set(b, lanes.length ? { model: b.model, lanes } : null);
+    this.thruLanes.set(b, { model: b.model, open, lanes });
     return lanes.length ? lanes : null;
   }
 

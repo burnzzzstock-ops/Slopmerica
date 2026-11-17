@@ -1,7 +1,9 @@
 // Photo mode has a way in and controls. On a desktop window and a 390 x 844 phone: Photo (in More) puts the game into the
 // look lane's photo mode (g.photo), with the HUD hidden but for one bar; Street level, the hour, the weather, the postcard
 // frame, Save and Save 4K reach the photo API with the right values; a real capture gives a PNG; Done and Esc bring the HUD
-// back. Exits nonzero on failure.
+// back. Adjust has a Focus slider, which is what brings the blur back after Street level has set the focus to 60 m (the blur
+// fades out under 240 m and is gone under 80), and on a preset with no post-processing a line says blur and focus do not
+// show; on the desktop P opens photo mode. Exits nonzero on failure.
 //
 //   BASE_URL=http://127.0.0.1:5173 node scripts/phototest.mjs
 import { launch } from './lib/browser.mjs';
@@ -54,6 +56,18 @@ for (const [who, opts] of [['desktop', { viewport: { width: 1280, height: 720 } 
   await press('[data-pb="wx:rain"]');
   s = await state();
   check(`${who}: Adjust sets the hour, the blur and the weather (hour ${s.hour}, blur ${s.tilt}, ${s.weather})`, s.hour === 19.5 && s.tilt === 0.6 && s.weather === 'rain', s);
+  // Focus: it reads the 60 m Street level left, and sets the distance the blur is measured from
+  const focus = () => page.evaluate(() => { const i = document.querySelector('[data-pbr="focus"]'); return i ? { value: Number(i.value), says: document.querySelector('[data-pbo="focus"]')?.textContent, m: window.__game.photo.focusDistance, note: document.querySelector('.pb-note')?.textContent ?? null, post: window.__game.post.active } : null; });
+  let f = await focus();
+  check(`${who}: Adjust has a Focus slider, reading the 60 m Street level set ("${f?.says}")`, !!f && f.m === 60 && f.says === '60 m' && Math.abs(f.value - 42) <= 1, f);
+  await page.evaluate(() => { const i = document.querySelector('[data-pbr="focus"]'); i.value = '75'; i.dispatchEvent(new Event('input', { bubbles: true })); });
+  await frames(2);
+  f = await focus();
+  check(`${who}: moving it sets the focus (${Math.round(f?.m ?? 0)} m, "${f?.says}"), far enough for the blur to show again`, !!f && Math.abs(f.m - 861) < 2 && f.says === '861 m' && f.m > 240, f);
+  check(`${who}: ${f?.post ? 'with post-processing on there is no note about it' : 'on this preset a line says blur and focus do not show'}`, !!f && (f.post ? f.note === null : /Medium graphics preset/.test(f.note ?? '')), f);
+  await press('[data-pb="street"]');
+  f = await focus();
+  check(`${who}: Street level again, with Adjust open, puts the slider back at 60 m`, !!f && f.m === 60 && f.says === '60 m', f);
   await press('[data-pb="adjust"]');
 
   await press('[data-pb="save"]');
@@ -82,6 +96,11 @@ for (const [who, opts] of [['desktop', { viewport: { width: 1280, height: 720 } 
     await frames();
     s = await state();
     check(`${who}: Esc leaves photo mode and takes the bar with it`, !s.active && s.bar === null && s.toolbar === 'visible', s);
+    await page.keyboard.press('p');
+    await frames();
+    s = await state();
+    check(`${who}: P opens photo mode`, s.active && s.bar?.vis === 'visible', s);
+    await press('[data-pb="exit"]');
   }
   check(`${who}: no page errors`, errs.length === 0, errs.slice(0, 3));
   await ctx.close();

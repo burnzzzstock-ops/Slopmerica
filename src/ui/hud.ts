@@ -1190,7 +1190,7 @@ export class Hud implements UiSink {
       // desktop: the building tools up front and a little larger, the rest
       // (land, transit, districts, terraforming, communes, the feed,
       // disasters) behind More: twenty small buttons were hard to scan
-      const hint: Record<string, string> = { inspect: 'Esc', zones: 'Z', upgrade: 'U', bulldoze: 'B' };
+      const hint: Record<string, string> = { inspect: 'Esc', zones: 'Z', upgrade: 'U', bulldoze: 'B', photo: 'P' };
       const primary = DESK_PRIMARY.map((id) => all.find((x) => x[0] === id)).filter(Boolean) as [string, string, string][];
       this.moreItems = all.filter((x) => !DESK_PRIMARY.includes(x[0]));
       this.bar.innerHTML = primary.map(btn).join('') + btn(['more', '<i class="more-dots"><b></b><b></b><b></b></i>', 'More']);
@@ -1452,7 +1452,8 @@ export class Hud implements UiSink {
           <div><b>Roads</b> click start, click end. Keeps chaining. Esc / right-click stops.</div>
           <div><b>Speed</b> Space pause · 1 2 3</div>
           <div><b>Tools</b> B bulldoze · U one more lane · Z zoning · Esc cancel</div>
-          <div><b>Interchanges</b> Roads → Interchanges · , and . rotate</div>${PLAYTEST ? `
+          <div><b>Interchanges</b> Roads → Interchanges · , and . rotate</div>
+          <div><b>Photo mode</b> P, or Photo under More · Esc leaves</div>${PLAYTEST ? `
           <div><b>Performance</b> F3 shows FPS, frame time, draw calls and triangles</div>` : ''}`}
         </div>
         <div class="sp-row"><button class="chip" id="save-now">💾 Save now</button><button class="chip" id="save-slot" title="Put this city away under its name and day. Find it on the title screen under Saved cities.">📌 Save to a slot</button><button class="chip" id="save-file">📁 Save city file</button><button class="chip" id="new-city">🆕 New city</button><small>Autosaves every 30 seconds in this browser. A city file is a backup you keep: where downloads are blocked it is copied to the clipboard instead.</small></div>
@@ -1568,6 +1569,7 @@ export class Hud implements UiSink {
     else if (e.key.toLowerCase() === 'u') this.onTool('upgrade');
     else if (e.key.toLowerCase() === 'z') this.onTool('zones');
     else if (e.key.toLowerCase() === 'h') this.game.goHome();
+    else if (e.key.toLowerCase() === 'p') this.onTool('photo');
     else if (e.key === 'Escape' && this.demandKey) {
       const k = this.demandKey;
       this.closeDemand();

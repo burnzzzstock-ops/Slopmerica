@@ -177,6 +177,11 @@ export class Zoning {
   occupantAt?: (x: number, z: number, segId: number) => number;
   /** A road was rebuilt (widened): its buildings keep their lots unless the new road runs into them. */
   onRelink?: (buildingIds: number[]) => void;
+  /**
+   * Lots changed zone: once per brush stroke (when it ends), or once per paint() made outside a stroke (a click, the
+   * inspector's dezone). zone null = dezoned; (x, z) the middle of what changed and r its reach (m). Never with 0 lots.
+   */
+  onPainted?: (zone: ZoneType | null, cells: number, x: number, z: number, r: number) => void;
   private relink = new Set<number>();
   version = 0;
 
@@ -369,16 +374,21 @@ export class Zoning {
   /** true while builders want this zone (the overlay dims zoned lots that are waiting for demand) */
   growable: ((z: ZoneType) => boolean) | null = null;
   /** what the current brush stroke did, by cell (a stroke repaints the same cells many times) */
-  private stroke: { changed: Set<number>; notOwned: Set<number>; otherZone: Set<number>; built: Set<number> } | null = null;
+  private stroke: {
+    changed: Set<number>; notOwned: Set<number>; otherZone: Set<number>; built: Set<number>;
+    /** the zone it painted last, and the box round the lots it changed (for the one onPainted it ends with) */
+    zone: ZoneType | null; x0: number; z0: number; x1: number; z1: number;
+  } | null = null;
 
   beginStroke() {
-    this.stroke = { changed: new Set(), notOwned: new Set(), otherZone: new Set(), built: new Set() };
+    this.stroke = { changed: new Set(), notOwned: new Set(), otherZone: new Set(), built: new Set(), zone: null, x0: Infinity, z0: Infinity, x1: -Infinity, z1: -Infinity };
   }
 
   /** counts for the stroke that just ended: lots changed, and lots refused by reason */
   endStroke() {
     const s = this.stroke;
     this.stroke = null;
+    if (s && s.changed.size) this.onPainted?.(s.zone, s.changed.size, (s.x0 + s.x1) / 2, (s.z0 + s.z1) / 2, Math.hypot(s.x1 - s.x0, s.z1 - s.z0) / 2 + CELL / 2);
     return { changed: s?.changed.size ?? 0, notOwned: s?.notOwned.size ?? 0, otherZone: s?.otherZone.size ?? 0, built: s?.built.size ?? 0 };
   }
 
@@ -394,9 +404,14 @@ export class Zoning {
       if (zone && this.allowed && !this.allowed(c.x, c.z)) { st?.notOwned.add(c.id); continue; }
       // zoned land keeps its zone: dezone it first to change it
       if (zone && c.zone && c.zone !== zone) { this.skipped++; st?.otherZone.add(c.id); continue; }
-      if (c.zone !== zone) { c.zone = zone; n++; st?.changed.add(c.id); }
+      if (c.zone !== zone) {
+        c.zone = zone; n++;
+        if (st) { st.changed.add(c.id); st.zone = zone; st.x0 = Math.min(st.x0, c.x); st.z0 = Math.min(st.z0, c.z); st.x1 = Math.max(st.x1, c.x); st.z1 = Math.max(st.z1, c.z); }
+      }
     }
     if (n) { this.overlayDirty = true; this.version++; }
+    // a stroke says what it did once, when it ends; a paint on its own is a whole action
+    if (n && !st) this.onPainted?.(zone, n, x, z, r);
     return n;
   }
 

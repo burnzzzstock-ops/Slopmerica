@@ -550,6 +550,10 @@ export class Game {
         this.floatText(drunk ? '💥🍺 DUI' : '💥 WRECK', new THREE.Vector3(c.x, c.y + 2, c.z), '#ff8a3a');
       }
     };
+    this.zones.onPainted = (zone, cells, x, z, r) => this.sim.events.emit('zonePainted', { zone, cells, x, z, r });
+    this.net.onBuilt = (segIds) => this.sim.events.emit('roadBuilt', { segIds });
+    this.net.onLaneAdded = (seg, lanes) => this.sim.events.emit('laneAdded', { segId: seg.id, lanes });
+    this.net.onTreesCut = (x, z, r, count) => this.sim.events.emit('treesCleared', { x, z, r, count, cause: 'road' });
     this.traffic.onJam = (seg) => this.feed.push('trafficJam', { road: seg.name });
     this.traffic.onDriveThruSpill = (b, seg) => this.feed.push('driveThruLine', { brand: brandName(b.brand) || b.label, road: seg?.name });
     this.traffic.onEmit = (kind, x, y, z, n) => this.particles.emit(kind, x, y, z, { count: n, spread: kind === 'cigarette' ? 0.2 : 1.5 });

@@ -5,15 +5,15 @@
 // builds can be compared mesh by mesh.
 //
 // usage: BASE_URL=http://127.0.0.1:5175 node scripts/roadclass.mjs [quality]   (ONLY=moonless,rain adds nights; day always runs)
-import { chromium } from 'playwright-core';
-import { ARGS, EXE, openBlock, shoot } from './refblock.mjs';
+import { launch } from './lib/browser.mjs';
+import { openBlock, shoot } from './refblock.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const quality = process.argv[2] || 'high';
 const VIEW = [-40, -30, 150, 2.4, 0.45];
 const ALL = [['day', 14, 0.5, 'clear'], ['moonless', 23, 0, 'clear'], ['rain', 23, 0.25, 'rain']];
 const CONDS = ALL.filter(([n]) => n === 'day' || (process.env.ONLY || '').split(',').includes(n));
 
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const { page, errs, center } = await openBlock(browser, { base, quality });
 for (const [name, hour, moon, weather] of CONDS) {
   await shoot(page, center, { hour, moon, weather, view: VIEW });

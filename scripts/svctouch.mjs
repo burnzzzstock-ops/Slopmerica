@@ -1,6 +1,6 @@
 // Phone: services and bus depot are planned by a tap and only bought on Build.
-import { chromium } from 'playwright-core';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+import { launch } from './lib/browser.mjs';
+const browser = await launch();
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
 const page = await ctx.newPage();
 const errs = [];

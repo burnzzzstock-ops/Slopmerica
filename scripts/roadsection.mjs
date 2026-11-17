@@ -13,14 +13,14 @@
 //
 // usage: BASE_URL=http://127.0.0.1:5175 node scripts/roadsection.mjs [quality]
 // Exits nonzero on failure (the old code fails the first two).
-import { chromium } from 'playwright-core';
-import { ARGS, EXE, openBlock } from './refblock.mjs';
+import { launch } from './lib/browser.mjs';
+import { openBlock } from './refblock.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const quality = process.argv[2] || 'low';
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 400)); if (!ok) bad++; };
 
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const { page, errs } = await openBlock(browser, { base, quality });
 const m = await page.evaluate(async () => {
   const g = window.__game;

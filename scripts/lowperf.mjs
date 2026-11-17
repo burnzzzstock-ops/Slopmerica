@@ -7,15 +7,15 @@
 //
 // usage: A_URL=http://127.0.0.1:5175 B_URL=http://127.0.0.1:5183 node scripts/lowperf.mjs [quality, default low]
 //   K=9 frames per camera and build   PHONE=1 a 390x780 @3x touch context   HOUR=12.5 (noon; 23 = night)
-import { chromium } from 'playwright-core';
-import { ARGS, EXE, openBlock, shoot } from './refblock.mjs';
+import { launch } from './lib/browser.mjs';
+import { openBlock, shoot } from './refblock.mjs';
 const A = process.env.A_URL || 'http://127.0.0.1:5175', B = process.env.B_URL || 'http://127.0.0.1:5183';
 const quality = process.argv[2] || 'low';
 const K = Number(process.env.K || 9);
 const hour = Number(process.env.HOUR || 12.5);
 const phone = !!process.env.PHONE;
 const VIEWS = { overview: [0, 0, 320, 0.7, 0.6], street: [-40, -30, 110, 2.4, 0.38], houses: [-170, -130, 120, 4.0, 0.42] };
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const open = (base) => openBlock(browser, phone ? { base, quality, width: 390, height: 780, phone: true } : { base, quality });
 const [a, b] = [await open(A), await open(B)];
 const timeFrame = (page) => page.evaluate(() => {

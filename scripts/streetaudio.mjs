@@ -12,13 +12,13 @@
 // On the OLD code (no streetAudio.ts; the ambience takes only aggregate SoundMix) the same checks fail: run it
 // with BASE_URL=http://127.0.0.1:5175. Exits nonzero on failure. usage:
 //   scripts/withslot.sh env BASE_URL=http://127.0.0.1:5182 node scripts/streetaudio.mjs [--json out.json]
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { writeFileSync } from 'node:fs';
 import { installLab } from './lib/streetlab.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const jsonOut = process.argv.includes('--json') ? process.argv[process.argv.indexOf('--json') + 1] : null;
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required'] });
+const browser = await launch({ gl: false, args: ['--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage();
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

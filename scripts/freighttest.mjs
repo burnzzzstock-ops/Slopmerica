@@ -1,6 +1,6 @@
 // Builds a mixed town and verifies conserved production, truck deliveries,
 // dry-shop consequences, and freight save data. Run with Vite on :5173.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -9,9 +9,7 @@ const playwrightTmp = resolve('..', 'playwright-tmp');
 mkdirSync(playwrightTmp, { recursive: true });
 process.env.TEMP = process.env.TMP = playwrightTmp;
 
-const executablePath = process.env.CHROME_PATH
-  || (process.platform === 'win32' ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' : '/opt/pw-browsers/chromium-1194/chrome-linux/chrome');
-const browser = await chromium.launch({ executablePath, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 960, height: 640 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));

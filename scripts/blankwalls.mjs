@@ -18,14 +18,13 @@
 // usage: BASE_URL=http://127.0.0.1:5175 BW_OUT=shots/gfx/bw-old.json node scripts/blankwalls.mjs
 //        BASE_URL=http://127.0.0.1:5185 BW_BASE=shots/gfx/bw-old.json node scripts/blankwalls.mjs
 // (a light page: it loads the generators as modules, not the game). Exits nonzero on failure with BW_BASE.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { ARGS, EXE } from './refblock.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 500)); if (!ok) bad++; };
 
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const page = await browser.newPage();
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

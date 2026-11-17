@@ -1,4 +1,4 @@
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -10,17 +10,9 @@ process.env.TEMP = tempRoot;
 process.env.TMP = tempRoot;
 process.on('exit', () => fs.rmSync(tempRoot, { recursive: true, force: true }));
 
-const candidates = [
-  process.env.CHROME_PATH,
-  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-  '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
-].filter(Boolean);
-const executablePath = candidates.find((p) => fs.existsSync(p));
-if (!executablePath) throw new Error('Set CHROME_PATH to Chrome/Chromium');
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
-const browser = await chromium.launch({ executablePath, headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 page.on('pageerror', (e) => console.error('pageerror', e.message));
 await page.goto(`${base}/#skip&map=florida&mode=sandbox`, { waitUntil: 'load' });

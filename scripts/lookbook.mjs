@@ -9,9 +9,9 @@
 //   VIEWS=overview,street keeps just those cameras (overview, street, houses, shore)
 //   JPEG=dir also writes each shot as dir/<name>.jpg (quality 85, phone shots at CSS size 390x780): the size the before/after pairs in
 //   docs/screenshots/cars-look/ are kept at
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { ARGS, EXE, openBlock, shoot } from './refblock.mjs';
+import { openBlock, shoot } from './refblock.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const qualities = (process.argv[2] || 'high').split(',');
 const ALL_TIMES = [['noon', 12.5, 0.5, 'clear'], ['dusk', 19.9, 0.5, 'clear'], ['moonless', 23, 0, 'clear'], ['fullmoon', 23, 0.5, 'clear'], ['rain', 22.5, 0.25, 'rain']];
@@ -21,7 +21,7 @@ const WANT_VIEWS = process.env.VIEWS ? process.env.VIEWS.split(',') : null; // V
 const pre = phone ? 'phone-' : '';
 const VIEWS = { overview: [0, 0, 320, 0.7, 0.6], street: [-40, -30, 110, 2.4, 0.38], houses: [-170, -130, 120, 4.0, 0.42], shore: null };
 mkdirSync('shots/lookbook', { recursive: true });
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const shots = [];
 for (const q of qualities) {
   const { page, errs, center } = await openBlock(browser, phone ? { base, quality: q, width: 390, height: 780, phone: true } : { base, quality: q });

@@ -9,10 +9,10 @@
 //   ONLY    scene:time,scene:time,...  shoot just these (scenes and times as above); overrides the two lists
 //   OUT     file prefix (default docs/screenshots/cars-look/junction) -> <OUT>-<scene>-<time>-<TAG>.jpg (1024x576, q85)
 //   W, H    frame size;  FRAMES  frames rendered per shot (default 3)
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { ARGS, EXE, openBlock } from './refblock.mjs';
+import { openBlock } from './refblock.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const tag = process.env.TAG || 'shot';
 const quality = process.argv[2] || 'high';
@@ -22,7 +22,7 @@ const out = process.env.OUT || 'docs/screenshots/cars-look/junction';
 const W = +(process.env.W || 1024), H = +(process.env.H || 576), FRAMES = +(process.env.FRAMES || 3);
 mkdirSync(dirname(out), { recursive: true });
 
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const { page, errs, center } = await openBlock(browser, { base, quality, width: W, height: H });
 
 // ---- find or build the junctions

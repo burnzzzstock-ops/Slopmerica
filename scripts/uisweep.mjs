@@ -1,14 +1,14 @@
 // Open every toolbar panel (and every More item on phones), screenshot it, and
 // flag page errors, content spilling off-screen, and tools left armed.
 // usage: node scripts/uisweep.mjs [phone|desk]
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdirSync } from 'node:fs';
 const kind = process.argv[2] || 'phone';
 const phone = kind === 'phone';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const out = `shots/sweep-${kind}`;
 mkdirSync(out, { recursive: true });
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const ctx = await browser.newContext(phone ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : { viewport: { width: Number(process.env.W) || 1280, height: Number(process.env.H) || 800 } });
 const page = await ctx.newPage();
 const errs = [];

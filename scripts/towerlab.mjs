@@ -11,9 +11,9 @@
 //   VARIANT=0          showcase seed variant
 //   ROWS=office        which showcase rows to frame: office | comHigh | resHigh | all (default office)
 //   OUT=dir            JPEG per shot: dir/lab-<quality>-h<hour>-y<yaw>-s<set>.jpg
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { ARGS, EXE, openBlock, shoot } from './refblock.mjs';
+import { openBlock, shoot } from './refblock.mjs';
 import { classStats, maskPass } from './lib/towermask.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const quality = process.argv[2] || 'low';
@@ -25,7 +25,7 @@ const variant = Number(process.env.VARIANT || 0);
 const rows = process.env.ROWS || 'office';
 const OUT = process.env.OUT || 'shots/lab';
 mkdirSync(OUT, { recursive: true });
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const { page, errs, center } = await openBlock(browser, phone ? { base, quality, width: 390, height: 780, phone: true } : { base, quality });
 page.on('console', (m) => { if (m.type() === 'error' || /WebGLProgram|shader/i.test(m.text())) console.log('console:', m.text().slice(0, 600)); });
 const lab = { x: center.x, z: center.z + 560 };

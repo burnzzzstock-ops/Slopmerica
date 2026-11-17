@@ -1,7 +1,7 @@
-import { chromium } from 'playwright-core';
+import { launch } from '../lib/browser.mjs';
 import fs from 'node:fs/promises';
 const base=process.env.VAULT_URL||'http://127.0.0.1:5176/';
-const browser=await chromium.launch({executablePath:process.env.CHROME_PATH||'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,args:['--enable-unsafe-swiftshader','--use-angle=swiftshader']});
+const browser=await launch();
 const errors=[];
 const page=await browser.newPage({viewport:{width:1750,height:1100},deviceScaleFactor:1});
 page.on('pageerror',e=>errors.push(String(e)));

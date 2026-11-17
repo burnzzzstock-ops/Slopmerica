@@ -10,13 +10,13 @@
 //    second toast.
 // usage: node scripts/collegetest.mjs   (BASE_URL, default http://127.0.0.1:5173)
 // Exits 1 on failure.
-import { chromium } from 'playwright-core';
-import { ARGS, EXE, openBlock } from './refblock.mjs';
+import { launch } from './lib/browser.mjs';
+import { openBlock } from './refblock.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 600)); if (!ok) bad++; };
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const { page, errs, center } = await openBlock(browser, { base, quality: 'low' });
 const r = await page.evaluate((center) => {
   const g = window.__game, d = window.__dbg, SV = window.__services;

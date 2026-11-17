@@ -5,12 +5,12 @@
 // counters for that frame: draw calls, triangles, geometries and textures alive, plus the number of visible meshes.
 //
 // usage: BASE_URL=http://127.0.0.1:5201 node scripts/drawcalls.mjs [presets, default high,low]  (prints JSON lines and a table)
-import { chromium } from 'playwright-core';
-import { ARGS, EXE, openBlock, shoot } from './refblock.mjs';
+import { launch } from './lib/browser.mjs';
+import { openBlock, shoot } from './refblock.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const presets = (process.argv[2] || 'high,low').split(',');
 const VIEWS = { overview: [0, 0, 320, 0.7, 0.6], street: [-40, -30, 110, 2.4, 0.38], houses: [-170, -130, 120, 4.0, 0.42], shore: null };
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const rows = [];
 for (const q of presets) {
   const { page, center } = await openBlock(browser, { base, quality: q });

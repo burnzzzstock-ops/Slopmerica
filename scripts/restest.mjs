@@ -3,9 +3,9 @@
 // to pixels) is undone, one that does is kept, and Settings → Resolution:
 // always full never drops. Drives the frame sampler directly. Exits nonzero
 // on failure.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 900, height: 500 }, deviceScaleFactor: 2 });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

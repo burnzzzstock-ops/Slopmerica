@@ -5,15 +5,15 @@
 // pictures before and after.
 // usage: BASE_URL=http://127.0.0.1:5175 node scripts/carcam.mjs <tag> [quality=high] [scenes=moving,queue,junction] [times=day,night]
 //   OUT=shots/carcam  SEED steps: STEPS=1200  DIST=11  PITCH=0.28  WEATHER=clear|rain  KIND=pickup (prefer this kind)  W=1280 H=720  PHONE=1
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdirSync } from 'node:fs';
-import { ARGS, EXE, openBlock } from './refblock.mjs';
+import { openBlock } from './refblock.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const [tag = 'run', quality = 'high', scenesArg = 'moving,queue,junction', timesArg = 'day,night'] = process.argv.slice(2);
 const scenes = scenesArg.split(','), times = timesArg.split(',');
 const out = `${process.env.OUT || 'shots/carcam'}/${tag}`;
 mkdirSync(out, { recursive: true });
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const phone = !!process.env.PHONE;
 const { page, errs, center } = await openBlock(browser, phone ? { base, quality, width: 390, height: 780, phone: true } : { base, quality, width: Number(process.env.W || 1280), height: Number(process.env.H || 720) });
 const found = await page.evaluate(({ steps, kind }) => {

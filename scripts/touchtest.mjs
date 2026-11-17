@@ -1,6 +1,6 @@
 // Simulated phone: drag-to-draw a road with one finger, then Done, then Undo.
-import { chromium } from 'playwright-core';
-const browser = await chromium.launch({ executablePath: process.env.CHROME || (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'), args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+import { launch } from './lib/browser.mjs';
+const browser = await launch();
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
 const page = await ctx.newPage();
 page.on('pageerror', (e) => console.log('pageerror', e.message));

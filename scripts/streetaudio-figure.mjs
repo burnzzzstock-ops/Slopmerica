@@ -3,13 +3,13 @@
 // jam with its honks. Old code (BASE_URL=http://127.0.0.1:5175): the same panels from the only thing the old ambience can
 // do, one aggregate traffic level (a bed plus random honks and pass-bys), so every "scene" comes out the same.
 // usage: scripts/withslot.sh env BASE_URL=... node scripts/streetaudio-figure.mjs docs/screenshots/cars-look/audio-spectrograms-after.jpg
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { writeFileSync } from 'node:fs';
 import { installLab } from './lib/streetlab.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const out = process.argv[2] || 'shots/tmp/streetaudio-spectrograms.jpg';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required'] });
+const browser = await launch({ gl: false, args: ['--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage();
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

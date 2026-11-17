@@ -9,15 +9,15 @@
 // round the corner from the busy one served 0-71 people), or the page throws. (The bot builds a hospital beside an
 // overloaded clinic once it can afford one, and before that a clinic on the lot that takes most of its load and of the
 // nearly full ones'.) It prints how long its clinics were overloaded, from the first overload to the end.
-import { chromium } from 'playwright-core';
-import { ARGS, EXE, seededInit, seededRandom } from './refblock.mjs';
+import { launch } from './lib/browser.mjs';
+import { seededInit, seededRandom } from './refblock.mjs';
 import { installLatePlayer } from './lib/latePlayer.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const MAP = process.env.MAP || 'florida', POP = Number(process.env.POP || 2800), DAYS = Number(process.env.DAYS || 900), SEED = Number(process.env.SEED || 1);
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 600)); if (!ok) bad++; };
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 800, height: 500 } });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

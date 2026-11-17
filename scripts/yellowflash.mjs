@@ -14,9 +14,9 @@
 // env: BASE_URL, Q (ultra), W/H (640x360), DPR (1), OUT (dir for annotated JPEG frames),
 //      CASES="move=static&w=clear&moon=0&frames=40&dt=0.1&hide=fire+fireflies&ff=1;..." (keys: move pan|static,
 //      view street|overview|houses, w weather, moon phase, frames, dt, hide (see __hide), ff firefly amount)
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { ARGS, EXE, openBlock } from './refblock.mjs';
+import { openBlock } from './refblock.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const Q = process.env.Q || 'ultra';
@@ -35,7 +35,7 @@ const OUT = process.env.OUT;
 const MAX_POPS = +(process.env.MAX_POPS || 40 * (W * H * DPR * DPR) / (640 * 360)), MEAN_POPS = +(process.env.MEAN_POPS || 4 * (W * H * DPR * DPR) / (640 * 360));
 if (OUT) mkdirSync(OUT, { recursive: true });
 
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 // Every case runs on its own freshly opened page (ISOLATE=0 reuses one page for all of them, the way this test used to run). Particle pools,
 // weather blends, exposure and the traffic of one case leaked into the next one: the moonlit pan failed in the full run (45 to 52 flash pixels in one
 // frame, limit 40) and passed alone (28 to 36).

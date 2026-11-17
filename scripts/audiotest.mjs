@@ -4,9 +4,9 @@
 // by steady sine waves (3.7 Hz, 1.3 Hz). Renders the ambience offline and
 // checks the loop seams, and that the loudness has no steady rhythm.
 // Exits nonzero on failure.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox', '--autoplay-policy=no-user-gesture-required'] });
+const browser = await launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage();
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

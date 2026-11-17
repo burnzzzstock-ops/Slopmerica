@@ -1,9 +1,9 @@
 // Title screen screenshots: home, New City and loading, on desktop and phone.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdirSync } from 'node:fs';
 mkdirSync('shots', { recursive: true });
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const errs = [];
 for (const [name, opts] of [['desk', { viewport: { width: 1440, height: 900 } }], ['phone', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }]]) {
   const ctx = await browser.newContext(opts);

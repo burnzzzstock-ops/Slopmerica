@@ -9,11 +9,11 @@
 // mirror image matches the old clipping-plane image; nothing under the surface
 // shows in it. Prints the old and new first-frame times for the record.
 // Exits nonzero on failure.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 500)); if (!ok) bad++; };
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 
 // one fresh page per mode: 'now' (oblique near plane) or 'old' (the renderer's clipping planes, as before)
 async function run(mode) {

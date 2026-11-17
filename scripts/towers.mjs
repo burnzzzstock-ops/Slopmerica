@@ -16,9 +16,9 @@
 //   FILL=0         set the wall fill (GLASS.uFillK) first: 0 = off, to measure the glass alone
 //   TALL=22        metres above the pad from which a wall counts as a tower facade
 // Exits 0; prints one JSON line per capture and a summary table.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { ARGS, EXE, openBlock, shoot } from './refblock.mjs';
+import { openBlock, shoot } from './refblock.mjs';
 import { classStats, maskPass } from './lib/towermask.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const quality = process.argv[2] || 'low';
@@ -30,7 +30,7 @@ const OUT = process.env.OUT;
 const pre = phone ? 'phone-' : '';
 if (OUT) mkdirSync(OUT, { recursive: true });
 
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const { page, errs, center } = await openBlock(browser, phone ? { base, quality, width: 390, height: 780, phone: true } : { base, quality });
 
 // FILL=0.35 sets the building material's wall fill (buildings/material.ts GLASS.uFillK) before shooting: 0 = off, to measure the glass alone

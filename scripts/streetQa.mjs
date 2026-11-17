@@ -1,11 +1,10 @@
 // PORT=5174 node scripts/streetQa.mjs
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 const out = process.env.OUT || 'shots/street-qa';
 await mkdir(out, { recursive: true });
-const browser = await chromium.launch({ executablePath: process.env.CHROME || 'C:/Program Files/Google/Chrome/Application/chrome.exe',
-  args: ['--use-angle=d3d11', '--enable-gpu-rasterization', '--ignore-gpu-blocklist', '--disable-software-rasterizer', '--no-sandbox'] });
+const browser = await launch({ gl: false, args: ['--use-angle=d3d11', '--enable-gpu-rasterization', '--ignore-gpu-blocklist', '--disable-software-rasterizer'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));

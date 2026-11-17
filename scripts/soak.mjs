@@ -2,11 +2,11 @@
 // mode, bulldoze and upgrade mid-run, save/continue, and flag anything odd
 // (page errors, NaN/Infinity state, runaway counts, heap or GPU leaks).
 // usage: node scripts/soak.mjs [map] [days]
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const map = process.argv[2] || 'norcal';
 const DAYS = Number(process.argv[3]) || 360;
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox', '--enable-precise-memory-info'] });
+const browser = await launch({ args: ['--enable-precise-memory-info'] });
 const page = await browser.newPage({ viewport: { width: 900, height: 600 } });
 const errs = [];
 page.on('pageerror', (e) => errs.push('pageerror ' + e.message + '\n' + (e.stack || '').split('\n').slice(0, 4).join('\n')));

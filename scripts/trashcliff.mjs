@@ -13,15 +13,15 @@
 //  - the inspector's word on an abandoned building says when it comes down.
 // usage: node scripts/trashcliff.mjs   (BASE_URL, default http://127.0.0.1:5173; SEED=n replays a run;
 // DAYS, default 200). Exits 1 on failure.
-import { chromium } from 'playwright-core';
-import { ARGS, EXE, openBlock, testSeed } from './refblock.mjs';
+import { launch } from './lib/browser.mjs';
+import { openBlock, testSeed } from './refblock.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const SEED = testSeed();
 const DAYS = Number(process.env.DAYS || 200);
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 600)); if (!ok) bad++; };
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const { page, errs } = await openBlock(browser, { base, seed: SEED, quality: 'low' });
 const r = await page.evaluate(async ({ DAYS }) => {
   const g = window.__game, d = window.__dbg, SV = window.__services;

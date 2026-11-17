@@ -1,9 +1,9 @@
 // Ambient piano, rendered offline (no speakers needed): it plays, it never
 // clips, it stays well under the game's level, it breathes (quiet moments),
 // and every note is in the current key. Exits nonzero on failure.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required'] });
+const browser = await launch({ gl: false, args: ['--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage();
 await page.goto(`${base}/`, { waitUntil: 'load', timeout: 120000 });
 let bad = 0;

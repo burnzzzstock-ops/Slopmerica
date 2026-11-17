@@ -6,13 +6,12 @@
 //   - the slider sets the level (and is remembered); a reload keeps both settings;
 //   - the Settings panel still fits at 390 px (nothing off the sides) and the new controls are 44 px tall or more.
 // usage: scripts/withslot.sh env BASE_URL=http://127.0.0.1:5173 node scripts/soundtest.mjs      exits 1 on failure
-import { chromium } from 'playwright-core';
-import { ARGS, EXE } from './refblock.mjs';
+import { launch } from './lib/browser.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 400)); if (!ok) bad++; };
-const browser = await chromium.launch({ executablePath: EXE, args: [...ARGS, '--autoplay-policy=no-user-gesture-required'] });
+const browser = await launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
 const page = await ctx.newPage();
 const errs = [];

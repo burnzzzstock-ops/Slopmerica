@@ -3,9 +3,9 @@
 // street trees on the verge, bus stops get the library's shelter (and the
 // box shelter steps aside), and it all draws as instanced LODs. Low quality
 // never loads it. SHOTS=prefix saves pictures. Exits nonzero on failure.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra)); if (!ok) bad++; };
 const open = async (quality) => {

@@ -5,9 +5,8 @@
 // controls that spill off the screen, and touch targets under 44 px. A step that throws is logged and the session carries on.
 // usage: scripts/withslot.sh env BASE_URL=http://127.0.0.1:5210 node scripts/audit8.mjs <phone|desk> <appalachia|norcal|florida>
 //   env: DPR=2 (phone pixel ratio, default 2), QUALITY=low|medium|high|ultra (desktop default high; phone is always the touch default)
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { ARGS, EXE } from './refblock.mjs';
 
 const [kind = 'phone', map = 'appalachia'] = process.argv.slice(2);
 const phone = kind === 'phone';
@@ -18,7 +17,7 @@ mkdirSync(out, { recursive: true });
 const LITE = process.env.LITE ? process.env.LITE !== '0' : map !== 'appalachia';
 const log = { ctx: kind, map, base, lite: LITE, steps: [], errors: [], small: {}, spills: {} };
 let n = 0;
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const ctx = await browser.newContext(phone
   ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: Number(process.env.DPR || 2) }
   : { viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });

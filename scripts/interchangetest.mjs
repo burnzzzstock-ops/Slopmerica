@@ -4,10 +4,10 @@
 // and can't join it mid-span, nothing zones along it, it survives a save),
 // its ramps join the two, it lines up with an existing highway, and undo
 // refunds it. Exits nonzero on failure. `--shots` saves views to /tmp.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const shots = process.argv.includes('--shots');
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1100, height: 650 } });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

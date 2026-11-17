@@ -1,4 +1,4 @@
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -6,12 +6,7 @@ const tmp = resolve('..', 'playwright-tmp');
 const out = resolve('docs', 'screenshots', 'systems');
 mkdirSync(tmp, { recursive: true }); mkdirSync(out, { recursive: true });
 process.env.TEMP = tmp; process.env.TMP = tmp;
-const browser = await chromium.launch({
-  executablePath: process.env.CHROME_PATH || (process.platform === 'win32'
-    ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-    : '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'),
-  args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-sandbox'],
-});
+const browser = await launch({ args: ['--ignore-gpu-blocklist'] });
 const errors = [];
 for (const [layout, width, height] of [['desktop', 1280, 800], ['mobile', 390, 844]]) {
   const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1, isMobile: layout === 'mobile', hasTouch: layout === 'mobile' });

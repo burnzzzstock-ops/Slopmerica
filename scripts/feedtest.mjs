@@ -7,7 +7,7 @@
 // the tags (Node, where the file isn't loaded, like a build without it) the
 // feed posts exactly what it posted before this change, draw for draw.
 // Exits nonzero on failure.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -40,7 +40,7 @@ const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, o
 }
 
 // ---- in the game, with tags
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1100, height: 700 } });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

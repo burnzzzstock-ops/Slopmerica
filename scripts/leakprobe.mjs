@@ -1,7 +1,7 @@
 // Heap after forced GC over a long run with a stable town: flags leaks.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox', '--enable-precise-memory-info', '--js-flags=--expose-gc'] });
+const browser = await launch({ args: ['--enable-precise-memory-info', '--js-flags=--expose-gc'] });
 const page = await browser.newPage({ viewport: { width: 900, height: 600 } });
 await page.addInitScript(() => { try { localStorage.setItem('slopmerica.quality', 'low'); localStorage.setItem('slopmerica.onboarded', '1'); } catch { /* */ } });
 await page.goto(`${base}/#skip&map=florida&mode=sandbox`, { waitUntil: 'load' });

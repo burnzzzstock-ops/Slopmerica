@@ -1,12 +1,9 @@
 // Multi-view screenshots in one session: node scripts/views.mjs <map> <prefix> [w h] [touch]
 // Each view: [name, js] — js runs with window.__dbg / window.__game available.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { writeFileSync } from 'node:fs';
 const [map = 'appalachia', prefix = 'shots/v', w = '1280', h = '800', touch = ''] = process.argv.slice(2);
-const browser = await chromium.launch({
-  executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
-  args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-sandbox'],
-});
+const browser = await launch({ args: ['--ignore-gpu-blocklist'] });
 const page = await browser.newPage({ viewport: { width: +w, height: +h }, deviceScaleFactor: 1, hasTouch: !!touch, isMobile: !!touch });
 const logs = [];
 page.on('console', (m) => { const t = m.text(); if (!t.includes('CERT') && !t.includes('404') && !t.includes('[vite]')) logs.push(`[${m.type()}] ${t}`); });

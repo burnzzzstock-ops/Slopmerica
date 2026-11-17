@@ -21,9 +21,9 @@
 // With WEAR_BASE it also checks the targets against that run; `node scripts/roadwear.mjs --compare old.json new.json`
 // [tone-base.json] checks two saved runs without a browser (the optional third file is the build the tone is held against:
 // the one just before the wear went in). Exits nonzero on failure.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { ARGS, EXE, openBlock } from './refblock.mjs';
+import { openBlock } from './refblock.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const quality = process.argv[2] || 'low';
 let bad = 0;
@@ -52,7 +52,7 @@ if (process.argv[2] === '--compare') {
   process.exit(bad ? 1 : 0);
 }
 
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const { page, errs } = await openBlock(browser, { base, quality });
 const m = await page.evaluate(async () => {
   const g = window.__game;

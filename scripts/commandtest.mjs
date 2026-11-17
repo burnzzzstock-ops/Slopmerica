@@ -1,9 +1,9 @@
 // Player actions share one command: ONE MORE LANE from the inspector and the
 // map tool cost the same, reject when unaffordable without changing anything,
 // and undo. Road bulldoze salvages the same from both. Exits nonzero on failure.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

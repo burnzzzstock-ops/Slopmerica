@@ -7,11 +7,11 @@
 //   told the amount of.
 //
 //   BASE_URL=http://127.0.0.1:5173 node scripts/disasterloop.mjs
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const CASES = [['florida', 'hurricane'], ['florida', 'floridaMan'], ['norcal', 'wildfire'], ['appalachia', 'landslide']];
-const browser = await chromium.launch({ executablePath: process.env.CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 900, height: 600 } });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

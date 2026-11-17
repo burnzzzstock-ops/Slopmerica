@@ -16,9 +16,9 @@
 //          ('slope' lays two roads up a hillside first and is always shot last)
 //   conds  comma list of day,dusk,night,moon,rain (default day,night)
 //   quality low|medium|high|ultra (default high); PHONE=1 shoots a 390x780 @3x touch context
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { ARGS, EXE, openBlock, shoot } from './refblock.mjs';
+import { openBlock, shoot } from './refblock.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const outDir = process.argv[2] || 'shots/gfx/out';
@@ -30,7 +30,7 @@ const CAMS = process.env.CAMS || 'shots/gfx/cams.json';
 mkdirSync(outDir, { recursive: true });
 mkdirSync('shots/gfx', { recursive: true });
 
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const opts = process.env.PHONE ? { base, quality, width: 390, height: 780, phone: true } : { base, quality };
 const { page, errs, center } = await openBlock(browser, opts);
 // The street furniture and street trees (civic/layer.ts) stream in after the town is up and are placed on a 1.5 s

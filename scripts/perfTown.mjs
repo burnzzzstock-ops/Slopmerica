@@ -1,7 +1,7 @@
 // Build a repeatable 7x7 town, advance 270 days and capture stable F3 metrics.
 // PORT=5174 PRESET=high node scripts/perfTown.mjs
 // PRESET=both runs high desktop followed by low mobile.
-import { chromium } from 'playwright-core';
+import { EXE as chrome, launch } from './lib/browser.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 
@@ -9,7 +9,6 @@ const requestedPreset = (process.env.PRESET || 'high').toLowerCase();
 const presets = requestedPreset === 'both' || requestedPreset === 'all' ? ['high', 'low'] : [requestedPreset];
 const port = process.env.PORT || '5173';
 const out = process.env.OUT || 'shots/perf';
-const chrome = process.env.CHROME || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const swiftshader = process.env.SWIFTSHADER !== '0';
 await mkdir(out, { recursive: true });
 
@@ -258,8 +257,7 @@ async function runPreset(preset) {
 }
 
 try {
-  browser = await chromium.launch({ executablePath: chrome,
-    args: swiftshader
+  browser = await launch({ gl: false, args: swiftshader
       ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-sandbox']
       : ['--use-angle=d3d11', '--enable-gpu-rasterization', '--ignore-gpu-blocklist', '--disable-software-rasterizer', '--no-sandbox'] });
   report.browserVersion = browser.version();

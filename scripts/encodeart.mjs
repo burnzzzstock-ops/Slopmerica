@@ -2,10 +2,10 @@
 // usage: node scripts/encodeart.mjs <in.png> <out.webp> [width] [quality 0-1] [crop x,y,w,h]
 // GRADE=sunX,sunY (0-1) adds the key-art grade: contrast, warm sun glow from
 // that point, cool shadows and a vignette. GRADE=none skips it.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { readFileSync, writeFileSync } from 'node:fs';
 const [src, out, width = '1920', quality = '0.82', crop] = process.argv.slice(2);
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--no-sandbox'] });
+const browser = await launch({ gl: false });
 const page = await browser.newPage();
 const dataUrl = `data:image/png;base64,${readFileSync(src).toString('base64')}`;
 const grade = process.env.GRADE ?? '0.8,0.15';

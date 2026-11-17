@@ -4,13 +4,12 @@
 // This puts a building exactly under where the x will be (the camera is moved until the building's middle projects onto it), taps it with a real touch,
 // and checks the building is still selected a second later; then that the x still closes the sheet when it is pressed on purpose.
 // usage: scripts/withslot.sh env BASE_URL=http://127.0.0.1:5173 node scripts/ghosttap.mjs      exits 1 on failure
-import { chromium } from 'playwright-core';
-import { ARGS, EXE } from './refblock.mjs';
+import { launch } from './lib/browser.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 400)); if (!ok) bad++; };
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
 const page = await ctx.newPage();
 page.setDefaultTimeout(240000);

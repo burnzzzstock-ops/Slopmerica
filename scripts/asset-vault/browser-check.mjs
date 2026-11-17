@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright-core';
+import { EXE, launch } from '../lib/browser.mjs';
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
 const args = process.argv.slice(2);
@@ -44,22 +44,6 @@ if (!Number.isFinite(timeout) || timeout < 1_000) throw new Error('--timeout mus
 const reportDir = path.join(repoRoot, 'shots', 'asset-vault');
 const thumbnailDir = path.join(repoRoot, 'vault-public', 'asset-vault', 'thumbnails');
 const reportPath = path.join(reportDir, mode === 'normal' ? 'check.json' : 'check-' + mode + '.json');
-
-async function executable() {
-  const candidates = [
-    process.env.CHROME_PATH,
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/usr/bin/google-chrome',
-    '/usr/bin/chromium',
-  ].filter(Boolean);
-  for (const candidate of candidates) {
-    try { await fs.access(candidate); return candidate; } catch { /* Try the next installed browser. */ }
-  }
-  throw new Error('Chrome was not found. Set CHROME_PATH to a Chromium-compatible executable.');
-}
 
 const report = {
   schemaVersion: 1,
@@ -368,13 +352,9 @@ try {
   if (unknownFamilyIds.length) throw new Error(`Unknown family ID${unknownFamilyIds.length === 1 ? '' : 's'}: ${unknownFamilyIds.join(', ')}`);
   const selectedFamilies = requestedFamilyIds ? requestedFamilyIds.map((id) => familyById.get(id)) : manifest.families;
   report.selection = { families: selectedFamilies.map((family) => family.id), count: selectedFamilies.length };
-  const executablePath = await executable();
+  const executablePath = EXE;
   report.browser = { executablePath, headless: !args.includes('--headed') };
-  browser = await chromium.launch({
-    executablePath,
-    headless: !args.includes('--headed'),
-    args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--disable-gpu-sandbox'],
-  });
+  browser = await launch({ args: ['--disable-gpu-sandbox'], headless: !args.includes('--headed') });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1100 }, deviceScaleFactor: 1 });
   context.setDefaultTimeout(timeout);
   context.setDefaultNavigationTimeout(timeout);

@@ -15,9 +15,9 @@
 // is everything the people cost the GPU: the group's draws in the view and in the shadow map, plus the pose pass. The old model has no pose pass.
 // Every build is shown the first build's people (position, archetype, action, set by hand from then on, legs walking), from the same camera.
 // `near` and `far` are what the renderer drew (the near figure's instance count and the far one's), `pose` is one pose pass on its own.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { writeFileSync } from 'node:fs';
-import { ARGS, EXE, openBlock } from './refblock.mjs';
+import { openBlock } from './refblock.mjs';
 const bases = process.env.BASES
   ? process.env.BASES.split(',').map((s) => { const i = s.indexOf('='); return { label: s.slice(0, i), url: s.slice(i + 1) }; })
   : [{ label: 'build', url: process.env.BASE_URL || 'http://127.0.0.1:5173' }];
@@ -26,7 +26,7 @@ const phone = process.argv[3] ? process.argv[3] === 'phone' : quality === 'low';
 const want = +(process.env.PEOPLE || 160), rounds = +(process.env.ROUNDS || 4), frames = +(process.env.FRAMES || 4);
 const viewNames = (process.env.VIEWS || 'close,street').split(',');
 const VIEWS = { close: [24, 0.35], street: [60, 0.5], overview: [140, 0.7] };
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 
 // per page: fill the street, find the busiest cluster, and leave the helpers on window.__pc
 const setup = ({ center, want, frames, seed }) => {

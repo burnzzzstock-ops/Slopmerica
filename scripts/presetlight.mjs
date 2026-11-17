@@ -8,8 +8,8 @@
 //   SWEEP=1 (one preset besides high): also tries HEMI (the no-IBL hemisphere scale) and NIGHT (its night-sun boost) values
 //   given as HEMI=1,1.2,1.4 NIGHT=1,1.5,2 on the street and overview cameras, to pick the constants.
 //   Exits nonzero if a preset's mean luma is more than TOL (default 0.03) from High's on any camera and hour.
-import { chromium } from 'playwright-core';
-import { ARGS, EXE, openBlock, shoot } from './refblock.mjs';
+import { launch } from './lib/browser.mjs';
+import { openBlock, shoot } from './refblock.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const presets = (process.argv[2] || 'high,medium,low').split(',');
 const TOL = +(process.env.TOL ?? 0.03);
@@ -17,7 +17,7 @@ const ALL_TIMES = [['noon', 12.5, 0.5], ['dusk', 19.9, 0.5], ['moonless', 23, 0]
 // ONLY=noon,moonless / VIEWS=overview,street keep just those times / cameras; EVAL='js' runs in each page after it opens (to flip a look switch)
 const TIMES = process.env.ONLY ? ALL_TIMES.filter(([n]) => process.env.ONLY.split(',').includes(n)) : ALL_TIMES;
 const VIEWS = { overview: [0, 0, 320, 0.7, 0.6], street: [-40, -30, 110, 2.4, 0.38], houses: [-170, -130, 120, 4.0, 0.42], shore: null };
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 const measure = (page) => page.evaluate(() => {
   const g = window.__game, gl = g.renderer.getContext();
   g.frame(0.016);

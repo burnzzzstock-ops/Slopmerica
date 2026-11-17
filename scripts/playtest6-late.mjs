@@ -9,14 +9,14 @@
 //   BASE_URL=http://127.0.0.1:5175 MAP=appalachia DAYS=3000 node scripts/playtest6-late.mjs
 //   OPTS='{"upgrades":true,"loans":true}'  bot options; OUT=file.json dumps the trace; SAVE=file.json the grown town
 //   (at the end, or with SAVEAT=6000 the first time it has that many people)
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { writeFileSync } from 'node:fs';
 import { installLatePlayer } from './lib/latePlayer.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const MAXDAYS = Number(process.env.DAYS || 3000), STEP = Number(process.env.STEP || 10), TARGET = Number(process.env.TARGET || 10000);
 const OPTS = process.env.OPTS ? JSON.parse(process.env.OPTS) : {};
-const browser = await chromium.launch({ executablePath: process.env.CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1000, height: 600 } });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

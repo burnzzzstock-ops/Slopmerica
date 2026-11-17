@@ -5,9 +5,9 @@
 // Leaving the window through an edge it was scrolling toward keeps going a
 // moment (inside the Claude page the game's top isn't the screen's top);
 // leaving from anywhere else stops at once. Exits nonzero on failure.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1100, height: 700 } });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

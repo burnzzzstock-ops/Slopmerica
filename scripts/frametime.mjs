@@ -1,7 +1,7 @@
 // Measure average frame ms for a view (headless). node scripts/frametime.mjs map "js-setup"
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const [map = 'appalachia', setup = ''] = process.argv.slice(2);
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 page.on('pageerror', (e) => console.log('pageerror', e.message));
 await page.goto(`http://127.0.0.1:5173/#skip&map=${map}&mode=sandbox`, { waitUntil: 'load' });

@@ -1,6 +1,6 @@
 // Real pointer-input test: pick Roads, click twice on the canvas, zone, run.
-import { chromium } from 'playwright-core';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+import { launch } from './lib/browser.mjs';
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const logs = [];
 page.on('pageerror', (e) => logs.push('pageerror ' + e.message));

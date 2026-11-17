@@ -1,15 +1,10 @@
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const tmp = resolve('..', 'playwright-tmp'); mkdirSync(tmp, { recursive: true });
 process.env.TEMP = tmp; process.env.TMP = tmp;
-const browser = await chromium.launch({
-  executablePath: process.env.CHROME_PATH || (process.platform === 'win32'
-    ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-    : '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'),
-  args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'],
-});
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 900, height: 600 } });
 const errors = []; page.on('pageerror', e => errors.push(e.message));
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';

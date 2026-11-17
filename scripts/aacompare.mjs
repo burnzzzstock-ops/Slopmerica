@@ -5,11 +5,11 @@
 // steps: the error at each step and how much it jumps between steps (shimmer)
 // plus any lag behind the reference (trails). Bloom, tilt-shift and vignette
 // are off. Usage: node scripts/aacompare.mjs [modes...]
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const modes = process.argv.slice(2).length ? process.argv.slice(2) : ['none', 'msaa4', 'msaa8', 'taa'];
 const W = 640, H = 360;
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));

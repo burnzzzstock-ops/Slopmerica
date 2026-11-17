@@ -7,11 +7,11 @@
 // two that overlap. A second scenario has no emergency and the first-steps card up ("Step 3/5 ..."), with a building inspected and no drawer: on a
 // phone that card sat on the bottom of the inspector sheet and covered its last rows and the Bulldoze button (round 8 audit).
 // SHOT=prefix saves screenshots. Exits nonzero on failure.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const PANELS = (process.env.PANELS || 'zones,ext:services,roads').split(',');
 const SIZES = (process.env.SIZES || '1707x1019,1280x800,1024x700,390x844').split(',').map((s) => s.split('x').map(Number));
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const browser = await launch();
 let total = 0;
 const SCENARIOS = [
   { name: 'drawer + inspector + emergency', steps: true, emergency: true, panels: PANELS },

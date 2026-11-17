@@ -16,9 +16,9 @@
 //   K=5 frames per measurement (median)   W=1280 H=720 (window; the preset's pixel ratio multiplies it)   SIZE=320x180 (shrink the window after opening)   SIZES=320x180,640x360,1280x720
 //   ONLY=shadows,bloom (toggles by name; default all)   WEATHER=clear   PHONE=1 (390x844 @3x touch)   OUT=file.json (appends a JSON line)
 // One page load costs minutes on the software GPU, and each frame seconds: run one job at a time through scripts/withslot.sh.
-import { chromium } from 'playwright-core';
+import { launch } from './lib/browser.mjs';
 import { appendFileSync } from 'node:fs';
-import { ARGS, EXE, openBlock, shoot } from './refblock.mjs';
+import { openBlock, shoot } from './refblock.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const quality = process.argv[2] || 'high';
 const modes = (process.env.MODES || 'passes').split(',');
@@ -29,7 +29,7 @@ const W = Number(process.env.W || 1280), H = Number(process.env.H || 720);
 const weather = process.env.WEATHER || 'clear';
 const phone = !!process.env.PHONE;
 const VIEW = [-40, -30, 110, 2.4, 0.38]; // the lookbook's street camera
-const browser = await chromium.launch({ executablePath: EXE, args: ARGS });
+const browser = await launch();
 // (the game's Continue button is off screen in a tiny window: open at the usual size, SIZE=320x180 shrinks it afterwards)
 const { page, errs, center } = await openBlock(browser, phone ? { base, quality, width: 390, height: 844, phone: true } : { base, quality, width: process.env.SIZE ? 1280 : W, height: process.env.SIZE ? 720 : H });
 const result = { quality, base, K, window: phone ? '390x844@3x' : `${W}x${H}`, runs: [] };

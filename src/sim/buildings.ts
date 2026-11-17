@@ -17,6 +17,7 @@ import type { Trees } from '../world/trees';
 import type { ZCell, Zoning } from '../zones/zoning';
 import type { RoadNetwork } from '../roads/network';
 import { ROAD_TYPES } from '../roads/roadTypes';
+import { buildingLod, buildingSilhouette, withBuildingLodRandom } from '../render/buildingLod';
 
 export interface Bld {
   id: number;
@@ -72,6 +73,15 @@ class Batch {
   usedVerts = 0;
   private usedIndices = 0;
   private count = 0;
+  private lods = new Map<number, { far: number; silhouette: number; center: THREE.Vector3 }>();
+  private instances = new Map<number, { original: number; written: number; far: boolean }>();
+  private lodMatrix = new THREE.Matrix4();
+  private lodPoint = new THREE.Vector3();
+  private shadowPass = false;
+  lodEnabled = true;
+  lodVerts = 0;
+  lodBuildMs = 0;
+  farInstances = 0;
   constructor(scene: THREE.Scene, material: THREE.Material, verts: number, inst: number) {
     this.maxVerts = this.maxIndices = verts;
     this.maxInst = inst;
@@ -81,19 +91,48 @@ class Batch {
     this.mesh.perObjectFrustumCulled = true;
     this.mesh.sortObjects = false;
     this.mesh.frustumCulled = false;
+    const render = this.mesh.onBeforeRender;
+    this.mesh.onBeforeRender = (renderer, scene, camera, geometry, material, group) => {
+      if (!this.shadowPass) this.updateLod(camera, false);
+      render.call(this.mesh, renderer, scene, camera, geometry, material, group);
+    };
+    const shadow = this.mesh.onBeforeShadow;
+    this.mesh.onBeforeShadow = (renderer, object, camera, shadowCamera, geometry, material, group) => {
+      this.updateLod(camera, true);
+      this.shadowPass = true;
+      try { shadow.call(this.mesh, renderer, object, camera, shadowCamera, geometry, material, group); }
+      finally { this.shadowPass = false; }
+    };
     scene.add(this.mesh);
   }
-  addGeometry(g: THREE.BufferGeometry): number {
+  addGeometry(g: THREE.BufferGeometry, allowLod = true): number {
     const n = g.getAttribute('position').count;
     const ni = g.getIndex()?.count ?? n;
     if (this.usedVerts + n > this.maxVerts || this.usedIndices + ni > this.maxIndices) {
       if (this.usedVerts + n > this.maxVerts) this.maxVerts = Math.ceil((this.maxVerts + n) * 1.6);
       if (this.usedIndices + ni > this.maxIndices) this.maxIndices = Math.ceil((this.maxIndices + ni) * 1.6);
-      this.mesh.setGeometrySize(this.maxVerts, this.maxIndices);
+      withBuildingLodRandom(() => this.mesh.setGeometrySize(this.maxVerts, this.maxIndices));
     }
     this.usedVerts += n;
     this.usedIndices += ni;
-    return this.mesh.addGeometry(g);
+    const id = this.mesh.addGeometry(g);
+    if (allowLod) {
+      const started = performance.now();
+      withBuildingLodRandom(() => {
+        const far = buildingLod(g);
+        if (far) {
+          g.computeBoundingBox();
+          const farId = this.addGeometry(far, false);
+          const coarse = buildingSilhouette(far), silhouette = coarse ? this.addGeometry(coarse, false) : farId;
+          this.lods.set(id, { far: farId, silhouette, center: g.boundingBox!.getCenter(new THREE.Vector3()) });
+          this.lodVerts += far.getAttribute('position').count;
+          if (coarse) { this.lodVerts += coarse.getAttribute('position').count; coarse.dispose(); }
+          far.dispose();
+        }
+      });
+      this.lodBuildMs += performance.now() - started;
+    }
+    return id;
   }
   addInstance(geoId: number): number {
     if (this.count + 8 > this.maxInst) {
@@ -101,11 +140,44 @@ class Batch {
       this.mesh.setInstanceCount(this.maxInst);
     }
     this.count++;
-    return this.mesh.addInstance(geoId);
+    const id = this.mesh.addInstance(geoId);
+    this.instances.set(id, { original: geoId, written: geoId, far: false });
+    return id;
   }
   deleteInstance(i: number) {
     this.mesh.deleteInstance(i);
+    this.instances.delete(i);
     this.count--;
+  }
+  private updateLod(camera: THREE.Camera, shadow: boolean) {
+    const perspective = camera as THREE.PerspectiveCamera;
+    const fovScale = perspective.isPerspectiveCamera ? Math.tan(THREE.MathUtils.degToRad(perspective.fov) * 0.5) / Math.tan(THREE.MathUtils.degToRad(50) * 0.5) : 1;
+    let farCount = 0;
+    for (const [id, state] of this.instances) {
+      const current = this.mesh.getGeometryIdAt(id);
+      // Level-ups and restyles assign a new source geometry to the same handle.
+      if (current !== state.written) { state.original = current; state.far = false; }
+      const lod = this.lods.get(state.original);
+      let useFar = false, coarse = false;
+      if (this.lodEnabled && lod) {
+        this.mesh.getMatrixAt(id, this.lodMatrix);
+        this.lodPoint.copy(lod.center).applyMatrix4(this.lodMatrix);
+        const distance = camera.position.distanceTo(this.lodPoint) * fovScale;
+        // Construction and its separate scaffolds stay exact. A shadow's
+        // sub-pixel furniture can disappear earlier than the visible facade.
+        const growing = Math.abs(this.lodMatrix.elements[5] - 1) > 0.001;
+        useFar = !growing && distance > (shadow ? 300 : state.far ? 700 : 850);
+        // Atlas repeats must stay exact in the visible scene. Coalesced wall
+        // quads are silhouettes for the shadow pass only, never facade LODs.
+        coarse = useFar && shadow;
+        if (!shadow) state.far = useFar;
+      }
+      const desired = useFar ? coarse ? lod!.silhouette : lod!.far : state.original;
+      if (current !== desired) this.mesh.setGeometryIdAt(id, desired);
+      state.written = desired;
+      if (useFar) farCount++;
+    }
+    if (!shadow) this.farInstances = farCount;
   }
 }
 
@@ -312,7 +384,7 @@ export class Buildings {
     if (!e) {
       const geometry = generateConstruction(w, d, h, w * 97 + d * 193 + h);
       const model: BuildingModel = { geometry, height: h, label: 'Construction', emitters: [] };
-      e = { id: this.kit.addGeometry(geometry), model };
+      e = { id: this.kit.addGeometry(geometry, false), model };
       this.geoIds.set(key, e);
     }
     return { id: e.id, height: h };
@@ -321,6 +393,12 @@ export class Buildings {
   /** Vertices uploaded to the atlas-building batch (perf budget checks). */
   get usedVerts() {
     return this.main.usedVerts;
+  }
+  /** Render-only diagnostics and A/B switch; neither touches simulation data. */
+  setLodEnabled(enabled: boolean) { this.main.lodEnabled = this.kit.lodEnabled = enabled; }
+  lodStats() {
+    return { far: this.main.farInstances + this.kit.farInstances, addedVertices: this.main.lodVerts + this.kit.lodVerts,
+      uploadedVertices: this.main.usedVerts + this.kit.usedVerts, buildMs: this.main.lodBuildMs + this.kit.lodBuildMs };
   }
 
   /** The batch a building's own instance lives in. */

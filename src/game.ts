@@ -356,7 +356,8 @@ export class Game {
 
     this.traffic = new Traffic(this.scene, this.net, this.buildings, this.q.maxCars);
     this.traffic.rng.state = streamSeed(this.seed, 'traffic');
-    this.audio.reverseState = handle => this.traffic.renderer.isReversing(handle);
+    this.audio.reverseState = (handle, id) => id === undefined ? this.traffic.renderer.isReversing(handle) : this.traffic.renderer.isCarReversing(id, handle);
+    this.audio.carDrawn = id => this.traffic.renderer.isCarDrawn(id);
     this.traffic.groundAt = (x, z) => this.terrain.h(x, z);
     // look pass: the vehicle renderer throws dust off gravel roads (it asks what the road under a car is, twice a second at most)
     this.traffic.renderer.surfaceAt = (x, z) => (this.net.pickSeg(x, z, 3)?.seg.type === 'gravel' ? 'gravel' : 'paved');
@@ -897,7 +898,8 @@ export class Game {
   // ------------------------------------------------------------------ selection
   inspect(p: THREE.Vector3, e: PointerEvent) {
     this.ray.setFromCamera(this.ndc(e.clientX, e.clientY), this.camera);
-    const car = this.traffic.pick(this.ray);
+    const drawnCarId = this.traffic.renderer.pickCarId(this.ray);
+    const car = drawnCarId === null ? this.traffic.pick(this.ray) : this.traffic.cars.find(c => c.id === drawnCarId);
     if (car) return this.select({ kind: 'car', c: car });
     const ped = this.peds.pick(this.ray);
     if (ped) return this.select({ kind: 'ped', p: ped });
@@ -1272,6 +1274,7 @@ export class Game {
     P.lap('zones+roads');
     // moving things are drawn between their last two steps (smooth at any frame rate), or where they are after stepping by hand
     const alpha = this.snap ? 1 : this.owed / STEP_SECONDS;
+    this.traffic.renderer.observeTraffic(this.traffic.cars, this.camera, alpha, this.q.name === 'low' ? 'low' : 'high');
     this.traffic.draw(alpha, dt, this.rts.target);
     this.parkView.setFromProjectionMatrix(this.parkMat.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
     this.parking.update(dt, this.hour, this.rts.target.x, this.rts.target.z, this.rts.distance, () => this.traffic.renderer.stats().active);
@@ -1395,7 +1398,7 @@ export class Game {
       previousTrees.x = treeX; previousTrees.z = treeZ; previousTrees.count = treeCount;
       let cars = 0, people = 0, construction = 0;
       for (const car of this.traffic.cars) {
-        if (car.h < 0 || car.crashed !== 0) continue;
+        if (!this.traffic.renderer.isCarDrawn(car.id) || car.crashed !== 0) continue;
         const dx = car.x - T.x, dz = car.z - T.z;
         cars += Math.max(0, 1 - (dx * dx + dz * dz) / 40000);
       }

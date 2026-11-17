@@ -3,7 +3,7 @@
 import { currentLayout, LAYOUT_ORDER, LAYOUTS, rotateLayout, selectLayout, type LayoutId } from '../roads/interchanges';
 import * as THREE from 'three';
 import { EXT } from '../ext/registry';
-import type { LandmarkId, ZoneType } from '../contracts';
+import type { LandmarkId, ViewTarget, ZoneType } from '../contracts';
 import { ZONE_TYPES } from '../contracts';
 import type { Game, Selection, UiSink } from '../game';
 import { LANDMARK_COST, LANDMARKS } from '../game';
@@ -139,6 +139,10 @@ export class Hud implements UiSink {
   private demandCells: ZCell[] = [];
   private nextBar?: HTMLElement;
   private nextBarObs?: ResizeObserver;
+  /** the follow camera's pill, who it names, and the subject it was last drawn for */
+  private followPill!: HTMLButtonElement;
+  private followName = '';
+  private followKey = '';
   /** the weather badge as last written (it is rewritten only when it changes: an SVG swapped every frame cannot be tapped) */
   private wxHtml = '';
   private nextHidden = '';
@@ -177,6 +181,10 @@ export class Hud implements UiSink {
     this.tip = this.mk('div', 'cursor-tip');
     this.tip.hidden = true;
     this.actions = this.mk('div', 'tool-actions');
+    this.followPill = this.mk('button', 'follow-pill') as HTMLButtonElement;
+    this.followPill.hidden = true;
+    this.followPill.setAttribute('aria-label', 'Stop following');
+    this.followPill.addEventListener('click', () => { crumb('stop following (pill)'); this.game.rts.follow(null); });
     this.perfEl = this.mk('div', 'perf-overlay');
     this.perfEl.hidden = true;
     this.demandPop = this.mk('div', 'demand-pop');
@@ -844,6 +852,12 @@ export class Hud implements UiSink {
     const i = steps.findIndex((x) => !x.done);
     if (i < 0) { this.firstStepsDone = true; try { localStorage.setItem('slopmerica.firstSteps', '1'); } catch { /* not remembered */ } return null; }
     return { n: i + 1, of: steps.length, ...steps[i] };
+  }
+
+  private isFollowing(t: ViewTarget) { const f = this.game.rts.following; return !!f && f.kind === t.kind && f.id === t.id; }
+  /** The inspector's Follow button for a car or a person: the camera rides with them until it is let go. */
+  private followButton(t: ViewTarget) {
+    return this.isFollowing(t) ? '<button id="in-follow" class="on">🎥 Stop following</button>' : '<button id="in-follow">🎥 Follow</button>';
   }
 
   private doAction(act: string) {
@@ -1593,14 +1607,16 @@ export class Hud implements UiSink {
           <div><span>Headed to</span><b>${esc(c.dest)}</b></div>
           <div><span>Speed</span><b>${Math.round(c.v * 3.6)} km/h</b></div>
           <div><span>Vibe</span><b>${c.crashed > 0 ? '💥 WRECKED' : c.drunk ? `🍺 BAC ${c.bac.toFixed(2)}` : c.reckless ? '😤 reckless' : '😐 fine'}${c.smoker ? ' 🚬' : ''}</b></div>
-        </div>`;
+        </div>
+        <div class="in-actions">${this.followButton({ kind: 'car', id: c.id })}</div>`;
     } else if (sel.kind === 'ped') {
       const p = sel.p;
       const a = ARCHETYPES[p.arch];
       html = `<div class="in-kicker">${a?.hippie ? 'COMMUNE MEMBER' : 'CITIZEN'}</div>
         <h3>${esc(a?.name ?? 'Citizen')}</h3>
         <p class="in-blurb">${esc(a?.bio ?? '')}</p>
-        <div class="in-stats"><div><span>@</span><b>${esc(a?.handle ?? 'anon')}</b></div><div><span>Doing</span><b>${esc(p.action)}</b></div><div><span>Near</span><b>${esc(p.label)}</b></div><div><span>Leans</span><b>${esc(a?.lean ?? '?')}</b></div></div>`;
+        <div class="in-stats"><div><span>@</span><b>${esc(a?.handle ?? 'anon')}</b></div><div><span>Doing</span><b>${esc(p.action)}</b></div><div><span>Near</span><b>${esc(p.label)}</b></div><div><span>Leans</span><b>${esc(a?.lean ?? '?')}</b></div></div>
+        <div class="in-actions">${this.followButton({ kind: 'person', id: p.id })}</div>`;
     } else if (sel.kind === 'commune') {
       const c = sel.c;
       html = `<div class="in-kicker hippie">HIPPIE COMMUNE · EST. ${c.founded}</div>
@@ -1650,6 +1666,19 @@ export class Hud implements UiSink {
     }
     this.inspector.innerHTML = `<button class="in-close" id="in-close" aria-label="Close">×</button>${html}`;
     this.inspector.querySelector('#in-close')?.addEventListener('click', () => g.select(null));
+    this.inspector.querySelector('#in-follow')?.addEventListener('click', () => {
+      const target: ViewTarget | null = sel.kind === 'car' ? { kind: 'car', id: sel.c.id } : sel.kind === 'ped' ? { kind: 'person', id: sel.p.id } : null;
+      if (!target) return;
+      const on = this.isFollowing(target);
+      crumb(on ? 'stop following' : `follow ${target.kind}`);
+      if (on) g.rts.follow(null);
+      else if (g.rts.follow(target)) {
+        this.followName = sel.kind === 'car' ? `${ARCHETYPES[sel.c.driver % ARCHETYPES.length]?.name ?? 'a driver'} (${VEHICLE_SPECS[sel.c.kind].label})` : sel.kind === 'ped' ? ARCHETYPES[sel.p.arch]?.name ?? 'a citizen' : '';
+        // a phone's inspector is a sheet over the lower half of the screen: it goes away so the ride can be seen
+        if (IS_TOUCH) { g.select(null); return; }
+      }
+      this.renderInspector();
+    });
     this.inspector.querySelector('#in-road')?.addEventListener('click', () => { crumb('draw a road (inspector: not connected)'); g.tools.roadMode = 'straight'; if (this.panel !== 'roads') this.onTool('roads'); g.tools.set('road'); });
     this.inspector.querySelector('#in-bulldoze')?.addEventListener('click', () => {
       if (sel.kind === 'building') { crumb(`bulldozed ${sel.b.label} (inspector)`); g.buildings.demolish(sel.b, 'bulldozed'); g.audio.play('bulldoze'); }
@@ -1911,7 +1940,19 @@ export class Hud implements UiSink {
     }
     // follow selected car
     const sel = this.game.selection;
-    if (sel?.kind === 'car' && sel.c.crashed !== -1 && this.game.rts.distance < 200) this.game.rts.setView(sel.c.x, sel.c.z, this.game.rts.distance);
+    const riding = this.game.rts.following;
+    if (!riding && sel?.kind === 'car' && sel.c.crashed !== -1 && this.game.rts.distance < 200) this.game.rts.setView(sel.c.x, sel.c.z, this.game.rts.distance);
+    // the follow camera: a pill says who it is riding with, and a tap on it lets go (so does moving the camera, or the
+    // subject driving off the map). A tool in hand lets go too: nobody draws a road from a moving car.
+    if (riding && this.game.tools.active !== 'inspect') this.game.rts.follow(null);
+    const key = riding ? `${riding.kind}:${riding.id}` : '';
+    if (key !== this.followKey) {
+      this.followKey = key;
+      this.followPill.hidden = !riding;
+      if (riding) this.followPill.innerHTML = `<span>🎥 Following <b>${esc(this.followName || (riding.kind === 'car' ? 'a car' : riding.kind === 'person' ? 'a citizen' : 'a building'))}</b></span><small>${IS_TOUCH ? 'tap to let go' : 'click or Esc to let go'}</small>`;
+      else this.followName = '';
+      if (sel && (sel.kind === 'car' || sel.kind === 'ped')) this.renderInspector();
+    }
   }
 }
 

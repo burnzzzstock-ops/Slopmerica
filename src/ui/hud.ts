@@ -17,6 +17,7 @@ import { courtText, emergencyToast } from './copy';
 import { MERCH_URL, brandById } from '../art/brands';
 import { BUILD, cityFile, crumb, onCapturedError, openBugReport, saveFile, saveMessage } from './bugreport';
 import { FOV_MAX, FOV_MIN, IS_TOUCH } from '../config';
+import { PLAYTEST } from '../core/flags';
 import { QUALITY, type Quality } from '../config';
 import { BANKRUPT_AT, BANKRUPT_WEEKS, CREDIT_LINE, LEDGER_LABEL, LOSS_LABEL, ONE_TIME, RECURRING, SPEEDS, Sim, UNLOCKS, usd, type DemandKey } from '../sim/sim';
 import { SERVICE_DEFS, overloadedServices, type EmergencyView } from '../sim/services';
@@ -265,7 +266,7 @@ export class Hud implements UiSink {
         <li><b>▶▶▶</b>: let the slop grow. Widen jammed roads with <b>One More Lane</b>. Hippies can be paid off or sued.</li>
       </ol>
       <p>Goal: pave every inch and max every building. Tokyo × Delhi or bust.</p>
-      <p class="ob-playtest">🐞 <b>This is a playtest.</b> When something breaks, looks wrong or confuses you, tap <b>Report bug</b>${IS_TOUCH ? ' (under More)' : ''}.</p>
+      ${PLAYTEST ? `<p class="ob-playtest">🐞 <b>This is a playtest.</b> When something breaks, looks wrong or confuses you, tap <b>Report bug</b>${IS_TOUCH ? ' (under More)' : ''}.</p>` : ''}
       <button id="ob-go">Let's pave</button>`;
     el.querySelector('#ob-go')!.addEventListener('click', () => {
       try { localStorage.setItem('slopmerica.onboarded', '1'); } catch { /* ignore */ }
@@ -1077,7 +1078,8 @@ export class Hud implements UiSink {
       ['communes', '☮️', 'Communes'],
       ['feed', '𝕏', 'Feed'],
       ['help', '⚙️', 'Settings'],
-      ['bug', '🐞', 'Report bug'],
+      // testers get the bug button on the toolbar; everyone else reports from Settings
+      ...(PLAYTEST ? [['bug', '🐞', 'Report bug'] as [string, string, string]] : []),
     ];
     // extension panels slot in by `order` (core buttons sit at 10, 20, 30, ...)
     const withOrder = items.map((it, i) => ({ it, o: (i + 1) * 10 }));
@@ -1276,7 +1278,7 @@ export class Hud implements UiSink {
         <div class="sp-title">Info Views</div>
         <div class="sp-row">${views.map(([v, i, l]) => `<button class="chip ${mode === v && !ev ? 'on' : ''}" data-view="${v}">${i} ${l}</button>`).join('')}${EXT.views.map((v) => `<button class="chip ${ev === v ? 'on' : ''}" data-extview="${v.id}">${v.icon} ${esc(v.label)}</button>`).join('')}</div>
         ${ev?.legend ? `<div class="sp-legend">${ev.legend(g)}</div>` : ''}
-        <div class="sp-row">${['clear', 'rain', 'storm', 'snow', 'fog', 'heatwave'].map((w) => `<button class="chip" data-wx="${w}">${w}</button>`).join('')}</div>`;
+        ${PLAYTEST ? `<div class="sp-row">${['clear', 'rain', 'storm', 'snow', 'fog', 'heatwave'].map((w) => `<button class="chip" data-wx="${w}">${w}</button>`).join('')}</div>` : ''}`;
       this.sub.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => b.addEventListener('click', () => { g.overlays.set(b.dataset.view as ViewMode); this.renderPanel(); }));
       this.sub.querySelectorAll<HTMLButtonElement>('[data-extview]').forEach((b) => b.addEventListener('click', () => {
         const v = EXT.views.find((x) => x.id === b.dataset.extview);
@@ -1322,7 +1324,7 @@ export class Hud implements UiSink {
         <div class="sp-title">Settings &amp; Controls</div>
         <div class="sp-row quality-controls"><span class="ql" id="quality-label">Graphics</span>
           <span class="seg" role="radiogroup" aria-labelledby="quality-label">${(Object.keys(QUALITY) as Quality['name'][]).map((n) => { const on = n === (g.pendingQuality ?? g.q.name); return `<button class="chip ${on ? 'on' : ''}" role="radio" aria-checked="${on}" data-quality="${n}">${n[0].toUpperCase() + n.slice(1)}</button>`; }).join('')}</span>
-          <button class="chip" id="perf-toggle">${this.perfVisible ? 'Hide' : 'Show'} performance</button>
+          ${PLAYTEST ? `<button class="chip" id="perf-toggle">${this.perfVisible ? 'Hide' : 'Show'} performance</button>` : ''}
           ${IS_TOUCH ? '' : `<button class="chip ${g.rts.edgeScroll ? 'on' : ''}" id="edge-toggle" aria-pressed="${g.rts.edgeScroll}">Edge scrolling: ${g.rts.edgeScroll ? 'on' : 'off'}</button>`}
           ${g.pendingQuality ? '<button class="chip on" id="quality-reload">Reload to finish applying</button>' : ''}
           ${IS_TOUCH ? '' : `<button class="chip ${g.resolutionMode === 'full' ? 'on' : ''}" id="res-toggle" title="Auto lowers the resolution when frames are slow; Always full keeps it sharp">Resolution: ${g.resolutionMode === 'full' ? 'always full' : 'auto'}</button>`}
@@ -1351,11 +1353,11 @@ export class Hud implements UiSink {
           <div><b>Roads</b> click start, click end. Keeps chaining. Esc / right-click stops.</div>
           <div><b>Speed</b> Space pause · 1 2 3</div>
           <div><b>Tools</b> B bulldoze · U one more lane · Z zoning · Esc cancel</div>
-          <div><b>Interchanges</b> Roads → Interchanges · , and . rotate</div>
-          <div><b>Performance</b> F3 shows FPS, frame time, draw calls and triangles</div>`}
+          <div><b>Interchanges</b> Roads → Interchanges · , and . rotate</div>${PLAYTEST ? `
+          <div><b>Performance</b> F3 shows FPS, frame time, draw calls and triangles</div>` : ''}`}
         </div>
         <div class="sp-row"><button class="chip" id="save-now">💾 Save now</button><button class="chip" id="save-file">📁 Save city file</button><button class="chip" id="new-city">🆕 New city</button><small>Autosaves every 30 seconds in this browser. A city file is a backup you keep: where downloads are blocked it is copied to the clipboard instead.</small></div>
-        <div class="sp-row"><button class="chip on" id="report-bug">🐞 Report a bug</button><small>Playtest build ${BUILD}</small></div>`;
+        <div class="sp-row"><button class="chip on" id="report-bug">🐞 Report a bug</button><small>${PLAYTEST ? 'Playtest build' : 'Build'} ${BUILD}</small></div>`;
       this.sub.querySelector('#save-now')?.addEventListener('click', () => { const ok = saveGame(g); this.toast(ok ? 'Saved.' : 'Could not save in this browser', !ok); });
       this.sub.querySelector('#save-file')?.addEventListener('click', async () => {
         const f = cityFile(g);
@@ -1451,7 +1453,7 @@ export class Hud implements UiSink {
   private hotkey(e: KeyboardEvent) {
     if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
     const s = this.game.sim;
-    if (e.key === 'F3') { e.preventDefault(); this.togglePerf(); }
+    if (e.key === 'F3') { if (PLAYTEST) { e.preventDefault(); this.togglePerf(); } }
     else if (e.key === ' ') { e.preventDefault(); if (!this.endingUp()) s.speed = s.speed === 0 ? 1 : 0; }
     else if (e.key === '1' || e.key === '2' || e.key === '3') { if (!this.endingUp()) s.speed = Number(e.key); }
     // Ctrl/Cmd+Z before plain Z (Zoning), or undo never happens

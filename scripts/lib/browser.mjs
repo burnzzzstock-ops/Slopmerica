@@ -4,6 +4,11 @@
 //   const browser = await launch();                        // software WebGL (SwiftShader): the same pixels on every machine
 //   const browser = await launch({ args: ['--autoplay-policy=no-user-gesture-required'] });   // extra Chromium flags
 //   const browser = await launch({ gl: false });           // no WebGL flags at all (offline audio renders)
+//   const browser = await launch({ debug: false });        // pages see the game as a player does: no debug hooks, no playtest tools
+//
+// A production build installs the debug hooks (window.__game, __dbg, ...) and shows the playtest tools only when asked (src/core/flags.ts).
+// So every page and context this browser opens gets an init script, run before the page's own code, that asks for both: the same test
+// then works against the dev server and against a built game. `debug: false` leaves it out.
 //
 // env: CHROME (or CHROME_PATH)  the browser to run. Without it: Playwright's own Chromium when it is installed, else the system Chrome
 //                               on Windows and macOS, else the container's /opt/pw-browsers build.
@@ -36,15 +41,28 @@ export const ARGS = GPU
   ? [`--use-angle=${ANGLE}`, '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--no-sandbox']
   : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'];
 
+/** Runs in every frame before the game's code: turn on the debug hooks and the playtest tools (a sandboxed frame may have no storage). */
+function askForDebug() {
+  try { localStorage.setItem('slopmerica.debug', '1'); localStorage.setItem('slopmerica.playtest', '1'); } catch { /* no storage here */ }
+}
+
 /**
  * Start the browser. `args` are added to the WebGL flags; `gl: false` starts it with no WebGL flags (only --no-sandbox);
- * anything else goes to Playwright's chromium.launch as it is.
+ * `debug: false` opens pages without the debug init script; anything else goes to Playwright's chromium.launch as it is.
  */
-export async function launch({ gl = true, args = [], ...rest } = {}) {
+export async function launch({ gl = true, args = [], debug = true, ...rest } = {}) {
   if (!existsSync(EXE)) throw new Error(`No browser at ${EXE}. Set CHROME to a Chrome or Chromium executable.`);
   await takeSlot();
   const flags = [...(gl ? ARGS : ['--no-sandbox']), ...args.filter((a) => !(gl ? ARGS : ['--no-sandbox']).includes(a))];
-  return chromium.launch({ executablePath: EXE, headless: process.env.HEADED !== '1', ...rest, args: flags });
+  const browser = await chromium.launch({ executablePath: EXE, headless: process.env.HEADED !== '1', ...rest, args: flags });
+  if (debug) {
+    // a context's init scripts run in every page it opens, so its pages need nothing more; a page from browser.newPage is
+    // still on about:blank when it gets the script, so the first goto already runs it
+    const newContext = browser.newContext.bind(browser), newPage = browser.newPage.bind(browser);
+    browser.newContext = async (...a) => { const ctx = await newContext(...a); await ctx.addInitScript(askForDebug); return ctx; };
+    browser.newPage = async (...a) => { const page = await newPage(...a); await page.addInitScript(askForDebug); return page; };
+  }
+  return browser;
 }
 
 export { chromium };

@@ -3428,6 +3428,8 @@ a {
 }
 @media (pointer: coarse) and (max-width: 760px) {
   .tb-speed button { min-width: 30px; min-height: 26px; }
+  /* the population stat is an emoji and a short number: a narrow emoji font left it 31 px wide with its hit area, under 32 */
+  .tb-popstat { min-width: 28px; }
   .topbar { gap: 4px; padding-inline: 6px; }
   .tb-demand { gap: 3px; }
   .mtrack { width: 26px; }

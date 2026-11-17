@@ -10,10 +10,12 @@ A satirical 3D city builder where the goal is everything urban planners warn you
 ```sh
 npm install
 npm run dev            # http://127.0.0.1:5173
-npm run build:single   # dist-single/index.html, one file, works offline
+npm run build:single   # dist-single/index.html, one file (about 12 MB, the art packs inside), works offline
 ```
 
 `#skip&map=florida&mode=sandbox` on the URL skips the title screen (maps: `appalachia`, `norcal`, `florida`; modes: `ponzi`, `sandbox`, `hippie`, `speedrun`).
+
+A built game has no debug hooks and no playtest tools. `#debug` on the URL installs the hooks (`window.__game`, `__dbg`, ...). `#playtest` installs them too and shows the tester's tools (bug button, build stamp, performance); the tools stay on for that device until `#playtest=0`.
 
 ## Milestones
 

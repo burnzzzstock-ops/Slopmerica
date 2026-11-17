@@ -76,8 +76,11 @@ check('and multiplied out in the inspector', /Running cost\s*\$\d+\/wk\s*\([\d,]
 const aim = await page.evaluate(() => {
   const g = window.__game, SV = window.__services, S = g.startView();
   for (let r = 60; r < 500; r += 30) for (let a = 0; a < 16; a++) {
-    const x = S.x + Math.cos(a * 0.39) * r, z = S.z + Math.sin(a * 0.39) * r;
-    if (!SV.canPlace(g, 'wellTower', x, z).ok) continue;
+    // the spot the tool itself would take from a cursor here, and the cursor goes on that spot: a cursor half way between two
+    // streets snaps to either, and one of them may hold the clinic placed above ("Urgent Care is already here")
+    const sp = SV.findSpot(g, 'wellTower', S.x + Math.cos(a * 0.39) * r, S.z + Math.sin(a * 0.39) * r);
+    if (sp.reason || SV.findSpot(g, 'wellTower', sp.x, sp.z).reason || !SV.canPlace(g, 'wellTower', sp.x, sp.z, sp.yaw).ok) continue;
+    const x = sp.x, z = sp.z;
     g.rts.setView(x, z, 300, undefined, undefined, true); g.frame(0.016);
     const p = new (g.camera.position.constructor)(x, g.terrain.h(x, z), z).project(g.camera), rc = g.renderer.domElement.getBoundingClientRect();
     return { x: rc.left + ((p.x + 1) / 2) * rc.width, y: rc.top + ((1 - p.y) / 2) * rc.height };

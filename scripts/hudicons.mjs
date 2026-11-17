@@ -4,7 +4,8 @@
 // control with no drawn icon still shows something. Then the places that are not a list of controls: the tool badge (Build,
 // Done or Stop, Undo), the top bar's nature and sprawl meters and the phone's population stat, and a home's inspector (its
 // utility row is a sign for the utility and a sign for yes or no, with the words for a screen reader; its service rows; its
-// Bulldoze button). Exits nonzero on failure.
+// Bulldoze button), and the buttons on the cards: the Next card's, the demand card's, an emergency's and the in-the-red
+// card's, Settings' sound, save and report chips, the city-wide policies and a milestone's medal. Exits nonzero on failure.
 //
 //   BASE_URL=http://127.0.0.1:5173 node scripts/hudicons.mjs
 import { launch } from './lib/browser.mjs';
@@ -69,7 +70,8 @@ for (const [name, opts] of [['desktop', { viewport: { width: 1280, height: 720 }
   // ---- the places that are not a list of controls: each is a drawing 14 px or more, with no emoji left beside it
   const spots = (sel) => page.evaluate((sel) => [...document.querySelectorAll(sel)].filter((el) => el.offsetParent !== null).map((el) => {
     const svg = el.querySelector('.ui-icon svg'), r = svg?.getBoundingClientRect();
-    return { text: (el.textContent ?? '').replace(/\s+/g, ' ').trim(), svg: !!svg, w: r ? Math.round(r.width) : 0, emoji: /\p{Extended_Pictographic}/u.test(el.textContent ?? '') };
+    // (an emoji left where the drawing should stand: before the first word. One inside the words, "slow to ▶", is text)
+    return { text: (el.textContent ?? '').replace(/\s+/g, ' ').trim(), svg: !!svg, w: r ? Math.round(r.width) : 0, emoji: /^[^\p{L}\p{N}]*\p{Extended_Pictographic}/u.test(el.textContent ?? '') };
   }), sel);
   const drawnAll = (what, rows, n) => check(`${name}: ${what}: ${rows.filter((r) => r.svg).length} of ${rows.length} drawn, 14 px or more, no emoji`, rows.length >= n && rows.every((r) => r.svg && r.w >= 14 && !r.emoji), rows);
   drawnAll('the top bar\'s nature and sprawl meters', await spots('.tb-meters .meter > span'), 2);
@@ -95,6 +97,38 @@ for (const [name, opts] of [['desktop', { viewport: { width: 1280, height: 720 }
   check(`${name}: the inspector's four utilities are each a utility sign and a yes/no sign, with the words for a screen reader`, util.length === 4 && util.every((u) => u.img && u.n === 2 && !u.emoji && /^(Power|Water|Sewage|Garbage): /.test(u.label ?? '')), util);
   drawnAll('the inspector\'s fire, police, health and education rows', await spots('.inspector .svc-covs > div:nth-child(-n+4) > span'), 4);
   drawnAll('the inspector\'s Bulldoze button', await spots('.inspector #in-bulldoze'), 1);
+
+  // ---- the buttons on the cards: each shows the drawing for what it does in front of its words
+  const openTool = async (id) => {
+    if (await page.$(`.tbtn[data-t="${id}"]`)) await page.click(`.tbtn[data-t="${id}"]`);
+    else { await page.click('.tbtn[data-t="more"]'); await settle(); await page.click(`[data-more="${id}"]`); }
+    await settle();
+  };
+  await page.evaluate(() => { const g = window.__game; g.select(null); g.ui.nextHidden = ''; g.sim.demand.res = 60; g.time += 2; g.ui.refreshNow(); });
+  drawnAll('the Next card\'s button', await spots('.next-bar .chip[data-act]'), 1);
+  await page.click('.dbar[data-dem="res"]'); await settle();
+  await page.evaluate(() => { window.__game.sim.demand.res = 60; window.__game.ui.refreshNow(); });
+  drawnAll('the demand card\'s buttons', await spots('.demand-pop .dp-acts button'), 1);
+  await page.keyboard.press('Escape');
+  await openTool('help');
+  drawnAll('Settings: emergencies, music, sound, save and report', await spots('#emergency-toggle, #music-toggle, #sound-toggle, #save-now, #report-bug'), 5);
+  await page.keyboard.press('Escape');
+  await openTool('ext:districts');
+  await page.click('.subpanel [data-tab="city"]'); await settle();
+  verdict('city-wide policies', await read('.subpanel [data-policy]', 'policy', 'data-policy'), 10);
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => window.__game.ui.milestone(1));
+  drawnAll('a milestone\'s medal', await spots('.toast.milestone span > b:first-child'), 1);
+  // an emergency and a town in the red, both made up: their cards and what the cards offer
+  await page.evaluate(() => {
+    const g = window.__game, home = [...g.buildings.list.values()][0];
+    g.emergency = () => ({ level: 'crit', needs: [{ need: 'power', cat: 'power', icon: '⚡', label: 'Power', failing: 'without power', buildings: 14, residents: 65, eta: [6, 18], why: 'Demand 2.3 MW against a 2.2 MW import cap.' }], atRisk: 14, residents: 65, hot: [{ x: home.x, z: home.z, n: 14, residents: 65, id: home.id }], forecast: '', forecastDays: 90, crisis: { since: g.sim.day - 3, cause: 'power', peakAtRisk: 14, peakTrash: 0, lowPop: 0, popAtStart: 0, endedAt: -1 }, trash: 0, abandoned: 2, day: g.sim.day });
+    g.sim.money = -5000; g.sim.speed = 1;
+    g.ui.refreshNow();
+  });
+  drawnAll('the emergency card\'s heading', await spots('.emergency .em-head > b'), 1);
+  drawnAll('the emergency card\'s Fix, Worst area and Pause', await spots('.emergency .em-acts .chip'), 3);
+  drawnAll('the in-the-red card\'s Budget and Pause', await spots('.crisis .crisis-acts .chip'), 2);
   check(`${name}: no page errors`, errs.length === 0, errs.slice(0, 3));
   await ctx.close();
 }

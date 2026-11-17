@@ -13,7 +13,7 @@ import { MAX_LEVEL } from '../contracts';
 import type { ToolId } from '../tools/tools';
 import { GRID_BLOCKS, type GridBlock } from '../tools/gridRoads';
 import { FeedPanel } from './feedPanel';
-import { courtText, emergencyToast } from './copy';
+import { courtText, emergencyToast, toastMs } from './copy';
 import { MERCH_URL, brandById } from '../art/brands';
 import { BUILD, cityFile, crumb, onCapturedError, openBugReport, saveFile, saveMessage } from './bugreport';
 import { FOV_MAX, FOV_MIN, IS_TOUCH } from '../config';
@@ -1772,12 +1772,14 @@ export class Hud implements UiSink {
 
   // ------------------------------------------------------------------ transient UI
   toast(msg: string, bad = false) {
+    // it stays as long as it takes to read (ui/copy.ts), then fades for 0.6 s
+    const life = toastMs(msg);
     // the same message again while it's still showing: keep one, refreshed
     for (const el of this.toasts.children) {
       if (el.textContent !== msg || el.classList.contains('out')) continue;
       const t0 = el as HTMLElement & { _t?: number[] };
       t0._t?.forEach((h) => clearTimeout(h));
-      t0._t = [window.setTimeout(() => t0.classList.add('out'), 2600), window.setTimeout(() => t0.remove(), 3200)];
+      t0._t = [window.setTimeout(() => t0.classList.add('out'), life), window.setTimeout(() => t0.remove(), life + 600)];
       t0.classList.remove('again'); void t0.offsetWidth; t0.classList.add('again');
       return;
     }
@@ -1786,7 +1788,7 @@ export class Hud implements UiSink {
     t.className = 'toast' + (bad ? ' bad' : '');
     t.textContent = msg;
     this.toasts.appendChild(t);
-    t._t = [window.setTimeout(() => t.classList.add('out'), 2600), window.setTimeout(() => t.remove(), 3200)];
+    t._t = [window.setTimeout(() => t.classList.add('out'), life), window.setTimeout(() => t.remove(), life + 600)];
     while (this.toasts.children.length > 3) this.toasts.firstChild?.remove();
   }
 

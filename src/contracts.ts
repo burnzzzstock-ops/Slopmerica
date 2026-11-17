@@ -396,4 +396,10 @@ export interface WorldFields {
   naturePct(): number;
   /** where a follow target is now, or null when it no longer exists (stop following) */
   poseOf(target: ViewTarget): ViewPose | null;
+  /** the bus a car is driving a leg for (the id of a ViewTarget of kind 'bus'), or null when the car is no bus in service */
+  busOf(carId: number): number | null;
+  /** what a bus is doing now, or null once it has left service */
+  bus(id: number): BusInfo | null;
+  /** every bus in service, in the order they entered it */
+  buses(): BusInfo[];
 }

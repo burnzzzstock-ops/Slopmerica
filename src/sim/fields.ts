@@ -6,9 +6,12 @@ import type { Game } from '../game';
 import { isZoned } from './buildings';
 import { FIELD_CELL, FIELD_N } from './pollution';
 import { airFields } from './services';
+import { transitFor } from '../transit/system';
 import { TUNING } from './tuning';
 
 const YEAR = 365;
+/** a followed bus that is between two legs is shown where it was last seen on the road, if that is this near (m) to where it waits */
+const BUS_SEEN_NEAR = 40;
 const LV_N = 192;
 
 const LEGENDS: Partial<Record<InfoViewId, FieldLegend>> = {
@@ -66,10 +69,31 @@ export function makeFields(g: Game): WorldFields {
     return smogNow;
   };
 
+  // Where each followed bus was last on the road. A bus is not a car between two legs (the car that drove it in is gone, the one
+  // that drives it out has not set off), so the camera is told it is still where it stopped. The camera's, not the simulation's.
+  const busSeen = new Map<number, ViewPose>();
+  const busPose = (id: number): ViewPose | null => {
+    const T = transitFor(g), bus = T?.bus(id);
+    if (!T || !bus) { busSeen.delete(id); return null; }
+    // (the car for the next leg is sent out a step before it has a place on the road)
+    const c = bus.carId === null ? undefined : g.traffic.cars.find((c) => c.id === bus.carId);
+    if (c?.posed) {
+      const pose = { x: c.shown[0], y: c.shown[1], z: c.shown[2], yaw: c.shown[3], speed: c.v, radius: c.len / 2 };
+      busSeen.set(id, pose);
+      return pose;
+    }
+    const at = T.busWaitsAt(id), seen = busSeen.get(id);
+    // (a place remembered from an earlier ride is no use once the bus has moved on without the camera)
+    if (seen && at && Math.hypot(seen.x - at.x, seen.z - at.z) < BUS_SEEN_NEAR) { seen.speed = 0; return seen; }
+    busSeen.delete(id);
+    return at ? { ...at, speed: 0, radius: 6 } : seen ? { ...seen, speed: 0 } : null;
+  };
+
   const poseOf = (t: ViewTarget): ViewPose | null => {
+    if (t.kind === 'bus') return busPose(t.id);
     if (t.kind === 'car') {
       const c = g.traffic.cars.find((c) => c.id === t.id);
-      return c ? { x: c.shown[0], y: c.shown[1], z: c.shown[2], yaw: c.shown[3], speed: c.v, radius: c.len / 2 } : null;
+      return c?.posed ? { x: c.shown[0], y: c.shown[1], z: c.shown[2], yaw: c.shown[3], speed: c.v, radius: c.len / 2 } : null;
     }
     if (t.kind === 'person') {
       const p = g.peds.peds.find((p) => p.id === t.id && !p.gone);
@@ -91,5 +115,8 @@ export function makeFields(g: Game): WorldFields {
     smog,
     naturePct: () => g.sim.naturePct,
     poseOf,
+    busOf: (carId) => { const c = g.traffic.cars.find((c) => c.id === carId); return c ? transitFor(g)?.busOf(c) ?? null : null; },
+    bus: (id) => transitFor(g)?.bus(id) ?? null,
+    buses: () => transitFor(g)?.buses() ?? [],
   };
 }

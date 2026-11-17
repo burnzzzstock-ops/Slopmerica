@@ -5,6 +5,7 @@ import { registerInspector, registerPanel, registerSystem, registerTool, registe
 import type { Game } from '../game';
 import type { Bld } from './buildings';
 import { isZoned } from './buildings';
+import { uiIcon } from '../ui/icons';
 import {
   POLICY_BY_ID, POLICY_DEFS, POLICY_IDS, policyDemandDelta, policyEnabled, policyLandValue,
   policyTaxMultiplier, policyVacancyReason, type PolicyId, type PolicyOverride,
@@ -251,7 +252,7 @@ function renderPolicies(s: DistrictState, district: District | null) {
     const effective = district ? policyEnabled(p.id, s.cityPolicies, district.overrides) : s.cityPolicies.has(p.id);
     const state = district ? own === undefined ? 'inherit' : own ? 'on' : 'off' : effective ? 'on' : 'off';
     const suffix = state === 'inherit' ? `inherits ${effective ? 'ON' : 'OFF'}` : state.toUpperCase();
-    return `<button class="card ${effective ? 'on' : ''}" data-policy="${p.id}" title="${esc(p.summary)}"><span class="ci">${p.icon}</span><b>${esc(p.label)}</b><small>${esc(p.summary)} · ${suffix}</small></button>`;
+    return `<button class="card ${effective ? 'on' : ''}" data-policy="${p.id}" title="${esc(p.summary)}"><span class="ci">${uiIcon('policy', p.id, p.icon, 28)}</span><b>${esc(p.label)}</b><small>${esc(p.summary)} · ${suffix}</small></button>`;
   }).join('');
 }
 

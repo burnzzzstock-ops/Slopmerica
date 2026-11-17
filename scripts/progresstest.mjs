@@ -41,8 +41,10 @@ await page.evaluate(() => { const s = window.__game.sim; s.population = 1150; s.
 await settle();
 const cards = await page.evaluate(() => [...document.querySelectorAll('.toast.unlock')].map((t) => t.textContent));
 const note = cards[cards.length - 1] ?? null;
+// (the medal beside the name is drawn, so it is not in the text)
+const medal = await page.evaluate(() => !![...document.querySelectorAll('.toast.unlock')].pop()?.querySelector('b .ui-icon svg'));
 const m1 = await page.evaluate(() => Math.round(window.__game.sim.money));
-check(`the milestone says what it unlocked and where ("${note}")`, !!note && /🏅 Boomburb/.test(note) && /1,100 people/.test(note) && /Unlocked: .*Luxury Slop/.test(note) && /Next: Exurb at 1,800 people/.test(note), cards);
+check(`the milestone says what it unlocked and where ("${note}")`, !!note && medal && /^\s*Boomburb/.test(note) && /1,100 people/.test(note) && /Unlocked: .*Luxury Slop/.test(note) && /Next: Exurb at 1,800 people/.test(note), cards);
 check(`each milestone passed pays its state grant (+$${(m1 - m0).toLocaleString()} for four)`, m1 - m0 === 5000 + 10000 + 15000 + 20000, { m0, m1 });
 const bigBanner = await page.evaluate(() => [...document.querySelectorAll('.banner')].some((b) => /Unlocked|Boomburb/.test(b.textContent)));
 check('and no banner covers the middle of the map for it', !bigBanner);

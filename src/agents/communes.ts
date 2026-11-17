@@ -45,6 +45,8 @@ export interface Commune {
   /** Smoke / fire emitters in commune-local space. */
   emitters: Emitter[];
   leaveT: number;
+  /** real seconds it has been shown sinking (a look) */
+  sink?: number;
 }
 
 const VIBES = [
@@ -236,7 +238,8 @@ export class Communes {
         c.bulbMesh.position.y = Math.sin(time * 1.15 + c.id) * 0.045;
         c.bulbMesh.rotation.y = Math.sin(time * 0.8 + c.id) * 0.0018;
       }
-      if (c.state === 'leaving') c.group.position.y = c.baseY - Math.min(4, c.leaveT) * 2;
+      // (shown going down over four real seconds, paused or not; the land is free when the step says they have gone)
+      if (c.state === 'leaving') { c.sink = Math.min(4, (c.sink ?? 0) + _dt); c.group.position.y = c.baseY - c.sink * 2; }
     }
     if (lit) {
       const flicker = 0.88 + Math.sin(time * 13 + lit.id) * 0.09 + Math.sin(time * 23.7 + lit.id * 4) * 0.035;

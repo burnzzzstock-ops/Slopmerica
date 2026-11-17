@@ -24,6 +24,8 @@ export interface Ped {
   pose?: Float64Array;
   pose0?: Float64Array;
   act?: PersonAction;
+  /** where they were last drawn: x, y, z, heading (what a camera following them reads) */
+  shown?: Float64Array;
   h: number;
   arch: number;
   kind: 'walk' | 'loiter' | 'commune' | 'protest' | 'wait';
@@ -235,7 +237,7 @@ export class Pedestrians {
   /** People on their own, for tests and dev pages: real seconds at a speed, then drawn. The game calls step() and draw(). */
   update(dtReal: number, simSpeed: number, cam: THREE.Vector3, camDist: number) {
     if (dtReal * simSpeed > 0) this.step(dtReal * simSpeed, cam, camDist);
-    this.draw(1);
+    this.draw(1, dtReal);
   }
   /** the people's own random stream, seeded from the county's seed */
   readonly rng = new Rng(0x9ed5);
@@ -330,7 +332,7 @@ export class Pedestrians {
         p.z = lerp(g.fz, g.tz, u);
         p.y = this.terrain.h(p.x, p.z) + 0.06;
         if (gd > 0.2) p.yaw = Math.atan2(g.tx - g.fx, g.tz - g.fz);
-        p.ryaw = p.ryaw === undefined ? p.yaw : angEase(p.ryaw, p.yaw, 1 - Math.exp(-dtReal * 9));
+        p.ryaw = p.yaw;
         if (u >= 1) {
           delete p.go;
           delete p.crossing;
@@ -361,7 +363,7 @@ export class Pedestrians {
       }
       // feet planted: the legs cycle as fast as the body moves (they used to shuffle at 3x)
       const k = Math.max(0.3, Math.min(simSpeed, 3));
-      p.phase += dtReal * k * (p.kind === 'walk' ? p.speed / (p.action === 'run' ? STRIDE.run : STRIDE.walk) : 1);
+      p.phase += p.kind === 'walk' ? (dt * p.speed) / (p.action === 'run' ? STRIDE.run : STRIDE.walk) : dtReal * k;
       if (p.kind === 'walk') {
         const seg = this.net.segs.get(p.seg);
         if (!seg) continue;
@@ -466,7 +468,7 @@ export class Pedestrians {
         const seg = this.net.segs.get(p.seg);
         if (!seg || seg.blocked <= 0) { p.life = 0; continue; }
       }
-      p.ryaw = p.ryaw === undefined ? p.yaw : angEase(p.ryaw, p.yaw, 1 - Math.exp(-dtReal * 8));
+      p.ryaw = p.yaw;
       this.put(p, p.x, p.y, p.z, p.ryaw, p.action, p.phase);
     }
   }
@@ -481,14 +483,20 @@ export class Pedestrians {
     if (fresh) p.pose0!.set(P);
   }
 
-  /** Put the people on screen, `alpha` of the way (0..1) from where each was a step ago to where they are now. Changes nothing they do. */
-  draw(alpha: number) {
-    const a = Math.max(0, Math.min(1, alpha));
+  /**
+   * Put the people on screen, `alpha` of the way (0..1) from where each was a step ago to where they are now. The body turns toward
+   * its heading over a moment of real time (`dtReal` seconds since the last draw). Changes nothing they do.
+   */
+  draw(alpha: number, dtReal = 0) {
+    const a = Math.max(0, Math.min(1, alpha)), turn = dtReal > 0 ? 1 - Math.exp(-dtReal * 9) : 1;
     for (const p of this.peds) {
       const P = p.pose, P0 = p.pose0;
       if (!P || !P0) continue;
-      if (a >= 1) this.renderer.set(p.h, P[0], P[1], P[2], P[3], p.act ?? p.action, P[4]);
-      else this.renderer.set(p.h, P0[0] + (P[0] - P0[0]) * a, P0[1] + (P[1] - P0[1]) * a, P0[2] + (P[2] - P0[2]) * a, angEase(P0[3], P[3], a), p.act ?? p.action, P0[4] + (P[4] - P0[4]) * a);
+      const S = (p.shown ??= new Float64Array(4));
+      const fresh = S[1] === 0 && S[0] === 0 && S[2] === 0;
+      if (a >= 1) { S[0] = P[0]; S[1] = P[1]; S[2] = P[2]; } else { S[0] = P0[0] + (P[0] - P0[0]) * a; S[1] = P0[1] + (P[1] - P0[1]) * a; S[2] = P0[2] + (P[2] - P0[2]) * a; }
+      S[3] = fresh ? P[3] : angEase(S[3], P[3], turn);
+      this.renderer.set(p.h, S[0], S[1], S[2], S[3], p.act ?? p.action, a >= 1 ? P[4] : P0[4] + (P[4] - P0[4]) * a);
     }
     this.renderer.flush();
   }

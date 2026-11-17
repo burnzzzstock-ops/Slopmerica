@@ -92,7 +92,7 @@ const advance = ({ to, how, player }) => {
       if (w.act) window.__player.step(0);   // the scripted commissioner looks at the county and builds (no time passes: run(0))
     });
   }
-  const from = Math.round(((g.steps - D.base) * 0.08) / 2.5);
+  const from = Math.floor((g.steps - D.base) / g.stepsFor(1));
   D.want.set(at(to), { ...(D.want.get(at(to)) ?? {}), mark: to });
   if (player) for (let day = Math.floor(from / 5) * 5 + 5; day <= to; day += 5) D.want.set(at(day), { ...(D.want.get(at(day)) ?? {}), act: true });
   const speed = g.sim.speed;

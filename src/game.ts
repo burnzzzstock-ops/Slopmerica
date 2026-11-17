@@ -5,7 +5,7 @@ import { defaultQuality, FOV_MAX, FOV_MIN, GLOW, HALF, IS_TOUCH, MIN_RENDER_SCAL
 import type { FeedContext, FeedEventKind, LandmarkId, WorldFields } from './contracts';
 import { makeFields } from './sim/fields';
 import { Climate } from './sim/climate';
-import { STEP_SECONDS } from './core/time';
+import { STEP_SECONDS, STEPS_PER_DAY } from './core/time';
 import { fx, Rng, streamSeed } from './core/rng';
 import { generateMap, MapData, MapId } from './world/maps';
 import { Terrain } from './world/terrain';
@@ -549,10 +549,18 @@ export class Game {
     };
     this.weather.onChange = (kind, season) => {
       if (season !== this.lastSeason) { this.lastSeason = season; this.feed.push('seasonChange'); }
-      else this.feed.push('weatherChange');
-      void kind;
+      // (the sky is handed every spell, a clear one after a clear one included: only a real change is news)
+      else if (kind !== this.lastSkyKind) this.feed.push('weatherChange');
+      this.lastSkyKind = kind;
     };
+    // weather.force(kind, days) is what scripts, dev pages and the playtest buttons call. It sets the simulation's weather
+    // (days are the sky's own: 360 game seconds each), and the sky follows that like any other spell.
+    this.skyForce = this.weather.force.bind(this.weather);
+    this.weather.force = (kind, days = 3) => this.climate.force(kind, this.sim.day, days * (360 / DAY_SECONDS));
   }
+  private lastSkyKind = 'clear';
+  private skyForce: WeatherSystem['force'] = () => {};
+  private skyEnd = -1;
   private lastSeason = 'spring';
 
   near(x: number, z: number, r: number) {
@@ -1090,11 +1098,18 @@ export class Game {
   runSteps(n: number) {
     for (let i = 0; i < n; i++) this.step();
     this.snap = true;
-    if (!this.stepping) this.frame(0, false);   // (asked for from inside a step, by a scripted player: no frame within a step)
+    if (this.stepping) return;   // (asked for from inside a step, by a scripted player: no frame within a step)
+    // what is drawn on a slower beat than the frame (problem icons, info views, lamp pools) catches up: two undrawn seconds with the
+    // simulation held, so nothing on screen is older than the county
+    const speed = this.sim.speed;
+    this.sim.speed = 0;
+    this.frame(1, false);
+    this.frame(1, false);
+    this.sim.speed = speed;
   }
   private stepping = false;
   /** how many fixed steps a span of game days is */
-  stepsFor(days: number) { return Math.round((days * DAY_SECONDS) / STEP_SECONDS); }
+  stepsFor(days: number) { return Math.ceil(days * STEPS_PER_DAY - 1e-9); }
 
   /**
    * Advance the simulation by game seconds, in whole fixed steps; what is left over waits for the next call. At most 8 steps a
@@ -1118,15 +1133,18 @@ export class Game {
    */
   step() {
     const P = this.prof, h = STEP_SECONDS;
+    const nested = this.stepping;
     this.stepping = true;
     for (const f of this.onStep) f(this.steps);
-    this.stepping = false;
+    this.stepping = nested;
+    // what the player did since the last step (a road drawn, zoning painted) is in place before anything reads it
+    this.zones.sync();
     this.hour = (this.hour + (h * 24) / 360) % 24;
     const dayWas = Math.floor(this.sim.day);
     this.sim.step(h);
     if (Math.floor(this.sim.day) !== dayWas) P.note(Math.floor(this.sim.day) % 7 === 0 ? 'new week' : 'new day');
     P.lap('sim');
-    this.climate.step(h, this.sim.day, this.hour, SPEEDS[this.sim.speed] || 1);
+    this.climate.step(h, this.sim.day, this.hour);
     const fxs = this.climate.effects();
     this.traffic.speedMul = fxs.speedMul;
     this.traffic.crashMul = fxs.crashMul;
@@ -1174,9 +1192,10 @@ export class Game {
     P.lap('camera+sky');
     const t = this.sim.time(this.hour);
     // the sky shows the simulation's weather: each new spell is handed to it (a little long, so it never rolls one of its own)
-    if (this.climate.spell !== this.skySpell) {
+    // (again if the sky has wandered off: it must never roll a spell of its own)
+    if (this.climate.spell !== this.skySpell || this.weather.kind !== this.climate.kind) {
       this.skySpell = this.climate.spell;
-      this.weather.force(this.climate.kind, (this.climate.spellDays * 1.5 + 10) / (360 / DAY_SECONDS));
+      this.skyForce(this.climate.kind, (Math.max(1, this.climate.daysLeft(this.sim.day)) * 1.5 + 10) / (360 / DAY_SECONDS));
     }
     this.weather.update(dt, t, this.camera, spd, this.rts.distance);
     this.groundDetail.update(this.time, this.rts.target, this.rts.distance, {
@@ -1196,7 +1215,7 @@ export class Game {
     this.parkView.setFromProjectionMatrix(this.parkMat.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
     this.parking.update(dt, this.hour, this.rts.target.x, this.rts.target.z, this.rts.distance, () => this.traffic.renderer.stats().active);
     P.lap('traffic');
-    this.peds.draw(alpha);
+    this.peds.draw(alpha, dt);
     this.civic.update(dt);
     this.vaultScenery.update(dt);
     P.lap('people');

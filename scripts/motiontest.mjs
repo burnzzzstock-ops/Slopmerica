@@ -56,12 +56,12 @@ const r = await page.evaluate(() => {
       for (let i = c.pi; i < c.path.length; i++) if (oneWays.has(c.path[i].seg) && c.path[i].dir < 0) wrongWay++;
       const p = prev.get(c.id);
       if (p && c.v > 2) {
-        let dy = c.yaw - p.yaw;
+        let dy = (c.shown ? c.shown[3] : c.yaw) - p.yaw;
         dy = Math.atan2(Math.sin(dy), Math.cos(dy));
         samples++;
         if (Math.abs(dy) > maxJump) { maxJump = Math.abs(dy); jumpAt = { v: +c.v.toFixed(1), junction: !!c.junction, pi: c.pi, len: c.path.length, jlen: c.junction ? +c.junction.len.toFixed(2) : null, jt: c.junction ? +c.junction.t.toFixed(2) : null, turn: c.turn }; }
       }
-      prev.set(c.id, { yaw: c.yaw });
+      prev.set(c.id, { yaw: c.shown ? c.shown[3] : c.yaw });
       const l0 = laneOf.get(c.id);
       if (!c.junction && l0 && l0.pi === c.pi && l0.lane !== c.lane) laneChanges++;
       if (!c.junction) laneOf.set(c.id, { pi: c.pi, lane: c.lane });

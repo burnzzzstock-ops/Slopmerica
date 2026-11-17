@@ -45,7 +45,7 @@ const r = await page.evaluate((SECONDS) => {
     // (on the road: not in a lot or a drive-thru lane)
     const cars = tr.cars.filter((c) => c.crashed <= 0 && c.dep <= 0 && c.arr < 0 && !c.thru);
     for (const c of cars) {
-      const y = c.ryaw ?? c.yaw, p = prevYaw.get(c.id);
+      const y = c.shown ? c.shown[3] : c.ryaw ?? c.yaw, p = prevYaw.get(c.id);   // (the heading as drawn, between two steps)
       if (p !== undefined) { let d = Math.abs(y - p) % (Math.PI * 2); if (d > Math.PI) d = Math.PI * 2 - d; if (d > 0.35) snaps++; }
       prevYaw.set(c.id, y);
       // waiting, away from a red light (a queue behind a red is fine)

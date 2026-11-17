@@ -61,8 +61,12 @@ const FALL: Record<WeatherKind, { rain: number; snow: number; wind: number; temp
 const isWet = (k: WeatherKind) => k === 'rain' || k === 'storm' || k === 'snow' || k === 'blizzard' || k === 'hurricane';
 /** Florida's "snow" is a single flake: nothing else about the day changes. */
 const isFlakeJoke = (map: MapId, kind: WeatherKind) => map === 'florida' && (kind === 'snow' || kind === 'blizzard');
-/** the shortest a spell lasts, in real seconds at the speed it began at (so top speed does not strobe), as calendar days per unit of speed */
-const SPELL_MIN_DAYS_PER_SPEED = 12 / DAY_SECONDS;
+/**
+ * The shortest a spell lasts, in calendar days: 12 real seconds at top speed, so the sky does not strobe there. (It used to be
+ * 12 real seconds at whatever speed the player had set, which made the weather, and through it crashes, building and
+ * disasters, depend on the speed button.)
+ */
+const SPELL_MIN_DAYS = (12 * 4) / DAY_SECONDS;
 /** the longest a spell takes to build and to fade, in calendar days */
 const EASE_MAX = 0.18 * (360 / DAY_SECONDS);
 
@@ -101,7 +105,6 @@ export class Climate {
   /** the calendar length the spell was rolled with, before the speed's floor */
   private cal = 0;
   private forced = false;
-  private spd = 1;
   private windAngle: number;
   private readonly rng: Rng;
   private readonly look = newSeasonLook();
@@ -139,7 +142,7 @@ export class Climate {
     // on the calendar: fair spells last one to a few weeks, rain and snow a few days, storms a day or two
     if (!forced) {
       this.cal = kind === 'clear' ? 5 + this.rng.float() * 20 : kind === 'storm' || kind === 'hurricane' || kind === 'blizzard' ? 1 + this.rng.float() * 2 : 2 + this.rng.float() * 6;
-      days = Math.max(this.cal, SPELL_MIN_DAYS_PER_SPEED * Math.max(1, this.spd));
+      days = Math.max(this.cal, SPELL_MIN_DAYS);
     }
     this.forced = forced;
     this.end = day + days;
@@ -155,16 +158,14 @@ export class Climate {
     this.start = day - this.ease;   // no slow build: the button is instant
   }
 
-  /** One fixed step: `h` game seconds on, at calendar day `day` (float) and clock hour `hour`; `spd` is the speed the player has set (1, 2 or 4). */
-  step(h: number, day: number, hour: number, spd: number) {
+  /** calendar days until this spell ends */
+  daysLeft(day: number) { return this.end - day; }
+
+  /** One fixed step: `h` game seconds on, at calendar day `day` (float) and clock hour `hour`. */
+  step(h: number, day: number, hour: number) {
     const dDays = h / DAY_SECONDS;
     const doy = ((day % YEAR) + YEAR) % YEAR;
     this.season = seasonOf(doy);
-    if (spd > 0 && spd !== this.spd) {
-      this.spd = spd;
-      // a spell begun at another speed keeps to the calendar at this one
-      if (!this.forced) this.end = Math.max(this.start + Math.max(this.cal, SPELL_MIN_DAYS_PER_SPEED * spd), day + this.ease);
-    }
     const flake = isFlakeJoke(this.map, this.kind);
     const fall = FALL[flake ? 'cloudy' : this.kind];
     this.temperature = temperatureC(this.map, doy, hour) + fall.temp * this.intensity;
@@ -175,15 +176,16 @@ export class Climate {
     // the ground: wet roads, the snowpack
     const rain = fall.rain * this.intensity, snow = fall.snow * this.intensity;
     const wantWet = rain > 0.05 ? 1 : this.kind === 'fog' && this.intensity > 0.5 ? 0.35 : 0;
-    this.wet += (wantWet - this.wet) * (1 - Math.exp(-dDays / (wantWet > this.wet ? 0.6 : 4)));
-    if (this.kind === 'heatwave' && this.intensity > 0.3) this.wet = Math.max(0, this.wet - dDays * 0.02);
+    // (the rates the sky had at top speed: roads wet in about 8 calendar days of rain and dry over about 72)
+    this.wet += (wantWet - this.wet) * (1 - Math.exp(-dDays / (wantWet > this.wet ? 8.4 : 72)));
+    if (this.kind === 'heatwave' && this.intensity > 0.3) this.wet = Math.max(0, this.wet - dDays * (3 / 144));
     const snowing = this.map === 'florida' ? 0 : Math.max(snow, this.map === 'norcal' && this.season === 'winter' ? rain * 0.8 : 0);
     if (snowing > 0.05) this.snowCover = Math.min(1, this.snowCover + dDays * 0.0375 * snowing);
     else this.snowCover = Math.max(0, this.snowCover - (dDays / 144) * (this.season === 'winter' ? 0.2 : this.season === 'fall' ? 1 : 3) * (1 + rain * 2));
     // the hollers keep a winter snowpack of their own between storms
     if (this.map === 'appalachia') {
       const floor = sampleSeason(this.map, doy, this.look).snowClimate * (this.temperature < 3 ? 1 : 0.4);
-      if (this.snowCover < floor) this.snowCover += (floor - this.snowCover) * (1 - Math.exp(-dDays / 12));
+      if (this.snowCover < floor) this.snowCover += (floor - this.snowCover) * (1 - Math.exp(-dDays / 41));
     }
     if (this.map === 'florida') this.snowCover = 0;
 
@@ -209,14 +211,14 @@ export class Climate {
 
   save() {
     return { kind: this.kind, intensity: this.intensity, temperature: this.temperature, wet: this.wet, snowCover: this.snowCover, spell: this.spell, spellDays: this.spellDays,
-      start: this.start, end: this.end, ease: this.ease, strength: this.strength, cal: this.cal, forced: this.forced, spd: this.spd, windAngle: this.windAngle, rng: this.rng.state };
+      start: this.start, end: this.end, ease: this.ease, strength: this.strength, cal: this.cal, forced: this.forced, windAngle: this.windAngle, rng: this.rng.state };
   }
 
   load(d: ReturnType<Climate['save']> | undefined) {
     if (!d) return;
     this.kind = d.kind; this.intensity = d.intensity; this.temperature = d.temperature; this.wet = d.wet; this.snowCover = d.snowCover; this.spell = d.spell; this.spellDays = d.spellDays;
-    this.start = d.start; this.end = d.end; this.ease = d.ease; this.strength = d.strength; this.cal = d.cal; this.forced = d.forced; this.spd = d.spd; this.windAngle = d.windAngle; this.rng.state = d.rng;
-    const w = Math.hypot(this.wind.x, this.wind.y) || 0.9;
+    this.start = d.start; this.end = d.end; this.ease = d.ease; this.strength = d.strength; this.cal = d.cal; this.forced = d.forced; this.windAngle = d.windAngle; this.rng.state = d.rng;
+    const w = 0.9 * (1 + (FALL[isFlakeJoke(this.map, this.kind) ? 'cloudy' : this.kind].wind - 1) * this.intensity);
     this.wind.x = Math.cos(this.windAngle) * w; this.wind.y = Math.sin(this.windAngle) * w;
   }
 }

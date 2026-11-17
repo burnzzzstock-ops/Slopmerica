@@ -90,8 +90,10 @@ export interface Car {
   pose0: Float64Array;
   /** has a pose yet (false until its first step) */
   posed: boolean;
-  /** draw() has sent this standing pose to the renderer already */
-  sent: boolean;
+  /** how many frames running draw() has sent this standing pose (after STILL_FRAMES it is left alone) */
+  sent: number;
+  /** where it was last drawn: x, y, z, heading (between its last two steps; what a camera following it, or a test of smooth motion, reads) */
+  shown: Float64Array;
   crashYaw: number;
   crashRoll: number;
   x: number;
@@ -1160,7 +1162,7 @@ export class Traffic {
       // codex:policies begin -- a smoke-free endpoint disables the visible in-car smoking effect
       len: spec.length, drunk, reckless: drunk || (!sober && this.rnd() < RECKLESS), smoker: !sober && (!oB || this.policySmokingAllowed?.(oB) !== false) && (!dB || this.policySmokingAllowed?.(dB) !== false) && this.rnd() < 0.2, redsRun: 0, wob: this.rnd() * 10,
       // codex:policies end
-      junction: null, crashed: 0, pose: new Float64Array(6), pose0: new Float64Array(6), posed: false, sent: false, crashYaw: 0, crashRoll: 0, x: 0, y: 0, z: 0, yaw: 0, purpose, dest,
+      junction: null, crashed: 0, pose: new Float64Array(6), pose0: new Float64Array(6), posed: false, sent: 0, shown: new Float64Array(4), crashYaw: 0, crashRoll: 0, x: 0, y: 0, z: 0, yaw: 0, purpose, dest,
       lat: NaN, latV: 0, ryaw: NaN, turn: 0, turnV: Infinity, turnFor: -1, laneCd: 2 + this.rnd() * 3, brakeT: 0, acc: 0, roll: 0, dive: 0,
       driver: Math.floor(this.rnd() * ARCHETYPES.length), smokeT: fx.float() * 2, bac: drunk ? 0.09 + this.rnd() * 0.2 : 0,
       dep: 0, arr: -1, lotO: null, lotD: null, local,
@@ -1206,7 +1208,10 @@ export class Traffic {
 
   private dropCarsOn(segId: number) {
     for (const c of this.cars) {
-      if (c.path.some((st, i) => i >= c.pi && st.seg === segId)) c.crashed = -1; // mark for removal
+      if (c.path.some((st, i) => i >= c.pi && st.seg === segId)) {
+        c.crashed = -1; // mark for removal
+        if (!c.parked && c.h >= 0) { this.renderer.remove(c.h); c.h = -1; }
+      }
     }
   }
 
@@ -1218,7 +1223,7 @@ export class Traffic {
   update(dtReal: number, simSpeed: number, hour: number, population: number, jobs: number, camTarget?: THREE.Vector3) {
     this.owed += dtReal * simSpeed;
     while (this.owed >= STEP_SECONDS - 1e-9) { this.owed -= STEP_SECONDS; this.step(STEP_SECONDS, hour, population, jobs); }
-    this.draw(1, dtReal, camTarget);
+    this.draw(this.owed / STEP_SECONDS, dtReal, camTarget);
   }
   private owed = 0;
   /** the traffic's own random stream: seeded from the county's seed, saved with the cars */
@@ -2325,7 +2330,7 @@ export class Traffic {
     const P = c.pose;
     P[0] = x; P[1] = y; P[2] = z; P[3] = yaw; P[4] = pitch; P[5] = roll;
     if (!c.posed) { c.pose0.set(P); c.posed = true; }
-    c.sent = false;
+    c.sent = 0;
   }
 
   /**
@@ -2339,10 +2344,14 @@ export class Traffic {
       if (c.crashed === -1 || !c.posed) continue;
       const P = c.pose, P0 = c.pose0;
       const still = P[0] === P0[0] && P[2] === P0[2] && P[3] === P0[3] && P[1] === P0[1] && P[4] === P0[4] && P[5] === P0[5];
-      if (!(still && c.sent)) {
-        if (still || a >= 1) R.set(c.h, P[0], P[1], P[2], P[3], P[4], P[5]);
-        else R.set(c.h, P0[0] + (P[0] - P0[0]) * a, P0[1] + (P[1] - P0[1]) * a, P0[2] + (P[2] - P0[2]) * a, angLerp(P0[3], P[3], a), P0[4] + (P[4] - P0[4]) * a, P0[5] + (P[5] - P0[5]) * a);
-        c.sent = still;
+      const S = c.shown;
+      if (still || a >= 1) {
+        S[0] = P[0]; S[1] = P[1]; S[2] = P[2]; S[3] = P[3];
+        if (!still || c.sent < STILL_FRAMES) { R.set(c.h, P[0], P[1], P[2], P[3], P[4], P[5]); c.sent = still ? c.sent + 1 : 0; }
+      } else {
+        S[0] = P0[0] + (P[0] - P0[0]) * a; S[1] = P0[1] + (P[1] - P0[1]) * a; S[2] = P0[2] + (P[2] - P0[2]) * a; S[3] = angLerp(P0[3], P[3], a);
+        R.set(c.h, S[0], S[1], S[2], S[3], P0[4] + (P[4] - P0[4]) * a, P0[5] + (P[5] - P0[5]) * a);
+        c.sent = 0;
       }
       // smoking out the window (an effect: its own clock, its own dice, only near the camera)
       if (cam && dtReal > 0 && c.smoker && c.crashed === 0 && Math.abs(c.x - cam.x) < 300 && Math.abs(c.z - cam.z) < 300) {

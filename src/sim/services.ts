@@ -25,7 +25,6 @@ import { CELL, HALF, WATER, WORLD } from '../config';
 import { INFO_OVERLAY, Paint } from '../world/terrain';
 import { Fields } from './pollution';
 import { fx, Rng, streamSeed } from '../core/rng';
-import { TOP_SPEED } from '../core/time';
 import { ProblemIcons, type Problem, type ProblemItem } from './serviceIcons';
 import type { FeedContext, FeedEventKind, VehicleKind, ZoneType } from '../contracts';
 import type { DemandKey, LossCause } from './sim';
@@ -323,13 +322,13 @@ const S = {
   fields: new Fields(),
   /** the services' own random stream (fires, sickness, crime, dispatches), seeded from the county's seed and saved */
   rng: new Rng(0x5e41),
-  /** game seconds (at top-speed pace) until road links are checked again */
-  linkT: 0,
   graphDirty: true,
   /** road components need recomputing (roads changed) */
   compDirty: true,
   /** special buildings' road links have been checked once (the first check after a load raises no alerts) */
   linksSeen: false,
+  /** what was last said about each special building's link (the flag itself may be fresher: the screen reads it too) */
+  linkSaid: new Map<number, 'noRoad' | 'noLink' | undefined>(),
   /** special buildings last seen linked (losing the link later, to a bulldozer, gets a toast) */
   linked: new Set<number>(),
   facSig: '',
@@ -369,6 +368,7 @@ const S = {
   cutWas: { power: 0, water: 0, sewage: 0 } as Record<Util, number>,
   icons: null as ProblemIcons | null,
   iconT: 0,
+  iconMerged: false,
   fireT: 0,
   view: null as ViewId | null,
   overlayTex: null as THREE.DataTexture | null,
@@ -607,19 +607,29 @@ export function roadLinkText(g: Game, b: Bld): string {
 }
 
 /** flag every special building's link, and say so when one loses it (placed off the network, or its road bulldozed) */
-function updateLinks(g: Game) {
+/**
+ * The flags are a plain reading of the roads and the buildings as they stand, so reading them again changes nothing: the step
+ * does it before anything uses them, and the screen may do it between steps (a paused player who draws the missing road sees
+ * the bubble go). Saying so (the alert, the toast) is the step's alone, so the alert log has one order.
+ */
+function updateLinks(g: Game, announce = true) {
   for (const b of g.buildings.list.values()) {
     if (b.zone !== 'landmark' && b.zone !== 'service') continue;
     const off = linkProblem(g, b) ?? undefined;
-    if (off && !b.offNet && S.linksSeen) {
+    if (!announce) { b.offNet = off; continue; }
+    const was = S.linkSaid.get(b.id);
+    S.linkSaid.set(b.id, off);
+    if (off && !was && S.linksSeen) {
       const text = `🚧 ${b.label} isn't connected to the road network: ${b.zone === 'landmark' ? 'it does nothing' : off === 'noRoad' ? (b.kind === 'busDepot' ? 'no bus can leave it' : 'it serves nobody') : b.kind === 'busDepot' ? 'its buses can only run on its own road' : 'it only serves its own road'} until a road links it to your streets`;
       g.sim.alert('warn', text);
       // cut off by a bulldozer (placing one off the network already said so)
       if (S.linked.has(b.id)) g.toast(text, true);
-    } else if (!off && b.offNet && S.linksSeen) g.sim.alert('info', `🛣️ ${b.label} is connected to the road network`);
+    } else if (!off && was && S.linksSeen) g.sim.alert('info', `🛣️ ${b.label} is connected to the road network`);
     b.offNet = off;
     if (off) S.linked.delete(b.id); else S.linked.add(b.id);
   }
+  if (!announce) return;
+  for (const id of S.linkSaid.keys()) if (!g.buildings.list.has(id)) S.linkSaid.delete(id);
   S.linksSeen = true;
 }
 
@@ -1571,6 +1581,9 @@ function frame(g: Game, dt: number) {
     }
   }
   S.iconT -= dt;
+  // (zooming across the distance where bubbles merge redraws them at once: they used to stay merged, or split, for up to 0.6 s)
+  const merged = g.rts.distance > CLUSTER_FROM;
+  if (merged !== S.iconMerged) { S.iconMerged = merged; S.iconT = 0; }
   if (S.iconT <= 0) { S.iconT = 0.6; refreshIcons(g); }
   if (S.view) {
     S.overlayT -= dt;
@@ -1658,6 +1671,7 @@ const PROBLEM_WORDS: Record<Problem, string> = {
 };
 
 function refreshIcons(g: Game) {
+  updateLinks(g, false);
   const cam = g.rts.target, dist = g.rts.distance, merge = dist > CLUSTER_FROM;
   const only = S.view ? VIEW_PROBLEMS[S.view] : undefined;
   const raw: ProblemItem[] = [];
@@ -2348,10 +2362,7 @@ registerInspector((sel, g) => {
 registerSystem({
   id: 'services',
   // which buildings have lost their road link (they do nothing until it is back): checked on the simulation's clock
-  step(g, dt) {
-    S.linkT -= dt / TOP_SPEED;
-    if (S.linkT <= 0) { S.linkT = 0.6; updateLinks(g); }
-  },
+  step(g) { updateLinks(g); },
   init(g) {
     if (S.inited) return;
     S.inited = true;

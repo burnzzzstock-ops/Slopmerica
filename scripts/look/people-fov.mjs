@@ -53,6 +53,28 @@ try {
       g.camera.fov = 50;
       g.camera.updateProjectionMatrix();
       g.frame(0);
+      const immediateHandle = r.add(0, 918);
+      if (immediateHandle < 0) throw Error('No renderer handle for first-frame FOV check');
+      set(immediateHandle, g.q.peopleNear * 0.8);
+      g.frame(0);
+      const firstFrames = [];
+      for (const fov of [110, 35, 110]) {
+        g.camera.fov = fov;
+        g.camera.updateProjectionMatrix();
+        g.frame(0);
+        const lists = r.listHandles();
+        const near = lists.near.includes(immediateHandle);
+        const far = lists.far.includes(immediateHandle);
+        const expected = fov === 35;
+        firstFrames.push({ fov, near, far });
+        if (near !== expected || far === expected) {
+          throw Error(`First frame at FOV ${fov}: near=${near}, far=${far}, expected near=${expected}`);
+        }
+      }
+      r.remove(immediateHandle);
+      g.camera.fov = 50;
+      g.camera.updateProjectionMatrix();
+      g.frame(0);
       const h = r.add(0, 919), decisions = [];
       for (const factor of [0.99, 1.05, 1.12, 1.05, 0.98]) {
         set(h, g.q.peopleNear * factor);
@@ -65,7 +87,7 @@ try {
       if (String(decisions) !== 'true,true,false,false,true') throw Error('Unstable LOD transition ' + decisions);
       const unchanged = citizens === JSON.stringify(g.peds.peds.map(p => [p.id, p.x, p.y, p.z, p.phase, p.action]));
       if (!unchanged) throw Error('Rendering test changed simulated citizens');
-      return { quality: g.q.name, samples, decisions, unchanged };
+      return { quality: g.q.name, samples, firstFrames, decisions, unchanged };
     });
     rows.push(result);
     console.log(JSON.stringify(result));

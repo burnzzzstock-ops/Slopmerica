@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import type { Emitter } from '../contracts';
 import { signSlot, T, TILE_M } from './atlas';
+import { contactAO } from './contactAO';
 
 type V3 = [number, number, number];
 export type Col = THREE.Color;
@@ -339,6 +340,7 @@ export class Kit {
     g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nor, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
+    g.setAttribute('ambientVisibility', new THREE.BufferAttribute(contactAO(this.pos, this.nor, this.idx), 1));
     g.setAttribute('tile', new THREE.Float32BufferAttribute(this.tile, 1));
     g.setIndex(this.idx);
     g.computeBoundingBox();

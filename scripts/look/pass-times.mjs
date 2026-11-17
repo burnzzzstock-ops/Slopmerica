@@ -10,7 +10,7 @@ export async function timePasses(frameCount) {
   ]);
   const undo = [];
   function wrap(object, method, wrapper) {
-    if (!object) return;
+    if (!object || typeof object[method] !== 'function') return;
     const old = object[method];
     object[method] = function (...args) { return wrapper(() => old.apply(this, args), args); };
     undo.push(() => { object[method] = old; });
@@ -46,9 +46,12 @@ export async function timePasses(frameCount) {
   try {
     wrap(post.bloom, 'render', draw => context('bloom', draw));
     wrap(g.water.reflection, 'render', draw => context('water mirror', draw));
-    wrap(r, 'render', (draw, [scene]) => {
+    wrap(g.roads, 'renderReflection', draw => context('road mirror', draw));
+    wrap(post, 'afterComposite', draw => context('god rays', draw));
+    wrap(r, 'copyTextureToTexture', draw => time('texture copy', draw));
+    wrap(r, 'render', (draw, [scene, camera]) => {
       const rt = r.getRenderTarget();
-      const label = outer ?? (scene.isMesh ? (materialNames.get(scene.material) ?? 'quad')
+      const label = outer ?? ((camera?.layers.mask >>> 0) === 0x80000000 ? 'water refraction' : scene.isMesh ? (materialNames.get(scene.material) ?? 'quad')
         : rt && rt !== post.sceneRT ? (rt.width < 64 ? 'people pose' : 'offscreen scene') : 'scene');
       return time(label, draw);
     });

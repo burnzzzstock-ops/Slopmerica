@@ -11,6 +11,8 @@
 // keeps its resolution. Its tiles' u runs 2..3: the building material
 // samples both sheets and picks by u (see buildings/material.ts).
 import * as THREE from 'three';
+import { finishAlbedo, tileFinish } from './surfaceDetail';
+import { withVisualRandom } from '../render/visualRandom';
 import type { Ctx } from './draw';
 
 export type Layer = 'a' | 'e'; // albedo | emissive
@@ -179,6 +181,28 @@ function ensureLayout() {
 }
 
 const warned = new Set<string>();
+let finishes: THREE.DataTexture | undefined;
+/** One numeric class per 8×8 albedo texels. Tile gutters cover the nearest
+ * lookup even at a face's outermost UV. Satire art uses the plain class. */
+export function finishClasses() {
+  if (finishes) return finishes;
+  ensureLayout();
+  const scale = 8, side = ATLAS_SIZE / scale, bytes = new Uint8Array(side * side);
+  for (const d of defs) {
+    if (d.sheet !== 'main') continue;
+    const kind = tileFinish(d.name, d.glass);
+    if (!kind) continue;
+    const left = Math.floor((d.x + PAD) / scale), right = Math.floor((d.x + PAD + d.pw) / scale);
+    const top = Math.floor((d.y + PAD) / scale), bottom = Math.floor((d.y + PAD + d.ph) / scale);
+    for (let row = top; row <= bottom; row++) {
+      const start = (side - 1 - row)*side;
+      bytes.fill(kind, start+left, start+right+1);
+    }
+  }
+  finishes = withVisualRandom(() => new THREE.DataTexture(bytes, side, side, THREE.RedFormat));
+  finishes.needsUpdate = true;
+  return finishes;
+}
 /** Look up a tile by name (falls back to 'plain'). */
 export function T(name: string): Tile {
   ensureLayout();
@@ -312,6 +336,8 @@ function paintOne(d: TileDef, a: Ctx, e: Ctx) {
     console.error(`[atlas] painter ${d.name} failed`, err);
   }
   ca.restore();
+  const finish = tileFinish(d.name, d.glass);
+  if (d.wrap && finish) finishAlbedo(ca, d.pw, d.ph, finish);
   blit(a, tmpA, d.x + PAD, d.y + PAD, d.pw, d.ph, PAD, d.wrap);
   if (!d.emissive) return;
   const ew = d.pw * EMI_SCALE, eh = d.ph * EMI_SCALE;

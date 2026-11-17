@@ -8,6 +8,7 @@ import { mulberry32 } from '../core/rng';
 import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from '../world/atmos';
 import { facadeTexture, loadSignFonts, SIGN_BASE, T } from './atlas';
 import { col, Kit } from './kit';
+import { FINISH_PARS, FINISH_VERTEX, finishTexture, shadeFinish, Finish } from '../art/surfaceDetail';
 import { bindLamps, LAMP_PARS, lampAdd } from '../world/nightLights';
 
 // ------------------------------------------------------------------ material
@@ -18,14 +19,18 @@ const nightUniform = { value: 0 };
 export function kitMaterial(): THREE.Material {
   if (material) return material;
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0.02 });
+  Object.assign(m, { defaultAttributeValues: { color: [1, 1, 1], uv: [0, 0], ambientVisibility: [1] } });
   m.onBeforeCompile = (sh) => {
     sh.uniforms.tFacade = { value: facadeTexture() };
+    sh.uniforms.tFinish = { value: finishTexture() };
     sh.uniforms.uNightB = nightUniform;
     sh.uniforms.uGlow = GLOW;
     bindAtmos(sh);
     bindLamps(sh);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float tile;\nvarying float vTile;\nvarying vec2 vUvT;\nvarying vec3 vBW;\nvarying float vKitH;')
+      .replace('#include <common>', '#include <common>\nattribute float ambientVisibility;\nvarying float vAmbientVisibility, vFinishWear;')
+      .replace('#include <color_vertex>', '#include <color_vertex>\n' + FINISH_VERTEX)
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvTile = tile;\nvUvT = uv;')
       .replace(
         '#include <project_vertex>',
@@ -45,6 +50,7 @@ export function kitMaterial(): THREE.Material {
         `#include <common>
 precision highp sampler2DArray;
 uniform sampler2DArray tFacade;
+${FINISH_PARS}
 uniform float uNightB, uSnow, uSnowLine, uWet, uGlow;
 varying float vKitH;
 ${LAMP_PARS}
@@ -79,13 +85,15 @@ float bh(vec3 p) { vec3 p3 = fract(p * 0.1031); p3 += dot(p3, p3.zyx + 31.32); r
   diffuseColor.rgb *= 1.0 - uWet * 0.2 * smoothstep(0.5, 0.9, wN.y) * (1.0 - sn);
 }`,
       )
-      .replace(
-        '#include <roughnessmap_fragment>',
-        `#include <roughnessmap_fragment>
-roughnessFactor = mix(roughnessFactor, 0.1, gGlass);
-roughnessFactor = mix(roughnessFactor, 0.35, uWet * 0.6 * (1.0 - gGlass));`,
-      )
-      .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = mix(metalnessFactor, 0.35, gGlass);')
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        const float kitFinishes[30] = float[30](
+          ${[Finish.concrete,Finish.siding,Finish.brick,Finish.siding,Finish.concrete,Finish.glass,Finish.panel,Finish.shingles,Finish.roof,Finish.panel,
+              Finish.plain,Finish.concrete,Finish.plain,Finish.panel,Finish.siding,Finish.concrete,Finish.plain,Finish.glass,Finish.panel,Finish.siding,
+              Finish.plain,Finish.plain,Finish.plain,Finish.siding,Finish.plain,Finish.glass,Finish.plain,Finish.plain,Finish.brick,Finish.shingles].map(n => n.toFixed(1)).join(',')});
+        ${shadeFinish('vBW', 'vKitH', 'gSign > 0.5 ? 0.0 : (gGlass > 0.5 ? 1.0 : kitFinishes[clamp(int(vTile + 0.5), 0, 29)])')}
+        roughnessFactor = mix(roughnessFactor, 0.35, uWet * 0.6 * (1.0 - gGlass));
+        metalnessFactor = mix(metalnessFactor, 0.35, gGlass);`)
+      .replace('#include <aomap_fragment>', '#include <aomap_fragment>\nreflectedLight.indirectDiffuse *= vAmbientVisibility * finishAO;')
       .replace(
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>

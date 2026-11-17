@@ -1,3 +1,4 @@
+import { applySmogLook } from './aerialPerspective';
 import * as THREE from 'three';
 import type { Game } from '../game';
 import { FOV_MAX, FOV_MIN, GLOW, HALF, nightLift, WATER } from '../config';
@@ -104,7 +105,7 @@ export class PhotoMode {
     canvas.addEventListener('wheel', e => { e.preventDefault(); this.move(0, 0, -e.deltaY * 0.12); }, { passive: false, signal });
   }
 
-  frame(dt: number, aspect = this.g.camera.aspect) {
+  frame(dt: number, aspect = this.g.camera.aspect, warmShadows = false) {
     if (this.keys.size) {
       const speed = dt * (this.keys.has('shift') ? 120 : 18), d = (key: string) => Number(this.keys.has(key));
       this.move((d('d') - d('a')) * speed, (d('e') - d('q')) * speed, (d('w') - d('s')) * speed);
@@ -116,9 +117,12 @@ export class PhotoMode {
     cam.updateProjectionMatrix(); cam.updateMatrixWorld();
     const dist = THREE.MathUtils.clamp(this.focusDistance, 2, 6500);
     cam.getWorldDirection(this.target).multiplyScalar(dist).add(cam.position);
+    g.env.smog = g.fields.smog();
     const wet = g.weather.photoLook(this.weather, this.hour, cam, this.target, dist), n = g.env.night;
+    applySmogLook(g.post.look, g.env.smog, n);
+    g.water.updateFields(g.fields);
     GLOW.value = 1 / nightLift(n, g.env.moonLight);
-    setBuildingNight(n); setKitNight(n); g.roads.setNight(n); g.roads.setWet(wet);
+    setBuildingNight(n); setKitNight(n); g.roads.setNight(n); g.roads.setWet(wet, (g.pendingQuality ?? g.q.name) === 'ultra');
     g.zones.setNight(n); g.traffic.setNight(n); g.peds.setNight(n); g.nightLights.update(0, n);
     g.terrain.updateLOD(cam.position); g.trees.update(g.time, this.target, dist);
     g.groundDetail.update(g.time, this.target, dist, { season: g.weather.season, snowCover: g.weather.snowCover, wind: g.weather.wind });
@@ -129,12 +133,15 @@ export class PhotoMode {
     const mirror = g.water.reflection;
     wu.uReflOn.value = mirror?.shouldRender(cam) ? 1 : 0;
     g.renderer.toneMappingExposure = 0.95 * (g.post.active ? 1 : lowExposure(g.env, g.post.look));
-    if (!g.post.active) applyLowGrade(g.env, g.post.look);
+    if (!g.post.active) applyLowGrade(g.env, g.post.look, g.renderer);
+    else g.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     const oldTilt = g.post.tiltShift, oldStrength = g.post.tiltStrength;
     try {
       g.post.tiltShift = this.tilt > 0; g.post.tiltStrength = this.tilt;
       g.renderer.info.reset();
+      if (warmShadows) g.shadows.warm(g.renderer, cam);
       if (wu.uReflOn.value) mirror?.render(g.renderer, g.scene, cam, [g.water.mesh]);
+      g.roads.renderReflection(g.renderer, g.scene, cam);
       g.post.render(n, dist, cam);
       g.perf.calls = g.renderer.info.render.calls; g.perf.triangles = g.renderer.info.render.triangles;
     } finally { g.post.tiltShift = oldTilt; g.post.tiltStrength = oldStrength; }
@@ -143,14 +150,19 @@ export class PhotoMode {
   capture(framed = true, size?: PhotoSize) {
     const g = this.g, renderer = g.renderer;
     const draw = (aspect = g.camera.aspect) => {
-      if (this.active) return this.frame(0, aspect);
+      if (this.active) return this.frame(0, aspect, true);
       const camera = aspect === g.camera.aspect ? g.camera : g.camera.clone();
       camera.aspect = aspect; camera.updateProjectionMatrix(); camera.updateMatrixWorld();
       // Direct exports also need a mirror for this exact lens and buffer size.
       // Warm it before the final scene draw, without stepping the game.
       const mirror = g.water.reflection, wu = g.water.mat.uniforms;
       wu.uReflOn.value = mirror?.shouldRender(camera) ? 1 : 0;
+      if (!g.post.active) applyLowGrade(g.env, g.post.look, renderer);
+      else renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      g.shadows.warm(renderer, camera);
       if (wu.uReflOn.value) mirror?.render(renderer, g.scene, camera, [g.water.mesh]);
+      g.roads.setWet(g.weather.wet, (g.pendingQuality ?? g.q.name) === 'ultra');
+      g.roads.renderReflection(renderer, g.scene, camera);
       g.post.render(g.env.night, g.rts.distance, camera);
     };
     if (!size) return photoPNG(renderer.domElement, draw, g.map.def.name, framed);

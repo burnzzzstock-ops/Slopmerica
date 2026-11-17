@@ -56,8 +56,8 @@ export const QUALITY: Record<Quality['name'], Quality> = {
     lod: [900, 1900, 3800], maxCars: 1400, maxPeople: 420, peopleNear: 64, peopleNearMax: 100, peopleShadow: 9999, peopleShadowLite: false, post: true, ao: true, aoFull: false, groundRadius: 240,
   },
   ultra: {
-    name: 'ultra', pixelRatio: 2.25, shadows: true, shadowMap: 4096, treeDensity: 1.15, treeNear: 850, treeNearCap: 34000, treeFarCap: 210000,
-    lod: [1100, 2200, 4200], maxCars: 1900, maxPeople: 580, peopleNear: 64, peopleNearMax: 120, peopleShadow: 9999, peopleShadowLite: false, post: true, ao: true, aoFull: true, groundRadius: 300,
+    name: 'ultra', pixelRatio: 2.25, shadows: true, shadowMap: 4096, treeDensity: 1.15, treeNear: 1000, treeNearCap: 48000, treeFarCap: 210000,
+    lod: [1100, 2200, 4200], maxCars: 1900, maxPeople: 580, peopleNear: 64, peopleNearMax: 200, peopleShadow: 9999, peopleShadowLite: false, post: true, ao: true, aoFull: true, groundRadius: 300,
   },
 };
 

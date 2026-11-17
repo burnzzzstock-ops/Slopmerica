@@ -41,7 +41,9 @@ try {
   writeFileSync(join(out, 'overview.jpg'), Buffer.from(world, 'base64'));
   await page.evaluate(async () => {
     const g = window.__game; g.stop();
-    const THREE = await import('/node_modules/three/build/three.module.js');
+    const source = await (await fetch('/src/render/post.ts')).text();
+    const THREE = await import(source.match(/from\s+["']([^"']*three[^"']*)["']/)[1]);
+    const { PostFX } = await import('/src/render/post.ts');
     const camera = g.camera; camera.position.set(0, 0, 0); camera.lookAt(0, 0, -1);
     camera.near = 1; camera.far = 50000; camera.updateProjectionMatrix();
     const scene = new THREE.Scene();
@@ -54,12 +56,16 @@ try {
       const panel = new THREE.Mesh(new THREE.PlaneGeometry(h * camera.aspect * 0.48, h * 0.9), material);
       panel.position.set(side * h * camera.aspect * 0.25, 0, -depth); scene.add(panel);
     }
-    const p = g.post; p.scene = scene; p.bloomOn = false; p.vignette = false; p.ao = false;
+    // Construct the normal post pipeline for this scene, including its ambient
+    // output attachment. Game water and sky hooks belong to the original world.
+    const p = new PostFX(g.renderer, scene, camera, g.q);
+    window.__focusPost = p;
+    p.bloomOn = false; p.vignette = false; p.ao = false;
   });
   const metrics = {};
   for (const [name, distance] of [['off', 1000], ['near', 1000], ['far', 3500], ['street', 40]]) {
     const { energy, img } = await page.evaluate(([kind, focus]) => {
-      const g = window.__game, p = g.post;
+      const g = window.__game, p = window.__focusPost;
       p.tiltShift = kind !== 'off'; p.render(0, focus);
       const c = document.createElement('canvas'), screen = g.renderer.domElement;
       c.width = screen.width; c.height = screen.height;

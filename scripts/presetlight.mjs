@@ -20,6 +20,9 @@ const VIEWS = { overview: [0, 0, 320, 0.7, 0.6], street: [-40, -30, 110, 2.4, 0.
 const browser = await launch();
 const measure = (page) => page.evaluate(() => {
   const g = window.__game, gl = g.renderer.getContext();
+  // Each probe jumps to a new hour. Refresh that hour's sky bake instead of
+  // retaining the preceding probe during the live 1.2-second throttle.
+  g.env.envT = -Infinity;
   g.frame(0.016);
   const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, px = new Uint8Array(w * h * 4);
   gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);

@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { GLOW, type Quality } from '../config';
+import { installAmbientOutput } from './ambientOutput';
 
 const AO_SAMPLES = 12;
 const FSQ_VERT = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
@@ -119,14 +120,14 @@ const blurMat = () =>
 
 const compositeMat = () =>
   new THREE.ShaderMaterial({
-    uniforms: { tColor: { value: null }, tAO: { value: null }, uAO: { value: 1 } },
+    uniforms: { tColor: { value: null }, tAmbient: { value: null }, tAO: { value: null }, uAO: { value: 1 } },
     vertexShader: FSQ_VERT,
     // Also the frame's firewall: one NaN or Inf pixel from any material would
     // be smeared across the whole screen by bloom's blur and turn it black.
     // Bad pixels take their neighbours' colour; brightness is capped well
     // inside half-float range.
     fragmentShader: /* glsl */ `
-      uniform sampler2D tColor, tAO;
+      uniform sampler2D tColor, tAmbient, tAO;
       uniform float uAO;
       varying vec2 vUv;
       // NaN and ±Inf have every exponent bit set; tested on the bits so no
@@ -148,7 +149,9 @@ const compositeMat = () =>
         float ao = texture2D(tAO, vUv).r;
         if (!finite(ao)) ao = 1.0;
         ao = mix(1.0, ao, uAO);
-        gl_FragColor = vec4(clamp(c * ao, 0.0, 4096.0), 1.0);
+        vec3 ambient = texture2D(tAmbient, vUv).rgb;
+        if (!finite3(ambient)) ambient = vec3(0.0);
+        gl_FragColor = vec4(clamp(c - ambient * (1.0 - ao), 0.0, 4096.0), 1.0);
       }`,
     depthTest: false,
     depthWrite: false,
@@ -360,8 +363,13 @@ export class PostFX {
   readonly look: PostLook = { tint: new THREE.Color(1, 1, 1), sat: 1.0, tintLit: new THREE.Color(1, 1, 1), satLit: 1.0, contrast: 1.06, lift: new THREE.Color(0, 0, 0), exposure: 1, shimmer: 0, flash: 0 };
   /** World-space AO radius; the game scales it with zoom. */
   aoRadius = 4;
+  /** Optional water colour/depth resolve around the normal scene draw. */
+  scenePass?: (target: THREE.WebGLRenderTarget, camera: THREE.PerspectiveCamera, draw: () => void) => void;
+  /** Optional depth-aware atmosphere blended into the resolved HDR scene. */
+  afterComposite?: (target: THREE.WebGLRenderTarget, depth: THREE.DepthTexture, camera: THREE.PerspectiveCamera) => void;
 
   constructor(private renderer: THREE.WebGLRenderer, private scene: THREE.Scene, private camera: THREE.PerspectiveCamera, q: Quality) {
+    installAmbientOutput(scene);
     this.setQuality(q);
   }
 
@@ -389,6 +397,7 @@ export class PostFX {
     const w = Math.max(1, size.x), h = Math.max(1, size.y);
     if (!this.sceneRT) {
       this.sceneRT = new THREE.WebGLRenderTarget(w, h, {
+        count: 2,
         type: THREE.HalfFloatType,
         samples: 4,
         depthTexture: new THREE.DepthTexture(w, h, THREE.UnsignedIntType),
@@ -452,7 +461,8 @@ export class PostFX {
       cam.setViewOffset(W, H, jx - 0.5, jy - 0.5, W, H);
     }
     r.setRenderTarget(this.sceneRT!);
-    r.render(this.scene, cam);
+    if (this.scenePass) this.scenePass(this.sceneRT!, cam, () => r.render(this.scene, cam));
+    else r.render(this.scene, cam);
     if (taa) cam.clearViewOffset();
 
     let aoTex: THREE.Texture | null = null;
@@ -486,6 +496,7 @@ export class PostFX {
 
     const c = this.compM.uniforms;
     c.tColor.value = this.sceneRT!.texture;
+    c.tAmbient.value = this.sceneRT!.textures[1];
     c.tAO.value = aoTex ?? this.sceneRT!.texture;
     c.uAO.value = aoTex ? 1 : 0;
     this.quad.material = this.compM;
@@ -493,6 +504,7 @@ export class PostFX {
     this.quad.render(r);
 
     const bl = this.bloom!;
+    this.afterComposite?.(this.hdrRT!, this.sceneRT!.depthTexture!, cam);
     // HDR input: only real light sources and sun glints should bloom
     // bloom with a threshold, a strength that doesn't grow with the night
     // exposure lift (GLOW), and a tighter radius after dark: lamps glow, they

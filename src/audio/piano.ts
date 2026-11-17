@@ -25,10 +25,24 @@ const PROGRESSIONS: Chord[][] = [
 const PENTA = [0, 2, 4, 7, 9]; // major pentatonic degrees
 const KEYS = [60, 62, 65, 67, 57, 55]; // C, D, F, G, A (low), G (low) as middle-register roots
 
+export interface PianoBar {
+  time: number;
+  beat: number;
+  index: number;
+  key: number;
+  root: number;
+  tones: readonly number[];
+  night: number;
+}
+
 export class AmbientPiano {
   enabled = true;
   /** 0..1, applied on top of the game's master volume */
   volume = 0.55;
+  /** Adaptive accompaniment shares this bar clock and harmony. Standalone defaults stay at 62 bpm. */
+  tempoScale = 1;
+  layerGain = 1;
+  onBar?: (bar: PianoBar) => void;
   private bus: GainNode;
   private rev: GainNode;
   private next = 0; // audio time of the next bar
@@ -36,11 +50,12 @@ export class AmbientPiano {
   private prog = PROGRESSIONS[0];
   private key = 60;
   /** random source (tests pass a seeded one) */
-  rng: () => number = Math.random;
+  rng: () => number;
   private lastMel = 72;
   private phraseRest = false;
 
   constructor(private s: Synth, out: AudioNode, reverb: AudioNode) {
+    this.rng = s.random;
     const c = s.ctx;
     this.bus = c.createGain();
     this.bus.gain.value = 0;
@@ -58,7 +73,7 @@ export class AmbientPiano {
   /** call every frame; schedules a bar ahead of the audio clock */
   update(night: number) {
     const c = this.s.ctx;
-    const target = this.enabled ? this.volume * 0.32 * (1 - night * 0.3) : 0;
+    const target = this.enabled ? this.volume * this.layerGain * 0.32 * (1 - night * 0.3) : 0;
     this.bus.gain.setTargetAtTime(target, c.currentTime, 1.2);
     if (!this.enabled) { this.next = 0; return; }
     const now = c.currentTime;
@@ -68,7 +83,7 @@ export class AmbientPiano {
   }
 
   private scheduleBar(t0: number, night: number) {
-    const bpm = 62 - night * 6;
+    const bpm = (62 - night * 6) * this.tempoScale;
     const beat = 60 / bpm, barLen = beat * 4;
     // more pedal at night: the notes ring into the next bar instead of gaps
     const ped = 1 + night * 0.5;
@@ -82,6 +97,7 @@ export class AmbientPiano {
     if (pos % 4 === 0) this.phraseRest = this.rng() < 0.18;
     const chord = this.prog[pos % 4];
     const k = this.key;
+    this.onBar?.({ time: t0, beat, index: this.bar, key: k, root: chord.root, tones: chord.tones, night });
     // bass: the root two octaves down (never below C2: lower is mud), on beat
     // one; by day sometimes a fifth on three
     let bass = k - 24 + chord.root;
@@ -144,7 +160,7 @@ export class AmbientPiano {
       o.type = 'sine';
       // piano strings are slightly inharmonic: upper partials a little sharp
       o.frequency.value = f0 * h * (1 + 0.0004 * h * h);
-      o.detune.value = (Math.random() - 0.5) * 4;
+      o.detune.value = (this.s.random() - 0.5) * 4;
       const pg = c.createGain();
       pg.gain.value = g * 0.5;
       // higher partials die sooner
@@ -164,7 +180,7 @@ export class AmbientPiano {
     ng.gain.setValueAtTime(vel * 0.25, t);
     ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
     n.connect(nf).connect(ng).connect(env);
-    n.start(t, Math.random() * 2);
+    n.start(t, this.s.random() * 2);
     n.stop(t + 0.08);
   }
 }

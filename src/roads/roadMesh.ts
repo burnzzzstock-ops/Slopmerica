@@ -11,9 +11,12 @@ import { StreetDetails } from './streetDetails';
 import { isSimple, junctionShape, legPaint, triangulate, visualTrim } from './roadJunction';
 import type { Junction } from './roadJunction';
 import {
-  CURB_REVEAL, DRIVE_FLARE, DRIVE_FLAT, GROUND_BELOW, GUTTER, SURF_LIFT, VERGE_RUN, ZEBRA_EDGE, curbLipAt, curbOffset, driveRamp, edgeLift,
+  CURB_REVEAL, DRIVE_FLARE, DRIVE_FLAT, GROUND_BELOW, GUTTER, SURF_LIFT, VERGE_RUN, ZEBRA_EDGE, curbLipAt, curbOffset, driveRamp, edgeLift, endCapRadius,
 } from './roadSection';
 import type { SignalStateProvider } from './streetDetails';
+import type { WorldFields } from '../contracts';
+import { RoadSurfaceState, roadWearTexture } from './roadSurface';
+import type { ReflectiveRoad } from './roadReflection';
 
 const REPEAT = 12; // meters per texture repeat along the road
 
@@ -469,7 +472,7 @@ function asphaltTexture(maxAniso: number) {
   const ctx = c.getContext('2d')!;
   noiseFill(ctx, 256, 256, [84, 84, 88], 22);
   // the same wear as the roads' own canvases (linear-light tone put back, so it meets them without a seam in tone); the tile
-  // is 8 m across and repeats in both directions, so the stains wrap and the seam wanders to match
+  // is 14 m across and repeats in both directions, so the stains wrap and the seam wanders to match
   const rnd = mulberry32(seedOf('junction'));
   const tone = linearTone(ctx, 0, 0, 256, 256);
   mottle(ctx, 256, 256, true, 0, 256, 10, 62, rnd, 0.8);
@@ -481,6 +484,85 @@ function asphaltTexture(maxAniso: number) {
   tex.anisotropy = maxAniso;
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
+}
+
+/** All paved surfaces project the same asphalt and wear in world metres.
+ * The road maps still supply lane markings, medians, gutters and sidewalks.
+ * White crossing bars keep their alpha test and use the shared asphalt between bars. */
+function sharedAsphalt(mat: THREE.MeshStandardMaterial, texture: THREE.Texture, wear: THREE.Texture, state: RoadSurfaceState, road?: RoadType) {
+  const previous = mat.onBeforeCompile;
+  const junction = mat.map === texture;
+  const span = road ? carriageHalf(road) / road.width : 1;
+  const median = road && road.median > 0 ? road.median / (2 * road.width) : 0;
+  mat.onBeforeCompile = (shader, renderer) => {
+    previous.call(mat, shader, renderer);
+    shader.uniforms.uRoadAsphalt = { value: texture };
+    shader.uniforms.uRoadWear = { value: wear };
+    Object.assign(shader.uniforms, state.uniforms);
+    Object.assign(shader.uniforms, state.reflection.uniforms);
+    shader.uniforms.uAsphaltSpan = { value: new THREE.Vector2(span, median) };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec3 aRoadState;\nvarying vec3 vRoadState;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRoadState = aRoadState;');
+    const surface = junction
+      ? 'float carriage = 1.0; float asphaltMask = 1.0; diffuseColor *= texture2D(map, vLampW.xz / 14.0);'
+      : `
+        vec4 roadDecal = texture2D(map, vMapUv);
+        float lateral = abs(vMapUv.x - 0.5);
+        float carriage = ${road ? 'step(lateral, uAsphaltSpan.x) * step(uAsphaltSpan.y, lateral)' : '1.0'};
+        float marking = smoothstep(0.16, 0.32, max(roadDecal.r, max(roadDecal.g, roadDecal.b)));
+        float asphaltMask = carriage * (1.0 - marking);
+        vec3 asphalt = texture2D(uRoadAsphalt, vLampW.xz / 14.0).rgb;
+        diffuseColor *= vec4(mix(roadDecal.rgb, asphalt, asphaltMask), roadDecal.a);
+      `;
+    shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', surface + `
+      vec3 roadMarks = texture2D(uRoadWear, vLampW.xz / 28.0).rgb;
+      float roadAge = 1.0 - clamp(vRoadState.x, 0.0, 1.0);
+      float crackWear = smoothstep(0.05, 0.85, roadAge) * roadMarks.r * 0.58;
+      float patchWear = smoothstep(0.2, 0.9, roadAge) * roadMarks.g * 0.34;
+      float oil = vRoadState.z * roadMarks.b * (0.015 + roadAge * 0.035);
+      diffuseColor.rgb *= 1.0 - asphaltMask * min(0.75, crackWear + patchWear + oil);
+      float roadPuddle = uRoadWet * uRoadWet * vRoadState.y * smoothstep(0.32, 0.67, roadMarks.b);
+      diffuseColor.rgb *= 1.0 - asphaltMask * roadPuddle * 0.15;
+    `);
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>',
+      `#include <common>
+      uniform sampler2D uRoadAsphalt, uRoadWear, tRoadReflection;
+      uniform vec2 uAsphaltSpan;
+      uniform float uRoadWet, uRoadHasEnvironment, uRoadReflectionOn;
+      uniform mat4 uRoadReflectionMatrix;
+      uniform vec4 uRoadReflectionPlane;
+      uniform vec3 uRoadSky;
+      varying vec3 vRoadState;`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        roughnessFactor = mix(roughnessFactor, 0.045, carriage * roadPuddle);`)
+      .replace('#include <opaque_fragment>', `
+        float roadFresnel = 0.04 + 0.96 * pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 5.0);
+        outgoingLight += uRoadSky * roadFresnel * uRoadWet * carriage * (0.14 + roadPuddle * 0.5) * (1.0 - uRoadHasEnvironment);
+        if (uRoadReflectionOn > 0.5) {
+          vec4 mirrorPoint = uRoadReflectionMatrix * vec4(vLampW, 1.0);
+          vec2 mirrorUv = mirrorPoint.xy / max(mirrorPoint.w, 0.0001);
+          float edge = min(min(mirrorUv.x, mirrorUv.y), min(1.0 - mirrorUv.x, 1.0 - mirrorUv.y));
+          float planeDistance = abs(dot(uRoadReflectionPlane, vec4(vLampW, 1.0)));
+          vec3 roadNormal = inverseTransformDirection(normal, viewMatrix);
+          float alignment = smoothstep(0.995, 0.9995, dot(roadNormal, uRoadReflectionPlane.xyz));
+          float coplanar = (1.0 - smoothstep(0.015, 0.06, planeDistance)) * alignment;
+          float mirrorMask = smoothstep(0.0, 0.025, edge) * step(0.0001, mirrorPoint.w) * coplanar;
+          vec3 reflected = texture2D(tRoadReflection, clamp(mirrorUv, 0.0, 1.0)).rgb;
+          outgoingLight = mix(outgoingLight, reflected, mirrorMask * carriage * roadPuddle * roadFresnel * 0.8);
+        }
+        #include <opaque_fragment>`);
+  };
+  const beforeRender = mat.onBeforeRender;
+  mat.onBeforeRender = (...args) => {
+    beforeRender.apply(mat, args);
+    const scene = args[1];
+    if (scene.fog) state.uniforms.uRoadSky.value.copy(scene.fog.color);
+    state.uniforms.uRoadHasEnvironment.value = scene.environment ? 1 : 0;
+  };
+  const key = mat.customProgramCacheKey.bind(mat);
+  const variant = junction ? 'junction' : road ? 'road' : 'crosswalk';
+  mat.customProgramCacheKey = () => key() + '|world-asphalt-mirror-' + variant;
 }
 
 /** Zebra bars for crosswalks: u runs across the road in metres (one bar per metre). */
@@ -524,7 +606,7 @@ const CONCRETE: [number, number, number] = [0.62, 0.61, 0.58];
 const CURB_FACE: [number, number, number] = [0.5, 0.49, 0.46];
 /** a corner slab's top: the sidewalk texture's average (linear), so it matches the walks it joins */
 const WHITE_TINT: [number, number, number] = [1, 1, 1];
-const BANK_TOP: [number, number, number] = [0.3, 0.255, 0.19], BANK_FOOT: [number, number, number] = [0.235, 0.195, 0.14];
+const BANK_TOP: [number, number, number] = [0.21, 0.15, 0.09], BANK_FOOT: [number, number, number] = [0.24, 0.19, 0.11];
 
 export class RoadRenderer {
   readonly group = new THREE.Group();
@@ -535,6 +617,7 @@ export class RoadRenderer {
   private junctionMesh: THREE.Mesh;
   private concMesh: THREE.Mesh;
   private dirty = true;
+  private surfaceState: RoadSurfaceState;
   private lampPoles: THREE.InstancedMesh;
   private lampHeads: THREE.InstancedMesh;
   private lampMat: THREE.MeshStandardMaterial;
@@ -544,6 +627,7 @@ export class RoadRenderer {
   lampSpots: Lamp[] = [];
 
   constructor(private net: RoadNetwork, renderer: THREE.WebGLRenderer) {
+    this.surfaceState = new RoadSurfaceState(net);
     const aniso = renderer.capabilities.getMaxAnisotropy();
     for (const id of ROAD_ORDER) {
       const mat = new THREE.MeshStandardMaterial({ map: roadTexture(ROAD_TYPES[id], aniso), vertexColors: true, roughness: 0.92, metalness: 0, envMapIntensity: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
@@ -555,20 +639,44 @@ export class RoadRenderer {
       this.group.add(m);
     }
     const jt = asphaltTexture(aniso);
+    const wear = roadWearTexture(aniso);
     // the same asphalt as the roads (sky reflection included): with the default
     // env intensity junctions read as lighter grey discs
     this.junctionMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ map: jt, roughness: 0.92, metalness: 0, envMapIntensity: 0.5, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 }));
     this.junctionMesh.receiveShadow = true;
     litByLamps(this.junctionMesh.material as THREE.MeshStandardMaterial);
+    sharedAsphalt(this.junctionMesh.material as THREE.MeshStandardMaterial, jt, wear, this.surfaceState);
+    for (const [id, material] of this.typeMats) {
+      if (id !== 'gravel') sharedAsphalt(material, jt, wear, this.surfaceState, ROAD_TYPES[id]);
+    }
     this.group.add(this.junctionMesh);
     this.crosswalkMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ map: crosswalkTexture(aniso), alphaTest: 0.5, roughness: 0.8, metalness: 0, envMapIntensity: 0.5, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 }));
     this.crosswalkMesh.receiveShadow = true;
     litByLamps(this.crosswalkMesh.material as THREE.MeshStandardMaterial);
+    sharedAsphalt(this.crosswalkMesh.material as THREE.MeshStandardMaterial, jt, wear, this.surfaceState);
     this.group.add(this.crosswalkMesh);
     this.concMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, side: THREE.DoubleSide }));
     this.concMesh.castShadow = true;
     this.concMesh.receiveShadow = true;
     litByLamps(this.concMesh.material as THREE.MeshStandardMaterial);
+    if (net.terrain.detail) {
+      const material = this.concMesh.material as THREE.MeshStandardMaterial;
+      const previous = material.onBeforeCompile, previousKey = material.customProgramCacheKey.bind(material);
+      material.onBeforeCompile = (shader, renderer) => {
+        previous.call(material, shader, renderer);
+        shader.uniforms.tBankDetail = { value: net.terrain.detail };
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', '#include <common>\nprecision highp sampler2DArray;\nuniform sampler2DArray tBankDetail;')
+          .replace('#include <color_fragment>', `#include <color_fragment>
+            // Brown bank vertices share the terrain's soil grain. Concrete
+            // curbs, bridge decks and pillars have neutral vertex colours.
+            float earthBank = smoothstep(0.06, 0.09, vColor.r - vColor.b);
+            vec3 bankDetail = texture(tBankDetail, vec3(vLampW.xz * 0.23, 1.0)).rgb;
+            diffuseColor.rgb *= mix(vec3(1.0), clamp(bankDetail * 2.0, vec3(0.5), vec3(1.4)), earthBank);
+          `);
+      };
+      material.customProgramCacheKey = () => previousKey() + '|soil-bank-v1';
+    }
     this.group.add(this.concMesh);
 
     const pole = new THREE.CylinderGeometry(0.09, 0.13, 8, 5);
@@ -623,22 +731,50 @@ export class RoadRenderer {
     this.details.setSignalStateProvider(provider);
   }
 
+  /** Reads the simulation's current road condition without changing road state. */
+  setConditionProvider(provider: WorldFields['roadCondition']) {
+    this.surfaceState.setProvider(provider);
+  }
+
   private wetWas = -1;
   /** Rain makes asphalt dark and glossy. */
-  setWet(w: number) {
+  setWet(w: number, planarReflection = false) {
+    const reflection = this.surfaceState.reflection;
+    reflection.enabled = planarReflection && w > .15;
+    if (!reflection.enabled) reflection.uniforms.uRoadReflectionOn.value = 0;
+    if (!planarReflection) reflection.dispose();
     if (Math.abs(w - this.wetWas) < 0.02) return;
     this.wetWas = w;
+    this.surfaceState.uniforms.uRoadWet.value = clamp(w, 0, 1);
     const mats = [...this.typeMats.values(), this.junctionMesh.material as THREE.MeshStandardMaterial, this.crosswalkMesh.material as THREE.MeshStandardMaterial];
     for (const m of mats) {
       m.roughness = 0.92 - w * 0.55;
       m.color.setScalar(1 - w * 0.35);
+      if (m !== this.typeMats.get('gravel')) m.envMapIntensity = 0.5 + w * 1.15;
     }
+  }
+
+  /** Refresh after the main scene has produced this frame's shadow maps. */
+  renderReflection(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, seconds?: number) {
+    const reflection = this.surfaceState.reflection;
+    if (!reflection.enabled) return false;
+    const surfaces: ReflectiveRoad[] = [];
+    for (const [id, mesh] of this.typeMeshes) {
+      if (id === 'gravel') continue;
+      const road = ROAD_TYPES[id];
+      surfaces.push({ mesh, span: carriageHalf(road) / road.width, median: road.median / (2 * road.width) });
+    }
+    surfaces.push({ mesh: this.junctionMesh, span: 1, median: 0 });
+    surfaces.push({ mesh: this.crosswalkMesh, span: 1, median: 0, select: false });
+    return reflection.render(renderer, scene, camera, surfaces, seconds);
   }
 
   update() {
     this.details.updateSignals();
+    this.surfaceState.update();
     if (!this.dirty) return;
     this.dirty = false;
+    this.surfaceState.resetGeometry();
     const perType = new Map<RoadTypeId, Buf[]>();
     const conc: Buf[] = [];
     const junc: Buf[] = [];
@@ -673,11 +809,14 @@ export class RoadRenderer {
       mesh.geometry.dispose();
       const list = perType.get(id);
       mesh.geometry = list && list.length ? concat(list, true, true) : new THREE.BufferGeometry();
+      if (id !== 'gravel') this.surfaceState.attach(mesh.geometry);
     }
     this.junctionMesh.geometry.dispose();
     this.junctionMesh.geometry = junc.length ? concat(junc, false, true) : new THREE.BufferGeometry();
+    this.surfaceState.attach(this.junctionMesh.geometry);
     this.crosswalkMesh.geometry.dispose();
     this.crosswalkMesh.geometry = walks.length ? concat(walks, false, true) : new THREE.BufferGeometry();
+    this.surfaceState.attach(this.crosswalkMesh.geometry);
     this.concMesh.geometry.dispose();
     this.concMesh.geometry = conc.length ? concat(conc, true, true) : new THREE.BufferGeometry();
 
@@ -709,16 +848,29 @@ export class RoadRenderer {
   }
 
   /** Where the earth bank beside a road or corner meets the ground: from the walk's edge (px, pz) outwards along (ox, oz). */
-  private bankFoot(px: number, pz: number, ox: number, oz: number, topY: number, yDefault: number): { run: number; yB: number } {
+  private bankFoot(px: number, pz: number, ox: number, oz: number, topY: number, yDefault: number) {
     const T = this.net.terrain;
-    let run = VERGE_RUN, yB = yDefault;
-    for (let it = 0; it < 3; it++) {
-      const g = T.h(px + ox * run, pz + oz * run) - 0.02;
-      if (g >= yB) break;
-      yB = g;
-      run = clamp(topY - yB, VERGE_RUN, 3.2);
+    const ground = (run: number) => {
+      const y = T.h(px + ox * run, pz + oz * run) - 0.015;
+      return Math.min(topY - 0.015, Number.isFinite(y) ? y : yDefault);
+    };
+    let run = VERGE_RUN;
+    for (let it = 0; it < 4; it++) {
+      const next = clamp((topY - ground(run)) * 2.6, run, 5);
+      if (next - run < 0.01) break;
+      run = next;
     }
-    return { run, yB };
+    const yB = ground(run), drop = topY - yB, length = Math.hypot(drop, run);
+    const normal = [ox * drop / length, run / length, oz * drop / length];
+    // Match the terrain gradient at the foot, then blend into the bank face.
+    const x = px + ox * run, z = pz + oz * run, e = 2;
+    const nx = (T.h(x - e, z) - T.h(x + e, z)) / (2 * e);
+    const nz = (T.h(x, z - e) - T.h(x, z + e)) / (2 * e);
+    const terrainLength = Math.hypot(nx, 1, nz);
+    const footNormal = [nx, 1, nz].map((value, axis) => value / terrainLength * 0.8 + normal[axis] * 0.2);
+    const footLength = Math.hypot(...footNormal);
+    for (let axis = 0; axis < 3; axis++) footNormal[axis] /= footLength;
+    return { run, yB, normal, footNormal };
   }
 
   private buildSeg(seg: RSeg): SegGeo {
@@ -795,13 +947,10 @@ export class RoadRenderer {
         } else {
           // an earth bank from the walk's edge down to the graded ground (terrain.gradeRoad leaves it GROUND_BELOW
           // under the road's height, but only on the grid's vertices: across a hillside it can sit a few tens of
-          // centimetres lower, so the foot is placed on the terrain itself and the bank runs long enough to keep
-          // to about 45 degrees), then a skirt for the times the ground has dropped away since
-          const { run, yB } = this.bankFoot(F.p.x + out.x * hw, F.p.z + out.z * hw, out.x, out.z, topY, F.y - GROUND_BELOW - 0.03);
-          const drop = topY - yB;
-          const ln = Math.hypot(drop, run);
-          const n = [(out.x * drop) / ln, run / ln, (out.z * drop) / ln];
-          S.wedge = [cv(side * hw, topY, n, BANK_TOP), cv(side * (hw + run), yB, n, BANK_FOOT), cv(side * (hw + run), yB - 1.0, [out.x, 0, out.z], BANK_FOOT)];
+          // centimetres lower, so the foot follows the terrain with a gentle
+          // bank and a buried skirt for later ground edits.
+          const { run, yB, normal, footNormal } = this.bankFoot(F.p.x + out.x * hw, F.p.z + out.z * hw, out.x, out.z, topY, F.y - GROUND_BELOW - 0.03);
+          S.wedge = [cv(side * hw, topY, normal, BANK_TOP), cv(side * (hw + run), yB, footNormal, BANK_FOOT), cv(side * (hw + run), yB - 1.0, [out.x, 0, out.z], BANK_FOOT)];
         }
       }
       if (elevated) {
@@ -884,7 +1033,7 @@ export class RoadRenderer {
       // dead end: round cap; residential roads get a cul-de-sac bulb
       const s = segs[0];
       const t = ROAD_TYPES[s.type];
-      const r = t.width / 2 * (t.id === 'twoLane' || t.id === 'gravel' ? 1.55 : 1.0);
+      const r = endCapRadius(t);
       const c = b.v(n.x, y, n.z, 0, 1, 0, n.x / 8, n.z / 8);
       const N = 20;
       const ids: number[] = [];
@@ -1059,10 +1208,9 @@ export class RoadRenderer {
       for (let m = 0; m < K; m++) {
         const o = outer[m], d = dir[m], topY = yo[m] + CURB_REVEAL;
         const yDef = (m === 0 ? Lj.y : m === K - 1 ? Li.y : (Li.y + Lj.y) / 2) - GROUND_BELOW - 0.03;
-        const { run, yB } = this.bankFoot(o.x, o.z, d.x, d.z, topY, yDef);
-        const drop = topY - yB, ln = Math.hypot(drop, run), nb = [(d.x * drop) / ln, run / ln, (d.z * drop) / ln];
+        const { run, yB, normal: nb, footNormal } = this.bankFoot(o.x, o.z, d.x, d.z, topY, yDef);
         wt.push(conc.v(o.x, topY, o.z, nb[0], nb[1], nb[2], 0, 0, BANK_TOP));
-        wf.push(conc.v(o.x + d.x * run, yB, o.z + d.z * run, nb[0], nb[1], nb[2], 0, 0, BANK_FOOT));
+        wf.push(conc.v(o.x + d.x * run, yB, o.z + d.z * run, footNormal[0], footNormal[1], footNormal[2], 0, 0, BANK_FOOT));
         ws.push(conc.v(o.x + d.x * run, yB - 1.0, o.z + d.z * run, d.x, 0, d.z, 0, 0, BANK_FOOT));
       }
       for (let m = 0; m + 1 < K; m++) {

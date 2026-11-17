@@ -11,6 +11,7 @@ import { HUD_CONTROLS, HUD_ICON_NAMES, HUD_ICON_ACCENTS, hudIcon, hudIconFor } f
 
 const sizes = [16, 18, 24, 32], themes = ['#252923', '#f3efe0'];
 const simplified = ['stroad4','stroad6','stroad8','grid','resHigh','comHigh','server','treatment','music','building'];
+const cameraActions = ['photo', 'follow', 'street'];
 const states = Object.values(HUD_CONTROLS.status);
 const categories = ['resLow','comLow','industry','office','power','water','sewage','garbage'];
 // Machado, Oliveira & Fernandes (2009), DOI 10.1109/TVCG.2009.113,
@@ -47,17 +48,18 @@ function place(name, px, x, y, mode='Standard') {
   return `<g transform="translate(${x} ${y})">${icon.replace(/#[\da-f]{6}/gi, colour => simulate(colour,mode))}</g>`;
 }
 
-function contactSheet() {
-  const width = 1248, tileWidth = 416, rowHeight = 41, top = 63;
-  const rows = Math.ceil(HUD_ICON_NAMES.length / 3), height = top + rows * rowHeight;
+function contactSheet(names = HUD_ICON_NAMES) {
+  const columns = names.length <= 3 ? 1 : 3;
+  const width = columns * 416, tileWidth = 416, rowHeight = 41, top = 63;
+  const rows = Math.ceil(names.length / columns), height = top + rows * rowHeight;
   let body = rect(0,0,width,height,'#efe6cf') + label(9,23,'HUD icon proofs', '#111111', 20);
-  for (let i=0; i<3; i++) {
+  for (let i=0; i<columns; i++) {
     const x = i * tileWidth;
     body += label(x+9,49,'Control');
     body += label(x+99,49,'Dark   16 / 18 / 24 / 32');
     body += label(x+257,49,'Light   16 / 18 / 24 / 32');
   }
-  HUD_ICON_NAMES.forEach((name, i) => {
+  names.forEach((name, i) => {
     const x = Math.floor(i / rows) * tileWidth, y = top + (i % rows) * rowHeight;
     body += label(x+9,y+25,name);
     themes.forEach((bg, theme) => {
@@ -105,6 +107,7 @@ function distinctionSheet(names, title) {
 }
 export const statusSvg = distinctionSheet(states,'Inspector status proofs');
 const categorySvg = distinctionSheet(categories,'Zone and utility category proofs');
+const actionSvg = distinctionSheet(cameraActions, 'Camera action proofs');
 
 /** Percentage of a cell whose appearance changes by >=32 in at least one sRGB channel.
  * In the shape-only row every foreground fill is identical, so only the mark and
@@ -132,7 +135,7 @@ function checkDistinction(rgba,names) {
 export function checkStatuses(rgba) { return checkDistinction(rgba,states); }
 function checkManifest() {
   const shape = svg => svg.replace(/width="[\d.]+" height="[\d.]+"/,'');
-  for(const name of simplified) {
+  for(const name of [...simplified, ...cameraActions]) {
     assert.equal(shape(hudIcon(name,16)),shape(hudIcon(name,18)),'small variant covers the full requested size range');
     assert.notEqual(shape(hudIcon(name,18)),shape(hudIcon(name,24)),'small variant must reduce interior detail');
     assert.equal(shape(hudIcon(name,19)),shape(hudIcon(name,24)),'large variant retains its original detail');
@@ -143,6 +146,10 @@ function checkManifest() {
   assert.ok(hudIconFor('facility','gasPeaker',16).includes('fill="#ffd84a"'));
   assert.ok(hudIconFor('facility','incinerator',16).includes('fill="#c89d54"'));
   assert.ok(hudIconFor('landmark','slopCannon',16).includes('fill="#b3202a"'));
+  assert.equal(hudIconFor('toolbar', 'photo', 16), hudIcon('photo', 16));
+  for (const name of ['follow', 'street']) {
+    assert.equal(hudIconFor('action', name, 16), hudIcon(name, 16));
+  }
   const read = path => readFileSync(path,'utf8');
   const match = (file,re) => [...read(file).matchAll(re)].map(m=>m[1]);
   const extensionDirs = ['src/sim', 'src/tools', 'src/transit'];
@@ -172,11 +179,14 @@ async function main() {
   const out=resolve('shots/hud-icons');
   mkdirSync(out,{recursive:true});
   const contact=contactSheet();
+  const actionContact = contactSheet(cameraActions);
   const before=process.env.HUD_BASE ? (await import(pathToFileURL(resolve(process.env.HUD_BASE)).href)).hudIcon : null;
   const comparison=before ? smallComparison(before) : null;
   writeFileSync(join(out,'contact.svg'),contact);
   writeFileSync(join(out,'statuses.svg'),statusSvg);
   writeFileSync(join(out,'categories.svg'),categorySvg);
+  writeFileSync(join(out, 'actions.svg'), actionSvg);
+  writeFileSync(join(out, 'actions-contact.svg'), actionContact);
   if(comparison)writeFileSync(join(out,'small-before-after.svg'),comparison);
   console.log(HUD_ICON_NAMES.length+' icons, 16/18/24/32 px on two backgrounds: '+out);
   if (process.argv.includes('--svg-only')) return;
@@ -198,17 +208,30 @@ async function main() {
       const contact=await rasterize(source.contact);
       const status=await rasterize(source.status);
       const categories=await rasterize(source.categories);
+      const actions = await rasterize(source.actions);
+      const actionContact = await rasterize(source.actionContact);
       const comparison=source.comparison ? await rasterize(source.comparison) : null;
       const encode = context => {
         const bytes=context.getImageData(0,0,context.canvas.width,context.canvas.height).data,chunks=[];
         for (let i=0;i<bytes.length;i+=16384) chunks.push(String.fromCharCode(...bytes.subarray(i,i+16384)));
         return btoa(chunks.join(''));
       };
-      return { rgba:encode(status), categoryRgba:encode(categories), contact: contact.canvas.toDataURL().split(',')[1], status: status.canvas.toDataURL().split(',')[1], categories:categories.canvas.toDataURL().split(',')[1], comparison:comparison?.canvas.toDataURL().split(',')[1] };
-    }, { contact, status:statusSvg, categories:categorySvg, comparison });
+      return {
+        rgba: encode(status),
+        categoryRgba: encode(categories),
+        actionRgba: encode(actions),
+        contact: contact.canvas.toDataURL().split(',')[1],
+        status: status.canvas.toDataURL().split(',')[1],
+        categories: categories.canvas.toDataURL().split(',')[1],
+        actions: actions.canvas.toDataURL().split(',')[1],
+        actionContact: actionContact.canvas.toDataURL().split(',')[1],
+        comparison: comparison?.canvas.toDataURL().split(',')[1],
+      };
+    }, { contact, status: statusSvg, categories: categorySvg, actions: actionSvg, actionContact, comparison });
     const pixels=Buffer.from(proof.rgba,'base64');
     const report=checkStatuses(pixels);
     const categoryReport=checkDistinction(Buffer.from(proof.categoryRgba,'base64'),categories);
+    const actionReport = checkDistinction(Buffer.from(proof.actionRgba, 'base64'), cameraActions);
     // Prove a missing status accidentally drawn as the healthy check is caught.
     for (let y=0;y<16;y++) {
       const first=((top+10+y)*statusWidth+left+6)*4;
@@ -218,11 +241,15 @@ async function main() {
     writeFileSync(join(out,'contact.png'),Buffer.from(proof.contact,'base64'));
     writeFileSync(join(out,'statuses.png'),Buffer.from(proof.status,'base64'));
     writeFileSync(join(out,'categories.png'),Buffer.from(proof.categories,'base64'));
+    writeFileSync(join(out, 'actions.png'), Buffer.from(proof.actions, 'base64'));
+    writeFileSync(join(out, 'actions-contact.png'), Buffer.from(proof.actionContact, 'base64'));
     if(proof.comparison)writeFileSync(join(out,'small-before-after.png'),Buffer.from(proof.comparison,'base64'));
     writeFileSync(join(out,'status-check.json'),JSON.stringify(report,null,2)+'\n');
     writeFileSync(join(out,'category-check.json'),JSON.stringify(categoryReport,null,2)+'\n');
+    writeFileSync(join(out, 'action-check.json'), JSON.stringify(actionReport, null, 2) + '\n');
     console.log(JSON.stringify(report));
     console.log(JSON.stringify(categoryReport));
+    console.log(JSON.stringify(actionReport));
   } finally { await browser.close(); }
 }
 if (process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)) await main();

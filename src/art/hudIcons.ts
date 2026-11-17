@@ -23,6 +23,7 @@ const art = {
   communes: stamp(disc(12, 12, 9), 'M12 4v16m0-8-6 5m6-5 6 5', LIME),
   feed: stamp('M3 4h16q2 0 2 2v10H10l-6 5v-5H2V6z', 'M6 8h11M6 12h8'),
   settings: stamp('M10 2h4l1 3 3-1 3 3-2 3 3 1v4l-3 1 1 3-3 2-3-2-1 3H9l-1-3-3 1-2-3 2-3-3-1V9l3-1-1-3 3-2 3 2z', disc(12, 12, 3)),
+  photo: stamp('M3 7h4l2-3h6l2 3h4v14H3z', disc(12,14,4)+'M5 10h2m11 0h1'),
   bug: stamp('M8 6 7 3l3 2h4l3-2-1 3q4 3 2 10-1 5-6 5t-6-5Q4 9 8 6z', 'M7 9h10m-5 1v8', RED, 'M6 11l-3-1m3 5-3 1m15-5 3-1m-3 5 3 1'),
   more: stamp('M3 6h18v12H3z', disc(7,12,1)+disc(12,12,1)+disc(17,12,1)),
   services: stamp('M2 9l10-6 10 6-1 2H3zm2 10h16l1 2H3zM5 11h3v8H5zm6 0h3v8h-3zm6 0h3v8h-3z'),
@@ -119,6 +120,8 @@ const art = {
   music: stamp('M3 4h18v16H3z', 'M4 13h16M7 5v7m5-7v7m5-7v7M8 14v5m7-5v5'),
   save: stamp('M3 3h15l3 3v15H3z', 'M7 4v6h10V4M7 21v-7h10v7'),
   folder: stamp('M2 6h7l3 3h9v11H2z', 'M3 11h16'),
+  follow: stamp('M3 11h10v9H3zM13 13l8-3v11l-8-3z', disc(8,15.5,2), CREAM, 'M3 8q0-4 4-4h10m-3-2 3 2-3 3'),
+  street: stamp(disc(12,4.5,2.5)+'M9 9h6l2 6h-3v7h-2v-7h-1v7H9v-7H7z', 'M12 10v3', CREAM, 'M5 11 3 21m16-10 2 10'),
   pin: stamp('M12 22Q3 12 4 8q1-6 8-6 8 0 8 7 0 4-8 13z', disc(12,9,2.5), RED),
   residents: stamp(disc(9,7,3)+disc(17,8,2.3)+'M2 20q0-8 7-8t7 8zm15-7q5-1 5 6h-4z'),
   medal: stamp('M3 3h6l3 5 3-5h6l-6 9q5 7-3 10-8-2-5-9z', disc(12,16,2)),
@@ -151,6 +154,9 @@ const smallArt: Partial<Record<HudIconName, { outline?: string; detail: string }
   treatment: { outline: 'M3 7q0-4 9-4t9 4v11q0 3-9 3t-9-3z', detail: 'M4 8q8 5 16 0' },
   music: { detail: 'M4 13h16M9 5v7m6-7v7' },
   building: { detail: 'M5 12l5-5m4 5 5-5' },
+  photo: { detail: disc(12,14,4) },
+  follow: { detail: '' },
+  street: { detail: '' },
 };
 
 /** Keys mirror data-t/data-more, data-zone, data-road, data-mode, data-view,
@@ -159,7 +165,7 @@ export const HUD_CONTROLS = {
   toolbar: {
     inspect: 'inspect', roads: 'roads', zones: 'zones', upgrade: 'upgrade', bulldoze: 'bulldoze',
     landmarks: 'landmarks', views: 'views', budget: 'budget', communes: 'communes', feed: 'feed',
-    help: 'settings', bug: 'bug', more: 'more', 'ext:services': 'services', 'ext:land': 'land',
+    help: 'settings', photo: 'photo', bug: 'bug', more: 'more', 'ext:services': 'services', 'ext:land': 'land',
     'ext:transit': 'transit', 'ext:districts': 'districts', 'ext:terraform': 'terraform', 'ext:disasters': 'disasters',
   },
   road: { gravel: 'gravel', twoLane: 'roads', oneWay1: 'oneWay1', oneWay2: 'oneWay2', stroad4: 'stroad4', stroad6: 'stroad6', stroad8: 'stroad8', highway: 'highway' },
@@ -198,7 +204,7 @@ export const HUD_CONTROLS = {
   weather: { clear: 'sun', cloudy: 'cloud', rain: 'rain', storm: 'storm', snow: 'snow', blizzard: 'blizzard', fog: 'fog', heatwave: 'heatwave', hurricane: 'hurricane', wildfireSmoke: 'fire' },
   action: {
     build: 'hammer', done: 'ok', stop: 'missing', undo: 'undo', pause: 'pause', play: 'play', music: 'music', sound: 'sound',
-    save: 'save', file: 'folder', show: 'pin', report: 'bug', court: 'scales', bribe: 'budget', unlock: 'medal',
+    save: 'save', file: 'folder', follow: 'follow', street: 'street', show: 'pin', report: 'bug', court: 'scales', bribe: 'budget', unlock: 'medal',
   },
   meter: { nature: 'pine', sprawl: 'resHigh', population: 'residents', milestone: 'medal' },
 } as const satisfies Record<string, Record<string, HudIconName>>;

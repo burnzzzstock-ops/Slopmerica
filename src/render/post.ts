@@ -308,7 +308,7 @@ export interface PostLook {
 }
 
 export class PostFX {
-  readonly enabled: boolean;
+  enabled = false;
   /** why the effects were switched off at runtime (see Game.checkBlackFrame), or null */
   offReason: string | null = null;
   /** effects are on and haven't been switched off */
@@ -320,8 +320,8 @@ export class PostFX {
   tiltShift = false;
   /** Screen height (0 bottom .. 1 top) of the in-focus band for tilt-shift. */
   tiltFocus = 0.45;
-  private ao: boolean;
-  private aoScale: number;
+  private ao = false;
+  private aoScale = 0.5;
   private sceneRT?: THREE.WebGLRenderTarget;
   private aoRT?: THREE.WebGLRenderTarget;
   private aoRT2?: THREE.WebGLRenderTarget;
@@ -349,23 +349,48 @@ export class PostFX {
   aoRadius = 4;
 
   constructor(private renderer: THREE.WebGLRenderer, private scene: THREE.Scene, private camera: THREE.PerspectiveCamera, q: Quality) {
-    this.enabled = q.post && renderer.capabilities.isWebGL2;
+    this.setQuality(q);
+  }
+
+  /** Reconfigure the live renderer. Low keeps no offscreen post targets. */
+  setQuality(q: Quality) {
+    this.enabled = q.post && this.renderer.capabilities.isWebGL2;
     this.ao = q.ao;
     this.aoScale = q.aoFull ? 1 : 0.5;
-    if (!this.enabled) return;
-    const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+    if (!this.enabled) {
+      if (!this.sceneRT) return;
+      this.sceneRT?.dispose();
+      this.hdrRT?.dispose();
+      this.aoRT?.dispose();
+      this.aoRT2?.dispose();
+      this.ldrRT?.dispose();
+      for (const target of this.hist) target.dispose();
+      this.bloom?.dispose();
+      this.sceneRT = this.hdrRT = this.aoRT = this.aoRT2 = this.ldrRT = undefined;
+      this.bloom = undefined;
+      this.hist = [];
+      this.hasHist = false;
+      return;
+    }
+    const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
     const w = Math.max(1, size.x), h = Math.max(1, size.y);
-    this.sceneRT = new THREE.WebGLRenderTarget(w, h, {
-      type: THREE.HalfFloatType,
-      samples: 4,
-      depthTexture: new THREE.DepthTexture(w, h, THREE.UnsignedIntType),
-    });
-    this.sceneRT.depthTexture!.minFilter = this.sceneRT.depthTexture!.magFilter = THREE.NearestFilter;
-    this.hdrRT = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, depthBuffer: false });
+    if (!this.sceneRT) {
+      this.sceneRT = new THREE.WebGLRenderTarget(w, h, {
+        type: THREE.HalfFloatType,
+        samples: 4,
+        depthTexture: new THREE.DepthTexture(w, h, THREE.UnsignedIntType),
+      });
+      this.sceneRT.depthTexture!.minFilter = this.sceneRT.depthTexture!.magFilter = THREE.NearestFilter;
+      this.hdrRT = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, depthBuffer: false });
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.25, 0.3, 0.92);
+      this.setAA(this.aaMode);
+    }
     const aw = Math.max(1, Math.floor(w * this.aoScale)), ah = Math.max(1, Math.floor(h * this.aoScale));
-    this.aoRT = new THREE.WebGLRenderTarget(aw, ah, { type: THREE.UnsignedByteType, depthBuffer: false });
-    this.aoRT2 = this.aoRT.clone();
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.25, 0.3, 0.92);
+    this.aoRT ??= new THREE.WebGLRenderTarget(aw, ah, { type: THREE.UnsignedByteType, depthBuffer: false });
+    this.aoRT2 ??= this.aoRT.clone();
+    this.aoRT.setSize(aw, ah);
+    this.aoRT2.setSize(aw, ah);
+    this.hasHist = false;
   }
 
   /** switch anti-aliasing (MSAA samples on the scene target, or temporal) */
@@ -389,8 +414,8 @@ export class PostFX {
     const w = Math.max(1, Math.floor(cssW * pr)), h = Math.max(1, Math.floor(cssH * pr));
     this.sceneRT!.setSize(w, h);
     this.hdrRT!.setSize(w, h);
-    this.aoRT!.setSize(Math.max(1, Math.floor(w * this.aoScale)), Math.max(1, Math.floor(h * this.aoScale)));
-    this.aoRT2!.setSize(Math.max(1, Math.floor(w * this.aoScale)), Math.max(1, Math.floor(h * this.aoScale)));
+    this.aoRT?.setSize(Math.max(1, Math.floor(w * this.aoScale)), Math.max(1, Math.floor(h * this.aoScale)));
+    this.aoRT2?.setSize(Math.max(1, Math.floor(w * this.aoScale)), Math.max(1, Math.floor(h * this.aoScale)));
     this.bloom!.setSize(w, h);
     this.ldrRT?.setSize(w, h);
     for (const t of this.hist) t.setSize(w, h);

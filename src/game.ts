@@ -194,7 +194,8 @@ export class Game {
   private perfWindowFrames = 0;
   private qualityBenchmarkMs = 0;
   private qualityBenchmarkN = 0;
-  private qualityElapsed = 0;
+  private qualityWarmupMs = 0;
+  private qualityWarmupFrames = 0;
   private qualityBenchmarkDone = false;
   private resolutionCooldown = 0;
   /** Settings → Resolution: 'auto' lowers it to hold the frame rate, 'full' never does */
@@ -883,8 +884,11 @@ export class Game {
   /** Save a new preset and apply safe render changes immediately; reload completes asset budgets. */
   requestQuality(name: Quality['name']) {
     const next = QUALITY[name];
+    this.qualityBenchmarkDone = true; // a manual choice also ends the first-run benchmark
     saveQuality(name);
     this.pendingQuality = name === this.q.name ? null : name;
+    this.post.setQuality(next);
+    this.perf.quality = name;
     this.renderer.shadowMap.enabled = next.shadows;
     this.env.sun.castShadow = next.shadows;
     if (this.env.sun.shadow.mapSize.x !== next.shadowMap) {
@@ -944,19 +948,25 @@ export class Game {
       this.perfWindowMs = this.perfWindowFrames = 0;
       if (this.perfSamples > 80) this.cadenceMs = Math.min(this.cadenceMs, this.perf.frameMs);
     }
-    if (!this.qualityBenchmarkDone) {
-      this.qualityElapsed += intervalMs;
-      if (this.qualityElapsed > 500 && intervalMs < 2000) {
+    if (!this.qualityBenchmarkDone && intervalMs < 2000) {
+      // Give the scene a second of actual draws to compile shaders. A single
+      // slow frame or a return from a background tab must not finish warm-up.
+      if (this.qualityWarmupMs < 1000 || this.qualityWarmupFrames < 8) {
+        this.qualityWarmupMs += intervalMs;
+        this.qualityWarmupFrames++;
+      } else {
         this.qualityBenchmarkMs += intervalMs;
         this.qualityBenchmarkN++;
       }
-      if (this.qualityElapsed >= 3000) {
+      if (this.qualityBenchmarkMs >= 2000 && this.qualityBenchmarkN >= 12) {
         this.qualityBenchmarkDone = true;
-        const avg = this.qualityBenchmarkMs / Math.max(1, this.qualityBenchmarkN);
+        const avg = this.qualityBenchmarkMs / this.qualityBenchmarkN;
         const caps = this.renderer.capabilities;
-        const deviceCeiling: Quality['name'] = IS_TOUCH || !caps.isWebGL2 || caps.maxTextureSize < 8192 ? 'medium' : 'ultra';
         let chosen: Quality['name'] = avg > 34 ? 'low' : avg > 24 ? 'medium' : avg > 16 ? 'high' : 'ultra';
-        if (deviceCeiling === 'medium' && (chosen === 'high' || chosen === 'ultra')) chosen = IS_TOUCH ? 'low' : 'medium';
+        // Phones start on Low. Only turn on the Medium HDR/bloom path when
+        // the lighter pipeline has headroom. Higher desktop tiers stay capped.
+        if (IS_TOUCH) chosen = avg > 24 ? 'low' : 'medium';
+        else if ((!caps.isWebGL2 || caps.maxTextureSize < 8192) && chosen !== 'low') chosen = 'medium';
         // Apply live (no reload mid-city); asset budgets pick it up next launch.
         if (chosen !== this.q.name) this.requestQuality(chosen);
         saveQuality(chosen, true);

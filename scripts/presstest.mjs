@@ -26,7 +26,16 @@ for (const kind of ['desk', 'phone']) {
   for (const hold of [30, 400, 700]) {
     const id = await pick();
     await page.waitForTimeout(450); // past the guard against the tap that opened the sheet
-    const box = await page.locator('#in-bulldoze').boundingBox();
+    // (read in one go inside the page: the card is redrawn four times a second, and a locator that found the button and then
+    // asked for its box could find it replaced in between and get nothing, which is how this test crashed twice under load)
+    const box = await page.evaluate(() => { const r = document.querySelector('#in-bulldoze')?.getBoundingClientRect(); return r && r.width > 0 && r.height > 0 ? { x: r.x, y: r.y, width: r.width, height: r.height } : null; });
+    if (!box) {
+      // no button to press: say what is on screen instead (the card may have been put away, or be another thing's)
+      const seen = await page.evaluate((id) => { const g = window.__game, i = document.querySelector('.inspector'); return { selected: g.selection ? `${g.selection.kind}:${g.selection.b?.id ?? ''}` : null, wanted: id, sheet: i.hidden ? 'hidden' : (i.querySelector('h3')?.textContent ?? 'no heading'), tool: g.tools.active, following: !!g.rts.following, standing: g.buildings.list.has(id) }; }, id);
+      check(`${kind}: the card of home ${id} has a Bulldoze button to press for ${hold} ms`, false, seen);
+      await page.evaluate(() => window.__game.select(null));
+      continue;
+    }
     const x = Math.round(box.x + box.width / 2), y = Math.round(box.y + box.height / 2);
     if (cdp) {
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] });

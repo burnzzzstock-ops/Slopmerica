@@ -22,6 +22,7 @@ import { applyLowGrade, lowExposure } from './render/lowGrade';
 import { Particles } from './render/particles';
 import { ConstructionEffects } from './render/constructionEffects';
 import { AudioEngine } from './audio/audio';
+import { WorldSoundSources } from './audio/worldSources';
 import { bindWorldAudio } from './audio/events';
 import type { SoundscapeMix } from './audio/ambience';
 import { COUNTY_ROAD, RoadNetwork, RSeg, Plan } from './roads/network';
@@ -219,6 +220,7 @@ export class Game {
     night: 0, weather: 'clear', weatherIntensity: 0, season: 'spring',
   };
   private soundTreeSample = { x: NaN, z: NaN, count: 0 };
+  private worldSoundSources = new WorldSoundSources();
   private ray = new THREE.Raycaster();
   private nightWas = false;
   /** pools of light from street lamps, shopfronts, entrances and yards after dark */
@@ -352,6 +354,7 @@ export class Game {
 
     this.traffic = new Traffic(this.scene, this.net, this.buildings, this.q.maxCars);
     this.traffic.rng.state = streamSeed(this.seed, 'traffic');
+    this.audio.reverseState = handle => this.traffic.renderer.isReversing(handle);
     this.traffic.groundAt = (x, z) => this.terrain.h(x, z);
     // look pass: the vehicle renderer throws dust off gravel roads (it asks what the road under a car is, twice a second at most)
     this.traffic.renderer.surfaceAt = (x, z) => (this.net.pickSeg(x, z, 3)?.seg.type === 'gravel' ? 'gravel' : 'paved');
@@ -1419,6 +1422,7 @@ export class Game {
     this.audio.update(dt, this.soundMix);
     // street sound follows the real cars near the camera (src/audio/streetAudio.ts); re-picks its voices 4x a second
     this.audio.street(dt, this.traffic.cars, this.rts, this.weather.wet, spd);
+    this.audio.world(dt, this.worldSoundSources.sample(this, dt), spd);
     P.lap('lighting+audio');
     if (render) {
       this.applyPendingRatio();

@@ -16,8 +16,8 @@ export const seed = Number(process.env.SEED ?? 271828);
 if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) throw Error('SEED must be a uint32');
 const base = process.env.BASE_URL ?? 'http://127.0.0.1:5173';
 
-export function selection(name, options) {
-  const list = process.env[name]?.split(',') ?? options;
+export function selection(name, options, defaults = options) {
+  const list = process.env[name]?.split(',') ?? defaults;
   if (list.some(x => !options.includes(x)) || new Set(list).size !== list.length) {
     throw Error(`${name} accepts ${options.join(', ')}`);
   }

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLOW } from '../config';
+import { GLOW, QUALITY, type Quality } from '../config';
 import type { VehicleKind } from '../contracts';
 import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from '../world/atmos';
 import { bindLamps, CAR_SHEEN, LAMP_PARS } from '../world/nightLights';
@@ -661,7 +661,7 @@ export class VehicleRenderer {
   }
 
   /** Game supplies observations before Traffic.draw; flush consumes its already interpolated shown poses. */
-  observeTraffic(cars: readonly Car[], camera: THREE.Camera, alpha: number, quality: 'high' | 'low'): void {
+  observeTraffic(cars: readonly Car[], camera: THREE.Camera, alpha: number, quality: Quality['name']): void {
     if (!this.presentation) {
       this.presentation = new VehiclePresentation(this.maxTotal, this.perKind);
       for (const [kind, batch] of this.batches) {
@@ -671,8 +671,11 @@ export class VehicleRenderer {
         this.presentationPickHandles.set(kind, new Int32Array(this.perKind).fill(-1));
       }
     }
+    // Presentation shares the existing per-kind GPU arrays. Logical allocation
+    // and parking ownership continue to use maxTotal at every graphics preset.
+    this.presentation.setCapacity(quality === 'ultra' ? 2600 : Math.min(this.maxTotal, QUALITY[quality].maxCars));
     this.presentationCars = cars; this.presentationCamera = camera; this.presentationAlpha = clamp(alpha, 0, 1);
-    this.updateLod(camera, quality);
+    this.updateLod(camera, quality === 'low' ? 'low' : 'high');
     if (quality === 'low') { this.lodClose = 36; this.lodNear = 112; this.lodCull = 930; }
   }
 
@@ -766,7 +769,7 @@ export class VehicleRenderer {
 
   presentationStats() {
     const drawn = [...this.drawnSlots.values()].filter(c => c.drawnFrame === this.presentationFrame);
-    return { capacity: this.maxTotal, selected: this.presentation?.selected.length ?? 0, drawnCars: drawn.map(c => c.car!.id), scans: this.presentation?.scans ?? 0,
+    return { capacity: this.presentation?.capacity ?? this.maxTotal, logicalCapacity: this.maxTotal, selected: this.presentation?.selected.length ?? 0, drawnCars: drawn.map(c => c.car!.id), scans: this.presentation?.scans ?? 0,
       unallocatedDrawn: drawn.filter(c => c.car!.h < 0).length };
   }
 

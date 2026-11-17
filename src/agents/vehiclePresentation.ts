@@ -24,7 +24,13 @@ export class VehiclePresentation {
   private cull2 = Infinity;
   scans = 0;
 
-  constructor(readonly capacity: number, readonly perKind: number) {}
+  constructor(public capacity: number, readonly perKind: number) {}
+
+  setCapacity(capacity: number): void {
+    if (capacity === this.capacity) return;
+    this.capacity = capacity;
+    this.elapsed = 1;
+  }
 
   begin(camera: THREE.Camera, dt: number, cull: number): boolean {
     this.elapsed += dt;

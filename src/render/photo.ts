@@ -1,3 +1,4 @@
+import { applySmogLook } from './aerialPerspective';
 import * as THREE from 'three';
 import type { Game } from '../game';
 import { FOV_MAX, FOV_MIN, GLOW, HALF, nightLift, WATER } from '../config';
@@ -116,7 +117,10 @@ export class PhotoMode {
     cam.updateProjectionMatrix(); cam.updateMatrixWorld();
     const dist = THREE.MathUtils.clamp(this.focusDistance, 2, 6500);
     cam.getWorldDirection(this.target).multiplyScalar(dist).add(cam.position);
+    g.env.smog = g.fields.smog();
     const wet = g.weather.photoLook(this.weather, this.hour, cam, this.target, dist), n = g.env.night;
+    applySmogLook(g.post.look, g.env.smog, n);
+    g.water.updateFields(g.fields);
     GLOW.value = 1 / nightLift(n, g.env.moonLight);
     setBuildingNight(n); setKitNight(n); g.roads.setNight(n); g.roads.setWet(wet, (g.pendingQuality ?? g.q.name) === 'ultra');
     g.zones.setNight(n); g.traffic.setNight(n); g.peds.setNight(n); g.nightLights.update(0, n);

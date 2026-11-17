@@ -363,6 +363,10 @@ export class PostFX {
   readonly look: PostLook = { tint: new THREE.Color(1, 1, 1), sat: 1.0, tintLit: new THREE.Color(1, 1, 1), satLit: 1.0, contrast: 1.06, lift: new THREE.Color(0, 0, 0), exposure: 1, shimmer: 0, flash: 0 };
   /** World-space AO radius; the game scales it with zoom. */
   aoRadius = 4;
+  /** Optional water colour/depth resolve around the normal scene draw. */
+  scenePass?: (target: THREE.WebGLRenderTarget, camera: THREE.PerspectiveCamera, draw: () => void) => void;
+  /** Optional depth-aware atmosphere blended into the resolved HDR scene. */
+  afterComposite?: (target: THREE.WebGLRenderTarget, depth: THREE.DepthTexture, camera: THREE.PerspectiveCamera) => void;
 
   constructor(private renderer: THREE.WebGLRenderer, private scene: THREE.Scene, private camera: THREE.PerspectiveCamera, q: Quality) {
     installAmbientOutput(scene);
@@ -457,7 +461,8 @@ export class PostFX {
       cam.setViewOffset(W, H, jx - 0.5, jy - 0.5, W, H);
     }
     r.setRenderTarget(this.sceneRT!);
-    r.render(this.scene, cam);
+    if (this.scenePass) this.scenePass(this.sceneRT!, cam, () => r.render(this.scene, cam));
+    else r.render(this.scene, cam);
     if (taa) cam.clearViewOffset();
 
     let aoTex: THREE.Texture | null = null;
@@ -499,6 +504,7 @@ export class PostFX {
     this.quad.render(r);
 
     const bl = this.bloom!;
+    this.afterComposite?.(this.hdrRT!, this.sceneRT!.depthTexture!, cam);
     // HDR input: only real light sources and sun glints should bloom
     // bloom with a threshold, a strength that doesn't grow with the night
     // exposure lift (GLOW), and a tighter radius after dark: lamps glow, they

@@ -1177,7 +1177,7 @@ export class Game {
     this.sim.step(h);
     if (Math.floor(this.sim.day) !== dayWas) P.note(Math.floor(this.sim.day) % 7 === 0 ? 'new week' : 'new day');
     P.lap('sim');
-    this.climate.step(h, this.sim.day, this.hour);
+    this.climate.step(h, this.sim.day, this.hour, SPEEDS[this.sim.speed]);
     const fxs = this.climate.effects();
     this.traffic.speedMul = fxs.speedMul;
     this.traffic.crashMul = fxs.crashMul;

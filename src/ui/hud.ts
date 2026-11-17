@@ -27,7 +27,8 @@ import { MILESTONES, lockText, milestoneAt, nameUnlock, unlockNames, unlockPop }
 import { isZoned } from '../sim/buildings';
 import type { ViewMode } from '../render/overlays';
 import { ARCHETYPES } from '../agents/people';
-import { saveGame } from '../sim/save';
+import { saveGame, snapshot } from '../sim/save';
+import { listSlots, slotName, writeSlot } from '../sim/slots';
 import { VEHICLE_SPECS } from '../agents/vehicles';
 import { LANDMARK_EVENTS } from '../agents/parking';
 import { VISIT_PULL } from '../agents/traffic';
@@ -1434,9 +1435,15 @@ export class Hud implements UiSink {
           <div><b>Interchanges</b> Roads → Interchanges · , and . rotate</div>${PLAYTEST ? `
           <div><b>Performance</b> F3 shows FPS, frame time, draw calls and triangles</div>` : ''}`}
         </div>
-        <div class="sp-row"><button class="chip" id="save-now">💾 Save now</button><button class="chip" id="save-file">📁 Save city file</button><button class="chip" id="new-city">🆕 New city</button><small>Autosaves every 30 seconds in this browser. A city file is a backup you keep: where downloads are blocked it is copied to the clipboard instead.</small></div>
+        <div class="sp-row"><button class="chip" id="save-now">💾 Save now</button><button class="chip" id="save-slot" title="Put this city away under its name and day. Find it on the title screen under Saved cities.">📌 Save to a slot</button><button class="chip" id="save-file">📁 Save city file</button><button class="chip" id="new-city">🆕 New city</button><small>Autosaves every 30 seconds in this browser. A city file is a backup you keep: where downloads are blocked it is copied to the clipboard instead.</small></div>
         <div class="sp-row"><button class="chip on" id="report-bug">🐞 Report a bug</button><small>${PLAYTEST ? 'Playtest build' : 'Build'} ${BUILD}</small></div>`;
       this.sub.querySelector('#save-now')?.addEventListener('click', () => { const ok = saveGame(g); this.toast(ok ? 'Saved.' : 'Could not save in this browser', !ok); });
+      this.sub.querySelector('#save-slot')?.addEventListener('click', async () => {
+        const taken = (await listSlots()).map((x) => x.name), nameIt = slotName(g.cityName, g.sim.day, taken);
+        const ok = await writeSlot(nameIt, JSON.stringify(snapshot(g)));
+        crumb(`save to a slot: ${ok ? 'ok' : 'failed'}`);
+        this.toast(ok ? `Saved as "${nameIt}". It is on the title screen under Saved cities.` : 'This browser would not store a slot (private windows often will not). Use Save city file.', !ok);
+      });
       this.sub.querySelector('#save-file')?.addEventListener('click', async () => {
         const f = cityFile(g);
         const r = await saveFile(f.name, f.data);

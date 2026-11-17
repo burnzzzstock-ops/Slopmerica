@@ -3434,6 +3434,22 @@ a {
   .tb-demand { gap: 3px; }
   .mtrack { width: 26px; }
 }
+/* ---- saved cities on the title screen, the question before a new city, and the unreadable-save notice ---- */
+.aaa-slots { display: grid; gap: 6px; max-height: 38vh; overflow-y: auto; margin-top: 8px; padding-right: 2px; }
+.aaa-slots[hidden] { display: none; }
+.aaa-slot { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid rgba(239, 230, 207, 0.25); border-radius: 10px; background: rgba(17, 17, 17, 0.55); }
+.aaa-slot-what { flex: 1 1 auto; min-width: 0; display: grid; }
+.aaa-slot-what b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aaa-slot-what small { opacity: 0.75; font-size: 12px; line-height: 1.35; }
+.aaa-slot .aaa-link { flex: none; }
+.aaa-slot [data-sure='1'] { color: #ff8a80; }
+.aaa-unreadable { margin: 8px 0; padding: 10px 12px; border: 1px solid #b3202a; border-radius: 10px; background: rgba(17, 17, 17, 0.7); font-size: 13px; line-height: 1.4; }
+.aaa-keep { margin-top: 12px; padding: 12px; border: 1px solid rgba(239, 230, 207, 0.35); border-radius: 12px; background: rgba(17, 17, 17, 0.7); }
+.aaa-keep[hidden] { display: none; }
+.aaa-keep p { margin: 0 0 10px; font-size: 14px; line-height: 1.4; }
+.aaa-keep-row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.aaa-keep-msg { margin-top: 8px; font-size: 13px; color: #ff8a80; }
+
 /* ---- photo mode's bar: the HUD is hidden while photo mode is up, and this stays (src/ui/photoBar.ts) ---- */
 .photo-bar {
   position: absolute;

@@ -104,7 +104,7 @@ export class PhotoMode {
     canvas.addEventListener('wheel', e => { e.preventDefault(); this.move(0, 0, -e.deltaY * 0.12); }, { passive: false, signal });
   }
 
-  frame(dt: number, aspect = this.g.camera.aspect) {
+  frame(dt: number, aspect = this.g.camera.aspect, warmShadows = false) {
     if (this.keys.size) {
       const speed = dt * (this.keys.has('shift') ? 120 : 18), d = (key: string) => Number(this.keys.has(key));
       this.move((d('d') - d('a')) * speed, (d('e') - d('q')) * speed, (d('w') - d('s')) * speed);
@@ -135,6 +135,7 @@ export class PhotoMode {
     try {
       g.post.tiltShift = this.tilt > 0; g.post.tiltStrength = this.tilt;
       g.renderer.info.reset();
+      if (warmShadows) g.shadows.warm(g.renderer, cam);
       if (wu.uReflOn.value) mirror?.render(g.renderer, g.scene, cam, [g.water.mesh]);
       g.roads.renderReflection(g.renderer, g.scene, cam);
       g.post.render(n, dist, cam);
@@ -145,7 +146,7 @@ export class PhotoMode {
   capture(framed = true, size?: PhotoSize) {
     const g = this.g, renderer = g.renderer;
     const draw = (aspect = g.camera.aspect) => {
-      if (this.active) return this.frame(0, aspect);
+      if (this.active) return this.frame(0, aspect, true);
       const camera = aspect === g.camera.aspect ? g.camera : g.camera.clone();
       camera.aspect = aspect; camera.updateProjectionMatrix(); camera.updateMatrixWorld();
       // Direct exports also need a mirror for this exact lens and buffer size.
@@ -154,6 +155,7 @@ export class PhotoMode {
       wu.uReflOn.value = mirror?.shouldRender(camera) ? 1 : 0;
       if (!g.post.active) applyLowGrade(g.env, g.post.look, renderer);
       else renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      g.shadows.warm(renderer, camera);
       if (wu.uReflOn.value) mirror?.render(renderer, g.scene, camera, [g.water.mesh]);
       g.roads.setWet(g.weather.wet, (g.pendingQuality ?? g.q.name) === 'ultra');
       g.roads.renderReflection(renderer, g.scene, camera);

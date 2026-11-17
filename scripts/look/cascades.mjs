@@ -65,11 +65,28 @@ try {
       const photoProjection = shadows.projection.equals(photo.projectionMatrix);
       r.render(scene, camera);
       const gameProjection = shadows.projection.equals(camera.projectionMatrix);
+      const shadowView = shadows.shadowView.clone();
+      const reflection = camera.clone();
+      reflection.position.y = -camera.position.y;
+      reflection.lookAt(0, 0, 0); reflection.updateMatrixWorld();
+      const shadowUpdates = r.shadowMap.autoUpdate;
+      r.shadowMap.autoUpdate = false;
+      r.render(scene, reflection);
+      const worldPoint = new THREE.Vector3(2, 1, -3);
+      const reflectedPoint = worldPoint.clone().applyMatrix4(reflection.matrixWorldInverse).applyMatrix4(shadows.uniforms.uCSMViewToShadow.value);
+      const reflectionError = reflectedPoint.distanceTo(worldPoint.clone().applyMatrix4(shadowView));
+      const reusedMaps = shadows.shadowView.equals(shadowView);
+      r.shadowMap.autoUpdate = shadowUpdates;
+      const targetBefore = r.getRenderTarget(), viewportBefore = r.getViewport(new THREE.Vector4());
+      const texturesBefore = r.info.memory.textures;
+      shadows.warm(r, photo);
+      const warmed = shadows.projection.equals(photo.projectionMatrix);
+      const restored = r.getRenderTarget() === targetBefore && r.getViewport(new THREE.Vector4()).equals(viewportBefore) && r.info.memory.textures === texturesBefore;
       r.setRenderTarget(oldTarget); r.toneMapping = oldTone;
       floor.geometry.dispose(); material.dispose(); target.dispose();
       for (const light of shadows.csm.lights) light.shadow.dispose();
       shadows.csm.remove();
-      return { main, energy, stability, photoProjection, gameProjection, unchanged: fingerprint === JSON.stringify(window.__dbg.fingerprint()), error: r.getContext().getError() };
+      return { main, energy, stability, photoProjection, gameProjection, reflectionError, reusedMaps, warmed, restored, unchanged: fingerprint === JSON.stringify(window.__dbg.fingerprint()), error: r.getContext().getError() };
     }), process.env.GPU === '1' ? 'hardware' : 'swiftshader');
     const probe = frame.measurement;
     writeFileSync(`${out}/${quality}-probe.json`, JSON.stringify(probe, null, 2));
@@ -82,6 +99,8 @@ try {
       assert.ok(row.alignment.every(d => d < 1e-6), 'Shadow camera left its texel grid');
     }
     assert.ok(probe.photoProjection && probe.gameProjection && probe.unchanged);
+    assert.ok(probe.reflectionError < 1e-8 && probe.reusedMaps, 'Reflected points must select the main shadow view cascade');
+    assert.ok(probe.warmed && probe.restored, 'Photo warmup must restore targets and release its temporary texture');
     assert.equal(probe.error, 0);
     writeFileSync(`${out}/${quality}.png`, frame.png); delete frame.png;
     rows.push(frame);

@@ -25,6 +25,7 @@ export class CascadeShadows {
   private csm!: CSM;
   private materials = new Set<THREE.Material>();
   private projection = new THREE.Matrix4();
+  private shadowView = new THREE.Matrix4();
   private focusDistance = -1;
   private lightFrame = new THREE.Matrix4();
   private inverseLightFrame = new THREE.Matrix4();
@@ -35,6 +36,7 @@ export class CascadeShadows {
     CSM_cascades: { value: [] as THREE.Vector2[] },
     cameraNear: { value: .5 },
     shadowFar: { value: 6000 },
+    uCSMViewToShadow: { value: new THREE.Matrix4() },
   };
 
   constructor(private scene: THREE.Scene, private camera: THREE.PerspectiveCamera, private sun: THREE.DirectionalLight, private quality: Quality) {
@@ -47,6 +49,9 @@ export class CascadeShadows {
       // Planar reflections reuse the main view's world-space shadow maps.
       if (args[0].shadowMap.autoUpdate && (args[2] as THREE.PerspectiveCamera).isPerspectiveCamera) {
         this.update(args[2] as THREE.PerspectiveCamera);
+        this.uniforms.uCSMViewToShadow.value.identity();
+      } else {
+        this.uniforms.uCSMViewToShadow.value.multiplyMatrices(this.shadowView, args[2].matrixWorld);
       }
     };
   }
@@ -104,12 +109,19 @@ export class CascadeShadows {
     material.onBeforeCompile = (shader, renderer) => {
       compile.call(material, shader, renderer);
       Object.assign(shader.uniforms, this.uniforms);
+      // A mirrored camera samples the main view's maps. Select the cascade
+      // using the original shadow view's depth at the same world-space point.
+      const lighting = THREE.ShaderChunk.lights_fragment_begin.replace(
+        'float linearDepth = (vViewPosition.z) / (shadowFar - cameraNear);',
+        'float linearDepth = -(uCSMViewToShadow * vec4(-vViewPosition, 1.0)).z / (shadowFar - cameraNear);');
+      shader.fragmentShader = 'uniform mat4 uCSMViewToShadow;\n' + shader.fragmentShader.replace('#include <lights_fragment_begin>', lighting);
     };
-    material.customProgramCacheKey = () => (defaultKey ? compile.toString() : key.call(material)) + '|cascades-' + this.csm.cascades;
+    material.customProgramCacheKey = () => (defaultKey ? compile.toString() : key.call(material)) + '|cascades-world-depth-' + this.csm.cascades;
     material.needsUpdate = true;
   }
 
   private update(camera: THREE.PerspectiveCamera) {
+    this.shadowView.copy(camera.matrixWorldInverse);
     const focusDistance = Math.round(camera.position.distanceTo(this.sun.target.position) / 25) * 25;
     if (this.csm.camera !== camera || !this.projection.equals(camera.projectionMatrix) || focusDistance !== this.focusDistance) {
       this.csm.camera = camera;
@@ -143,6 +155,30 @@ export class CascadeShadows {
       light.target.position.copy(light.position).add(this.csm.lightDirection);
       light.updateMatrixWorld();
       light.target.updateMatrixWorld();
+    }
+  }
+
+  /** Explicit exports need current-lens shadows before either mirror samples
+   * them. A one-pixel colour target primes the normal renderer's shadow pass. */
+  warm(renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera) {
+    const target = withVisualRandom(() => new THREE.WebGLRenderTarget(1, 1));
+    const previous = renderer.getRenderTarget();
+    const face = renderer.getActiveCubeFace(), mip = renderer.getActiveMipmapLevel();
+    const viewport = renderer.getViewport(new THREE.Vector4()), scissor = renderer.getScissor(new THREE.Vector4());
+    const test = renderer.getScissorTest(), autoClear = renderer.autoClear;
+    const autoUpdate = renderer.shadowMap.autoUpdate, needsUpdate = renderer.shadowMap.needsUpdate;
+    try {
+      renderer.autoClear = true;
+      renderer.shadowMap.autoUpdate = true;
+      renderer.setScissorTest(false);
+      renderer.setRenderTarget(target);
+      renderer.render(this.scene, camera);
+    } finally {
+      renderer.setRenderTarget(previous, face, mip);
+      renderer.setViewport(viewport); renderer.setScissor(scissor); renderer.setScissorTest(test);
+      renderer.autoClear = autoClear;
+      renderer.shadowMap.autoUpdate = autoUpdate; renderer.shadowMap.needsUpdate = needsUpdate;
+      target.dispose();
     }
   }
 

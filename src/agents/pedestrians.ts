@@ -12,7 +12,12 @@ import type { Terrain } from '../world/terrain';
 import { ARCHETYPES, PeopleRenderer } from './people';
 import type { Communes } from './communes';
 
+/** a person about to be added: add() gives them their number and their place in the draw pool */
+type NewPed = Omit<Ped, 'h' | 'id'>;
+
 export interface Ped {
+  /** this person's number: unique for the session, never reused (follow-cam targets name people by it) */
+  id: number;
   h: number;
   arch: number;
   kind: 'walk' | 'loiter' | 'commune' | 'protest' | 'wait';
@@ -209,10 +214,11 @@ export class Pedestrians {
     return this.norm[Math.floor(Math.random() * this.norm.length)];
   }
 
-  private add(p: Omit<Ped, 'h'>) {
+  private nextId = 1;
+  private add(p: NewPed) {
     const h = this.renderer.add(p.arch, Math.floor(Math.random() * 1e6));
     if (h < 0) return;
-    this.peds.push({ ...p, h });
+    this.peds.push({ ...p, h, id: this.nextId++ });
   }
 
   /** seconds of pedestrian time (for per-building departure spacing) */
@@ -456,7 +462,7 @@ export class Pedestrians {
   }
 
   /** Start a short walk from (fx,fz) to (tx,tz). */
-  private goTo(p: Ped | Omit<Ped, 'h'>, fx: number, fz: number, tx: number, tz: number, remove: boolean) {
+  private goTo(p: Ped | NewPed, fx: number, fz: number, tx: number, tz: number, remove: boolean) {
     const d = Math.hypot(tx - fx, tz - fz);
     p.go = { fx, fz, tx, tz, t: 0, T: Math.max(0.4, d / 1.3), remove };
     p.x = fx;
@@ -500,7 +506,7 @@ export class Pedestrians {
   }
 
   /** Add a ped that walks in from `from` to its spot first. */
-  private addFrom(p: Omit<Ped, 'h'>, from: V2) {
+  private addFrom(p: NewPed, from: V2) {
     const tx = p.x, tz = p.z;
     p.home = from;
     p.face = p.yaw;
@@ -565,7 +571,7 @@ export class Pedestrians {
         const approach = 18 + Math.random() * 34;
         const dir: 1 | -1 = stop.s > seg.length / 2 ? -1 : 1;
         const startS = clamp(stop.s - approach * dir, 0, seg.length);
-        const p: Omit<Ped, 'h'> = { arch: this.archFor('wait'), kind: 'walk', action: 'walk', seg: stop.seg, dir, s: startS, side: stop.side, speed: 1.05 + Math.random() * 0.35, life: 65, x: 0, y: 0, z: 0, yaw: 0, phase: Math.random() * 10, label: stop.label, transitStopId: stop.id, targetS: stop.s };
+        const p: NewPed = { arch: this.archFor('wait'), kind: 'walk', action: 'walk', seg: stop.seg, dir, s: startS, side: stop.side, speed: 1.05 + Math.random() * 0.35, life: 65, x: 0, y: 0, z: 0, yaw: 0, phase: Math.random() * 10, label: stop.label, transitStopId: stop.id, targetS: stop.s };
         this.placeOnSidewalk(p as Ped);
         // riders come out of a building on that street when there is one
         const from = this.b.near(p.x, p.z, 70).find((b) => b.seg === stop.seg && b.state === 'active' && isZoned(b));
@@ -667,12 +673,12 @@ export class Pedestrians {
     const a = seg.samp.pts[i], b = seg.samp.pts[i + 1];
     const tan = norm(sub(b, a));
     const side: 1 | -1 = (bld.x - lerp(a.x, b.x, f)) * -tan.z + (bld.z - lerp(a.z, b.z, f)) * tan.x >= 0 ? 1 : -1;
-    const p: Omit<Ped, 'h'> = { arch: this.archFor('walk', bld.brand), kind: 'walk', action: Math.random() < 0.1 ? 'run' : 'walk', seg: seg.id, dir: Math.random() < 0.5 ? 1 : -1, s: sAt, side, speed: 1.1 + Math.random() * 0.6, life: 40 + Math.random() * 60, x: 0, y: 0, z: 0, yaw: 0, phase: Math.random() * 10, label: seg.name, fromBld: bld.id, lat: 0 };
+    const p: NewPed = { arch: this.archFor('walk', bld.brand), kind: 'walk', action: Math.random() < 0.1 ? 'run' : 'walk', seg: seg.id, dir: Math.random() < 0.5 ? 1 : -1, s: sAt, side, speed: 1.1 + Math.random() * 0.6, life: 40 + Math.random() * 60, x: 0, y: 0, z: 0, yaw: 0, phase: Math.random() * 10, label: seg.name, fromBld: bld.id, lat: 0 };
     if (p.action === 'run') p.speed = 3;
     this.placeOnSidewalk(p as Ped);
     // a quarter walk with someone, side by side, in step-ish
     if (p.action === 'walk' && (ROAD_TYPES[seg.type].sidewalk > 1.5) && Math.random() < 0.25 && this.peds.length < this.max - 1) {
-      const q: Omit<Ped, 'h'> = { ...p, arch: this.archFor('walk', bld.brand), lat: -0.72, phase: p.phase + 0.45 + Math.random() * 0.1, x: 0, y: 0, z: 0 };
+      const q: NewPed = { ...p, arch: this.archFor('walk', bld.brand), lat: -0.72, phase: p.phase + 0.45 + Math.random() * 0.1, x: 0, y: 0, z: 0 };
       this.placeOnSidewalk(q as Ped);
       const dr = this.door(bld);
       this.goTo(q as Ped, dr.x, dr.z, q.x, q.z, false);

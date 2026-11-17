@@ -2402,6 +2402,9 @@ registerSystem({
 });
 
 /** Read-only snapshot for other systems and tests. */
+/** The air: the pollution and noise grids (read-only for anything outside the services). */
+export function airFields(): Fields { return S.fields; }
+
 export function servicesSnapshot() {
   return { util: S.util, counts: { ...S.counts }, garbage: { ...S.garbage }, facilities: S.f.size, buildings: S.b.size, emergency: S.emergency };
 }

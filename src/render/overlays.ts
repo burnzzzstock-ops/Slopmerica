@@ -168,7 +168,7 @@ export class Overlays {
         !(mat as THREE.MeshLambertMaterial).isMeshLambertMaterial) return;
     if (this.patched.has(mat)) return;
     this.patched.add(mat);
-    const previous = mat.onBeforeCompile, previousKey = mat.customProgramCacheKey();
+    const previous = mat.onBeforeCompile, previousKey = mat.customProgramCacheKey.bind(mat);
     mat.onBeforeCompile = (shader, renderer) => {
       previous.call(mat, shader, renderer);
       Object.assign(shader.uniforms, this.fieldUniforms);
@@ -201,7 +201,7 @@ export class Overlays {
           }
           #include <opaque_fragment>`);
     };
-    mat.customProgramCacheKey = () => previousKey + '|scalar-field-v1';
+    mat.customProgramCacheKey = () => previousKey() + '|scalar-field-v1';
     mat.needsUpdate = true;
   }
 

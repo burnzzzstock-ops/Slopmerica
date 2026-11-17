@@ -74,6 +74,8 @@ const BUILD_TOOLS = ['roads', 'zones', 'ext:services', 'landmarks'];
 const COMPACT = IS_TOUCH || (typeof window !== 'undefined' && window.innerWidth < 700);
 /** a touch readout longer than this many characters is given the badge's full width (shorter ones fit beside the buttons in two lines) */
 const WIDE_TIP = 60;
+/** The line a bus is running, or null for anything else on the road. Transit sends each leg out as a `cityBus` whose purpose is "running <line>". */
+const busLine = (c: { kind: string; purpose: string }): string | null => (c.kind === 'cityBus' && c.purpose.startsWith('running ') ? c.purpose.slice(8) : null);
 /** A tool's readout with its warnings moved up behind the first two facts (length, price), for a space that shows two lines. */
 function briefTip(text: string) {
   const parts = text.split(' · ');
@@ -1688,12 +1690,14 @@ export class Hud implements UiSink {
     } else if (sel.kind === 'car') {
       const c = sel.c;
       const a = ARCHETYPES[c.driver % ARCHETYPES.length];
+      // a bus in service is its line, not whoever is at the wheel: the card is headed by the line and says where it stops next
+      const line = busLine(c);
       html = `<div class="in-kicker">${esc(VEHICLE_SPECS[c.kind].label)}</div>
-        <h3>${esc(a?.name ?? 'Driver')}</h3>
-        <p class="in-blurb">${esc(a?.bio ?? '')}</p>
+        <h3>${esc(line ?? a?.name ?? 'Driver')}</h3>
+        ${line ? '' : `<p class="in-blurb">${esc(a?.bio ?? '')}</p>`}
         <div class="in-stats">
-          <div><span>Doing</span><b>${esc(c.purpose)}</b></div>
-          <div><span>Headed to</span><b>${esc(c.dest)}</b></div>
+          ${line ? `<div><span>Driver</span><b>${esc(a?.name ?? 'Driver')}</b></div>` : `<div><span>Doing</span><b>${esc(c.purpose)}</b></div>`}
+          <div><span>${line ? 'Next stop' : 'Headed to'}</span><b>${esc(c.dest)}</b></div>
           <div><span>Speed</span><b>${Math.round(c.v * 3.6)} km/h</b></div>
           <div><span>Vibe</span><b>${c.crashed > 0 ? '💥 WRECKED' : c.drunk ? `🍺 BAC ${c.bac.toFixed(2)}` : c.reckless ? '😤 reckless' : '😐 fine'}${c.smoker ? ' 🚬' : ''}</b></div>
         </div>
@@ -1762,7 +1766,7 @@ export class Hud implements UiSink {
       crumb(on ? 'stop following' : `follow ${target.kind}`);
       if (on) g.rts.follow(null);
       else if (g.rts.follow(target)) {
-        this.followName = sel.kind === 'car' ? `${ARCHETYPES[sel.c.driver % ARCHETYPES.length]?.name ?? 'a driver'} (${VEHICLE_SPECS[sel.c.kind].label})` : sel.kind === 'ped' ? ARCHETYPES[sel.p.arch]?.name ?? 'a citizen' : '';
+        this.followName = sel.kind === 'car' ? `${busLine(sel.c) ?? ARCHETYPES[sel.c.driver % ARCHETYPES.length]?.name ?? 'a driver'} (${VEHICLE_SPECS[sel.c.kind].label})` : sel.kind === 'ped' ? ARCHETYPES[sel.p.arch]?.name ?? 'a citizen' : '';
         // a phone's inspector is a sheet over the lower half of the screen: it goes away so the ride can be seen
         if (IS_TOUCH) { g.select(null); return; }
       }

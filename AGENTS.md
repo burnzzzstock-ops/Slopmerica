@@ -25,6 +25,8 @@ SLOPMERICA is a satirical 3D city builder in the browser: TypeScript, three.js, 
 
 If a fix belongs in the other lane's files, do not make it: write it in your `REQUESTS_*.md` (file, cause, proposed fix, what it blocks) and move on.
 
+A third lane directs and reviews: it listens to rendered audio, looks at screenshots and recordings, plays the game in a live browser and makes 2D art. It works on `agy/aaa-director` with ports 5170 to 5179, and writes what it finds in `docs/aaa/REQUESTS_ORION.md`. It owns the art it adds, in folders agreed with the look lane; a change it wants in a file one of the two lanes owns is a request, or a commit on its own branch that touches only that file.
+
 Heightfield generation is frozen for everyone: saves keep only edits, and the world regenerates from its seed.
 
 ## Branches

@@ -7,6 +7,7 @@ A fresh session can take over from this file alone. Read "Where things are", "St
 - **Worktree:** `C:/Users/burnz/Slopmerica-fable`, branch `claude/aaa-play` (LF line endings: `core.autocrlf false` in the worktree config).
 - **Integration:** `C:/Users/burnz/Slopmerica-int`, branch `aaa/integration` (mine to merge and push). It has its own `node_modules` (`npm ci` there after a lock change). ASTRA works on `codex/aaa-world` in its own worktree.
 - **Main checkout:** `C:/Users/burnz/Slopmerica` is on `aaa/briefs`. Leave it alone.
+- **A third lane joined on 17 Nov:** ORION (Antigravity), the director and reviewer: it listens to rendered audio, looks at screenshots, plays the game in a live browser and generates 2D art. Workspace `C:/Users/burnz/.gemini/antigravity/scratch/Slopmerica`, ports 5170 to 5179, branch `agy/aaa-director` (not pushed yet). Its evaluation and its queue for this lane are in that workspace, untracked: `docs/aaa/EVAL_AND_AAA_FUN_ROADMAP.md` and `docs/aaa/HANDOFF_FABLE_CLAUDE.md`. The owner pasted the roadmap into this session on 17 Nov, so its priorities are the owner's ("fun first"); "Next" below follows them. Both files were written against `9b3f161` and are out of date on everything listed in "State of the work".
 - **Ports:** 5180 to 5189. `--serve` in the suite uses 5189 by default; pass another port for a second run.
 - **Brief:** `docs/aaa/FABLE.md`. ASTRA's: `docs/aaa/ASTRA.md`. Requests: `REQUESTS_FABLE.md` (mine to ASTRA), `REQUESTS_ASTRA.md` (ASTRA's to me, on its branch). Owner decisions: `DECISIONS_FABLE.md`. The rules both lanes share are in `AGENTS.md` / `CLAUDE.md` at the repo root.
 - **Before a commit:** `npm run gate` (about 50 s). **Before a push:** `npm run smoke:gpu` (about 2 min). **At a merge:** the full suite on the merged tree (about 18 min with `--gpu`).
@@ -24,7 +25,7 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 
 ## State of the work (17 Nov 2026)
 
-`claude/aaa-play` is at `17e194e`. Everything below is committed. The registry has 189 entries on this branch (12 gate, 15 smoke, 87 full, 75 measure), 201 on the merge.
+`claude/aaa-play` is at `65e2c58` plus this file. Everything below is committed. The registry has 189 entries on this branch (12 gate, 15 smoke, 87 full, 75 measure), 201 on the merge.
 
 | Item | State |
 |---|---|
@@ -36,7 +37,7 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 | F0.6 ship like a game | Done: no debug hooks or playtest tools in a player's build, one-file build with packs inside, README, `shiptest` |
 | F0.7 sim hot spots | Open. The 10,000-person town to measure on is at `shots/towns/florida-10k.json` (gitignored; 14,632 people, 635 buildings) |
 | F0.8 AGENTS.md / CLAUDE.md | Done |
-| Contracts for ASTRA | Types, `game.fields` and 9 of 12 world events are live. Not emitted yet: `flood`, `collapseStage`, `paradisePaved` (they come with the systems that cause them) |
+| Contracts for ASTRA | Types, `game.fields` and 11 of 14 world events are live. Not emitted yet: `flood`, `collapseStage`, `paradisePaved` (they come with the systems that cause them) |
 | Phases 1 to 4 | Not started |
 
 ### What changed, by commit
@@ -59,6 +60,7 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 | 321eec7 | `AGENTS.md` and `CLAUDE.md` |
 | 98fb177 | costtest points its cursor at the spot the game's finder returns |
 | 17e194e | A weather spell's floor is 12 real seconds at the player's speed again (19 days at top speed, under 5 at normal), so rain is days long at normal speed |
+| 65e2c58 | `REFTOWN=v1` opens the old reference town; the suite sets it for every test in `astra.json` until the look lane has measured again on today's town |
 
 ### How the simulation is built now
 
@@ -113,10 +115,16 @@ Seed 1, norcal, a street grid with zones and services. Stepped, stepped again, 3
 
 ## Next
 
-1. Finish the integration merge: full suite on the merged tree, push `claude/aaa-play` and `aaa/integration`.
+The order below follows the owner's "fun first" roadmap of 17 Nov: what a player sees and touches comes before the rest of the foundation. Each item names the brief's code for it.
+
+1. Finish the integration merge: full suite on the merged tree, push `claude/aaa-play` and `aaa/integration`. Nothing after 9b3f161 is visible to the other two lanes until this is done.
 2. Cherry-pick the re-pointed lightstest, parkingtest and landmarktest once they pass on several seeds.
-3. F0.4 (people), then the rest of F0.3 (three maps, the scripted-player town, Low and Ultra).
-4. F0.5: slots UI on the title screen and in the game menu, confirm before New city, the unreadable-save message, three golden saves plus the v1 fixture, `slotstest`.
-5. F0.7: profile the 10,000-person town, write `docs/aaa/PERF_SIM.md`, measure the save hitch.
-6. Phase 1 in the brief's order: F1 traffic and induced demand, F2 the Growth Ponzi, F3 endings, F4 nature, F5 American roads, F6 parking, F7 citizens, F8 politics and Honest Mode, F9 headless sim.
-7. Phase 2 (UI; this is where ASTRA's follow camera, photo mode and HUD icons get wired), Phase 3 (writing), Phase 4 (proof).
+3. **The phone screen (U1, U4).** At 390 x 844 the tutorial card, an open drawer and the bottom bar stack up and cover more than half the screen. The tutorial step becomes one compact pill while a drawer is open; the drawer slides down to a slim bar while a finger is drawing on the map; step 5 of 5 dismisses itself once Budget has been opened. A test measures the share of the screen that is free map.
+4. **Wire what the look lane has built (U5):** the drawn HUD icons, a Follow button in the car, person and bus inspectors with a "Following" pill, photo mode and postcards.
+5. **One More Lane as a loop (F1):** the grant stamp, the corridor's volume before and after in the road inspector, traffic climbing back over about 18 game months, the feed line when it saturates. This needs the mesoscopic trip layer.
+6. **Honest Mode (F8):** a table of euphemism and plain word, a toggle that flips the whole UI, unlocked by Earl; the value-per-acre view.
+7. **The Growth Ponzi made visible (F2):** real road condition, the unfunded-liabilities curve in the budget, Cousin Dale's Paving LLC, tax abatements.
+8. **The Plat-o-Matic and Old Main** (`GAME_DESIGN.md` 5.2 and 7): a subdivision stamped from one drag; a courthouse square to start beside.
+9. **The Waffle Hut Index and floods the player caused (F4).** Then endings (F3), American roads (F5), parking (F6), citizens (F7), the headless sim (F9).
+10. Foundation still owed, fitted in between: F0.4 (people do not depend on the camera or the preset), the rest of F0.3 (three maps, the scripted-player town, Low and Ultra), F0.5 (slots UI, confirm before New city, the unreadable-save message, golden saves), F0.7 (hot spots on the 10,000-person town).
+11. Phase 3 (writing), Phase 4 (proof).

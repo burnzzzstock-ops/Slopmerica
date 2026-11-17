@@ -15,7 +15,7 @@ A fresh session can take over from this file alone. Read "Where things are", "St
 - **Long text goes through a file writer, not a shell heredoc.** Git Bash on this PC drops backslashes and trips on apostrophes in long heredocs. Edit scripts live in the session scratchpad; small edits go through a split/join helper that reports a missed match.
 - **A server on a port does not die with `pkill`.** Find the PID with `netstat -ano` and use `taskkill //F //PID`.
 - **Do not export a test's setting for a whole suite run.** `DAYS=120`, meant for the determinism test, also reached trashcliff and made it fail (it needs 133 days). The determinism entry in the registry carries its own settings now.
-- **Merge `origin/aaa/integration` into `claude/aaa-play` before the next push.** The branch was pushed at `03ecb16` without it, so it does not hold the look lane's code yet (photo mode, the follow camera, the HUD icons), which the next task wires up.
+- **Merge `origin/aaa/integration` into `claude/aaa-play` before every push** (done at 29cc868; the push at `03ecb16` went without it).
 
 ## This PC
 
@@ -27,7 +27,7 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 
 ## State of the work (17 Nov 2026)
 
-`claude/aaa-play` is pushed at `03ecb16`; `aaa/integration` is pushed at `451a302` (the first merge of both lanes), and its next merge waits on its suite. Everything below is committed. The registry has 191 entries on this branch (12 gate, 15 smoke, 89 full, 75 measure), 203 on the merge.
+`aaa/integration` is pushed at `bda104b` (both lanes, with the drive-thru fixes and the regrown town): 119 of 125 on its suite. `claude/aaa-play` holds integration and the HUD wiring on top. Everything below is committed. The registry has 191 entries on this branch (12 gate, 15 smoke, 89 full, 75 measure), 203 on the merge.
 
 | Item | State |
 |---|---|
@@ -69,6 +69,11 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 | ef3b669 | **Traffic:** a shop rebuilt as a drive-thru gets its lane; parkingtest fits any town |
 | fc09515 | The reference town regrown with its traffic moving; the grower refuses a town saved in a jam |
 | be5dbff, 03ecb16 | lightstest and landmarktest look at the new town's own junctions and field |
+| 29cc868 | `aaa/integration` merged into this branch: it now holds the look lane's code |
+| bf298e1 | **HUD:** the look lane's drawn icons are on the controls (`src/ui/icons.ts`, `scripts/hudicons.mjs`) |
+| 13032ad | **HUD:** a Follow button on cars and people, and a pill for who the camera rides with (`scripts/followtest.mjs`) |
+| ea27287 | **HUD:** photo mode has a way in (More) and a bar of controls (`src/ui/photoBar.ts`, `scripts/phototest.mjs`) |
+| 087e9cf | The content audit no longer reads a drawn icon's outline as a line of copy |
 
 ### How the simulation is built now
 
@@ -132,6 +137,10 @@ Seed 1, norcal, a street grid with zones and services. Stepped, stepped again, 3
 
 None of these thresholds was loosened. They are what the traffic does on a town whose streets are moving, and they are the first work of the traffic phase.
 
+### Integration at bda104b, `--gpu`, seed 1
+
+119 of 125. The six: photo-reflection (fails on the look lane's branch alone) and presetlight (fails on the base), both the look lane's; carsolid, lightstest and landmarktest (the table above); crosswalktest (one walker inside a car once on seed 1; it was seed 6 on the base: one seed in six on both).
+
 ### First integration merge (`codex/aaa-world` 9fd06ea + `claude/aaa-play` ecdc0e6), `--gpu`, seed 1
 
 113 of 122. The nine: photo-reflection (fails on `codex/aaa-world` alone: `mirror.lastEye` is undefined in `photoPNG`), presetlight and carsolid (as on the base), phonetargets and trashcliff (fixed by commits after ecdc0e6), parkingtest and lightstest (old-town aim), costtest (fixed, 98fb177), weathertest (fixed, 17e194e).
@@ -151,7 +160,7 @@ The order below follows the owner's "fun first" roadmap of 17 Nov: what a player
 1. Push `aaa/integration` at the merge of `03ecb16` once its suite is read, then merge `origin/aaa/integration` into `claude/aaa-play`.
 2. Done: the re-pointed lightstest, parkingtest and landmarktest are in (be5dbff, ef3b669, 03ecb16).
 3. **The phone screen (U1, U4):** first pass done (1edb035). What is left is listed under "The phone screen" above.
-4. **Wire what the look lane has built (U5):** the drawn HUD icons, a Follow button in the car, person and bus inspectors with a "Following" pill, photo mode and postcards.
+4. **Wire what the look lane has built (U5):** done (bf298e1, 13032ad, ea27287, 087e9cf). Left over: icons on the inspector's utility and status rows, the speed buttons and policies; Follow on buses.
 5. **One More Lane as a loop (F1):** the grant stamp, the corridor's volume before and after in the road inspector, traffic climbing back over about 18 game months, the feed line when it saturates. This needs the mesoscopic trip layer.
 6. **Honest Mode (F8):** a table of euphemism and plain word, a toggle that flips the whole UI, unlocked by Earl; the value-per-acre view.
 7. **The Growth Ponzi made visible (F2):** real road condition, the unfunded-liabilities curve in the budget, Cousin Dale's Paving LLC, tax abatements.

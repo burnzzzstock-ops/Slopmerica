@@ -3434,6 +3434,12 @@ a {
   .tb-demand { gap: 3px; }
   .mtrack { width: 26px; }
 }
+/* ---- drawn icons (src/ui/icons.ts): a box of their own size in the line, like the emoji they replace ---- */
+.ui-icon { display: inline-flex; vertical-align: middle; line-height: 0; flex: none; }
+.ui-icon svg { display: block; }
+.chip .ui-icon { margin: -3px 4px -3px -2px; }
+.more-btn .ui-icon, .ti .ui-icon, .ci .ui-icon { margin: 0; }
+
 /* ---- a phone's map stays in view (scripts/phonefree.mjs measures the share of the screen that is free map) ---- */
 @media (pointer: coarse) and (max-width: 760px) {
   /* beside an open drawer the step is one line, and a tap opens it */

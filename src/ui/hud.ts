@@ -18,6 +18,7 @@ import { MERCH_URL, brandById } from '../art/brands';
 import { BUILD, cityFile, crumb, onCapturedError, openBugReport, saveFile, saveMessage } from './bugreport';
 import { FOV_MAX, FOV_MIN, IS_TOUCH } from '../config';
 import { PLAYTEST } from '../core/flags';
+import { uiIcon } from './icons';
 import { QUALITY, type Quality } from '../config';
 import { BANKRUPT_AT, BANKRUPT_WEEKS, CREDIT_LINE, LEDGER_LABEL, LOSS_LABEL, ONE_TIME, RECURRING, SPEEDS, Sim, UNLOCKS, usd, type DemandKey } from '../sim/sim';
 import { SERVICE_DEFS, overloadedServices, type EmergencyView } from '../sim/services';
@@ -138,6 +139,8 @@ export class Hud implements UiSink {
   private demandCells: ZCell[] = [];
   private nextBar?: HTMLElement;
   private nextBarObs?: ResizeObserver;
+  /** the weather badge as last written (it is rewritten only when it changes: an SVG swapped every frame cannot be tapped) */
+  private wxHtml = '';
   private nextHidden = '';
   private nextKey = '';
   /** the step a phone player tapped open while a drawer was up, and the drawer it was (it shows in full until either changes) */
@@ -1081,7 +1084,8 @@ export class Hud implements UiSink {
     $('m-sprawl-t').textContent = s.sprawlPct < 0.1 && s.sprawlPct > 0 ? `${(s.sprawlPct * 100).toFixed(1)}%` : `${Math.round(s.sprawlPct * 100)}%`;
     const w = g.weather;
     const icon = { clear: '☀️', cloudy: '☁️', rain: '🌧️', storm: '⛈️', snow: '🌨️', blizzard: '❄️', fog: '🌫️', heatwave: '🥵', hurricane: '🌀', wildfireSmoke: '🔥' }[w.kind];
-    $('tb-weather').innerHTML = `<span>${icon}</span><small>${w.season}</small>`;
+    const wx = `<span>${uiIcon('weather', w.kind, icon, 20)}</span><small>${w.season}</small>`;
+    if (this.wxHtml !== wx) { this.wxHtml = wx; $('tb-weather').innerHTML = wx; }
     this.top.querySelectorAll<HTMLButtonElement>('[data-speed]').forEach((b) => b.classList.toggle('on', Number(b.dataset.speed) === s.speed));
   }
 
@@ -1110,7 +1114,7 @@ export class Hud implements UiSink {
     for (const ep of EXT.panels) withOrder.push({ it: [`ext:${ep.id}`, ep.icon, ep.label], o: ep.order ?? 65 });
     withOrder.sort((a, b) => a.o - b.o);
     const all = withOrder.map((x) => x.it);
-    const btn = ([id, icon, label]: [string, string, string]) => `<button class="tbtn" data-t="${id}" title="${label}"><span class="ti">${icon}</span><span class="tl">${label}</span>${id === 'feed' || id === 'more' ? '<i id="feed-badge" class="badge" hidden></i>' : ''}</button>`;
+    const btn = ([id, icon, label]: [string, string, string]) => `<button class="tbtn" data-t="${id}" title="${label}"><span class="ti">${uiIcon('toolbar', id, icon, 24)}</span><span class="tl">${label}</span>${id === 'feed' || id === 'more' ? '<i id="feed-badge" class="badge" hidden></i>' : ''}</button>`;
     if (COMPACT) {
       // phones: a short toolbar; the rest opens from More
       const short: Record<string, string> = { views: 'Views' };
@@ -1244,7 +1248,7 @@ export class Hud implements UiSink {
     if (p === 'more') {
       this.sub.innerHTML = `
         <div class="sp-title">More</div>
-        <div class="more-grid">${this.moreItems.map(([id, icon, label]) => `<button class="more-btn" data-more="${id}"><span>${icon}</span>${esc(label)}</button>`).join('')}
+        <div class="more-grid">${this.moreItems.map(([id, icon, label]) => `<button class="more-btn" data-more="${id}"><span>${uiIcon('toolbar', id, icon, 26)}</span>${esc(label)}</button>`).join('')}
           <a class="more-btn merch" href="${MERCH_URL}" target="_blank" rel="noopener"><span class="slop-mini">Slop</span>Merch</a></div>`;
       this.sub.querySelectorAll<HTMLButtonElement>('[data-more]').forEach((b) => b.addEventListener('click', () => {
         const id = b.dataset.more!;
@@ -1256,13 +1260,13 @@ export class Hud implements UiSink {
     if (p === 'roads') {
       this.sub.innerHTML = `
         <div class="sp-title">Roads <small>${IS_TOUCH ? 'Drag to plan a road, then tap Build. Drag from its end to keep going. Two fingers move the map. Double-tap or Stop to finish.' : 'Click start, click end, keep going. Right-click, double-click or Esc stops.'}</small></div>
-        <div class="sp-row modes">${(['straight', 'curve', 'freeform', 'grid'] as const).map((m) => `<button class="chip ${t.roadMode === m ? 'on' : ''}" data-mode="${m}" ${m === 'grid' ? 'title="Lay out a whole street grid: corner, first side, width"' : ''}>${m === 'straight' ? '📏 Straight' : m === 'curve' ? '↪️ Curved' : m === 'freeform' ? '〰️ Freeform' : '▦ Grid'}</button>`).join('')}</div>
+        <div class="sp-row modes">${(['straight', 'curve', 'freeform', 'grid'] as const).map((m) => `<button class="chip ${t.roadMode === m ? 'on' : ''}" data-mode="${m}" ${m === 'grid' ? 'title="Lay out a whole street grid: corner, first side, width"' : ''}>${uiIcon('roadMode', m, m === 'straight' ? '📏' : m === 'curve' ? '↪️' : m === 'freeform' ? '〰️' : '▦', 20)} ${m === 'straight' ? 'Straight' : m === 'curve' ? 'Curved' : m === 'freeform' ? 'Freeform' : 'Grid'}</button>`).join('')}</div>
         ${t.roadMode === 'grid' ? `<div class="sp-row modes grid-blocks"><small>${IS_TOUCH ? 'Touch a corner, drag the first side, drag out the width, then Build.' : 'Click a corner, the first side, then the width.'} Blocks:</small>${(Object.keys(GRID_BLOCKS) as GridBlock[]).map((b) => `<button class="chip ${t.gridBlock === b ? 'on' : ''}" data-block="${b}" title="${GRID_BLOCKS[b].cells * 2} lot rows between streets">${GRID_BLOCKS[b].label}</button>`).join('')}</div>` : ''}
         <div class="sp-grid roads-grid">${ROAD_ORDER.map((id) => {
           const r = ROAD_TYPES[id];
           const locked = !g.sim.isUnlocked({ road: id });
           return `<button class="card ${t.roadType === id && t.active === 'road' ? 'on' : ''} ${this.fresh.has(`road:${id}`) ? 'new' : ''}" data-road="${id}" ${locked ? 'disabled' : ''} title="${esc(r.blurb)}">
-            <span class="ci">${r.icon}</span><b>${esc(r.name)}</b><small>${locked ? lockText(r.unlockPop) : `$${r.costPerM}/m · ${r.oneWay ? `${r.lanesPerDir} lane${r.lanesPerDir > 1 ? 's' : ''}, one way` : `${r.lanesPerDir * 2} lanes${r.centerTurn ? ' + turn' : ''}`}`}</small></button>`;
+            <span class="ci">${uiIcon('road', id, r.icon, 28)}</span><b>${esc(r.name)}</b><small>${locked ? lockText(r.unlockPop) : `$${r.costPerM}/m · ${r.oneWay ? `${r.lanesPerDir} lane${r.lanesPerDir > 1 ? 's' : ''}, one way` : `${r.lanesPerDir * 2} lanes${r.centerTurn ? ' + turn' : ''}`}`}</small></button>`;
         }).join('')}<span class="sp-sep" aria-hidden="true"></span>${LAYOUT_ORDER.map((id) => {
           const l = LAYOUTS[id];
           const locked = g.sim.mode !== 'sandbox' && g.sim.peakPop < l.unlockPop;
@@ -1281,9 +1285,9 @@ export class Hud implements UiSink {
           const locked = !g.sim.isUnlocked({ zone: z });
           const need = UNLOCKS.find((u) => u.zone === z)?.pop;
           return `<button class="card zone ${t.active === 'zone' && t.zoneType === z ? 'on' : ''} ${this.fresh.has(`zone:${z}`) ? 'new' : ''}" data-zone="${z}" style="--zc:#${ZONE_COLORS[z].toString(16).padStart(6, '0')}" ${locked ? 'disabled' : ''}>
-            <span class="ci">${ZONE_ICON[z]}</span><b>${esc(ZONE_LABEL[z])}</b><small>${locked ? lockText(need ?? 0) : `Levels 1–${MAX_LEVEL[z]}`}</small></button>`;
+            <span class="ci">${uiIcon('zone', z, ZONE_ICON[z], 28)}</span><b>${esc(ZONE_LABEL[z])}</b><small>${locked ? lockText(need ?? 0) : `Levels 1–${MAX_LEVEL[z]}`}</small></button>`;
         }).join('')}
-          <button class="card zone ${t.active === 'dezone' ? 'on' : ''}" data-zone="none" style="--zc:#888"><span class="ci">🧽</span><b>Dezone</b><small>Unzone empty cells</small></button>
+          <button class="card zone ${t.active === 'dezone' ? 'on' : ''}" data-zone="none" style="--zc:#888"><span class="ci">${uiIcon('zone', 'none', '🧽', 28)}</span><b>Dezone</b><small>Unzone empty cells</small></button>
         </div>`;
       this.sub.querySelectorAll<HTMLButtonElement>('[data-zone]').forEach((b) => b.addEventListener('click', () => {
         const z = b.dataset.zone!;
@@ -1297,7 +1301,7 @@ export class Hud implements UiSink {
         <div class="sp-title">Landmarks <small>Monuments to Slopmerica. Place one, then build around it.</small></div>
         <div class="sp-grid">${LANDMARKS.map((l) => {
           const need = unlockPop.landmark(l.id), locked = g.sim.mode !== 'sandbox' && g.sim.peakPop < need;
-          return `<button class="card ${t.active === 'landmark' && t.landmark === l.id ? 'on' : ''}" data-lm="${l.id}" ${locked ? 'disabled' : ''}><span class="ci">${l.icon}</span><b>${esc(l.name)}</b><small>${locked ? lockText(need) : money(LANDMARK_COST[l.id])}</small></button>`;
+          return `<button class="card ${t.active === 'landmark' && t.landmark === l.id ? 'on' : ''}" data-lm="${l.id}" ${locked ? 'disabled' : ''}><span class="ci">${uiIcon('landmark', l.id, l.icon, 28)}</span><b>${esc(l.name)}</b><small>${locked ? lockText(need) : money(LANDMARK_COST[l.id])}</small></button>`;
         }).join('')}</div>`;
       this.sub.querySelectorAll<HTMLButtonElement>('[data-lm]').forEach((b) => b.addEventListener('click', () => { t.landmark = b.dataset.lm as LandmarkId; t.set('landmark'); this.renderPanel(); }));
     } else if (p === 'views') {
@@ -1306,7 +1310,7 @@ export class Hud implements UiSink {
       const ev = g.overlays.ext;
       this.sub.innerHTML = `
         <div class="sp-title">Info Views</div>
-        <div class="sp-row">${views.map(([v, i, l]) => `<button class="chip ${mode === v && !ev ? 'on' : ''}" data-view="${v}">${i} ${l}</button>`).join('')}${EXT.views.map((v) => `<button class="chip ${ev === v ? 'on' : ''}" data-extview="${v.id}">${v.icon} ${esc(v.label)}</button>`).join('')}</div>
+        <div class="sp-row">${views.map(([v, i, l]) => `<button class="chip ${mode === v && !ev ? 'on' : ''}" data-view="${v}">${uiIcon('view', v, i, 20)} ${l}</button>`).join('')}${EXT.views.map((v) => `<button class="chip ${ev === v ? 'on' : ''}" data-extview="${v.id}">${uiIcon('view', v.id, v.icon, 20)} ${esc(v.label)}</button>`).join('')}</div>
         ${ev?.legend ? `<div class="sp-legend">${ev.legend(g)}</div>` : ''}
         ${PLAYTEST ? `<div class="sp-row">${['clear', 'rain', 'storm', 'snow', 'fog', 'heatwave'].map((w) => `<button class="chip" data-wx="${w}">${w}</button>`).join('')}</div>` : ''}`;
       this.sub.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => b.addEventListener('click', () => { g.overlays.set(b.dataset.view as ViewMode); this.renderPanel(); }));

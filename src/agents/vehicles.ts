@@ -598,6 +598,13 @@ export class VehicleRenderer {
   setReversing(handle: number, on: boolean): void {
     const slot = this.slots[handle]; if (slot) this.batches.get(slot.kind)!.reversing[slot.instance] = on ? 1 : 0;
   }
+  /** Audio reads the same state used by the reverse lamps, without changing traffic. */
+  isReversing(handle: number): boolean {
+    const slot = this.slots[handle];
+    if (!slot) return false;
+    const batch = this.batches.get(slot.kind)!, i = slot.instance;
+    return !batch.parked[i] && !!(batch.reversing[i] || batch.reverseTimer[i] > 0);
+  }
   /**
    * Optional headlights: 0 automatic (on at night and in heavy rain, off by day), 1 off, 2 on. Parked cars are off.
    */

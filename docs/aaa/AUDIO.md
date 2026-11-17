@@ -207,13 +207,13 @@ All SFX random choices now use the injected synth RNG. Street audio receives its
 
 `action-audio` renders the actual `AudioEngine` graph through an `OfflineAudioContext`, including the master compressor and final peak ceiling. Background ambience and score scheduling are held inactive to isolate the action path. Ten cases pass, with zero nodes created by idle updates or paint updates. All 13 SFX recipes are rendered, followed by a simultaneous maximum-supported-volume stress case.
 
-The stress case exposed a pre-existing compressor-attack overshoot of 1.10550 linear amplitude and +0.8 dBFS reconstructed true peak. A four-times-oversampled soft ceiling now preserves unity gain below 0.7 linear amplitude and rolls off higher excursions. The accepted stress render peaks at 0.85225 and −1.1 dBFS true peak. The scripted gate checks both sample peak and measured true peak.
+The stress case exposed a pre-existing compressor-attack overshoot of 1.10550 linear amplitude and +0.8 dBFS reconstructed true peak. A four-times-oversampled soft ceiling now preserves unity gain below 0.7 linear amplitude and rolls off higher excursions. The final render including the A4 tyre squeal peaks at 0.84414 and −1.2 dBFS true peak. The scripted gate checks both sample peak and measured true peak.
 
 | Render | Peak | True peak | LUFS |
 | --- | ---: | ---: | ---: |
-| 22-second action montage | 0.77183 | −1.9 dBFS | −26.2 |
-| All 13 recipes, separated | 0.73722 | −2.5 dBFS | −21.4 |
-| All 13 recipes at volume 1.5 together | 0.85225 | −1.1 dBFS | −12.9 |
+| 22-second action montage | 0.77793 | −1.8 dBFS | −26.3 |
+| All 13 recipes, separated | 0.67553 | −3.1 dBFS | −20.9 |
+| All 13 recipes at volume 1.5 together | 0.84414 | −1.2 dBFS | −13.6 |
 | Isolated positional build | 0.32193 | −9.8 dBFS | −29.3 |
 | Zone-paint loop | 0.01500 | −36.4 dBFS | −46.4 |
 
@@ -240,3 +240,42 @@ node scripts/soundtest.mjs
 ```
 
 `action-events` and `action-audio` are registered in the full tier. Detailed measurements and the pre-ceiling failure are retained in `shots/audio/actions/`.
+
+## A4 world sound set pieces
+
+The normal frame loop samples real sources into four reused records at 4 Hz. Eligible sources are active, road-connected, allocated buildings within 300 m of the camera target. Intercom requires a drawn, unwrecked car in an actual drive-thru queue. Stadium sound follows the existing 17:00–22:00 event window. Church sound follows the existing 8:30–12:30 service window and additionally requires calendar Sunday: day 0 is Friday, March 20, 2026. Attendance schedules remain unchanged.
+
+Four persistent world voices cover intercom gibberish, a crowd roar, and organ/bell tones; Low permits two active voices. At 900 m zoom distance, or while paused/muted/Sound-off, they fade and disconnect. Car stereo and reverse tones live inside the existing StreetAudio car voices and inherit their cap, distance, pan, Doppler and sleep routing. Passing lifted trucks use an original eight-note country figure; Cyberslops use wordless filtered murmur. Reverse beeps require both departure state and the renderer's actual reverse-lamp state. A reversing car has enough selection weight to qualify even when its idling engine would fall below the normal voice floor. No additional car voice pool exists. Real crash events add a falling tyre tone and scrape to the existing crunch. Moving emergency sirens retain their original implementation.
+
+### Frozen real-source evidence
+
+`world-sources` passed on Chrome 157.0.8103.51, ANGLE D3D11, NVIDIA GeForce RTX 5090, with integrated reference fingerprint`25ca9818`. The immutable source tree at`work/audio-a4-1794936822906` has SHA-256`a6d28e8645468cf2081dac30ce030e70161c21ee050b2a4a686101dba313b3d1` over 204 source/config files; the full manifest is`shots/audio/world/source.json`. Asset packs and dependencies are excluded from that source hash. The final radio/beeper Doppler follow-up passed the offline and existing street regressions from `work/audio-a4-1794936267247`, source SHA-256 `403a55ba8cb824e3e4140ba3e46e295d64f068cad6348e286aabee2596ffb271`; the final live-source run also includes this Doppler change and owns the manifest.
+
+The reference fixture has no drive-thru model. The test adds one valid 4×4 commercial lot using the real generator and construction path, selecting Burger Baron variant 1 with 12 parking/queue spots. Traffic and parking then produce the sources themselves. Queue building 144 drives the intercom. SlopVan 1022 backs out of building 136 with its real reverse state. Passing liftedTruck 693, Cyberslop 866 and firetruck 909 retain matching voice IDs. The two landmarks are legally placed through the normal placement API and completed through construction. Unallocated, unfinished and disconnected landmark cases are rejected; Monday church and closed-hour cases are silent. Zoom, pause, master mute and Sound-off all reach zero world/street voices; resume restores two world voices on Low. The actual traffic crash requests exactly one positioned impact.
+
+### Stems and limits
+
+`world-audio` renders ten cases at 48 kHz for 12 seconds each. Every update allocates zero audio nodes and consumes zero global RNG draws. The controlled Low cap is two voices, and the sleeping stem reaches exact silence after its fade. These stems exercise the actual classes with controlled source positions; they are not microphone recordings of the live game.
+
+| Stem in shots/audio/world | Sample peak | True peak dBFS | LUFS |
+| --- | ---: | ---: | ---: |
+| intercom.wav | 0.00758 | −42.4 | −58.7 |
+| stadium.wav | 0.06040 | −24.4 | −39.9 |
+| church.wav | 0.02696 | −31.4 | −49.6 |
+| liftedTruck.wav | 0.11892 | −18.5 | −33.7 |
+| cyberslop.wav | 0.03494 | −29.1 | −40.9 |
+| reverse.wav | 0.04021 | −27.9 | −41.0 |
+| wreck.wav | 0.44647 | −6.9 | −24.0 |
+| siren.wav | 0.15269 | −16.3 | −26.2 |
+
+The existing StreetAudio regression passes: its dense crowd peaks at 1.03019 before the limiter and 0.70220 after it, with 310 nodes before and after 32 seconds. The 1,900-car update benchmark averages 0.0305 ms/frame; scan-frame median 0.2 ms, p90 0.3ms, worst 11.9 ms under concurrent desktop load. These are desktop measurements, not physical-phone estimates. The full action output graph also passes after the added wreck components; its worst simultaneous effect peak is 0.84414 / −1.2 dBFS true peak.
+
+HRTF remains disabled. In five alternating four-source 48 kHz / 12-second renders, stereo median was 429.7 ms and HRTF 866.8 ms, a 2.02× cost. Earlier runs ranged from 1.86× to 2.27×. Four-source update scripting averaged about 0.04–0.07 ms, but the offline rendering cost was substantial. HRTF is retained only as a comparison option in the isolated sound class; the game uses stereo on every preset. WebAudio processing is CPU work, and these results do not imply RTX audio acceleration.
+
+All eight listening stems are copied to`outputs/Audio/world-*.wav`. `outputs/Audio/REVIEW_GUIDE.md` lists the A1–A4 stems under`shots/audio/` with focused mix questions. Intercom recognition/level, murmur recognition, church timbre and reverse-beep fatigue specifically need native audio and owner review. No perceptual acceptance is claimed. Physical-phone speaker quality, audio scheduling and battery cost remain untested.
+
+```powershell
+node scripts/look/world-sources.mjs
+node scripts/look/world-audio.mjs
+node scripts/streetaudio.mjs
+```

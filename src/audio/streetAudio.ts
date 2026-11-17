@@ -19,6 +19,7 @@
 // scripts/streetaudio.mjs renders it offline and measures it.
 import type { VehicleKind } from '../contracts';
 import type { Synth } from './synth';
+import { CarExtras } from './carExtras';
 import {
   ENGINES, HORNS, SIRENS, SLOW_V, dopplerRatio, cents, distGain, hasSiren, hash01, honkRate, impatience, queueLink, sirenAt,
   type EngineProfile, type EngineWave, type SirenNow,
@@ -57,6 +58,8 @@ export interface StreetEnv {
   hush: number;
   /** game speed (0 = paused, 1, 2, 4) */
   speed: number;
+  /** Read the renderer's actual reverse-lamp state; absent in isolated clients. */
+  reversing?: (handle: number) => boolean;
 }
 export interface StreetOpts {
   voices?: number;
@@ -131,6 +134,7 @@ abstract class Slot {
 
 /** engine + tyres + brakes for one car */
 class CarVoice extends Slot {
+  readonly extras: CarExtras;
   private oscA: OscillatorNode;
   private oscB: OscillatorNode;
   private lpEng: BiquadFilterNode;
@@ -196,6 +200,7 @@ class CarVoice extends Slot {
     gW.connect(air);
     gT.connect(air);
     gH.connect(air);
+    this.extras = new CarExtras(s, air);
     this.level = gain(0);
     air.connect(this.level);
     this.pan = c.createStereoPanner ? c.createStereoPanner() : null;
@@ -246,6 +251,7 @@ class CarVoice extends Slot {
   refresh(S: StreetAudio, now: number, first: boolean) {
     const c = this.car!, p = this.p, L = S.view, E = S.env;
     const v = c.v > 0 ? c.v : 0;
+    const reversing = (c.dep ?? 0) > 0 && c.h !== undefined && !!E.reversing?.(c.h);
     const acc = c.acc ?? 0;
     const dx = c.x - L.x, dz = c.z - L.z, dy = c.y + 0.9 - L.y;
     const hd = Math.sqrt(dx * dx + dz * dz);
@@ -279,7 +285,7 @@ class CarVoice extends Slot {
     this.hiss = this.hiss > 0.02 ? this.hiss * (first ? 0 : 0.86) : 0;
 
     const run = p.idleLevel + (1 - p.idleLevel) * Math.min(1, v / 6);
-    const lvl = p.level * run * (0.72 + 0.42 * thr - 0.2 * brk) * (1 + 0.9 * this.jake);
+    const lvl = Math.max(reversing ? 0.06 : 0, p.level * run * (0.72 + 0.42 * thr - 0.2 * brk) * (1 + 0.9 * this.jake));
     const cut = (p.cut0 + (p.cut1 - p.cut0) * clamp(0.55 * rpm + 0.45 * thr, 0, 1)) * (1 + this.jake);
     const lope = p.rough * (1 - Math.min(1, v / 9)) + 0.55 * this.jake;
     const tc = first ? 0 : 0.06;
@@ -310,6 +316,7 @@ class CarVoice extends Slot {
     put(this.gH, Math.max(wetHiss, this.hiss * 0.5));
 
     const a = distGain(d, p.ref, p.reach);
+    this.extras.update(now, c.kind, c.id, v, reversing, ratio);
     put(this.air, clamp(11000 / (1 + d / 42), 800, 11000) * (1 - 0.45 * E.hush));
     this.lvl.to(lvl * a, now, 0.05); // never snapped: a new voice fades in from silence
     put(this.pn, pan, 0.05);
@@ -660,6 +667,7 @@ export class StreetAudio {
     V.x = view.x; V.y = view.y; V.z = view.z; V.rx = view.rx; V.rz = view.rz; V.dist = view.dist;
     const E = this.env;
     E.rain = env.rain; E.wet = env.wet; E.hush = env.hush; E.speed = env.speed;
+    E.reversing = env.reversing;
     this.dopplerSpeed = Math.min(2, env.speed);
     // buses: zoomed out you hear the city, not the cars; paused you hear nothing
     const paused = env.speed <= 0;
@@ -739,6 +747,7 @@ export class StreetAudio {
         const dy = c.y + 0.9 - ly;
         const d = Math.sqrt(d2 + dy * dy);
         let sc = p.level * (p.idleLevel + (1 - p.idleLevel) * Math.min(1, c.v / 6)) * distGain(d, p.ref, p.reach);
+        if ((c.dep ?? 0) > 0 && c.h !== undefined && this.env.reversing?.(c.h)) sc = Math.max(sc, 0.06 * distGain(d, p.ref, p.reach));
         if (sc >= FLOOR) {
           for (let k = 0; k < V.length; k++) if (V[k].car === c && V[k].state === LIVE) { sc *= 1.35; break; }
           if (nc < K || sc > this.candScore[K - 1]) {
@@ -887,8 +896,8 @@ export class StreetAudio {
 
   /** Debug/test: what each live voice is doing. Allocates; not for the frame loop. */
   debug() {
-    const out: { kind: VehicleKind; id: number; type: 'car' | 'siren' | 'horn'; dist: number; ratio: number; gain: number; pan: number; freq: number }[] = [];
-    const add = (arr: Slot[], type: 'car' | 'siren' | 'horn') => { for (const s of arr) if (s.state === LIVE && s.car) out.push({ kind: s.car.kind, id: s.carId, type, dist: s.dDist, ratio: s.dRatio, gain: s.dGain, pan: s.dPan, freq: s.dFreq }); };
+    const out: { kind: VehicleKind; id: number; type: 'car' | 'siren' | 'horn'; dist: number; ratio: number; gain: number; pan: number; freq: number; radio: number; reversing: boolean }[] = [];
+    const add = (arr: Slot[], type: 'car' | 'siren' | 'horn') => { for (const s of arr) if (s.state === LIVE && s.car) out.push({ kind: s.car.kind, id: s.carId, type, dist: s.dDist, ratio: s.dRatio, gain: s.dGain, pan: s.dPan, freq: s.dFreq, radio: s instanceof CarVoice ? s.extras.radioLevel : 0, reversing: s instanceof CarVoice && s.extras.reversing }); };
     add(this.voices, 'car'); add(this.sirens, 'siren'); add(this.horns, 'horn');
     return out;
   }

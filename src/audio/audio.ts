@@ -11,6 +11,8 @@ import { mulberry32 } from '../core/rng';
 import { StreetAudio, type StreetCar, type StreetEnv, type StreetView } from './streetAudio';
 import { AmbientPiano } from './piano';
 import { AdaptiveScore } from './score';
+import { WorldSound } from './worldSound';
+import type { WorldSoundSource } from './worldSources';
 
 export class AudioEngine {
   muted = false;
@@ -24,6 +26,8 @@ export class AudioEngine {
   private revIn?: GainNode;
   private amb?: Ambience;
   private streetVoices?: StreetAudio;
+  private worldVoices?: WorldSound;
+  reverseState?: (handle: number) => boolean;
   private streetView: StreetView = { x: 0, y: 0, z: 0, rx: 1, rz: 0, dist: 60 };
   private streetEnv: StreetEnv = { rain: 0, wet: 0, hush: 0, speed: 1 };
   private rainNow = 0;
@@ -129,6 +133,7 @@ export class AudioEngine {
     this.applySound();
     this.amb = new Ambience(s, this.ambBus, this.soundRev);
     this.streetVoices = new StreetAudio(s, this.ambBus, { ...StreetAudio.poolFor(this.quality), rng: mulberry32(0x57ee7) });
+    this.worldVoices = new WorldSound(new Synth(c, mulberry32(0xa4a4)), this.ambBus);
     this.score = new AdaptiveScore(new Synth(c, mulberry32(0x6d757369)), this.musicBus, this.musicRev);
     this.score.onRadioAd = text => this.onRadioAd?.(text);
     this.piano = this.score.piano;
@@ -170,6 +175,7 @@ export class AudioEngine {
       score: this.score?.weights ?? null, disaster: this.disasterLevel,
       ducked: this.ducked, musicGain: this.musicBus?.gain.value ?? null, zoneGain: this.zoneGain?.gain.value ?? null,
       spatialRoutes: this.spatialRoutes.length,
+      worldVoices: this.worldVoices?.stats ?? null,
     };
   }
 
@@ -221,8 +227,15 @@ export class AudioEngine {
     V.x = cam.target.x; V.z = cam.target.z; V.y = cam.target.y + Math.min(55, Math.max(3, cam.distance * 0.3));
     V.rx = Math.cos(cam.yaw); V.rz = -Math.sin(cam.yaw); V.dist = cam.distance;
     E.rain = this.rainNow; E.wet = wet; E.hush = this.hushNow;
+    E.reversing = this.reverseState;
     E.speed = this.muted || !this.soundOn_ || this.ctx.state !== 'running' ? 0 : speed; // muted, sound off or suspended = paused: the voices are released, then disconnected
     st.update(Math.min(dt, 0.1), cars, V, E);
+  }
+
+  /** Camera-local queues and scheduled landmarks, sampled from the live world. */
+  world(dt: number, sources: readonly WorldSoundSource[], speed: number) {
+    this.worldVoices?.update(Math.min(dt, 0.1), sources, this.streetView,
+      speed > 0 && !this.muted && this.soundOn_ && this.ctx?.state === 'running', this.quality);
   }
 
   /** Brief focus for a visible banner or feed notification, independently of Sound on/off. */

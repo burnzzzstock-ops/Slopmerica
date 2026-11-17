@@ -78,6 +78,10 @@ export const SFX: Record<SfxKind, SfxRecipe> = {
     s.tone(rev, { type: 'sine', f0: 1319, dur: 0.4, t: 0.1, gain: 0.04 * v });
   },
   crash(s, out, rev, v) {
+    // A short falling tyre skid and resonant scrape accompany the existing
+    // impact. The traffic crash callback remains the sole live trigger.
+    s.tone(out, { type: 'sawtooth', f0: 1450, f1: 620, dur: 0.32, a: 0.012, gain: 0.07 * v });
+    s.burst(out, { type: 'bandpass', f0: 2400, f1: 900, q: 5, dur: 0.38, a: 0.012, gain: 0.14 * v });
     s.burst(out, { type: 'lowpass', f0: 7000, f1: 380, dur: 0.75, a: 0.002, gain: 0.75 * v });
     s.tone(out, { f0: 95, f1: 38, dur: 0.35, a: 0.002, gain: 0.55 * v });
     for (const f of [311, 587, 919, 1373, 1861]) s.tone(out, { type: 'triangle', f0: f * rnd(s, 0.97, 1.03), dur: rnd(s, 0.35, 0.8), a: 0.002, gain: 0.06 * v });

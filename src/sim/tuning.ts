@@ -16,4 +16,15 @@ export const TUNING = {
   // ---- world events (what the look and the sound are told; nothing in the simulation reads these)
   /** PROPOSED: the crashed cars' speeds added up (m/s) at which a crash reads as a full wreck: two cars at a Freedom Stroad's 20 m/s */
   crashWreckSpeed: 40,
+  /**
+   * PROPOSED: a disaster's reach (m) and strength 0..1 as the look is told them. A hurricane takes low ground anywhere
+   * (the whole county from its middle: half the map's diagonal); a wildfire front burns 35 m round (disasters.ts fireStep);
+   * a landslide is one road's mud pile; Florida Man is one blocked street.
+   */
+  disasterLook: {
+    hurricane: { radius: 4345, intensity: 1 },
+    wildfire: { radius: 35, intensity: 0.8 },
+    landslide: { radius: 30, intensity: 0.6 },
+    floridaMan: { radius: 40, intensity: 0.2 },
+  },
 };

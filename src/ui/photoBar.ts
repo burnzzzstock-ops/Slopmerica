@@ -5,6 +5,7 @@
 import { FOV_MAX, FOV_MIN, IS_TOUCH } from '../config';
 import type { Game } from '../game';
 import type { PhotoWeather } from '../render/photo';
+import { uiIcon } from './icons';
 
 const WEATHERS: [PhotoWeather | null, string][] = [[null, 'As it is'], ['clear', 'Clear'], ['cloudy', 'Cloudy'], ['rain', 'Rain'], ['fog', 'Fog']];
 const clock = (h: number) => { const m = Math.round(h * 60) % 1440; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
@@ -88,11 +89,11 @@ export class PhotoBar {
         <div class="pb-row pb-wx" role="group" aria-label="Weather">${WEATHERS.map(([w, label]) => chip(`wx:${w ?? 'none'}`, label, p.weather === w)).join('')}</div>
       </div>` : ''}
       <div class="pb-row">
-        ${chip('exit', '✕ Done', false, 'Leave photo mode (Esc)')}
-        ${chip('save', `📷 Save ${this.framed ? 'postcard' : 'photo'}`, true)}
+        ${chip('exit', `${uiIcon('action', 'done', '✓', 20)} Done`, false, 'Leave photo mode (Esc)')}
+        ${chip('save', `${uiIcon('toolbar', 'photo', '📷', 20)} Save ${this.framed ? 'postcard' : 'photo'}`, true)}
         ${chip('save4k', '4K', false, 'Save at 3840 pixels on the long side')}
         ${chip('frame', '🖼️ Postcard frame', this.framed, 'Greetings from your county, printed on the picture')}
-        ${chip('street', '🚶 Street level', false, 'Stand in the street at the middle of the view')}
+        ${chip('street', `${uiIcon('action', 'street', '🚶', 20)} Street level`, false, 'Stand in the street at the middle of the view')}
         ${chip('adjust', '🎚️ Adjust', this.adjust, 'Hour, weather, blur and zoom')}
       </div>
       <small class="pb-hint">${IS_TOUCH ? 'Drag to look around · two fingers to move' : 'Drag to look · W A S D to move, Q E down and up, Shift faster · wheel to move in and out · Esc to leave'}</small>`;

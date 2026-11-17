@@ -861,7 +861,8 @@ export class Hud implements UiSink {
   private isFollowing(t: ViewTarget) { const f = this.game.rts.following; return !!f && f.kind === t.kind && f.id === t.id; }
   /** The inspector's Follow button for a car or a person: the camera rides with them until it is let go. */
   private followButton(t: ViewTarget) {
-    return this.isFollowing(t) ? '<button id="in-follow" class="on">🎥 Stop following</button>' : '<button id="in-follow">🎥 Follow</button>';
+    const cam = uiIcon('action', 'follow', '🎥', 20);
+    return this.isFollowing(t) ? `<button id="in-follow" class="on">${cam} Stop following</button>` : `<button id="in-follow">${cam} Follow</button>`;
   }
 
   private doAction(act: string) {
@@ -1956,7 +1957,7 @@ export class Hud implements UiSink {
     if (key !== this.followKey) {
       this.followKey = key;
       this.followPill.hidden = !riding;
-      if (riding) this.followPill.innerHTML = `<span>🎥 Following <b>${esc(this.followName || (riding.kind === 'car' ? 'a car' : riding.kind === 'person' ? 'a citizen' : 'a building'))}</b></span><small>${IS_TOUCH ? 'tap to let go' : 'click or Esc to let go'}</small>`;
+      if (riding) this.followPill.innerHTML = `<span>${uiIcon('action', 'follow', '🎥', 20)} Following <b>${esc(this.followName || (riding.kind === 'car' ? 'a car' : riding.kind === 'person' ? 'a citizen' : 'a building'))}</b></span><small>${IS_TOUCH ? 'tap to let go' : 'click or Esc to let go'}</small>`;
       else this.followName = '';
       if (sel && (sel.kind === 'car' || sel.kind === 'ped')) this.renderInspector();
     }

@@ -294,7 +294,7 @@ export class Buildings {
     this.hash.insert(b, b.x - pad, b.z - pad, b.x + pad, b.z + pad);
     b.y = this.terrain.h(b.x, b.z);
     this.terrain.flattenLot(this.corners(b), b.y, b.zone === 'resLow' || b.zone === 'resHigh' ? Paint.Lawn : Paint.Paved);
-    this.trees.cut(b.x - pad - 4, b.z - pad - 4, b.x + pad + 4, b.z + pad + 4, (tx, tz) => this.contains(b, tx, tz, 2));
+    this.felled(b, 2, this.trees.cut(b.x - pad - 4, b.z - pad - 4, b.x + pad + 4, b.z + pad + 4, (tx, tz) => this.contains(b, tx, tz, 2)));
     this.claimCells(b);
     if (b.inst >= 0) this.writeMatrix(b, b.state === 'active' ? 1 : easeGrow(b.progress));
   }
@@ -439,7 +439,7 @@ export class Buildings {
     this.hash.insert(b, x - b.hw - b.hd, z - b.hw - b.hd, x + b.hw + b.hd, z + b.hw + b.hd);
     const corners = this.corners(b);
     this.terrain.flattenLot(corners, y, zone === 'resLow' ? Paint.Lawn : zone === 'resHigh' ? Paint.Lawn : Paint.Paved);
-    this.trees.cut(x - b.hw - b.hd, z - b.hw - b.hd, x + b.hw + b.hd, z + b.hw + b.hd, (tx, tz) => this.contains(b, tx, tz, 1.5));
+    this.felled(b, 1.5, this.trees.cut(x - b.hw - b.hd, z - b.hw - b.hd, x + b.hw + b.hd, z + b.hw + b.hd, (tx, tz) => this.contains(b, tx, tz, 1.5)));
     this.placeInstance(b, e.id);
     this.zones.markOverlayDirty();
     return b;
@@ -485,7 +485,7 @@ export class Buildings {
     this.list.set(b.id, b);
     this.hash.insert(b, x - b.hw - b.hd, z - b.hw - b.hd, x + b.hw + b.hd, z + b.hw + b.hd);
     this.terrain.flattenLot(this.corners(b), y, Paint.Paved);
-    this.trees.cut(x - 80, z - 80, x + 80, z + 80, (tx, tz) => this.contains(b, tx, tz, 2));
+    this.felled(b, 2, this.trees.cut(x - 80, z - 80, x + 80, z + 80, (tx, tz) => this.contains(b, tx, tz, 2)));
     for (const c of this.zones.cellsNear(x, z, b.hw + b.hd + 6)) if (this.contains(b, c.x, c.z, 3)) c.bld = b.id;
     this.placeInstance(b, e.id);
     return b;
@@ -509,7 +509,7 @@ export class Buildings {
     this.list.set(b.id, b);
     this.hash.insert(b, x - b.hw - b.hd, z - b.hw - b.hd, x + b.hw + b.hd, z + b.hw + b.hd);
     this.terrain.flattenLot(this.corners(b), y, def.paint ?? Paint.Paved);
-    this.trees.cut(x - b.hw - b.hd - 4, z - b.hw - b.hd - 4, x + b.hw + b.hd + 4, z + b.hw + b.hd + 4, (tx, tz) => this.contains(b, tx, tz, 2));
+    this.felled(b, 2, this.trees.cut(x - b.hw - b.hd - 4, z - b.hw - b.hd - 4, x + b.hw + b.hd + 4, z + b.hw + b.hd + 4, (tx, tz) => this.contains(b, tx, tz, 2)));
     for (const c of this.zones.cellsNear(x, z, b.hw + b.hd + 6)) if (this.contains(b, c.x, c.z, 3)) c.bld = b.id;
     this.placeInstance(b, e.id);
     this.zones.markOverlayDirty();
@@ -597,7 +597,20 @@ export class Buildings {
   serializeState() { return { nextId: this.nextId, rng: this.rng.state }; }
   restoreState(d: { nextId: number; rng: number } | undefined) { if (d) { this.nextId = d.nextId; this.rng.state = d.rng; } }
 
+  /** true while a save is coming back: the trees its lots clear were cleared long ago, so nothing is said */
+  private restoring = false;
+
+  /** trees came down under b's lot (cut within `pad` m of it): say so, unless none did or a save is being restored */
+  private felled(b: Bld, pad: number, count: number) {
+    if (count && !this.restoring) this.onTreesCut?.(b.x, b.z, Math.hypot(b.hw, b.hd) + pad, count);
+  }
+
   restore(rows: readonly BldRow[]) {
+    this.restoring = true;
+    try { this.restoreRows(rows); } finally { this.restoring = false; }
+  }
+
+  private restoreRows(rows: readonly BldRow[]) {
     for (const r of rows) {
       const [zone, landmark, level, w, d, x, z, y, yaw, brand, occ, prog, seg, lp, id, variant, buildDays, lv, born, open, cellIds, abandoned, ask] = r;
       const exact = id !== undefined;

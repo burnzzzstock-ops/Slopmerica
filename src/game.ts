@@ -521,6 +521,7 @@ export class Game {
       this.sim.events.emit('levelUp', { bldId: b.id, level: b.level });
     })(this.buildings.onLevel);
     this.buildings.onProgress = (b, progress) => this.sim.events.emit('construction', { bldId: b.id, progress });
+    this.buildings.onTreesCut = (x, z, r, count) => this.sim.events.emit('treesCleared', { x, z, r, count, cause: 'building' });
     this.buildings.onDemolish = (b, reason) => {
       this.sim.events.emit('demolished', { bldId: b.id, x: b.x, z: b.z, w: 2 * b.hw, d: 2 * b.hd, height: b.model.height, cause: demolishCause(reason) });
       this.traffic.forget(b);

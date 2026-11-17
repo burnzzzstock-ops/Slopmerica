@@ -2,11 +2,12 @@
 // synthesized per call (see sfx.ts); the ambience beds and critters live in
 // ambience.ts. Everything goes through a gentle compressor so stacked crashes
 // and thunder never clip.
-import type { SfxKind, SoundMix } from '../contracts';
+import type { SfxKind } from '../contracts';
 import type { MapId } from '../world/maps';
 import { Synth } from './synth';
 import { SFX } from './sfx';
-import { Ambience, RAIN } from './ambience';
+import { Ambience, RAIN, type SoundscapeMix } from './ambience';
+import { mulberry32 } from '../core/rng';
 import { StreetAudio, type StreetCar, type StreetEnv, type StreetView } from './streetAudio';
 import { AmbientPiano } from './piano';
 
@@ -58,7 +59,7 @@ export class AudioEngine {
     } catch {
       return;
     }
-    const s = (this.synth = new Synth(c));
+    const s = (this.synth = new Synth(c, mulberry32(0x51a7a0d1)));
     const comp = c.createDynamicsCompressor();
     comp.threshold.value = -16;
     comp.knee.value = 12;
@@ -129,7 +130,7 @@ export class AudioEngine {
     };
   }
 
-  update(dt: number, mix: SoundMix) {
+  update(dt: number, mix: SoundscapeMix) {
     if (!this.ctx || !this.amb || !this.master) return;
     if (this.muted !== this.wasMuted) this.setMuted(this.muted);
     if (this.muted || this.ctx.state !== 'running') return;

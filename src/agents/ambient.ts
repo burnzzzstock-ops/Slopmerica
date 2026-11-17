@@ -8,6 +8,7 @@ import type { WeatherKind } from '../contracts';
 import type { MapData, MapId } from '../world/maps';
 import type { Terrain } from '../world/terrain';
 import type { RoadNetwork } from '../roads/network';
+import type { AmbientSoundSource } from '../audio/ambience';
 import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from '../world/atmos';
 import {
   AMBIENT_SPECIES,
@@ -23,6 +24,7 @@ export interface AmbientWeather {
   intensity?: number;
   wind?: { x: number; y?: number; z?: number };
 }
+const SOUND_SPECIES = new Set<AmbientSpecies>(['bird', 'crow', 'seagull', 'pelican', 'seaLion', 'alligator', 'fishingBoat', 'bassBoat', 'jetSki']);
 
 export interface AmbientLifeStats {
   budget: number;
@@ -130,6 +132,9 @@ export class AmbientLife {
   private readonly scale: Float32Array;
   private readonly shade: Float32Array;
   private readonly flock: Uint8Array;
+  private readonly drawn: Uint8Array;
+  private readonly soundFrustum = new THREE.Frustum();
+  private readonly soundPool: AmbientSoundSource[] = Array.from({ length: 8 }, () => ({ kind: 'bird', level: 0, pan: 0, speed: 0 }));
   private readonly roadFleeX: Float32Array;
   private readonly roadFleeZ: Float32Array;
   private readonly roadLines = new Float32Array(MAX_ROAD_LINES * ROAD_LINE_STRIDE);
@@ -177,6 +182,7 @@ export class AmbientLife {
     this.scale = new Float32Array(this.budget);
     this.shade = new Float32Array(this.budget);
     this.flock = new Uint8Array(this.budget);
+    this.drawn = new Uint8Array(this.budget);
     this.roadFleeX = new Float32Array(this.budget);
     this.roadFleeZ = new Float32Array(this.budget);
 
@@ -257,6 +263,34 @@ export class AmbientLife {
     let n = 0;
     for (let i = 0; i < this.budget; i++) if (this.active[i] && this.models[this.kind[i]].family === 'boat') n++;
     return n;
+  }
+
+  /** Reused nearest visible actors for spatial audio. Reads the current draw lists. */
+  soundSources(camera: THREE.Camera): readonly AmbientSoundSource[] {
+    const out = this.soundPool;
+    for (const source of out) source.level = 0;
+    if (this.disposed || !this.object.visible) return out;
+    this.soundFrustum.setFromProjectionMatrix(this.tmpMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    for (let i = 0; i < this.budget; i++) {
+      if (!this.drawn[i] || !this.active[i]) continue;
+      if (!SOUND_SPECIES.has(this.models[this.kind[i]].kind)) continue;
+      this.tmpPos.set(this.x[i], this.y[i], this.z[i]);
+      const d = this.tmpPos.distanceTo(camera.position);
+      if (d >= 220 || !this.soundFrustum.containsPoint(this.tmpPos)) continue;
+      const level = (1 - d / 220) ** 2;
+      if (level <= out[out.length - 1].level) continue;
+      this.tmpPos.applyMatrix4(camera.matrixWorldInverse);
+      const pan = THREE.MathUtils.clamp(this.tmpPos.x / Math.max(1, Math.hypot(this.tmpPos.x, this.tmpPos.z)), -1, 1);
+      let at = out.length - 1;
+      while (at > 0 && level > out[at - 1].level) {
+        Object.assign(out[at], out[at - 1]);
+        at--;
+      }
+      const source = out[at];
+      source.kind = this.models[this.kind[i]].kind;
+      source.level = level; source.pan = pan; source.speed = this.speed[i];
+    }
+    return out;
   }
 
   private chooseKind(): number {
@@ -546,12 +580,14 @@ export class AmbientLife {
     for (let k = 0; k < this.batches.length; k++) this.batches[k].count = 0;
     for (let k = 0; k < this.farBatches.length; k++) this.farBatches[k].count = 0;
     let wakeCount = 0, lightCount = 0;
+    this.drawn.fill(0);
 
     for (let i = 0; i < this.budget; i++) {
       if (!this.active[i]) continue;
       const def = this.models[this.kind[i]];
       this.moveSlot(i, dt, night, storm);
       if (def.family === 'bird' && !this.locked[i] && (i * .61803398875 % 1) > birdKeep) continue;
+      this.drawn[i] = 1;
       const cdx = this.x[i] - this.observerX, cdy = this.y[i] - this.observerY, cdz = this.z[i] - this.observerZ;
       const d2 = cdx * cdx + cdy * cdy + cdz * cdz;
       const flap = def.family === 'bird' ? .86 + Math.sin(this.phase[i] * 2.5) * .15 : 1;

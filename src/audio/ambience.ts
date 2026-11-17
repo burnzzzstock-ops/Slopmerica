@@ -6,11 +6,21 @@ import type { Season, SoundMix, WeatherKind } from '../contracts';
 import type { MapId } from '../world/maps';
 import type { Synth } from './synth';
 import { honkVoice } from './sfx';
+import type { AmbientSpecies } from '../agents/models/ambientModels';
 
-const rnd = (a: number, b: number) => a + Math.random() * (b - a);
-const pick = <T>(a: readonly T[]) => a[Math.floor(Math.random() * a.length)];
-const randPan = () => rnd(-0.8, 0.8);
-const randDist = () => rnd(0.35, 1);
+/** Reused camera-visible sources, ordered by audibility. Zero level is an empty slot. */
+export interface AmbientSoundSource { kind: AmbientSpecies; level: number; pan: number; speed: number }
+export interface SoundscapeMix extends SoundMix {
+  pollution?: number;
+  /** Local reference-tree cover, independent of graphics density. */
+  habitat?: number;
+  surf?: number;
+  clearing?: number;
+  speed?: number;
+  sources?: readonly AmbientSoundSource[];
+}
+const NO_SOURCES: readonly AmbientSoundSource[] = [];
+const MOTOR_BOATS = new Set(['fishingBoat', 'bassBoat', 'jetSki']);
 
 const SEASON_BIRDS: Record<Season, number> = { spring: 1, summer: 0.75, fall: 0.4, winter: 0.1 };
 export const RAIN: Partial<Record<WeatherKind, number>> = { rain: 0.6, storm: 1, hurricane: 1 };
@@ -29,6 +39,10 @@ export class Ambience {
   private traffic: GainNode;
   private cicada: GainNode;
   private crowd: GainNode;
+  private surf: GainNode;
+  private boats: { gain: GainNode; frequency: AudioParam; pan: AudioParam }[] = [];
+  private callEnds = new Float64Array(8);
+  private clearing = 0;
   private tick = 0;
   private voices: Record<string, Voice>;
   /**
@@ -93,15 +107,46 @@ export class Ambience {
     wander(1.5, 1.2, walla.gain);
     this.crowd = bed(s.loop('pink'), filt('bandpass', 650, 1), walla);
 
+    const wash = c.createGain();
+    wash.gain.value = 0.6;
+    wander(0.22, 2.2, wash.gain);
+    this.surf = bed(s.loop('pink'), filt('highpass', 70), filt('lowpass', 4200), wash);
+    for (let i = 0; i < 3; i++) {
+      const engine = c.createOscillator();
+      engine.type = 'sawtooth'; engine.frequency.value = 65;
+      const pan = c.createStereoPanner();
+      const gain = c.createGain(); gain.gain.value = 0;
+      engine.connect(filt('lowpass', 420)).connect(gain).connect(pan).connect(out);
+      engine.start();
+      this.boats.push({ gain, frequency: engine.frequency, pan: pan.pan });
+    }
+
     this.voices = this.makeVoices();
+  }
+
+  private rnd = (a: number, b: number) => a + this.s.random() * (b - a);
+  private pick = <T>(a: readonly T[]) => a[Math.floor(this.s.random() * a.length)];
+  private randPan = () => this.rnd(-0.8, 0.8);
+  private randDist = () => this.rnd(0.35, 1);
+
+  /** Bound concurrent phrases, including all of their scheduled notes. */
+  private emit(voice: Voice, gain: number, pan: number) {
+    const now = this.c.currentTime;
+    for (let i = 0; i < this.callEnds.length; i++) {
+      if (this.callEnds[i] > now) continue;
+      this.callEnds[i] = now + 2.2;
+      voice(0.02, gain, pan);
+      return;
+    }
   }
 
   private makeVoices(): Record<string, Voice> {
     const s = this.s;
+    const rnd = this.rnd;
     const out = this.out, rev = this.rev;
     return {
       sparrow: (t, g, p) => {
-        const n = 3 + Math.floor(Math.random() * 4);
+        const n = 3 + Math.floor(this.s.random() * 4);
         let tt = t;
         for (let i = 0; i < n; i++) {
           s.tone(out, { f0: rnd(3800, 5400), f1: rnd(2500, 3600), t: tt, dur: rnd(0.04, 0.07), a: 0.004, gain: g, pan: p });
@@ -109,7 +154,7 @@ export class Ambience {
         }
       },
       cardinal: (t, g, p) => {
-        const n = 3 + Math.floor(Math.random() * 3);
+        const n = 3 + Math.floor(this.s.random() * 3);
         const lo = rnd(1700, 2100);
         for (let i = 0; i < n; i++) s.tone(out, { f0: lo, f1: lo * 2.1, t: t + i * 0.24, dur: 0.17, a: 0.02, gain: g, pan: p });
       },
@@ -133,14 +178,14 @@ export class Ambience {
         s.tone(out, { f0: 3450, t: t + 0.3, dur: 0.3, a: 0.03, gain: g * 0.9, pan: p });
       },
       crow: (t, g, p) => {
-        const n = 2 + Math.floor(Math.random() * 2);
+        const n = 2 + Math.floor(this.s.random() * 2);
         for (let i = 0; i < n; i++) {
           s.tone(out, { type: 'sawtooth', f0: 640, f1: 500, t: t + i * 0.42, dur: 0.28, a: 0.02, gain: g * 0.35, pan: p });
           s.burst(out, { type: 'bandpass', f0: 1300, q: 2, t: t + i * 0.42, dur: 0.26, gain: g * 0.5, pan: p });
         }
       },
       gull: (t, g, p) => {
-        const n = 2 + Math.floor(Math.random() * 3);
+        const n = 2 + Math.floor(this.s.random() * 3);
         for (let i = 0; i < n; i++) s.tone(out, { type: 'triangle', f0: 1450 - i * 60, f1: 880, t: t + i * 0.38, dur: 0.33, a: 0.03, gain: g, pan: p, vibrato: 18, vibratoRate: 28 });
       },
       cricket: (t, g, p) => {
@@ -157,6 +202,24 @@ export class Ambience {
         s.burst(out, { color: 'brown', type: 'lowpass', f0: 380, t, dur: 0.26, gain: g * 2, pan: p });
       },
       treeFrog: (t, g, p) => s.tone(out, { type: 'square', f0: 820, f1: 700, t, dur: 0.07, a: 0.005, gain: g * 0.4, pan: p }),
+      seaLion: (t, g, p) => {
+        for (let i = 0; i < 3; i++) {
+          s.tone(out, { type: 'sawtooth', f0: 210, f1: 115, t: t + i * 0.34, dur: 0.17, gain: g * 0.5, pan: p });
+          s.burst(out, { color: 'pink', type: 'bandpass', f0: 700, q: 1.5, t: t + i * 0.34, dur: 0.19, gain: g, pan: p });
+        }
+      },
+      alligator: (t, g, p) => {
+        s.tone(out, { type: 'triangle', f0: 72, f1: 47, t, dur: 1.3, a: 0.12, gain: g * 2, pan: p, vibrato: 4, vibratoRate: 18 });
+        s.burst(out, { color: 'brown', type: 'lowpass', f0: 260, t, dur: 1.4, a: 0.1, gain: g, pan: p });
+      },
+      chainsaw: (t, g, p) => {
+        s.tone(out, { type: 'sawtooth', f0: 95, f1: 160, t, dur: 1.8, a: 0.15, gain: g * 0.7, pan: p, vibrato: 11, vibratoRate: 29 });
+        s.burst(out, { color: 'pink', type: 'bandpass', f0: 1100, q: 0.6, t, dur: 1.8, a: 0.2, gain: g, pan: p });
+      },
+      leafBlower: (t, g, p) => {
+        s.tone(out, { type: 'sawtooth', f0: 84, f1: 99, t, dur: 2, a: 0.25, gain: g * 0.4, pan: p });
+        s.burst(out, { color: 'pink', type: 'bandpass', f0: 680, q: 0.6, t, dur: 2, a: 0.2, gain: g, pan: p });
+      },
       owl: (t, g, p) => {
         s.tone(out, { f0: 380, f1: 360, t, dur: 0.38, a: 0.06, gain: g, pan: p, vibrato: 4, vibratoRate: 7 });
         s.tone(rev, { f0: 380, t, dur: 0.38, a: 0.06, gain: g * 0.6 });
@@ -196,7 +259,7 @@ export class Ambience {
         }
         node.connect(out);
         src.connect(f).connect(gg);
-        src.start(t0, Math.random() * 2);
+        src.start(t0, this.s.random() * 2);
         src.stop(t0 + 1.6);
       },
     };
@@ -207,10 +270,10 @@ export class Ambience {
   }
 
   private chance(rate: number, dt: number) {
-    return Math.random() < rate * dt;
+    return this.s.random() < rate * dt;
   }
 
-  update(dt: number, m: SoundMix) {
+  update(dt: number, m: SoundscapeMix) {
     const z = Math.min(1, Math.max(0, m.zoom));
     const near = 1 - z;
     const day = 1 - m.night;
@@ -219,7 +282,8 @@ export class Ambience {
     const rain = (RAIN[wk] ?? 0) * wi;
     const windW = 0.06 + (WIND[wk] ?? 0.1) * (0.35 + 0.65 * wi);
     const hush = wk === 'snow' || wk === 'blizzard' ? 0.5 * wi : 0; // snow muffles the world
-    const nature = m.nature;
+    const nature = Math.max(0, Math.min(1, m.nature)) * Math.max(0, Math.min(1, m.habitat ?? 1)) * Math.exp(-2 * Math.max(0, m.pollution ?? 0));
+    this.clearing = Math.max(0, this.clearing - dt / 6, Math.min(1, m.clearing ?? 0));
     const summer = m.season === 'summer' ? 1 : m.season === 'fall' ? 0.3 : m.season === 'spring' ? 0.15 : 0;
 
     // beds (throttled; the gains glide anyway)
@@ -231,17 +295,30 @@ export class Ambience {
       this.set(this.rainHiss, rain * 0.26 * (0.7 + near * 0.3));
       this.set(this.rainDrum, rain * 0.16 * (0.4 + near * 0.6));
       // only where there's water to hear (it played everywhere with the county's nature level)
-      this.set(this.creek, (m.water ?? 0) * nature * 0.1 * near * near * (m.season === 'winter' ? 0.5 : 1) * (1 - hush));
+      const coast = Math.max(0, Math.min(1, m.surf ?? 0));
+      this.set(this.creek, (m.water ?? 0) * (1 - coast) * nature * 0.1 * near * near * (m.season === 'winter' ? 0.5 : 1) * (1 - hush));
+      this.set(this.surf, coast * near * near * (0.035 + windW * 0.04));
       this.set(this.traffic, m.traffic * (0.1 + z * 0.08) * (1 - hush * 0.5));
       const cicadaMap = this.mapId === 'norcal' ? 0.3 : 1;
       this.set(this.cicada, nature * day * summer * cicadaMap * 0.035 * (1 - rain) * (0.4 + near * 0.6) * (m.season === 'summer' ? 1 : 0.4));
       this.set(this.crowd, m.people * near * 0.05 * (1 - rain * 0.6));
+      let boatCount = 0;
+      if (m.speed !== 0) for (const source of m.sources ?? NO_SOURCES) {
+        if (boatCount >= this.boats.length) break;
+        if (source.level <= 0 || source.speed <= 0.2 || !MOTOR_BOATS.has(source.kind)) continue;
+        const boat = this.boats[boatCount++];
+        this.set(boat.gain, source.level * 0.012 * near);
+        boat.frequency.setTargetAtTime(48 + Math.min(14, source.speed) * 9, this.c.currentTime, 0.15);
+        boat.pan.setTargetAtTime(source.pan, this.c.currentTime, 0.15);
+      }
+      for (let i = boatCount; i < this.boats.length; i++) this.set(this.boats[i].gain, 0);
     }
 
     // critters and the city, one call at a time
     const t = 0.02;
-    const p = randPan;
-    const far = randDist;
+    const p = this.randPan;
+    const far = this.randDist;
+    const rnd = this.rnd, pick = this.pick;
     const V = this.voices;
     const map = this.mapId;
     const dusk = m.night > 0.15 && m.night < 0.65 ? 1.8 : 1;
@@ -249,15 +326,15 @@ export class Ambience {
     if (this.chance(birdRate, dt)) {
       const g = 0.03 * far();
       let v: Voice;
-      if (m.season === 'winter') v = Math.random() < 0.55 ? V.chickadee : V.crow;
+      if (m.season === 'winter') v = this.s.random() < 0.55 ? V.chickadee : V.crow;
       else if (map === 'appalachia') v = pick([V.sparrow, V.cardinal, V.robin, V.thrush, V.sparrow]);
-      else if (map === 'norcal') v = Math.random() < 0.2 ? V.gull : pick([V.sparrow, V.robin, V.cardinal]);
-      else v = Math.random() < 0.3 ? V.gull : pick([V.cardinal, V.sparrow, V.robin]);
-      if (m.season === 'fall' && Math.random() < 0.25) v = V.crow;
-      v(t, g, p());
+      else if (map === 'norcal') v = this.s.random() < 0.2 ? V.gull : pick([V.sparrow, V.robin, V.cardinal]);
+      else v = this.s.random() < 0.3 ? V.gull : pick([V.cardinal, V.sparrow, V.robin]);
+      if (m.season === 'fall' && this.s.random() < 0.25) v = V.crow;
+      this.emit(v, g, p());
     }
     const cricketRate = nature * m.night * summer * (1 - rain) * (1 - hush) * 9 * (0.4 + near * 0.6);
-    if (this.chance(cricketRate, dt)) V.cricket(t, 0.012 * far(), p());
+    if (this.chance(cricketRate, dt)) this.emit(V.cricket, 0.012 * far(), p());
     let frogRate = 0;
     if (map === 'appalachia') frogRate = m.season === 'spring' ? 5 : m.season === 'summer' ? 1.5 : 0;
     else if (map === 'florida') frogRate = m.season === 'winter' ? 0.6 : 3;
@@ -265,16 +342,24 @@ export class Ambience {
     frogRate *= nature * m.night * (1 - hush) * (0.3 + near * 0.7) * (rain > 0 ? 1.5 : 1);
     if (this.chance(frogRate, dt)) {
       const g = 0.02 * far();
-      if (map === 'appalachia') V.peeper(t, g, p());
-      else if (map === 'florida') (Math.random() < 0.4 ? V.bullfrog : V.treeFrog)(t, g, p());
-      else V.chorusFrog(t, g, p());
+      if (map === 'appalachia') this.emit(V.peeper, g, p());
+      else if (map === 'florida') this.emit(this.s.random() < 0.4 ? V.bullfrog : V.treeFrog, g, p());
+      else this.emit(V.chorusFrog, g, p());
     }
-    if (map === 'appalachia' && this.chance(nature * m.night * 0.025 * near, dt)) V.owl(t, 0.03, p());
+    if (map === 'appalachia' && this.chance(nature * m.night * 0.025 * near, dt)) this.emit(V.owl, 0.03, p());
     if (this.randomTraffic) {
       if (this.chance(m.traffic * 0.12 * (0.4 + near * 0.6) * (1 - hush * 0.5), dt)) honkVoice(this.s, this.out, 0.25 * far() * (0.4 + near * 0.6), rnd(0.85, 1.15), t, rnd(0.12, 0.4), p());
-      if (this.chance(m.traffic * near * 0.7, dt)) V.passby(t, 0.035 * far(), p());
+      if (this.chance(m.traffic * near * 0.7, dt)) this.emit(V.passby, 0.035 * far(), p());
     }
-    if (this.chance(m.construction * 0.8 * (0.4 + near * 0.6), dt)) V.clank(t, 0.05 * far(), p());
-    if (this.chance(m.construction * 0.05, dt)) V.beeper(t, 0.05 * far(), p());
+    if (this.chance(m.construction * 0.8 * (0.4 + near * 0.6), dt)) this.emit(V.clank, 0.05 * far(), p());
+    if (this.chance(m.construction * 0.05, dt)) this.emit(V.beeper, 0.05 * far(), p());
+    if (m.speed !== 0 && this.chance(this.clearing * 0.7 * near, dt)) this.emit(V.chainsaw, 0.025 * far(), p());
+    if (m.speed !== 0 && this.chance((1 - nature) * m.people * day * near * 0.12, dt)) this.emit(V.leafBlower, 0.02 * far(), p());
+    if (m.speed !== 0) for (const source of m.sources ?? NO_SOURCES) {
+      if (source.level <= 0) continue;
+      const voice = source.kind === 'seagull' || source.kind === 'pelican' ? V.gull
+        : source.kind === 'bird' ? V.sparrow : source.kind === 'crow' ? V.crow : source.kind === 'seaLion' ? V.seaLion : source.kind === 'alligator' ? V.alligator : null;
+      if (voice && this.chance(0.16 * source.level * (1 - rain * 0.7), dt)) this.emit(voice, 0.04 * source.level * near, source.pan);
+    }
   }
 }

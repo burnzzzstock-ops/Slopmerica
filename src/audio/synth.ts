@@ -31,7 +31,7 @@ export interface BurstOpts {
 export class Synth {
   private buffers = new Map<NoiseColor, AudioBuffer>();
 
-  constructor(readonly ctx: AudioContext) {}
+  constructor(readonly ctx: AudioContext, readonly random: () => number = Math.random) {}
 
   noise(color: NoiseColor): AudioBuffer {
     let b = this.buffers.get(color);
@@ -42,7 +42,7 @@ export class Synth {
     const raw = new Float32Array(len + fade);
     let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0, last = 0;
     for (let i = 0; i < raw.length; i++) {
-      const w = Math.random() * 2 - 1;
+      const w = this.random() * 2 - 1;
       if (color === 'white') raw[i] = w;
       else if (color === 'pink') {
         // Paul Kellet's refined pink filter
@@ -80,7 +80,7 @@ export class Synth {
     const src = this.ctx.createBufferSource();
     src.buffer = this.noise(color);
     src.loop = true;
-    src.start(0, Math.random() * 9);
+    src.start(0, this.random() * 9);
     return src;
   }
 
@@ -135,7 +135,7 @@ export class Synth {
     g.gain.exponentialRampToValueAtTime(Math.max(0.0002, o.gain), t0 + a);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + o.dur);
     src.connect(f).connect(g).connect(this.out(dest, o.pan));
-    src.start(t0, Math.random() * 2);
+    src.start(t0, this.random() * 2);
     src.stop(t0 + o.dur + 0.05);
   }
 
@@ -149,7 +149,7 @@ export class Synth {
       let lp = 0;
       for (let i = 0; i < len; i++) {
         const t = i / len;
-        lp += (Math.random() * 2 - 1 - lp) * (0.9 - t * 0.7);
+        lp += (this.random() * 2 - 1 - lp) * (0.9 - t * 0.7);
         d[i] = lp * Math.pow(1 - t, decay);
       }
     }

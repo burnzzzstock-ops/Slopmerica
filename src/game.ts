@@ -175,7 +175,6 @@ export class Game {
   seed: number;
   /** the valley's ground as generated, before anything was built on it (a save keeps only where today's ground differs) */
   readonly pristine: Float32Array;
-  private skySpell = -1;
   readonly post: PostFX;
   readonly particles: Particles;
   readonly constructionEffects: ConstructionEffects;
@@ -313,7 +312,18 @@ export class Game {
     this.seed = (opts.restore?.seed ?? opts.seed ?? seedPick() ?? Math.floor(Math.random() * 2 ** 31)) >>> 0;
     this.climate = new Climate(opts.map, streamSeed(this.seed, 'climate'));
     this.dice.state = streamSeed(this.seed, 'county');
-    this.weather = new WeatherSystem({ scene: this.scene, renderer: this.renderer, env: this.env, terrain: this.terrain, trees: this.trees, water: this.water, quality: this.q, mapId: opts.map });
+    this.weather = new WeatherSystem({
+      scene: this.scene, renderer: this.renderer, env: this.env, terrain: this.terrain,
+      trees: this.trees, water: this.water, quality: this.q, mapId: opts.map,
+      climate: this.climate,
+      requestWeather: (kind, days) => {
+        // Keep the existing public override duration in 360-second sky days.
+        this.climate.force(kind, this.sim.day, Math.max(.001, days * (360 / DAY_SECONDS)));
+        this.climate.step(0, this.sim.day, this.hour, 0);
+        // Temperature reads intensity before the first step refreshes it.
+        this.climate.step(0, this.sim.day, this.hour, 0);
+      },
+    });
     this.post = new PostFX(this.renderer, this.scene, this.camera, this.q);
     this.waterRefraction = new WaterRefraction(this.renderer, this.scene, this.water.mesh, this.q.name);
     this.post.scenePass = this.waterRefraction.render;
@@ -390,7 +400,7 @@ export class Game {
     // crosswalks: people wait for a gap (or the walk phase), cars stop for people on them
     this.traffic.crosswalkWalkers = (node, seg) => this.peds.crosswalkWalkers(node, seg);
     this.peds.canCross = (node, segs, secs, impatient) => this.traffic.canCross(node, segs, secs, impatient);
-    // Civic Foundry street furniture, street trees and bus shelters (streamed in; low quality skips it)
+    // Streamed civic furniture and shelters, with vertex-coloured LOD2 on Low.
     this.civic = new CivicLayer(this);
     this.civic.load();
     this.vaultScenery = new VaultScenery(this);
@@ -607,14 +617,8 @@ export class Game {
       else if (kind !== this.lastSkyKind) this.feed.push('weatherChange');
       this.lastSkyKind = kind;
     };
-    // weather.force(kind, days) is what scripts, dev pages and the playtest buttons call. It sets the simulation's weather
-    // (days are the sky's own: 360 game seconds each), and the sky follows that like any other spell.
-    this.skyForce = this.weather.force.bind(this.weather);
-    this.weather.force = (kind, days = 3) => this.climate.force(kind, this.sim.day, days * (360 / DAY_SECONDS));
   }
   private lastSkyKind = 'clear';
-  private skyForce: WeatherSystem['force'] = () => {};
-  private skyEnd = -1;
   private lastSeason = 'spring';
 
   near(x: number, z: number, r: number) {
@@ -1274,12 +1278,6 @@ export class Game {
     this.env.update(0, this.rts.target, this.rts.distance, this.camera.position);
     P.lap('camera+sky');
     const t = this.sim.time(this.hour);
-    // the sky shows the simulation's weather: each new spell is handed to it (a little long, so it never rolls one of its own)
-    // (again if the sky has wandered off: it must never roll a spell of its own)
-    if (this.climate.spell !== this.skySpell || this.weather.kind !== this.climate.kind) {
-      this.skySpell = this.climate.spell;
-      this.skyForce(this.climate.kind, (Math.max(1, this.climate.daysLeft(this.sim.day)) * 1.5 + 10) / (360 / DAY_SECONDS));
-    }
     this.weather.update(dt, t, this.camera, spd, this.rts.distance);
     applySmogLook(this.post.look, this.env.smog, this.env.night);
     this.groundDetail.update(this.time, this.rts.target, this.rts.distance, {

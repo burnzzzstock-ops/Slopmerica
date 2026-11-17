@@ -21,7 +21,34 @@ Revision `027b18f` passes all twelve paused reference views with zero counter vi
 
 The per-view allowance remains 5%, rounded up, with absolute call ceilings of 250 on Low and 600 on High. Low street uses 245 calls and has five calls of absolute headroom. The fixture SHA-256 is `a3aa48b02a0ed6f692235b948f4149a3f9c2d75a003abc05acb74e437008f8d9` and the loaded-town fingerprint is `f74d7be`. The saved report is `shots/perf/final-027b18f/counters.json`.
 
-The integration suite was active during this run. These results establish draw-call and triangle counts. The isolated 300-frame High1080, Ultra4K and Low4× timing measurements remain pending. Physical-phone measurement remains pending.
+The integration suite was active during the paused counter measurements.
+
+## Reference-town timing on `027b18f`
+
+On November 17, 2026, High 1080p passed its 8 ms frame p95 target. The Low phone proxy exceeded its 16 ms target by 9.1 ms. Ultra 4K recorded a 12.7 ms frame p95 without a specified target.
+
+| Preset and buffer | Frame p50 / p95 (ms) | CPU work p50 / p95 (ms) | GPU p50 / p95 (ms) | Median draws | Median triangles |
+|---|---:|---:|---:|---:|---:|
+| High 1920×1080 | 4.5 / 6.9 | 4.4 / 6.8 | 4.94 / 7.27 | 403 | 2,177,330 |
+| Ultra 3840×2160 | 6.0 / 12.7 | 5.8 / 12.6 | 5.97 / 7.96 | 433 | 2,415,552 |
+| Low 585×1266, 4× CPU | 14.7 / 25.1 | 14.2 / 24.0 | 13.77 / 20.13 | 211 | 1,114,927 |
+
+Each case warmed up for five seconds before 300 unpaced animation-frame intervals. CPU work measures the synchronous game-frame call. A separate 12-frame GPU timer-query sample measured elapsed rendering-pass spans, which can include gaps in CPU command submission under throttling. They do not isolate active GPU execution time or attribute an individual slow frame to CPU or GPU work. Desktop used DPR 1. Chrome emulated a 390×844 touch viewport at DPR 3 and 4× CPU throttling for Low. The game rendered to a 585×1266 buffer on the RTX 5090. Physical phone performance remains unmeasured.
+
+The three runs used Chrome 157.0.8103.79, NVIDIA driver 610.60 and `ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)`. Each loaded reference town `f74d7be`, seed 271828, at the middle camera, with zero page errors. Tests ran sequentially after the other test suites and golden captures finished. Desktop applications remained active.
+
+| Sample boundary (CST) | CPU busy | GPU busy | VRAM used of 32,607 MiB | RAM available of 61.61 GiB |
+|---|---:|---:|---:|---:|
+| 16:02:48 before High | 24.5% | 15% | 4,233 MiB | 35.65 GiB |
+| 16:03:37 after High, before Ultra | 21.3% | 10% | 3,076 MiB | 37.73 GiB |
+| 16:04:20 after Ultra, before Low | 41.9% | 7% | 3,435 MiB | 36.50 GiB |
+| 16:05:07 after Low | 17.7% | 22% | 1,974 MiB | 40.00 GiB |
+
+CPU utilization covers one second at each boundary. GPU and memory figures are point samples. Chrome processes led CPU use in a short sample after Low. Both synchronous CPU work and the separate GPU p95 exceeded 16 ms in that case. These measurements leave the cause of the slowest intervals unresolved.
+
+A separate CPU profile used the same 300-frame Low workload. Of 7,393 sampled stacks, 76.2% included the Three renderer, 39.4% direct draw submission and 25.3% shadow rendering. These inclusive categories overlap. All fifteen slowest instrumented frames ran a fixed simulation step; 64 of 300 frames stepped overall. Recurring vehicle presentation selection appeared in only 0.4% of stacks. Profiling raised synchronous p95 to 51.7 ms, so its absolute timings are diagnostic and do not replace the original 25.1 ms acceptance result. The delivered `Performance/Low-phone-CPU-profile.md`, CPU profile and per-frame records preserve the evidence. Fixed-step traffic and daily simulation work require a play-lane follow-up.
+
+An isolated duplicate-shadow-LOD candidate was rejected. It reduced selection calls from four to two on Low and six to two on High/Ultra across the two building batches, while preserving actual shadow refreshes. All eighteen ordinary rendering cases matched pixels exactly, and all twenty-one cases retained geometry, per-light draw lists and simulation state. Direct photo captures varied across repeated controls, leaving export equivalence unverified. No timing benefit was measured and no candidate source entered the branch. The original Low acceptance result remains 25.1 ms. The delivered `Performance/Rejected-shadow-detail-review.md` and per-case JSON retain the experiment.
 
 ## Earlier baseline measurements
 

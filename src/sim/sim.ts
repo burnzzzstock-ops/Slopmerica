@@ -197,7 +197,8 @@ export class Sim {
   naturePct = 1;
   ended = false;
   bankruptWeeks = 0;
-  private rng = new Rng(777);
+  /** the dice for who arrives and who leaves (seeded from the county's seed, saved) */
+  readonly rng = new Rng(777);
   private dayAcc = 0;
   private lastWhole = 0;
   private popMarks = [50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000, 250000];
@@ -433,9 +434,10 @@ export class Sim {
   }
 
   // ------------------------------------------------------------------ tick
-  update(dtReal: number) {
+  /** One fixed step: `h` game seconds on (the game's speed setting only decides how many steps a real second gets). */
+  step(h: number) {
     if (this.ended) return;
-    const days = (dtReal * SPEEDS[this.speed]) / DAY_SECONDS;
+    const days = h / DAY_SECONDS;
     if (days <= 0) return;
     this.day += days;
     this.net.day = this.day;

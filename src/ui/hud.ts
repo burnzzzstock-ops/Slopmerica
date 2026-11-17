@@ -1283,7 +1283,7 @@ export class Hud implements UiSink {
         g.overlays.setExt(g.overlays.ext === v ? null : v ?? null);
         this.renderPanel();
       }));
-      this.sub.querySelectorAll<HTMLButtonElement>('[data-wx]').forEach((b) => b.addEventListener('click', () => g.weather.force(b.dataset.wx as never, 4)));
+      this.sub.querySelectorAll<HTMLButtonElement>('[data-wx]').forEach((b) => b.addEventListener('click', () => g.climate.force(b.dataset.wx as never, g.sim.day, 4 * 144)));
     } else if (p === 'budget') {
       const s = g.sim;
       this.sub.innerHTML = `

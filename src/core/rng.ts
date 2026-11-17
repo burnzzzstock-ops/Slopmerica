@@ -59,5 +59,19 @@ export class Rng {
   }
 }
 
-/** Global non-deterministic RNG for cosmetic stuff (feed posts, car colors). */
+/**
+ * The seed of one named stream of a county's dice. Every system that rolls dice in the simulation has its own stream (traffic,
+ * people, services, ...), all drawn from the county's one seed, so a roll in one never moves the rolls in another.
+ */
+export function streamSeed(seed: number, name: string): number {
+  let h = (seed ^ 0x9e3779b9) >>> 0;
+  for (let i = 0; i < name.length; i++) { h = Math.imul(h ^ name.charCodeAt(i), 0x01000193) >>> 0; h = (h ^ (h >>> 15)) >>> 0; }
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b) >>> 0;
+  return (h ^ (h >>> 13)) >>> 0 || 1;
+}
+
+/**
+ * The dice for everything that only dresses the screen or picks words (feed posts, car colours, particles, idle poses). Seeded
+ * from the clock, never saved. Nothing that changes the county may use it; the simulation's dice are the per-system streams.
+ */
 export const fx = new Rng((Math.random() * 2 ** 31) | 0);

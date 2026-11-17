@@ -4,6 +4,7 @@ import { hash2 } from '../core/rng';
 import { registerPanel, registerSystem } from '../ext/registry';
 import type { Game } from '../game';
 import { usd } from './sim';
+import { igniteBuilding } from './services';
 import type { RSeg } from '../roads/network';
 import { Paint } from '../world/terrain';
 
@@ -66,7 +67,7 @@ function announce(g: Game, kind: Kind, x: number, z: number) {
     floridaMan: 'Florida Man incident incoming. Traffic cones and local television crews are preparing.',
   };
   g.toast(line[kind], true);
-  g.feed.push('weatherChange', { weather: g.weather.kind });
+  g.feed.push('weatherChange', { weather: g.climate.kind });
 }
 
 function respond(g: Game) {
@@ -115,7 +116,7 @@ function respond(g: Game) {
 }
 
 function fireStep(g: Game, e: Event) {
-  const wind = g.weather.wind;
+  const wind = g.climate.wind;
   const len = Math.hypot(wind.x, wind.y) || 1;
   e.x += wind.x / len * 30;
   e.z += wind.y / len * 30;
@@ -127,11 +128,7 @@ function fireStep(g: Game, e: Event) {
   g.particles.emit('fire', x, g.terrain.h(x, z) + 1, z, { count: 12, spread: 25 });
   const b = g.buildings.near(x, z, 32).find(b => b.state === 'active');
   if (b) {
-    void import('./services').then(mod => {
-      const ignite = (mod as { igniteBuilding?: (game: Game, building: typeof b) => void }).igniteBuilding;
-      if (ignite) ignite(g, b);
-      else g.buildings.demolish(b, 'wildfire');
-    });
+    igniteBuilding(g, b);   // (now, in this step: it used to land whenever a lazy import resolved)
     e.cost += 700;
   }
 }
@@ -146,7 +143,7 @@ function recover(g: Game) {
   if (event.cost) g.sim.spend(event.cost, `${NAME[event.kind]} recovery`, 'disasters');
   // say what it cost: the response toast only knew the hurricane's bill, and a landslide's was never named
   g.toast(`${NAME[event.kind]} recovery complete${event.cost ? `: ${usd(event.cost)} billed to the treasury` : ''}. The invoice survived.`);
-  g.feed.push('weatherChange', { weather: g.weather.kind });
+  g.feed.push('weatherChange', { weather: g.climate.kind });
   event = null;
 }
 
@@ -185,9 +182,9 @@ registerSystem({
       return;
     }
     const seed = g.map.def.seed;
-    if (g.map.def.id === 'florida' && g.weather.kind === 'hurricane') announce(g, 'hurricane', 0, 0);
-    else if (g.map.def.id === 'appalachia' && (g.weather.kind === 'rain' || g.weather.kind === 'storm') && hash2(day, seed, 112) < 0.07) announce(g, 'landslide', 0, 0);
-    else if (g.map.def.id === 'norcal' && (g.weather.kind === 'heatwave' || g.weather.kind === 'wildfireSmoke') && hash2(day, seed, 222) < 0.12) {
+    if (g.map.def.id === 'florida' && g.climate.kind === 'hurricane') announce(g, 'hurricane', 0, 0);
+    else if (g.map.def.id === 'appalachia' && (g.climate.kind === 'rain' || g.climate.kind === 'storm') && hash2(day, seed, 112) < 0.07) announce(g, 'landslide', 0, 0);
+    else if (g.map.def.id === 'norcal' && (g.climate.kind === 'heatwave' || g.climate.kind === 'wildfireSmoke') && hash2(day, seed, 222) < 0.12) {
       const b = [...g.buildings.list.values()].find(b => b.state === 'active');
       announce(g, 'wildfire', b?.x ?? 0, b?.z ?? 0);
     } else if (g.map.def.id === 'florida' && hash2(day, seed, 333) < 0.025) announce(g, 'floridaMan', 0, 0);

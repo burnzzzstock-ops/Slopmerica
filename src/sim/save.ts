@@ -13,6 +13,8 @@ export interface SaveData {
   map: MapId;
   mode: Mode;
   city: string;
+  /** the county's seed: every stream of dice in the simulation is drawn from it (older saves have none and get one on load) */
+  seed?: number;
   day: number;
   hour: number;
   money: number | null;

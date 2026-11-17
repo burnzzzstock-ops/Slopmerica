@@ -4,6 +4,9 @@ import * as THREE from 'three';
 import { defaultQuality, FOV_MAX, FOV_MIN, GLOW, HALF, IS_TOUCH, MIN_RENDER_SCALE, nightLift, presetPixelRatio, QUALITY, Quality, saveQuality, storedQuality, WATER } from './config';
 import type { FeedContext, FeedEventKind, LandmarkId, WorldFields } from './contracts';
 import { makeFields } from './sim/fields';
+import { Climate } from './sim/climate';
+import { STEP_SECONDS } from './core/time';
+import { fx, Rng, streamSeed } from './core/rng';
 import { generateMap, MapData, MapId } from './world/maps';
 import { Terrain } from './world/terrain';
 import { Trees } from './world/trees';
@@ -63,9 +66,17 @@ function startPick(): 'best' | 'random' | number {
   return navigator.webdriver ? 'best' : 'random';
 }
 
+/** #seed=N on the address picks the county's seed (tests and replays); under automation with none given it is 1, so two runs agree */
+function seedPick(): number | undefined {
+  const m = /(?:^|[#&])seed=(\d+)/.exec(location.hash);
+  return m ? Number(m[1]) >>> 0 : navigator.webdriver ? 1 : undefined;
+}
+
 export interface GameOptions {
   map: MapId;
   mode: GameMode;
+  /** the county's seed (default: the save's, else #seed=, else random) */
+  seed?: number;
   cityName?: string;
   quality?: Quality;
   restore?: SaveData;
@@ -137,6 +148,11 @@ export class Game {
   readonly env: Environment;
   readonly water: ReturnType<typeof createWater>;
   readonly weather: WeatherSystem;
+  /** the weather the simulation runs on (seeded, saved, in game time); `weather` above is the sky, which follows it */
+  readonly climate: Climate;
+  /** the county's seed: every stream of dice in the simulation is drawn from it */
+  readonly seed: number;
+  private skySpell = -1;
   readonly post: PostFX;
   readonly particles: Particles;
   readonly audio = new AudioEngine();
@@ -259,6 +275,9 @@ export class Game {
     lap('trees');
     this.env = new Environment(this.scene, this.map.def, this.q, this.q.name === 'high' || this.q.name === 'ultra' ? this.renderer : undefined);
     this.env.hour = this.hour;
+    this.seed = (opts.restore?.seed ?? opts.seed ?? seedPick() ?? Math.floor(Math.random() * 2 ** 31)) >>> 0;
+    this.climate = new Climate(opts.map, streamSeed(this.seed, 'climate'));
+    this.dice.state = streamSeed(this.seed, 'county');
     this.weather = new WeatherSystem({ scene: this.scene, renderer: this.renderer, env: this.env, terrain: this.terrain, trees: this.trees, water: this.water, quality: this.q, mapId: opts.map });
     this.post = new PostFX(this.renderer, this.scene, this.camera, this.q);
     this.particles = new Particles(this.scene, this.q);
@@ -274,6 +293,8 @@ export class Game {
     this.zones = new Zoning(this.net, this.terrain, this.scene);
     this.buildings = new Buildings(this.scene, this.terrain, this.trees, this.zones, this.net);
     this.sim = new Sim(opts.mode, this.buildings, this.zones, this.net, this.terrain, this.trees);
+    this.sim.rng.state = streamSeed(this.seed, 'sim');
+    this.buildings.rng.state = streamSeed(this.seed, 'buildings');
     this.nightLights = new NightLights(this.q.name === 'low' ? 512 : 1024, () => practicalPools(this.roads.lampSpots, this.buildings.list.values()));
     lap('city');
 
@@ -306,8 +327,11 @@ export class Game {
     this.scene.add(this.groundDetail.group);
     lap('communes');
     this.sim.communePenalty = (x, z) => this.communes.penalty(x, z);
+    // the land a commune held is free once it has gone (on the simulation's clock)
+    this.communes.onGone = () => this.syncBlockers();
 
     this.traffic = new Traffic(this.scene, this.net, this.buildings, this.q.maxCars);
+    this.traffic.rng.state = streamSeed(this.seed, 'traffic');
     this.traffic.groundAt = (x, z) => this.terrain.h(x, z);
     // look pass: the vehicle renderer throws dust off gravel roads (it asks what the road under a car is, twice a second at most)
     this.traffic.renderer.surfaceAt = (x, z) => (this.net.pickSeg(x, z, 3)?.seg.type === 'gravel' ? 'gravel' : 'paved');
@@ -320,6 +344,7 @@ export class Game {
     // (the lamps show what the cars obey, leading greens included)
     this.roads.setSignalStateProvider((nodeId, segId) => this.traffic.lampState(nodeId, segId));
     this.peds = new Pedestrians(this.scene, this.net, this.buildings, this.terrain, this.communes, this.q.maxPeople);
+    this.peds.rng.state = streamSeed(this.seed, 'people');
     this.peds.renderer.setDetail(this.q); // the preset's near/far distance, near cap and shadow range for the citizens (a look budget; the simulation does not read it)
     // crosswalks: people wait for a gap (or the walk phase), cars stop for people on them
     this.traffic.crosswalkWalkers = (node, seg) => this.peds.crosswalkWalkers(node, seg);
@@ -367,7 +392,7 @@ export class Game {
       if (this.zones.overlayActive) this.zones.markOverlayDirty();
     });
     this.sim.events.on('week', () => { for (const s of EXT.systems) s.weekly?.(this); });
-    if (opts.restore) applySave(this, opts.restore);
+    if (opts.restore) { applySave(this, opts.restore); this.dayTick = Math.floor(this.sim.day); }
     else this.seedRoad(start);
     lap('rest');
     window.addEventListener('resize', () => this.resize());
@@ -470,24 +495,24 @@ export class Game {
   ctx(extra: Partial<FeedContext> = {}): FeedContext {
     return {
       city: this.cityName, map: this.map.def.id, population: this.sim.population, money: this.sim.money === Infinity ? 1e9 : this.sim.money,
-      naturePct: this.sim.naturePct, sprawlPct: this.sim.sprawlPct, season: this.weather.season, weather: this.weather.kind, ...extra,
+      naturePct: this.sim.naturePct, sprawlPct: this.sim.sprawlPct, season: this.climate.season, weather: this.climate.kind, ...extra,
     };
   }
 
   private wireEvents() {
     this.buildings.onComplete = ((orig) => (b: Bld) => {
       orig?.(b);
-      if (b.zone !== 'resLow' && b.zone !== 'resHigh' && Math.random() < 0.35) this.feed.push('buildingOpened', { building: b.label, brand: brandName(b.brand) });
+      if (b.zone !== 'resLow' && b.zone !== 'resHigh' && fx.float() < 0.35) this.feed.push('buildingOpened', { building: b.label, brand: brandName(b.brand) });
       this.traffic.grandOpening(b); // a new drive-thru: the town lines up (traffic pass)
       if (this.near(b.x, b.z, 500)) this.audio.play('build', 0.3);
     })(this.buildings.onComplete);
     this.buildings.onLevel = ((orig) => (b: Bld) => {
       orig?.(b); // (a system's own, e.g. the College's first graduates)
-      if (Math.random() < 0.25) this.feed.push('buildingLeveled', { building: b.label, brand: brandName(b.brand), count: b.level });
+      if (fx.float() < 0.25) this.feed.push('buildingLeveled', { building: b.label, brand: brandName(b.brand), count: b.level });
       if (this.near(b.x, b.z, 400)) this.particles.emit('confetti', b.x, b.y + b.model.height, b.z, { count: 20, spread: 4 });
     })(this.buildings.onLevel);
     this.buildings.onDemolish = (b, reason) => {
-      if (reason === 'road' && Math.random() < 0.6) this.feed.push('buildingDemolished', { building: b.label });
+      if (reason === 'road' && fx.float() < 0.6) this.feed.push('buildingDemolished', { building: b.label });
       if (this.selection?.kind === 'building' && this.selection.b === b) this.select(null);
       // the people who lived there are gone too (abandoned homes were already counted)
       if ((b.zone === 'resLow' || b.zone === 'resHigh') && b.abandoned === undefined && b.occ > 0)
@@ -549,12 +574,12 @@ export class Game {
     const t = ROAD_TYPES[segs[0].type];
     this.audio.play('build', 0.6);
     const kind: FeedEventKind = t.id === 'highway' ? 'highwayBuilt' : t.centerTurn ? 'stroadBuilt' : plan.bridgeLen > 10 ? 'bridgeBuilt' : 'roadBuilt';
-    if (Math.random() < (kind === 'roadBuilt' ? 0.25 : 0.7)) this.feed.push(kind, { road: segs[0].name, amount: plan.cost });
+    if (fx.float() < (kind === 'roadBuilt' ? 0.25 : 0.7)) this.feed.push(kind, { road: segs[0].name, amount: plan.cost });
     // communes hate roads near them
     for (const c of this.communes.list) {
       if (c.state !== 'active') continue;
       const s = segs[0].samp.pts[0];
-      if (Math.hypot(c.x - s.x, c.z - s.z) < 260 && Math.random() < 0.5) this.feed.push('communeProtest', { commune: c.name, road: segs[0].name });
+      if (Math.hypot(c.x - s.x, c.z - s.z) < 260 && fx.float() < 0.5) this.feed.push('communeProtest', { commune: c.name, road: segs[0].name });
     }
     return razed;
   }
@@ -770,11 +795,10 @@ export class Game {
     if (c.forever) { this.toast(`${c.name} laughs at your money. They've been here since 1969.`, true); return; }
     if (cost > this.sim.spendable()) { this.toast('Not enough money to bribe hippies', true); return; }
     this.sim.spend(cost, 'Commune payoff', 'communes');
-    if (Math.random() < this.communes.bribeOdds(c)) {
+    if (this.dice.float() < this.communes.bribeOdds(c)) {
       c.state = 'leaving';
       this.feed.push('communeBribed', { commune: c.name, amount: cost });
       this.toast(`${c.name} took the money and left in a cloud of patchouli.`);
-      setTimeout(() => this.syncBlockers(), 4500);
     } else {
       c.stubborn = Math.min(1, c.stubborn + 0.12);
       this.feed.push('communeProtest', { commune: c.name });
@@ -798,13 +822,12 @@ export class Game {
     const day = this.sim.day;
     for (const c of this.communes.list) {
       if (c.state === 'suing' && day >= c.suitDays) {
-        if (Math.random() < c.suitOdds) {
+        if (this.dice.float() < c.suitOdds) {
           c.state = 'leaving';
           // the commune lost the county's suit (the feed's lines for it say so; its buy-out
           // lines, posted here before, thanked them for $0)
           this.feed.push('communeLawsuitLost', { commune: c.name });
           this.ui.banner('Lawsuit won', `${c.name} has been evicted. The drum circle moves on.`);
-          setTimeout(() => this.syncBlockers(), 4500);
         } else {
           c.state = 'active';
           c.stubborn = Math.min(1, c.stubborn + 0.15);
@@ -814,7 +837,7 @@ export class Game {
         }
       }
       if (c.state === 'active' && day >= c.nextProtest) {
-        c.nextProtest = day + (c.forever ? 18 : 35) + Math.random() * 40;
+        c.nextProtest = day + (c.forever ? 18 : 35) + this.dice.float() * 40;
         const segs = this.net.segsNear(c.x - 300, c.z - 300, c.x + 300, c.z + 300).filter((s) => s.type !== 'highway');
         if (segs.length) {
           segs.sort((a, b) => Math.hypot(a.samp.pts[0].x - c.x, a.samp.pts[0].z - c.z) - Math.hypot(b.samp.pts[0].x - c.x, b.samp.pts[0].z - c.z));
@@ -822,7 +845,7 @@ export class Game {
           s.blocked = 30;
           this.feed.push('communeProtest', { commune: c.name, road: s.name });
         }
-        if (c.forever && Math.random() < 0.3) this.feed.push('communeForever', { commune: c.name });
+        if (c.forever && fx.float() < 0.3) this.feed.push('communeForever', { commune: c.name });
       }
     }
   }
@@ -1053,13 +1076,93 @@ export class Game {
 
   private dayTick = 0;
   private emitT = 0;
+  /** the county's own dice (bribes, lawsuits, protest dates), seeded and saved */
+  readonly dice = new Rng(0xc0de);
+  /** fixed steps since the county began */
+  steps = 0;
+  /** game seconds owed to the simulation: less than one step */
+  private owed = 0;
+  /** draw moving things where they are now, not between their last two steps (after stepping by hand, until the loop steps again) */
+  private snap = true;
+  /** called at the start of each fixed step with its number. Scripted input (tests, replays) acts here: the same step every run. */
+  onStep: ((step: number) => void)[] = [];
+  /** Step by hand: n fixed steps with no frames between (tests, the debug hook), then one undrawn frame so what is shown is current. */
+  runSteps(n: number) {
+    for (let i = 0; i < n; i++) this.step();
+    this.snap = true;
+    if (!this.stepping) this.frame(0, false);   // (asked for from inside a step, by a scripted player: no frame within a step)
+  }
+  private stepping = false;
+  /** how many fixed steps a span of game days is */
+  stepsFor(days: number) { return Math.round((days * DAY_SECONDS) / STEP_SECONDS); }
+
+  /**
+   * Advance the simulation by game seconds, in whole fixed steps; what is left over waits for the next call. At most 8 steps a
+   * call: on a machine too slow to keep up the game slows down rather than stalling.
+   */
+  advance(seconds: number) {
+    this.owed += seconds;
+    let n = 0;
+    while (this.owed >= STEP_SECONDS - 1e-9) {
+      this.owed -= STEP_SECONDS;
+      if (++n > 8) { this.owed = 0; break; }
+      this.step();
+      this.snap = false;
+    }
+  }
+
+  /**
+   * One fixed step: STEP_SECONDS of game time. Everything that changes the county happens here and only here, in this order, so
+   * the same seed and the same inputs give the same county at any frame rate, on any graphics preset, stepped by hand or live.
+   * Nothing in a step may read the frame time, the wall clock, the camera's frame, the preset or Math.random.
+   */
+  step() {
+    const P = this.prof, h = STEP_SECONDS;
+    this.stepping = true;
+    for (const f of this.onStep) f(this.steps);
+    this.stepping = false;
+    this.hour = (this.hour + (h * 24) / 360) % 24;
+    const dayWas = Math.floor(this.sim.day);
+    this.sim.step(h);
+    if (Math.floor(this.sim.day) !== dayWas) P.note(Math.floor(this.sim.day) % 7 === 0 ? 'new week' : 'new day');
+    P.lap('sim');
+    this.climate.step(h, this.sim.day, this.hour, SPEEDS[this.sim.speed] || 1);
+    const fxs = this.climate.effects();
+    this.traffic.speedMul = fxs.speedMul;
+    this.traffic.crashMul = fxs.crashMul;
+    this.sim.weatherBuildMul = fxs.buildMul;
+    this.sim.weatherDemandMul = fxs.demandMul;
+    this.peds.outdoorMul = fxs.outdoorPeopleMul * (this.hour >= 20.5 || this.hour < 5.5 ? 0.6 : 1);
+    P.lap('weather');
+    if (Math.floor(this.sim.day) !== this.dayTick) {
+      this.dayTick = Math.floor(this.sim.day);
+      this.communeTick();
+    }
+    this.communes.step(h);
+    P.lap('communes');
+    this.zones.sync();
+    P.lap('zones+roads');
+    this.traffic.step(h, this.hour, this.sim.population, this.sim.jobsFilled);
+    P.lap('traffic');
+    this.peds.population = this.sim.population;
+    this.peds.step(h, this.rts.target, this.rts.distance);
+    P.lap('people');
+    for (const s of EXT.systems) {
+      if (!s.step) continue;
+      s.step(this, h);
+      P.lap(s.id);
+    }
+    this.steps++;
+  }
+
   frame(dt: number, render = true) {
     const P = this.prof;
     P.begin();
     this.time += dt;
     const spd = SPEEDS[this.sim.speed];
     this.rts.update(dt);
-    this.hour = (this.hour + (dt * spd * 24) / 360) % 24;
+    // the simulation: whole fixed steps for the game time this frame covers
+    this.advance(dt * spd);
     this.env.hour = this.hour;
     // tighter near plane when zoomed in, deeper when zoomed out (depth precision)
     const nearWant = THREE.MathUtils.clamp(this.rts.distance * 0.008, 1, 10);
@@ -1069,27 +1172,17 @@ export class Game {
     }
     this.env.update(0, this.rts.target, this.rts.distance, this.camera.position);
     P.lap('camera+sky');
-    const dayWas = Math.floor(this.sim.day);
-    this.sim.update(dt);
-    if (Math.floor(this.sim.day) !== dayWas) P.note(Math.floor(this.sim.day) % 7 === 0 ? 'new week' : 'new day');
-    P.lap('sim');
     const t = this.sim.time(this.hour);
+    // the sky shows the simulation's weather: each new spell is handed to it (a little long, so it never rolls one of its own)
+    if (this.climate.spell !== this.skySpell) {
+      this.skySpell = this.climate.spell;
+      this.weather.force(this.climate.kind, (this.climate.spellDays * 1.5 + 10) / (360 / DAY_SECONDS));
+    }
     this.weather.update(dt, t, this.camera, spd, this.rts.distance);
     this.groundDetail.update(this.time, this.rts.target, this.rts.distance, {
       season: this.weather.season, snowCover: this.weather.snowCover, wind: this.weather.wind,
     });
-    const fxs = this.weather.effects();
-    this.traffic.speedMul = fxs.speedMul;
-    this.traffic.crashMul = fxs.crashMul;
-    this.sim.weatherBuildMul = fxs.buildMul;
-    this.sim.weatherDemandMul = fxs.demandMul;
-    this.peds.outdoorMul = fxs.outdoorPeopleMul * (this.env.night > 0.5 ? 0.6 : 1);
     P.lap('weather');
-    if (Math.floor(this.sim.day) !== this.dayTick) {
-      this.dayTick = Math.floor(this.sim.day);
-      this.communeTick();
-    }
-    P.lap('communes');
     this.terrain.updateLOD(this.camera.position);
     this.trees.setDayOfYear(t.dayOfYear);
     this.trees.update(this.time, this.rts.target, this.rts.distance);
@@ -1097,13 +1190,13 @@ export class Game {
     this.zones.update();
     this.roads.update();
     P.lap('zones+roads');
-    const jobs = this.sim.jobsFilled;
-    this.traffic.update(dt, spd, this.hour, this.sim.population, jobs, this.rts.target);
+    // moving things are drawn between their last two steps (smooth at any frame rate), or where they are after stepping by hand
+    const alpha = this.snap ? 1 : this.owed / STEP_SECONDS;
+    this.traffic.draw(alpha, dt, this.rts.target);
     this.parkView.setFromProjectionMatrix(this.parkMat.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
     this.parking.update(dt, this.hour, this.rts.target.x, this.rts.target.z, this.rts.distance, () => this.traffic.renderer.stats().active);
     P.lap('traffic');
-    this.peds.population = this.sim.population;
-    this.peds.update(dt, spd, this.rts.target, this.rts.distance, this.time);
+    this.peds.draw(alpha);
     this.civic.update(dt);
     this.vaultScenery.update(dt);
     P.lap('people');
@@ -1123,7 +1216,7 @@ export class Game {
           for (const em of b.model.emitters) {
             // (look pass, scripts/yellowflash.mjs) a prop's flame burns on every tick: skipping half of them
             // left gaps, so barrels and torches blinked on and off at night
-            if (em.kind !== 'fire' && Math.random() > (em.kind === 'chimney' ? chimneyP : 0.5)) continue;
+            if (em.kind !== 'fire' && fx.float() > (em.kind === 'chimney' ? chimneyP : 0.5)) continue;
             const [lx, ly, lz] = em.pos;
             // prop flames at 0.6 size: a default fire puff is 3 m across, over a 0.7 m barrel
             this.particles.emit(em.kind === 'cigarette' ? 'cigarette' : em.kind === 'fire' ? 'fire' : em.kind === 'steam' ? 'steam' : em.kind === 'sparkle' ? 'confetti' : 'smoke', b.x + lx * c + lz * s, b.y + ly, b.z - lx * s + lz * c, { count: em.kind === 'cigarette' ? 1 : 2, spread: em.kind === 'fire' ? 0.3 : 0.6, size: em.kind === 'fire' ? 0.6 : 1 });
@@ -1136,7 +1229,7 @@ export class Game {
       for (const c of this.communes.list) {
         if (c.state === 'gone' || Math.abs(c.x - tgt.x) > 500 || Math.abs(c.z - tgt.z) > 500) continue;
         for (const em of c.emitters) {
-          if (Math.random() > 0.6) continue;
+          if (fx.float() > 0.6) continue;
           const [lx, ly, lz] = em.pos;
           this.particles.emit(em.kind === 'fire' ? 'fire' : 'smoke', c.x + lx, c.group.position.y + ly, c.z + lz, { count: em.kind === 'fire' ? 4 : 2, spread: em.kind === 'fire' ? 0.8 : 0.3, size: em.kind === 'fire' ? 0.8 : 0.5 });
         }
@@ -1172,7 +1265,7 @@ export class Game {
     // look pass: the weather the cars show (exhaust in the cold, spray in rain)
     this.traffic.renderer.setEnvironment({ temperature: this.weather.temperature, wet: this.weather.wet, rain: atmo.uRain.value, snow: this.weather.snowCover });
     this.peds.setNight(n);
-    if (n > 0.6 && !this.nightWas) { this.nightWas = true; if (Math.random() < 0.5) this.feed.push('nightfall'); }
+    if (n > 0.6 && !this.nightWas) { this.nightWas = true; if (fx.float() < 0.5) this.feed.push('nightfall'); }
     if (n < 0.3) this.nightWas = false;
     // repaint the pools when the lamps or the lit lots change (checked once a second)
     if ((this.lampCheck -= dt) <= 0) {
@@ -1257,7 +1350,7 @@ function defaultCityName(map: MapId) {
     florida: ['Gator Gulch', 'Port Slop Lucie', 'Florida Mantown', 'Sawgrass Springs'],
   };
   const a = opts[map];
-  return a[Math.floor(Math.random() * a.length)];
+  return a[Math.floor(fx.float() * a.length)];
 }
 
 export { buildingMaterial };

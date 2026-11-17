@@ -2,7 +2,8 @@ import { unlockPop } from '../sim/milestones';
 import * as THREE from 'three';
 import { WATER } from '../config';
 import { closestOnSampled, clamp, lerp, locate, norm, sub } from '../core/math';
-import { hash2 } from '../core/rng';
+import { hash2, Rng, streamSeed } from '../core/rng';
+import { TOP_SPEED } from '../core/time';
 import type { Game, Selection } from '../game';
 import type { RSeg } from '../roads/network';
 import { ROAD_TYPES } from '../roads/roadTypes';
@@ -312,19 +313,27 @@ export class TransitSystem {
     this.stats.ridersThisWeek = 0;
   }
 
-  frame(dt: number) {
-    const routesVisible = this.g.tools.active === 'ext' && this.g.tools.extTool === 'transit-line' || this.g.overlays.ext?.id === 'transit';
-    this.renderer.setRoutesVisible(routesVisible);
-    if (this.visualDirty) { this.syncVisuals(); this.visualDirty = false; }
-    this.fleetT -= dt;
+  /** the buses' own random stream (how long each dwells at a stop) */
+  readonly rng = new Rng(0xb05);
+
+  /** One fixed step of `dt` game seconds: the fleet follows the lines, buses dwell and set off. */
+  step(dt: number) {
+    const real = dt / TOP_SPEED;
+    this.fleetT -= real;
     if (this.fleetT <= 0) { this.fleetT = 0.5; this.syncFleet(); }
     for (const run of this.runs.values()) {
       if (run.driving) continue;
-      if (run.dwell > 0) { run.dwell -= dt * Math.max(0.25, this.g.sim.speed); continue; }
+      if (run.dwell > 0) { run.dwell -= real * 3; continue; }
       const line = this.lines.get(run.lineId);
       if (!line || run.returning || run.slot >= line.buses || !this.lineCanRun(line)) this.returnRun(run);
       else this.launchNext(run, line);
     }
+  }
+
+  frame(dt: number) {
+    const routesVisible = this.g.tools.active === 'ext' && this.g.tools.extTool === 'transit-line' || this.g.overlays.ext?.id === 'transit';
+    this.renderer.setRoutesVisible(routesVisible);
+    if (this.visualDirty) { this.syncVisuals(); this.visualDirty = false; }
     if (this.g.overlays.ext?.id === 'transit') {
       this.tintT -= dt;
       if (this.tintT <= 0) { this.tintT = 0.5; this.tintAccess(); }
@@ -611,7 +620,7 @@ export class TransitSystem {
         stop.boardings += Math.max(1, Math.round(line.lastWeekRiders / Math.max(1, line.stopIds.length * 14)));
         run.nextIndex = (run.nextIndex + 1) % line.stopIds.length;
         if (run.nextIndex === 0) this.stats.busesCompletedLoops++;
-        run.dwell = 8 + Math.random() * 12;
+        run.dwell = 8 + this.rng.float() * 12;
       } else run.dwell = 3;
       if (!this.lines.has(run.lineId)) run.returning = true;
     } });
@@ -830,8 +839,9 @@ registerInspector((sel, g) => transitFor(g)?.inspector(sel) ?? null);
 
 registerSystem({
   id: 'transit',
-  init(g) { new TransitSystem(g); },
+  init(g) { new TransitSystem(g).rng.state = streamSeed(g.seed, 'transit'); },
   frame(g, dt) { transitFor(g)?.frame(dt); },
+  step(g, dt) { transitFor(g)?.step(dt); },
   daily(g) { transitFor(g)?.daily(); },
   weekly(g) { transitFor(g)?.weekly(); },
   save(g) { return transitFor(g)?.save(); },

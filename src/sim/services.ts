@@ -24,6 +24,8 @@ import type { RSeg } from '../roads/network';
 import { CELL, HALF, WATER, WORLD } from '../config';
 import { INFO_OVERLAY, Paint } from '../world/terrain';
 import { Fields } from './pollution';
+import { fx, Rng, streamSeed } from '../core/rng';
+import { TOP_SPEED } from '../core/time';
 import { ProblemIcons, type Problem, type ProblemItem } from './serviceIcons';
 import type { FeedContext, FeedEventKind, VehicleKind, ZoneType } from '../contracts';
 import type { DemandKey, LossCause } from './sim';
@@ -319,6 +321,10 @@ const S = {
   b: new Map<number, BS>(),
   f: new Map<number, FS>(),
   fields: new Fields(),
+  /** the services' own random stream (fires, sickness, crime, dispatches), seeded from the county's seed and saved */
+  rng: new Rng(0x5e41),
+  /** game seconds (at top-speed pace) until road links are checked again */
+  linkT: 0,
   graphDirty: true,
   /** road components need recomputing (roads changed) */
   compDirty: true,
@@ -750,9 +756,9 @@ function daily(g: Game, day: number) {
 }
 
 function solarFactor(g: Game): number {
-  const w = g.weather.kind;
+  const w = g.climate.kind;
   const cloud = w === 'clear' || w === 'heatwave' ? 1 : w === 'cloudy' || w === 'fog' || w === 'wildfireSmoke' ? 0.55 : 0.3;
-  const season = g.weather.season === 'winter' ? 0.7 : g.weather.season === 'summer' ? 1.1 : 0.9;
+  const season = g.climate.season === 'winter' ? 0.7 : g.climate.season === 'summer' ? 1.1 : 0.9;
   return 0.5 * cloud * season; // day/night average
 }
 
@@ -916,7 +922,7 @@ function garbage(g: Game, fac: Fac[], zoned: ZB[]) {
       landfillWarnings(g, f, d, fs, arr.length);
     }
     // a truck goes out on the route now and then (the visible part)
-    if (f && arr.length && Math.random() < 0.5) dispatchFrom(g, f, arr[0], 'collecting trash', arr[0].label);
+    if (f && arr.length && S.rng.float() < 0.5) dispatchFrom(g, f, arr[0], 'collecting trash', arr[0].label);
   }
   // the county contractor hauls what no local truck reaches (capped, pricey); a
   // full landfill's own buildings aren't its business (as before full landfills stopped covering)
@@ -933,7 +939,7 @@ function garbage(g: Game, fac: Fac[], zoned: ZB[]) {
   }
   const exported = TRASH_EXPORT - exportLeft;
   S.week.trash += exported;
-  if (exported > 0 && uncovered.length && Math.random() < 0.25) {
+  if (exported > 0 && uncovered.length && S.rng.float() < 0.25) {
     const b = uncovered[0];
     g.traffic.dispatch('garbageTruck', 'edge', b, 'county waste contract', b.label, g.hour, { sober: true, local: false, onDone: (_c, ok) => { if (ok && g.buildings.list.has(b.id)) g.traffic.dispatch('garbageTruck', b, 'edge', 'hauling trash out of county', 'the next county', g.hour, { sober: true, local: false }); } });
   }
@@ -1008,7 +1014,7 @@ function wellbeing(g: Game, zoned: ZB[]) {
     bs.crime += 0.9 * dens * poor * (1 + unemp * 3) * (1 - 0.85 * pol) * POLICY.crimeMul(b) - (0.25 + 2.2 * pol);
     if (b.abandoned !== undefined) bs.crime += 0.8;
     bs.crime = Math.max(0, Math.min(100, bs.crime));
-    if (bs.crime > 70 && pol > 0.2 && Math.random() < 0.08) {
+    if (bs.crime > 70 && pol > 0.2 && S.rng.float() < 0.08) {
       const hit = reachOf(g, b, S.covT.police);
       const st = hit && g.buildings.list.get(hit.o);
       if (st) dispatchFrom(g, st, b, 'responding to a call', b.label);
@@ -1018,7 +1024,7 @@ function wellbeing(g: Game, zoned: ZB[]) {
     const polSick = Math.min(0.3, polHere * 0.1), trashSick = trashDaysOf(b, bs) > TRASH_BAD ? 0.08 : 0;
     const target = (0.02 + polSick + (bs.wa ? 0 : 0.18) + (bs.se ? 0 : 0.12) + trashSick + (bs.dirty ? 0.12 : 0)) * (1 - 0.8 * bs.cov.health);
     bs.sick += (target - bs.sick) * 0.15;
-    if (bs.sick > 0.18 && bs.cov.health > 0.2 && Math.random() < 0.05) {
+    if (bs.sick > 0.18 && bs.cov.health > 0.2 && S.rng.float() < 0.05) {
       const hit = reachOf(g, b, S.covT.health);
       const st = hit && g.buildings.list.get(hit.o);
       if (st) dispatchFrom(g, st, b, 'on a call', b.label);
@@ -1027,7 +1033,7 @@ function wellbeing(g: Game, zoned: ZB[]) {
     const eTarget = Math.min(1, (0.15 + 0.5 * bs.cov.school + 0.4 * bs.cov.college) * POLICY.educationMul(b));
     bs.edu += (eTarget - bs.edu) * 0.04;
     // sick people move out
-    if (isRes(b) && bs.sick > 0.2 && b.occ > 0 && Math.random() < bs.sick) { b.occ--; g.sim.lose(1, sickRoot(bs, polSick, trashSick)); }
+    if (isRes(b) && bs.sick > 0.2 && b.occ > 0 && S.rng.float() < bs.sick) { b.occ--; g.sim.lose(1, sickRoot(bs, polSick, trashSick)); }
   }
 }
 
@@ -1039,21 +1045,21 @@ function sickRoot(bs: BS, polSick: number, trashSick: number): LossCause {
 }
 
 function fires(g: Game, zoned: ZB[]) {
-  const w = g.weather.kind;
+  const w = g.climate.kind;
   const wx = w === 'heatwave' ? 2 : w === 'wildfireSmoke' ? 2.5 : w === 'rain' || w === 'storm' || w === 'snow' || w === 'blizzard' || w === 'hurricane' ? 0.4 : 1;
   for (const b of zoned) {
     if (b.state !== 'active' || !g.buildings.list.has(b.id)) continue;
     const bs = bsOf(b);
     if (bs.burning > 0) {
       const fire = bs.cov.fire;
-      if (fire > 0.05 && Math.random() < 0.3 + 0.65 * fire) {
+      if (fire > 0.05 && S.rng.float() < 0.3 + 0.65 * fire) {
         bs.burning = 0;
         b.levelProgress = 0;
         continue;
       }
       bs.burning -= 1;
       // spreads to the neighbors when nobody's coming
-      if (fire < 0.3) for (const n of g.buildings.near(b.x, b.z, 22)) if (n !== b && isZoned(n) && Math.random() < 0.18) igniteBuilding(g, n);
+      if (fire < 0.3) for (const n of g.buildings.near(b.x, b.z, 22)) if (n !== b && isZoned(n) && S.rng.float() < 0.18) igniteBuilding(g, n);
       if (bs.burning <= 0) {
         S.counts.burned++;
         post(g, 'buildingBurned', { building: b.label }, 0.8);
@@ -1067,7 +1073,7 @@ function fires(g: Game, zoned: ZB[]) {
     const zm = b.zone === 'industry' ? 2.5 : b.zone === 'comHigh' ? 1.3 : b.zone === 'resHigh' ? 1.2 : 1;
     const trash = trashDaysOf(b, bs) > TRASH_BAD ? 1.8 : 1;
     const p = 0.00005 * zm * (1 + 0.15 * (b.level - 1)) * trash * (bs.pw ? 1 : 1.4) * wx * (1 - 0.6 * bs.cov.fire) * (b.abandoned !== undefined ? 3 : 1) * POLICY.fireRiskMul(b);
-    if (Math.random() < p) igniteBuilding(g, b);
+    if (S.rng.float() < p) igniteBuilding(g, b);
   }
 }
 
@@ -1108,7 +1114,7 @@ function fields(g: Game, fac: Fac[], zoned: ZB[]) {
     if (b.zone === 'industry') F.addEmission(b.x, b.z, 0.0028 * Math.max(b.occ, b.cap * 0.5) * (1 + 0.1 * (b.level - 1)));
     if (trashDaysOf(b, bsOf(b)) > TRASH_BAD) F.addEmission(b.x, b.z, 0.01);
   }
-  const wind = g.weather.wind;
+  const wind = g.climate.wind;
   F.stepPollution(2, wind.x, wind.y);
   F.rebuildNoise((stamp) => {
     for (const s of g.net.segs.values()) {
@@ -1373,7 +1379,7 @@ function assess(g: Game, zoned: ZB[]) {
 /** Feed post with a per-kind cooldown in game days. */
 function post(g: Game, kind: FeedEventKind, ctx: Partial<FeedContext>, chance: number) {
   const last = S.lastFeed.get(kind) ?? -1e9;
-  if (S.day - last < 12 || Math.random() > chance) return;
+  if (S.day - last < 12 || fx.float() > chance) return;
   S.lastFeed.set(kind, S.day);
   g.feed.push(kind, ctx);
 }
@@ -1560,7 +1566,7 @@ function frame(g: Game, dt: number) {
       const b = g.buildings.list.get(id);
       if (!b || Math.abs(b.x - cam.x) > 1600 || Math.abs(b.z - cam.z) > 1600) continue;
       const h = Math.max(4, b.model.height * 0.6);
-      g.particles.emit('fire', b.x + (Math.random() - 0.5) * b.hw, b.y + h * Math.random(), b.z + (Math.random() - 0.5) * b.hd, { count: 3, spread: b.hw * 0.5 });
+      g.particles.emit('fire', b.x + (fx.float() - 0.5) * b.hw, b.y + h * fx.float(), b.z + (fx.float() - 0.5) * b.hd, { count: 3, spread: b.hw * 0.5 });
       g.particles.emit('smoke', b.x, b.y + h + 2, b.z, { count: 2, spread: b.hw * 0.4, size: 2 });
     }
   }
@@ -1652,7 +1658,6 @@ const PROBLEM_WORDS: Record<Problem, string> = {
 };
 
 function refreshIcons(g: Game) {
-  updateLinks(g);
   const cam = g.rts.target, dist = g.rts.distance, merge = dist > CLUSTER_FROM;
   const only = S.view ? VIEW_PROBLEMS[S.view] : undefined;
   const raw: ProblemItem[] = [];
@@ -2342,9 +2347,15 @@ registerInspector((sel, g) => {
 // ============================================================== system + save
 registerSystem({
   id: 'services',
+  // which buildings have lost their road link (they do nothing until it is back): checked on the simulation's clock
+  step(g, dt) {
+    S.linkT -= dt / TOP_SPEED;
+    if (S.linkT <= 0) { S.linkT = 0.6; updateLinks(g); }
+  },
   init(g) {
     if (S.inited) return;
     S.inited = true;
+    S.rng.state = streamSeed(g.seed, 'services');
     initHooks(g);
     S.icons = new ProblemIcons(g.scene);
     g.problemAt = (cx, cy) => {

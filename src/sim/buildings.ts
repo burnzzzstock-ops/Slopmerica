@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { CELL, WATER } from '../config';
 import { MAX_LEVEL, type BuildingModel, type LandmarkId, type ZoneType } from '../contracts';
 import { closestOnSampled, SpatialHash, V2 } from '../core/math';
-import { Rng } from '../core/rng';
+import { fx, Rng } from '../core/rng';
 import { buildingMaterial, generateBuilding, generateLandmark, landmarkFootprint, setArtMap, variantsFor } from '../buildings/generator';
 import { generateConstruction, kitMaterial } from '../buildings/kitGenerator';
 import { applyAtmosphere } from '../world/seasons';
@@ -159,7 +159,8 @@ export class Buildings {
   readonly mesh: THREE.BatchedMesh;
   readonly kitMesh: THREE.BatchedMesh;
   private geoIds = new Map<string, { id: number; model: BuildingModel }>();
-  private rng = new Rng(4242);
+  /** the dice for what grows where and how (seeded from the county's seed, saved) */
+  readonly rng = new Rng(4242);
   private m4 = new THREE.Matrix4();
   private q = new THREE.Quaternion();
   private v = new THREE.Vector3();
@@ -404,7 +405,7 @@ export class Buildings {
       id: this.nextId++, zone, level, w, d, x, z, y, yaw, hw: (w * CELL) / 2, hd: (d * CELL) / 2, cells, seg: mid.seg,
       label: e.model.label, brand: e.model.brand ?? brand, model: e.model, state: 'building', progress: 0,
       buildDays: this.rng.range(3, 7) * (1 + level * 0.25), cap: capacityFor(zone, level, w * d), occ: 0, lv: 20, levelProgress: 0,
-      born: this.day, inst: -1, buildInst: -1, buildH: 1, emitT: Math.random() * 5,
+      born: this.day, inst: -1, buildInst: -1, buildH: 1, emitT: fx.float() * 5,
     };
     for (const c of cells) c.bld = b.id;
     this.list.set(b.id, b);
@@ -550,7 +551,7 @@ export class Buildings {
       const b: Bld = {
         id: this.nextId++, zone: zt, level, w, d, x, z, y, yaw, hw: (w * CELL) / 2, hd: (d * CELL) / 2, cells: [], seg,
         label: e.model.label, brand: e.model.brand ?? (brand || undefined), model: e.model, state: prog >= 1 ? 'active' : 'building', progress: Math.min(1, prog),
-        buildDays: 5, cap: capacityFor(zt, level, w * d), occ, lv: 30, levelProgress: lp, born: this.day, inst: -1, buildInst: -1, buildH: 1, emitT: Math.random() * 5,
+        buildDays: 5, cap: capacityFor(zt, level, w * d), occ, lv: 30, levelProgress: lp, born: this.day, inst: -1, buildInst: -1, buildH: 1, emitT: fx.float() * 5,
       };
       this.list.set(b.id, b);
       this.hash.insert(b, x - b.hw - b.hd, z - b.hw - b.hd, x + b.hw + b.hd, z + b.hw + b.hd);

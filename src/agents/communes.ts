@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { GLOW, HALF, WATER } from '../config';
 import { clamp } from '../core/math';
 import { Rng } from '../core/rng';
+import { TOP_SPEED } from '../core/time';
 import type { MapId } from '../world/maps';
 import type { Terrain } from '../world/terrain';
 import { Paint } from '../world/terrain';
@@ -200,8 +201,26 @@ export class Communes {
     return c.forever ? 0 : clamp(0.9 - c.stubborn * 0.6, 0.2, 0.9);
   }
 
+  /** told when a commune has packed up and gone (the land it blocked is free) */
+  onGone?: (c: Commune) => void;
+
+  /** One fixed step of `dt` game seconds: a commune that is leaving takes its time, then is gone. */
+  step(dt: number) {
+    for (const c of this.list) {
+      if (c.state !== 'leaving') continue;
+      c.leaveT += dt / TOP_SPEED;
+      if (c.leaveT > 4) {
+        c.state = 'gone';
+        this.group.remove(c.group);
+        if (c.remains) this.group.add(c.remains);
+        this.terrain.paintCircle(c.x, c.z, 7.5, Paint.Scorched);
+        this.onGone?.(c);
+      }
+    }
+  }
+
   /** Animate: flicker fires; leaving communes sink and fade. */
-  update(dt: number, night: number, time: number, camera: THREE.Vector3) {
+  update(_dt: number, night: number, time: number, camera: THREE.Vector3) {
     let lit: Commune | null = null, litD = Infinity;
     for (const c of this.list) {
       if (c.state === 'gone') continue;
@@ -217,16 +236,7 @@ export class Communes {
         c.bulbMesh.position.y = Math.sin(time * 1.15 + c.id) * 0.045;
         c.bulbMesh.rotation.y = Math.sin(time * 0.8 + c.id) * 0.0018;
       }
-      if (c.state === 'leaving') {
-        c.leaveT += dt;
-        c.group.position.y = c.baseY - Math.min(4, c.leaveT) * 2;
-        if (c.leaveT > 4) {
-          c.state = 'gone';
-          this.group.remove(c.group);
-          if (c.remains) this.group.add(c.remains);
-          this.terrain.paintCircle(c.x, c.z, 7.5, Paint.Scorched);
-        }
-      }
+      if (c.state === 'leaving') c.group.position.y = c.baseY - Math.min(4, c.leaveT) * 2;
     }
     if (lit) {
       const flicker = 0.88 + Math.sin(time * 13 + lit.id) * 0.09 + Math.sin(time * 23.7 + lit.id * 4) * 0.035;

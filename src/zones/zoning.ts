@@ -470,7 +470,8 @@ export class Zoning {
     for (const segId of this.bySeg.keys()) this.revalidate.add(segId);
   }
 
-  update() {
+  /** The lots catch up with the roads (new roads get lots, neighbours are checked again). No drawing: the simulation's step calls it. */
+  sync() {
     if (this.dirtySegs.size) {
       for (const id of this.dirtySegs) {
         const seg = this.net.segs.get(id);
@@ -494,6 +495,11 @@ export class Zoning {
       this.relink.clear();
       this.onRelink?.(ids);
     }
+  }
+
+  /** sync(), then what is drawn of the lots */
+  update() {
+    this.sync();
     if (this.overlayDirty) this.rebuildOverlay();
     // the beds follow the ground: a building levelling its lot next door moves the height they sit on (checked every half second or so)
     if (this.bedDirty || (this.bedVer !== this.terrain.surfaceVersion && ++this.bedWait > 30)) this.rebuildBeds();

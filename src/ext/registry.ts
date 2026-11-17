@@ -73,8 +73,13 @@ export type ExtInspector = (sel: NonNullable<Selection>, g: Game) => string | nu
 export interface ExtSystem {
   id: string;
   init?(g: Game): void;
-  /** every rendered frame; simDays = game days advanced this frame */
+  /**
+   * every rendered frame; simDays = game days advanced this frame. For what is drawn and heard only: anything that changes
+   * the county belongs in step (or daily / weekly), or the same county comes out different at another frame rate.
+   */
   frame?(g: Game, dt: number, simDays: number): void;
+  /** every fixed step of the simulation: `dt` game seconds on */
+  step?(g: Game, dt: number): void;
   daily?(g: Game, day: number): void;
   weekly?(g: Game): void;
   /** JSON-serializable state for saves */

@@ -20,6 +20,7 @@ import { PostFX } from './render/post';
 import { PhotoMode } from './render/photo';
 import { BuildingFinishes } from './buildings/finishState';
 import { applyLowGrade, lowExposure } from './render/lowGrade';
+import { installGradeLite } from './render/gradeLite';
 import { Particles } from './render/particles';
 import { ConstructionEffects } from './render/constructionEffects';
 import { AudioEngine } from './audio/audio';
@@ -275,6 +276,7 @@ export class Game {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, presetPixelRatio(this.q.name)));
     this.renderer.setSize(container.clientWidth, container.clientHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    installGradeLite(this.renderer);
     this.renderer.toneMappingExposure = 0.95;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = this.q.shadows;
@@ -1438,8 +1440,9 @@ export class Game {
       // rides on the tone map, since there is no grade pass to apply it. (Low used to take only the night lift, so a storm or a
       // heat wave exposed like a clear day.)
       this.renderer.toneMappingExposure = 0.95 * (this.post.active ? 1 : lowExposure(this.env, this.post.look));
-      // ... and its tint rides on the two lights that carry the ambient and the key (render/lowGrade.ts)
-      if (!this.post.active) applyLowGrade(this.env, this.post.look);
+      // Low applies the same look in each material's canvas tone-map chunk.
+      if (!this.post.active) applyLowGrade(this.env, this.post.look, this.renderer);
+      else this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
       this.post.render(n, this.rts.distance);
       P.lap('render');
       if (this.blackChecks.length && performance.now() >= this.blackChecks[0] && !document.hidden) {

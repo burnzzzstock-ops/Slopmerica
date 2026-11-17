@@ -3,7 +3,7 @@ import type { Game } from '../game';
 import { lineCubic, quadCubic } from '../core/math';
 import type { RoadTypeId } from '../roads/roadTypes';
 import type { ZoneType } from '../contracts';
-import { saveGame } from '../sim/save';
+import { saveGame, snapshot } from '../sim/save';
 import { refsFor } from '../sim/state';
 import { EXT } from '../ext/registry';
 import { CUSTOM_BUILDINGS } from '../sim/buildings';
@@ -50,6 +50,10 @@ export function debugApi(g: Game) {
     },
     save() {
       return saveGame(g);
+    },
+    /** The city as a save file's text, whole, without writing it anywhere (a big city's save can be more than the browser's storage holds). */
+    snapshot() {
+      return JSON.stringify(snapshot(g));
     },
     /** Lay out every zone x level (and the landmarks) in a grid for eyeballing. */
     showcase(x: number, z: number, variant = 0) {

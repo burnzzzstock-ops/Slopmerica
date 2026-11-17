@@ -66,8 +66,13 @@ function startPick(): 'best' | 'random' | number {
   return navigator.webdriver ? 'best' : 'random';
 }
 
-/** #seed=N on the address picks the county's seed (tests and replays); under automation with none given it is 1, so two runs agree */
+/**
+ * #seed=N on the address picks the county's seed (tests and replays), as does window.__seed set before the page's code runs (a
+ * test's init script); under automation with neither it is 1, so two runs agree.
+ */
 function seedPick(): number | undefined {
+  const w = (window as unknown as { __seed?: unknown }).__seed;
+  if (typeof w === 'number' && Number.isFinite(w)) return w >>> 0;
   const m = /(?:^|[#&])seed=(\d+)/.exec(location.hash);
   return m ? Number(m[1]) >>> 0 : navigator.webdriver ? 1 : undefined;
 }
@@ -151,7 +156,7 @@ export class Game {
   /** the weather the simulation runs on (seeded, saved, in game time); `weather` above is the sky, which follows it */
   readonly climate: Climate;
   /** the county's seed: every stream of dice in the simulation is drawn from it */
-  readonly seed: number;
+  seed: number;
   /** the valley's ground as generated, before anything was built on it (a save keeps only where today's ground differs) */
   readonly pristine: Float32Array;
   private skySpell = -1;
@@ -1098,6 +1103,21 @@ export class Game {
   private snap = true;
   /** called at the start of each fixed step with its number. Scripted input (tests, replays) acts here: the same step every run. */
   onStep: ((step: number) => void)[] = [];
+  /**
+   * Start every stream of dice again from a seed (tests: the same town, saved once, run with seed after seed). Everything the
+   * dice have not yet decided comes out as that seed says; nothing already decided changes.
+   */
+  reseed(seed: number) {
+    this.seed = seed >>> 0;
+    this.sim.rng.state = streamSeed(this.seed, 'sim');
+    this.buildings.rng.state = streamSeed(this.seed, 'buildings');
+    this.traffic.rng.state = streamSeed(this.seed, 'traffic');
+    this.peds.rng.state = streamSeed(this.seed, 'people');
+    this.dice.state = streamSeed(this.seed, 'county');
+    this.climate.reseed(streamSeed(this.seed, 'climate'));
+    for (const s of EXT.systems) s.reseed?.(this);
+  }
+
   /** Step by hand: n fixed steps with no frames between (tests, the debug hook), then one undrawn frame so what is shown is current. */
   runSteps(n: number) {
     for (let i = 0; i < n; i++) this.step();

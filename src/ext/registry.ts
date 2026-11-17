@@ -83,6 +83,8 @@ export interface ExtSystem {
   step?(g: Game, dt: number): void;
   daily?(g: Game, day: number): void;
   weekly?(g: Game): void;
+  /** the county's dice were started again from g.seed: do the same with this system's own stream (streamSeed(g.seed, name)) */
+  reseed?(g: Game): void;
   /** JSON-serializable state for saves */
   save?(g: Game): unknown;
   /**

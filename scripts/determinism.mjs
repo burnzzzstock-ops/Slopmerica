@@ -40,7 +40,8 @@ async function open(quality, save) {
       if (save) localStorage.setItem('slopmerica.save.v1', save);
     } catch { /* */ }
   }, { quality, save: save ?? null });
-  await page.addInitScript(seededInit, { seed, rng: seededRandom.toString() });
+  if (!save) await page.addInitScript(seededInit, { seed, rng: seededRandom.toString() });
+  else await page.addInitScript(() => { let game; Object.defineProperty(window, '__game', { configurable: true, get: () => game, set: (g) => { game = g; g.start = () => {}; } }); });
   if (save) {
     await page.goto(`${base}/`, { waitUntil: 'load', timeout: 180000 });   // (no seed on the address: the save carries it)
     await page.waitForSelector('#continue', { timeout: 180000 });
@@ -49,7 +50,8 @@ async function open(quality, save) {
     await page.goto(`${base}/#skip&map=${map}&mode=${TOWN === 'player' ? 'ponzi' : 'sandbox'}&start=best&seed=${seed}`, { waitUntil: 'load', timeout: 180000 });
   }
   await page.waitForFunction(() => window.__game && window.__dbg && window.__services, null, { timeout: 300000 });
-  await page.evaluate((seed) => { cancelAnimationFrame(window.__game.raf); window.__reseed?.(seed); }, seed);
+  // (a county opened from a save keeps the dice the save carries: seeding them again would be a different county)
+  await page.evaluate(() => cancelAnimationFrame(window.__game.raf));
   return page;
 }
 

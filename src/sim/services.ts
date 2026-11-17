@@ -2378,6 +2378,7 @@ registerSystem({
   id: 'services',
   // which buildings have lost their road link (they do nothing until it is back): checked on the simulation's clock
   step(g) { updateLinks(g); },
+  reseed(g) { S.rng.state = streamSeed(g.seed, 'services'); },
   init(g) {
     if (S.inited) return;
     S.inited = true;

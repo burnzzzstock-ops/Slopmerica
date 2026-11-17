@@ -869,6 +869,7 @@ registerSystem({
   init(g) { const t = new TransitSystem(g); t.rng.state = streamSeed(g.seed, 'transit'); t.wire(); },
   frame(g, dt) { transitFor(g)?.frame(dt); },
   step(g, dt) { transitFor(g)?.step(dt); },
+  reseed(g) { const t = transitFor(g); if (t) t.rng.state = streamSeed(g.seed, 'transit'); },
   daily(g) { transitFor(g)?.daily(); },
   weekly(g) { transitFor(g)?.weekly(); },
   save(g) { return transitFor(g)?.save(); },

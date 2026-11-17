@@ -11,6 +11,7 @@ import { launch } from './lib/browser.mjs';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 600)); if (!ok) bad++; };
@@ -27,7 +28,7 @@ const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, o
   const lines = (src) => [src.indexOf('const roads = ['), src.indexOf('const firstNames')];
   const [a0, a1] = lines(before), [b0, b1] = lines(today);
   writeFileSync(join(dir, 'feed.ts'), before.slice(0, a0) + today.slice(b0, b1) + before.slice(a1));
-  const old = await import(join(dir, 'feed.ts'));
+  const old = await import(pathToFileURL(join(dir, 'feed.ts')).href);   // (a bare C:... path is not an import specifier on Windows)
   const seeded = (s) => () => ((s = (s * 16807) % 2147483647) / 2147483647);
   const kinds = Object.keys(now.FEED_TEMPLATES);
   let same = 0, n = 0;
@@ -92,7 +93,8 @@ const r = await page.evaluate(async () => {
   g.feed.push = (kind, extra) => { pushed.push({ kind, extra }); };
   const rnd = Math.random;
   Math.random = () => 0.01;
-  try { g.buildings.onComplete?.({ id: 1e9, zone: 'comLow', brand: 'tacoBull', label: 'Taco Bull', x: 1e5, z: 1e5, y: 0, level: 1, model: { height: 5 } }); } finally { Math.random = rnd; g.feed.push = push; }
+  // (whether an opening is posted is a roll of the feed's own dice, which a test cannot load: open it until it is)
+  try { for (let i = 0; i < 80 && !pushed.some((p) => p.kind === 'buildingOpened'); i++) g.buildings.onComplete?.({ id: 1e9, zone: 'comLow', brand: 'tacoBull', label: 'Taco Bull', x: 1e5, z: 1e5, y: 0, level: 1, model: { height: 5 } }); } finally { Math.random = rnd; g.feed.push = push; }
   const opened = pushed.find((p) => p.kind === 'buildingOpened');
   return { tagged: F.feedTagged(), pools, empty, wrong: [...new Set(wrong)], loose: [...new Set(loose)], fm, lane, shown, opened: opened?.extra ?? null };
 });

@@ -209,6 +209,9 @@ export class Climate {
     return out;
   }
 
+  /** the dice from a new seed (what the next spell will be; the spell under way stays) */
+  reseed(seed: number) { this.rng.state = seed >>> 0; }
+
   save() {
     return { kind: this.kind, season: this.season, intensity: this.intensity, temperature: this.temperature, wet: this.wet, snowCover: this.snowCover, spell: this.spell, spellDays: this.spellDays,
       start: this.start, end: this.end, ease: this.ease, strength: this.strength, cal: this.cal, forced: this.forced, windAngle: this.windAngle, rng: this.rng.state };

@@ -61,7 +61,10 @@ export const seededRandom = (seed) => {
  */
 export function seededInit({ seed, rng }) {
   const make = new Function(`return (${rng})`)();
-  window.__reseed = (s) => { Math.random = make(s); };
+  // the county's own dice (what the simulation rolls) start from the seed too: a new county reads window.__seed, and a town
+  // opened from a save is reseeded once it is up (window.__reseed, below and in openBlock)
+  window.__seed = seed;
+  window.__reseed = (s) => { Math.random = make(s); window.__game?.reseed?.(s); };
   window.__reseed(seed);
   let game;
   Object.defineProperty(window, '__game', {

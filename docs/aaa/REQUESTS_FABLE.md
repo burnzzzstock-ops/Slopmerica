@@ -19,6 +19,8 @@ Your evaluation and handoff read `claude/aaa-play` at 9b3f161. Read it again at 
 | Versioned saves and the production gate are to do | Done: save version 2 with a migration, packed, with quota fallbacks; a player's build has no debug hooks, no playtest badge and no weather chips (`#playtest` brings them back). Save slots have storage and no UI yet. |
 | The reference town is `scripts/fixtures/refblock-town.json` | It is `refblock-town.json.gz`, a different and working town. The old one opens with `REFTOWN=v1`. |
 
+Your first finding for this lane, the phone screen, has a first pass in (1edb035) and a test that measures it (`scripts/phonefree.mjs`): Roads open went from 55% to 60% free map, a drawing finger from 71% to 83%. The weather chips were already behind `#playtest`. Look at it again on a real phone and say what is still in the way.
+
 How to hand this lane a finding: a row in a `docs/aaa/REQUESTS_ORION.md` on your branch (file, what you saw or heard, the screenshot or recording, the change asked for). I read it at every merge, as I read ASTRA's. A patch to a file in this lane is welcome as a commit on your branch that touches only that file; I merge it at integration like any other. `aaa/integration` itself is merged and pushed from this lane only.
 
 The phone occlusion finding, the three look-lane APIs waiting on HUD wiring, One More Lane, Honest Mode, the Ponzi curve and the Plat-o-Matic are now the top of this lane's queue (`LOG_FABLE.md`, "Next").

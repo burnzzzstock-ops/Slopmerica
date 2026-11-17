@@ -14,6 +14,8 @@ A fresh session can take over from this file alone. Read "Where things are", "St
 - **Never pipe the gate through `tail` in a command that then pushes.** The pipe hides the gate's exit code. This pushed one commit past a failing gate on day one.
 - **Long text goes through a file writer, not a shell heredoc.** Git Bash on this PC drops backslashes and trips on apostrophes in long heredocs. Edit scripts live in the session scratchpad; small edits go through a split/join helper that reports a missed match.
 - **A server on a port does not die with `pkill`.** Find the PID with `netstat -ano` and use `taskkill //F //PID`.
+- **Do not export a test's setting for a whole suite run.** `DAYS=120`, meant for the determinism test, also reached trashcliff and made it fail (it needs 133 days). The determinism entry in the registry carries its own settings now.
+- **Merge `origin/aaa/integration` into `claude/aaa-play` before the next push.** The branch was pushed at `03ecb16` without it, so it does not hold the look lane's code yet (photo mode, the follow camera, the HUD icons), which the next task wires up.
 
 ## This PC
 
@@ -25,7 +27,7 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 
 ## State of the work (17 Nov 2026)
 
-`claude/aaa-play` is at `65e2c58` plus this file. Everything below is committed. The registry has 189 entries on this branch (12 gate, 15 smoke, 87 full, 75 measure), 201 on the merge.
+`claude/aaa-play` is pushed at `03ecb16`; `aaa/integration` is pushed at `451a302` (the first merge of both lanes), and its next merge waits on its suite. Everything below is committed. The registry has 191 entries on this branch (12 gate, 15 smoke, 89 full, 75 measure), 203 on the merge.
 
 | Item | State |
 |---|---|
@@ -38,7 +40,8 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 | F0.7 sim hot spots | Open. The 10,000-person town to measure on is at `shots/towns/florida-10k.json` (gitignored; 14,632 people, 635 buildings) |
 | F0.8 AGENTS.md / CLAUDE.md | Done |
 | Contracts for ASTRA | Types, `game.fields` and 11 of 14 world events are live. Not emitted yet: `flood`, `collapseStage`, `paradisePaved` (they come with the systems that cause them) |
-| Phases 1 to 4 | Not started |
+| U1, U4 the phone screen | First pass done (1edb035): see "The phone screen" below |
+| Phases 1 to 4 otherwise | Not started. Two traffic bugs that locked a main street are fixed (897fd37, ef3b669) |
 
 ### What changed, by commit
 
@@ -61,6 +64,11 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 | 98fb177 | costtest points its cursor at the spot the game's finder returns |
 | 17e194e | A weather spell's floor is 12 real seconds at the player's speed again (19 days at top speed, under 5 at normal), so rain is days long at normal speed |
 | 65e2c58 | `REFTOWN=v1` opens the old reference town; the suite sets it for every test in `astra.json` until the look lane has measured again on today's town |
+| 1edb035 | **Phone:** the map stays in view under an open drawer and a drawing finger; `scripts/phonefree.mjs` |
+| 897fd37 | **Traffic:** a car on its way to a drive-thru that is gone pulls into the lot (it waited at the kerb for good and locked the main street); `scripts/thrugone.mjs` |
+| ef3b669 | **Traffic:** a shop rebuilt as a drive-thru gets its lane; parkingtest fits any town |
+| fc09515 | The reference town regrown with its traffic moving; the grower refuses a town saved in a jam |
+| be5dbff, 03ecb16 | lightstest and landmarktest look at the new town's own junctions and field |
 
 ### How the simulation is built now
 
@@ -78,6 +86,14 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 The town it replaced (262 buildings, no main street, no working utilities: the stroad had been drawn on top of the county road and every service aimed at ground with no road) is kept as `scripts/fixtures/saves/v1-norcal-block.json`, a version 1 save for the migration test.
 
 A first fully serviced version grew to 2,277 people and 363 cars and made the traffic tests fail for load reasons, so the zones were cut back to about 1,000 people.
+
+The town committed in 1cbdb6b had been saved with its main street locked for good: a McDougal's levelled up into a building with no drive-thru while three cars were on their way to its window, and they waited at its kerb for ever with 30 cars behind them. That save is kept as `scripts/fixtures/saves/v2-drivethru-jam.json.gz` (thrugone opens it). The town was regrown in fc09515 after the fix: the same buildings and roads, 187 cars, nobody standing on the road for over 33 s in its last 85 days. `scripts/refblock.mjs` now refuses to save a jammed town.
+
+### The phone screen (1edb035)
+
+Share of a 390 x 844 screen where a finger lands on the map and nothing else (`scripts/phonefree.mjs`): idle with the first step showing 82%; Roads open 55% to 60%; Zoning open 57% to 61%; Services open 44% to 48%; a finger drawing a road 71% to 83%. Beside an open drawer the tutorial step is one line (a tap opens it); under a drawing finger it is hidden and the cost readout is two lines; a tool drawer has no title row; the service categories and road modes are one scrolling row.
+
+Still to do on the phone: the readout after the finger lifts is the whole text again (116 px tall); the Services drawer is the tallest thing on the screen and its "Looks: Asset Vault / Classic" row belongs in Settings; the top bar is one tight row.
 
 ## Test results
 
@@ -103,6 +119,19 @@ A first fully serviced version grew to 2,277 people and 363 cars and made the tr
 
 Seed 1, norcal, a street grid with zones and services. Stepped, stepped again, 30 fps, 144 fps and a reload every 45 days agree on all 17 system fingerprints at every checkpoint for 180 days. Before the fixed step, 30 fps and 144 fps differed from day 1.
 
+### The play lane's traffic tests on the regrown town (fc09515), seeds 1 to 6, Low, real GPU
+
+| Test | Result | What fails |
+|---|---|---|
+| thrugone, trashcliff | pass | |
+| parkingtest | 5 of 6 | seed 6: the grand opening's line holds nobody behind it |
+| crosswalktest | 5 of 6 | seed 1: one walker inside a car once (the base: seed 6) |
+| carsolid | 0 of 6 | cars inside each other for an instant (0.00 to 0.02 pairs in a lane, 0.01 to 0.02 in a junction) and 2 to 5 heading snaps in 120 s. Its 60-second-wait check passes on all six now (it was 120 s on all six) |
+| lightstest | 2 of 6 | actuated greens carry 11 to 17% more at their best junction where the test asks 20%; a leading green does not cut the lefts' wait on seed 1; leading greens cost all the lights over a tenth of their cars on seeds 5 and 6 |
+| landmarktest | 1 of 6 | 16 to 22 of 29 fans are in their seats by kickoff where the test asks 20 |
+
+None of these thresholds was loosened. They are what the traffic does on a town whose streets are moving, and they are the first work of the traffic phase.
+
 ### First integration merge (`codex/aaa-world` 9fd06ea + `claude/aaa-play` ecdc0e6), `--gpu`, seed 1
 
 113 of 122. The nine: photo-reflection (fails on `codex/aaa-world` alone: `mirror.lastEye` is undefined in `photoPNG`), presetlight and carsolid (as on the base), phonetargets and trashcliff (fixed by commits after ecdc0e6), parkingtest and lightstest (old-town aim), costtest (fixed, 98fb177), weathertest (fixed, 17e194e).
@@ -112,14 +141,16 @@ Seed 1, norcal, a street grid with zones and services. Stepped, stepped again, 3
 1. People hold cars at crossings and trigger signal phases, and exist only when the camera is within 900 m. This is F0.4. The plan: town-wide seeded walkers in `peds` that do not depend on the camera; camera-local cosmetic extras in a separate list on the `fx` stream; a renderer handle of -1 for a walker not drawn; handles assigned at draw time. Then extend `qualitytest` to fingerprint the whole sim on Low and Ultra.
 2. The interchange tool (`net.together()`) and communes clearing trees do not raise `roadBuilt` / `treesCleared`.
 3. The sky module rolls nothing of its own any more but still owns the look of a spell; it is handed each spell through `weather.force`. It should read `game.climate` (requested).
+4. Traffic, from the tests on the regrown town: cars pass through each other for an instant where a truck pulls out of a lot and where two turning curves cross in a junction; 2 to 5 heading snaps in 120 s; a car can wait in its driveway up to 333 s for a gap on a residential street at rush hour; one car stopped past its stop line on a crosswalk while yielding to a walker and sat there through the red (seed 2); actuated lights help less than the test expects, and leading greens can cost a junction cars.
+5. The gridlock breaker (`REROUTE_T`) only frees a front car held by a full block. A front car held by anything else (it was a drive-thru that did not exist) locks the street for good with no alert. A watchdog for "a car on the road that has not moved in N minutes" would catch the next cause, whatever it is.
 
 ## Next
 
 The order below follows the owner's "fun first" roadmap of 17 Nov: what a player sees and touches comes before the rest of the foundation. Each item names the brief's code for it.
 
-1. Finish the integration merge: full suite on the merged tree, push `claude/aaa-play` and `aaa/integration`. Nothing after 9b3f161 is visible to the other two lanes until this is done.
-2. Cherry-pick the re-pointed lightstest, parkingtest and landmarktest once they pass on several seeds.
-3. **The phone screen (U1, U4).** At 390 x 844 the tutorial card, an open drawer and the bottom bar stack up and cover more than half the screen. The tutorial step becomes one compact pill while a drawer is open; the drawer slides down to a slim bar while a finger is drawing on the map; step 5 of 5 dismisses itself once Budget has been opened. A test measures the share of the screen that is free map.
+1. Push `aaa/integration` at the merge of `03ecb16` once its suite is read, then merge `origin/aaa/integration` into `claude/aaa-play`.
+2. Done: the re-pointed lightstest, parkingtest and landmarktest are in (be5dbff, ef3b669, 03ecb16).
+3. **The phone screen (U1, U4):** first pass done (1edb035). What is left is listed under "The phone screen" above.
 4. **Wire what the look lane has built (U5):** the drawn HUD icons, a Follow button in the car, person and bus inspectors with a "Following" pill, photo mode and postcards.
 5. **One More Lane as a loop (F1):** the grant stamp, the corridor's volume before and after in the road inspector, traffic climbing back over about 18 game months, the feed line when it saturates. This needs the mesoscopic trip layer.
 6. **Honest Mode (F8):** a table of euphemism and plain word, a toggle that flips the whole UI, unlocked by Earl; the value-per-acre view.

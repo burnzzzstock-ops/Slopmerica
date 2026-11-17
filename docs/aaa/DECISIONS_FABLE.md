@@ -10,7 +10,17 @@ Nothing here is decided by the agent. Each item has a recommendation and the evi
 | A drunk driver's weave | Advanced once per frame: barely moved at top speed, raced at normal speed | 1.6 radians per game second at every speed | Same reason | One constant |
 | How fast roads get wet and snow settles | Partly real time | Game time, at the rate the sky had at top speed: wet in about 8 calendar days of rain, dry over about 72 | Same reason | Two constants in `src/sim/climate.ts` |
 | The shortest weather spell | 12 real seconds at the speed set | The same (after a detour: for half a day it was a fixed 19 days, which made rain last weeks at normal speed; `weathertest` caught it) | It is your accepted behaviour | Nothing to do |
+| A drive-thru that closes or is rebuilt without a window | Cars already on their way waited at its kerb, on the road, for good; a main street could lock up behind them with no alert | They pull into the lot like any other visit (897fd37) | It was a bug, found on the new reference town | Nothing to do |
+| A shop that levels up into a drive-thru | It got no lane and no grand opening until the county was reloaded | It gets both at once (ef3b669) | It was a bug | Nothing to do |
+| The first-steps card on a phone | Three lines and a button, always | One line while a drawer is open or a tool is in hand (a tap opens it); hidden while a finger draws | The card, a drawer and the toolbar covered 45 to 56% of a 390 x 844 screen | I put the full card back; one CSS class |
 | The reference town every look and traffic test opens | 262 buildings, no main street, no working utilities | 969 people, 143 buildings, with its main street, plants, wells, landfill and sewage works | The old one was broken by a bug in the script that grew it; tests were measuring a town in a permanent utility emergency | Keep both; the old one is still in the repo |
+
+## Balance questions the tests raised
+
+| Question | What was measured | Recommendation |
+|---|---|---|
+| How early fans set off for a game (`EVENT_SLACK` in `src/agents/traffic.ts`, 6 times the free-flow drive) | On the reference town with its traffic moving, 16 to 22 of 29 fans are in their seats by kickoff (seeds 1 to 6); the test asks two in three. On the first reference town, which had little traffic, 18 to 21 of 21 were | Leave the number until the traffic phase has dealt with driveway waits and junction losses, then measure again: the slack may be fine once a car is not held 5 minutes in its own driveway |
+| How much actuated traffic lights should help | At their best junction they carry 11 to 33% more cars than fixed greens (six seeds); the test asks a fifth more. Leading greens for left turns cost all the lights 10 to 19% of their cars on two seeds of six | A finding for the traffic phase, not a number to change now |
 
 ## Proposed numbers (`src/sim/tuning.ts`)
 

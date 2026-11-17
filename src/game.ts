@@ -20,6 +20,7 @@ import { PostFX } from './render/post';
 import { PhotoMode } from './render/photo';
 import { applyLowGrade, lowExposure } from './render/lowGrade';
 import { Particles } from './render/particles';
+import { ConstructionEffects } from './render/constructionEffects';
 import { AudioEngine } from './audio/audio';
 import { bindWorldAudio } from './audio/events';
 import type { SoundscapeMix } from './audio/ambience';
@@ -166,6 +167,7 @@ export class Game {
   private skySpell = -1;
   readonly post: PostFX;
   readonly particles: Particles;
+  readonly constructionEffects: ConstructionEffects;
   readonly audio = new AudioEngine();
   readonly net: RoadNetwork;
   readonly roads: RoadRenderer;
@@ -402,6 +404,8 @@ export class Game {
     });
 
     this.wireEvents();
+    this.constructionEffects = new ConstructionEffects(this);
+    this.onFrame.push(dt => this.constructionEffects.update(dt));
     this.net.events.on('segSplit', ({ old, into }) => this.followSplit(old, into));
     // extension systems (transit, services, ...): init before a save restores their data
     for (const s of EXT.systems) s.init?.(this);

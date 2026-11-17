@@ -3631,3 +3631,19 @@ a {
 .more-btn, .chip small { font-size: 12px; }
 @media (max-width: 760px) { .card small { font-size: 11px; } }
 @media (min-width: 761px) and (max-height: 760px) { .card small { font-size: 10.5px; } }
+
+/* ---- every control answers a press, and a mouse over it (scripts/presslook.mjs) ----
+   A finger has no hover, and the tap highlight is switched off for the whole page: until now a touch changed nothing on a
+   button until whatever it did had happened. Pressed, a control brightens and the plain buttons sink a little; under a
+   mouse it brightens a shade. A disabled one does neither. With reduced motion the brightening stays and the sinking goes.
+   `.pressed` is set by the HUD the moment a pointer goes down (hud.ts): on a touch screen :active waits for the browser's
+   own press timer, and on some phones never comes. :active stays for a press from the keyboard. */
+.hud :is(button:not(:disabled), [role='button']):is(:active, .pressed) { filter: brightness(1.35); }
+:is(.tbtn, .chip, .card, .more-btn, .li, .in-actions button, .tool-actions button):not(:disabled):is(:active, .pressed) { transform: scale(0.96); }
+@media (hover: hover) {
+  .hud :is(button:not(:disabled), [role='button']):hover { filter: brightness(1.14); }
+  .hud :is(button:not(:disabled), [role='button']):is(:active, .pressed) { filter: brightness(1.35); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.tbtn, .chip, .card, .more-btn, .li, .in-actions button, .tool-actions button):is(:active, .pressed) { transform: none; }
+}

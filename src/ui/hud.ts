@@ -176,6 +176,17 @@ export class Hud implements UiSink {
     this.root = document.createElement('div');
     this.root.className = 'hud';
     parent.appendChild(this.root);
+    // A press shows on the control the moment the pointer goes down (`.pressed` in style.css) and goes when it lifts, wherever
+    // that is. The control may have been redrawn by then: the class goes from whichever element took it.
+    let pressed: Element | null = null;
+    this.root.addEventListener('pointerdown', (e) => {
+      const b = (e.target as HTMLElement).closest?.('button, [role="button"]');
+      if (!b || (b as HTMLButtonElement).disabled) return;
+      pressed?.classList.remove('pressed');
+      (pressed = b).classList.add('pressed');
+    }, true);
+    const unpress = () => { pressed?.classList.remove('pressed'); pressed = null; };
+    for (const ev of ['pointerup', 'pointercancel', 'blur'] as const) window.addEventListener(ev, unpress, true);
     this.buildTop();
     this.feed = new FeedPanel(game, this.root, IS_TOUCH || window.innerWidth < 760);
     this.feed.onUnread = (n) => {

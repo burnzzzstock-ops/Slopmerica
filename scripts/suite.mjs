@@ -57,6 +57,10 @@ for (const f of existsSync(REG) ? readdirSync(REG).filter((f) => f.endsWith('.js
 if (!tests.length) { console.error(`suite: no tests found in ${REG}/*.json`); process.exit(1); }
 
 if (flag('--lint')) process.exit(lint());
+// a misspelled name must not quietly select nothing (or quietly skip nothing)
+const unknown = [...only, ...skipArg].filter((n) => !tests.some((t) => t.name === n));
+if (unknown.length) { console.error(`suite: no test named ${unknown.join(', ')} (node scripts/suite.mjs --list shows the names)`); process.exit(1); }
+if (owner && !tests.some((t) => t.owner === owner)) { console.error(`suite: no registry file ${REG}/${owner}.json`); process.exit(1); }
 
 // why a test is not in this run (null: it runs)
 const left = (t) => {

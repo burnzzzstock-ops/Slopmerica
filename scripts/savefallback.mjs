@@ -70,7 +70,7 @@ const clip = (page) => page.evaluate(() => navigator.clipboard.readText().catch(
   const text = await clip(page);
   let city = null; try { city = JSON.parse(text); } catch { /* not JSON */ }
   const msg = await frame.evaluate(() => document.querySelector('.bug-status')?.textContent ?? '');
-  check('bug sheet, in a frame: the city file is on the clipboard (a valid save: v 1, map, buildings)', !!city && city.v === 1 && city.map === 'appalachia', { head: String(text).slice(0, 60) });
+  check('bug sheet, in a frame: the city file is on the clipboard (a valid save: a version, map, buildings)', !!city && city.v >= 1 && city.map === 'appalachia', { head: String(text).slice(0, 60) });
   check('... and the screen says it was copied', /copied/i.test(msg), { msg });
   check('... a download was never reported (the frame blocks it)', downloads === 0);
   // Settings' own button
@@ -85,7 +85,7 @@ const clip = (page) => page.evaluate(() => navigator.clipboard.readText().catch(
     const t2 = await clip(page);
     let c2 = null; try { c2 = JSON.parse(t2); } catch { /* */ }
     const toast = await frame.evaluate(() => [...document.querySelectorAll('.toast')].map((e) => e.textContent).join(' | '));
-    check('Settings, in a frame: the city file is on the clipboard', !!c2 && c2.v === 1, { head: String(t2).slice(0, 60) });
+    check('Settings, in a frame: the city file is on the clipboard', !!c2 && c2.v >= 1, { head: String(t2).slice(0, 60) });
     check('... and a toast says "copied"', /copied/i.test(toast), { toast });
     globalThis.__copied = t2;
   }

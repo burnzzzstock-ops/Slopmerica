@@ -26,8 +26,8 @@ console.log('picked fire station', JSON.stringify(await state()));
 await tap(195, 380);
 await page.waitForFunction(() => !document.querySelector('#ta-build').hidden, null, { timeout: 30000 }).catch(() => {});
 const planned = await state();
-console.log('after one tap (planned, not bought)', JSON.stringify(planned), planned.svc === 0 && planned.build.startsWith('🔨 Build $') ? 'OK' : 'FAIL');
-if (planned.build.startsWith('🔨 Build $') && !planned.build.includes('disabled')) {
+console.log('after one tap (planned, not bought)', JSON.stringify(planned), planned.svc === 0 && planned.build.startsWith('Build $') ? 'OK' : 'FAIL');
+if (planned.build.startsWith('Build $') && !planned.build.includes('disabled')) {
   await page.tap('#ta-build');
   await page.waitForFunction(() => [...window.__game.buildings.list.values()].some((x) => x.zone === 'service') && document.querySelector('#ta-build').hidden, null, { timeout: 30000 }).catch(() => {});
 }
@@ -58,7 +58,7 @@ await tap(120, 560);
 await page.waitForFunction(() => !document.querySelector('#ta-build').hidden, null, { timeout: 30000 }).catch(() => {});
 const lm1 = await state();
 console.log('landmark after tap', JSON.stringify({ tip: lm1.tip, build: lm1.build, placed: (await lmCount()) - n0 }), (await lmCount()) === n0 && lm1.build !== 'hidden' ? 'OK (planned, not bought)' : 'FAIL');
-if (lm1.build.startsWith('🔨 Build $') && !lm1.build.includes('disabled')) {
+if (lm1.build.startsWith('Build $') && !lm1.build.includes('disabled')) {
   await page.tap('#ta-build');
   await page.waitForFunction(() => window.__game.tools.active === 'inspect', null, { timeout: 30000 }).catch(() => {});
   console.log('landmark after Build', JSON.stringify({ tool: await page.evaluate(() => window.__game.tools.active), spent: await page.evaluate((m) => Math.round(m - window.__game.sim.money), money0) }));

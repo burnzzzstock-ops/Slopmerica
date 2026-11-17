@@ -1,6 +1,7 @@
 // Landmarks draw visitors (traffic pass, playtest 6: "built the stadium, nothing
 // happens"; no trip ever went to a landmark). On the reference block, with Slop
-// 69 Field placed beside one of its roads, stepping cars at game speed (an hour
+// 69 Field placed beside the road nearest the block's middle that has room for
+// it, stepping cars at game speed (an hour
 // on the clock is 15 s at ▶, 300 steps) without rendering:
 //  - the small hours send nobody to the game;
 //  - game night (every evening, 5 to 10 pm) draws a crowd, 3% of the town's
@@ -23,12 +24,17 @@ const SEED = testSeed();
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 600)); if (!ok) bad++; };
 const browser = await launch();
-const { page, errs } = await openBlock(browser, { base, seed: SEED, quality: 'low' });
-const r = await page.evaluate(() => {
-  const g = window.__game, tr = g.traffic, P = g.parking, tgt = g.rts.target;
+const { page, errs, center } = await openBlock(browser, { base, seed: SEED, quality: 'low' });
+const r = await page.evaluate((center) => {
+  const g = window.__game, tr = g.traffic, P = g.parking;
+  // (the camera, and where the field goes, over the block's middle: the town opens looking at the end of the county road,
+  // which was the block's middle only on the first reference town; there the field went up in a jam at the stroad's end)
+  const tgt = g.rts.target.clone();
+  tgt.x = center.x; tgt.z = center.z;
   tr.crosswalkWalkers = undefined; // cars only
   P.inView = () => true; // the lots are on screen: only cars that drive in and out change them
   // Slop 69 Field beside the nearest road that has room for it
+  let road = null;
   const place = (id, near) => {
     const segs = [...g.net.segs.values()].sort((a, b) => Math.hypot(a.samp.pts[0].x - near.x, a.samp.pts[0].z - near.z) - Math.hypot(b.samp.pts[0].x - near.x, b.samp.pts[0].z - near.z));
     for (const s of segs) for (const f of [0.5, 0.3, 0.7]) for (const side of [1, -1]) for (const off of [20, 35, 50, 70]) {
@@ -38,6 +44,7 @@ const r = await page.evaluate(() => {
       if (sp.ok && sp.front && g.placeLandmark(id, { x: sp.x, z: sp.z })) {
         const lm = [...g.buildings.list.values()].find((x) => x.landmark === id);
         lm.state = 'active'; lm.progress = 1;
+        road = `${s.name}, ${Math.round(Math.hypot(lm.x - near.x, lm.z - near.z))} m from the block's middle`;
         return lm;
       }
     }
@@ -104,13 +111,13 @@ const r = await page.evaluate(() => {
       tr.launch = launch2;
     }
   }
-  return { field: field.label, pop, ordinary, game, after, ins, church };
-});
+  return { field: field.label, road, pop, ordinary, game, after, ins, church };
+}, center);
 if (!r.field) check('Slop 69 Field placed beside a road on the block', false);
 else {
   const f = (x) => JSON.stringify(x.trips);
   const crowd = Math.round(Math.min(60, r.pop * 0.03));
-  console.log(`  ${r.field}, ${r.game.spots} stalls; the town has ${r.pop.toLocaleString()} people, so a crowd of about ${crowd} cars`);
+  console.log(`  ${r.field} beside ${r.road}, ${r.game.spots} stalls; the town has ${r.pop.toLocaleString()} people, so a crowd of about ${crowd} cars`);
   console.log(`  the small hours (2 to 5 am):        trips ${f(r.ordinary)}, ${r.ordinary.arrived} arrived, up to ${r.ordinary.most} parked`);
   console.log(`  game day (5 am to 10 pm):           trips ${f(r.game)}, ${r.game.arrived} arrived (${r.game.inByKickoff} of the crowd by kickoff), up to ${r.game.most} parked`);
   console.log(`  after the game (10 pm to 2 am):   trips ${f(r.after)}, ${r.after.arrived} more arrived by 1 am and ${r.after.lateArrived} after, ${r.after.backedOut} backed out, ${r.after.left} still parked`);
@@ -123,10 +130,17 @@ else {
   const came = r.game.arrived + r.after.arrived + r.after.lateArrived;
   check(`they arrive (${r.game.arrived} by 10 pm and ${came} in all, against ${r.ordinary.arrived} in the small hours)`, came >= Math.max(3, toGame * 0.7) && r.game.arrived > 2 * r.ordinary.arrived);
   check(`and park in its lot (up to ${r.game.most} of ${r.game.spots} stalls; ${r.ordinary.most} in the small hours)`, r.game.most >= Math.min(r.game.spots * 0.6, toGame * 0.5) && r.game.most > r.ordinary.most);
-  // (a lot lets three cars out at a time, each waiting for a gap in the road)
-  // the crowd that got there by 1 am: four in five of them have set off home by 2 am
+  // (a lot has three cars at most waiting at its exit, each waiting for a gap in the road)
+  // the crowd that got there by 1 am: four in five of them have set off home by 2 am, or four in five of what the lot
+  // can let out by then if that is fewer. Its cars pull out one at a time (traffic.ts, "one car at a time out of a
+  // driveway"), each taking DEP_T (2.6 s): the 60 s
+  // of traffic from 10 pm to 2 am let out 23 at most. The first town's crowd was 21 cars, inside that; this one's (3% of
+  // 969 people) is 29, and on seed 1 the lot let out 22 between 10 pm and 1:50 am, one every 2.7 s, with three more
+  // always waiting at its exit.
   const fans = toGame - r.after.onTheWay;
-  check(`after the game the crowd drives home (${r.after.trips['heading home'] ?? 0} trips by 2 am for the ${fans} fans there by 1 am; ${r.after.onTheWay} still on the way at 1 am; ${r.after.backedOut} backed out of the stalls, ${r.after.left} of ${r.game.most} still parked at 2 am)`, (r.after.trips['heading home'] ?? 0) >= fans * 0.8 && r.after.backedOut >= Math.min(3, r.game.most) && r.after.left < r.game.most);
+  const lotPace = Math.floor((4 * 15) / 2.6);
+  const home = r.after.trips['heading home'] ?? 0;
+  check(`after the game the crowd drives home (${home} trips by 2 am for the ${fans} fans there by 1 am, ${Math.ceil(Math.min(fans, lotPace) * 0.8)} due: the lot lets out ${lotPace} at most; ${r.after.onTheWay} still on the way at 1 am; ${r.after.backedOut} backed out of the stalls, ${r.after.left} of ${r.game.most} still parked at 2 am)`, home >= Math.min(fans, lotPace) * 0.8 && r.after.backedOut >= Math.min(3, r.game.most) && r.after.left < r.game.most);
   const m = r.ins.match(/Visitors today\s*([\d,]+)/);
   check(`the inspector counts today's visitors (${m?.[1] ?? 'none shown'})`, !!m && Number(m[1].replace(/,/g, '')) > 0, r.ins.slice(0, 300));
   check('and says when the games are', /Game night: every evening, 5 pm to 10 pm/.test(r.ins), r.ins.slice(0, 400));

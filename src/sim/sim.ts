@@ -1,9 +1,10 @@
 // The simulation: calendar, RCI(O) demand ratios, growth, move-ins, jobs,
 // land value, level-ups, the Growth Ponzi budget, and the endless-sprawl ending.
-import { MAX_LEVEL, ZONE_TYPES, type GameTime, type WorldEvents, type ZoneType } from '../contracts';
+import { MAX_LEVEL, ZONE_TYPES, type GameTime, type MoneyKind, type WorldEvents, type ZoneType } from '../contracts';
 import { Emitter } from '../core/events';
 import { clamp } from '../core/math';
 import { Rng } from '../core/rng';
+import { decodeFields, encodeFields, type Json } from '../core/snapshot';
 import { isZoned, type Bld, type Buildings } from './buildings';
 import type { RoadNetwork } from '../roads/network';
 import type { Zoning, ZCell } from '../zones/zoning';
@@ -61,6 +62,17 @@ export const LEDGER_LABEL: Record<LedgerKind, string> = {
   roads: 'Road upkeep', services: 'Services & utility imports', transit: 'Transit', policies: 'Policies', freight: 'Freight', loans: 'Loan payments',
   construction: 'Construction', impact: 'Impact fees', grants: 'Federal grants', communes: 'Communes & lawyers', disasters: 'Disaster recovery',
   refunds: 'Refunds', loanIn: 'Loans taken', other: 'Other',
+};
+/**
+ * What each ledger line is as the world events colour and sound it (src/contracts.ts MoneyKind). Taxes are 'tax'; road and
+ * policy running costs are 'upkeep'; services and transit (fares and operations) are 'service'; impact fees
+ * are the 'fee' a new building pays; loans in and loan payments are 'loan'; freight and the communes' lawyers fit no
+ * kind of their own and are 'other'.
+ */
+export const MONEY_KIND: Record<LedgerKind, MoneyKind> = {
+  resTax: 'tax', comTax: 'tax', indTax: 'tax', offTax: 'tax',
+  roads: 'upkeep', policies: 'upkeep', services: 'service', transit: 'service', freight: 'other', loans: 'loan',
+  construction: 'build', impact: 'fee', grants: 'grant', communes: 'other', disasters: 'disaster', refunds: 'refund', loanIn: 'loan', other: 'other',
 };
 /** how far below zero the treasury may go before purchases are refused */
 export const CREDIT_LINE = 20000;
@@ -197,7 +209,8 @@ export class Sim {
   naturePct = 1;
   ended = false;
   bankruptWeeks = 0;
-  private rng = new Rng(777);
+  /** the dice for who arrives and who leaves (seeded from the county's seed, saved) */
+  readonly rng = new Rng(777);
   private dayAcc = 0;
   private lastWhole = 0;
   private popMarks = [50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000, 250000];
@@ -246,17 +259,21 @@ export class Sim {
   spendable() {
     return this.money === Infinity ? Infinity : Math.max(0, this.money + CREDIT_LINE);
   }
-  private record(label: string, amount: number, kind: LedgerKind) {
+  /** every movement of money comes through here (spend, refund, earn, and so the weekly close): it is logged and told */
+  private record(label: string, amount: number, kind: LedgerKind, at?: { x: number; z: number }) {
     if (!amount) return;
     this.transactions.push({ day: Math.round(this.day * 10) / 10, label: label || LEDGER_LABEL[kind], amount, kind });
     if (this.transactions.length > 200) this.transactions.splice(0, this.transactions.length - 200);
     this.fcCache = null;
+    // (sandbox money is endless: nothing moved, so nothing is said)
+    if (this.money !== Infinity) this.events.emit('moneyTick', at ? { delta: amount, kind: MONEY_KIND[kind], x: at.x, z: at.z } : { delta: amount, kind: MONEY_KIND[kind] });
   }
-  spend(amount: number, label: string, kind: LedgerKind = 'construction') {
+  /** `at`: where the money went, when it went somewhere (a road, a building), for the tick shown there */
+  spend(amount: number, label: string, kind: LedgerKind = 'construction', at?: { x: number; z: number }) {
     if (this.money === Infinity) return true;
     this.money -= amount;
     this.ledger[kind] -= amount;
-    this.record(label, -amount, kind);
+    this.record(label, -amount, kind, at);
     return true;
   }
   refund(amount: number, label = 'Refund') {
@@ -264,10 +281,10 @@ export class Sim {
     this.ledger.refunds += amount;
     this.record(label, amount, 'refunds');
   }
-  earn(amount: number, kind: LedgerKind, label = LEDGER_LABEL[kind]) {
+  earn(amount: number, kind: LedgerKind, label = LEDGER_LABEL[kind], at?: { x: number; z: number }) {
     if (this.money !== Infinity) this.money += amount;
     this.ledger[kind] += amount;
-    this.record(label, amount, kind);
+    this.record(label, amount, kind, at);
   }
   takeLoan(amount: number) {
     const weeks = 52;
@@ -433,9 +450,10 @@ export class Sim {
   }
 
   // ------------------------------------------------------------------ tick
-  update(dtReal: number) {
+  /** One fixed step: `h` game seconds on (the game's speed setting only decides how many steps a real second gets). */
+  step(h: number) {
     if (this.ended) return;
-    const days = (dtReal * SPEEDS[this.speed]) / DAY_SECONDS;
+    const days = h / DAY_SECONDS;
     if (days <= 0) return;
     this.day += days;
     this.net.day = this.day;
@@ -607,6 +625,11 @@ export class Sim {
   }
 
   private landValueAndLevels(days: number) {
+    // the landmarks a road reaches (a handful): asked directly below. The pass used to search 300 m round every building
+    // for one, 200 buildings a search on a 14,000-person county, and that search was over half of a 29 ms pass that all
+    // lands in one step every third day.
+    const landmarks: Bld[] = [];
+    for (const o of this.b.list.values()) if (o.zone === 'landmark' && !o.offNet) landmarks.push(o);
     for (const bld of this.b.list.values()) {
       if (!isZoned(bld)) continue;
       const near = this.b.near(bld.x, bld.z, 140);
@@ -624,7 +647,7 @@ export class Sim {
       }
       lv += Math.min(40, dense * 1.1);
       lv += Math.min(30, lm * 15);
-      for (const o of this.b.near(bld.x, bld.z, 300)) if (o.zone === 'landmark' && !o.offNet) { lv += 6; break; }
+      for (const o of landmarks) if (Math.hypot(o.x - bld.x, o.z - bld.z) <= 300) { lv += 6; break; }
       if (bld.zone !== 'industry') lv -= Math.min(30, ind * (bld.zone.startsWith('res') ? 4 : 1.5));
       if (bld.zone.startsWith('res')) lv += Math.min(10, com * 1.2);
       lv += Math.min(10, slop * 5);
@@ -770,7 +793,7 @@ export class Sim {
   private onBuildingComplete(bld: Bld) {
     if (!isZoned(bld) || bld.level > 1) return;
     const perCell = { resLow: 75, resHigh: 90, comLow: 130, comHigh: 150, industry: 110, office: 170 }[bld.zone];
-    this.earn(Math.round(perCell * bld.w * bld.d), 'impact');
+    this.earn(Math.round(perCell * bld.w * bld.d), 'impact', undefined, bld);
   }
 
   private weekly() {
@@ -823,6 +846,25 @@ export class Sim {
     // milestones already passed (saves from before milestones get theirs back, without the grants)
     MILESTONES.forEach((m, i) => { if (i > 0 && Math.max(pop, this.peakSeen) >= m.pop) this.unlocked.add(tierKey(i)); });
   }
+
+  /**
+   * Every field that shapes the next day, whole (serializeExtra() below keeps the last few hundred entries and rounds the cash:
+   * enough to carry on plausibly, not to carry on identically). A save has both; this one wins when it is there.
+   */
+  serializeExact(): Json {
+    return encodeFields(this as unknown as Record<string, unknown>, Sim.EXACT);
+  }
+  restoreExact(j: Json | undefined) {
+    decodeFields(this as unknown as Record<string, unknown>, j);
+    this.fcCache = null;
+    this.growthCache = null;
+  }
+  private static readonly EXACT = [
+    'workers', 'jobsCap', 'jobsFilled', 'unemployment', 'demand', 'demandRaw', 'demandWhy', 'demandParts', 'demandHistory',
+    'ledger', 'lastWeek', 'transactions', 'weekStartCash', 'lastWeekCash', 'ledgerDrift', 'history', 'coverage', 'maxedPct', 'sprawlPct',
+    'naturePct', 'ended', 'bankruptWeeks', 'dayAcc', 'lastWhole', 'popMarks', 'natureMarks', 'sprawlMarks', 'unlocked', 'growthMul', 'growthAcc',
+    'peakSeen', 'popLog', 'alerts', 'sprawlSeen', 'sprawlCovered', 'sprawlCursor', 'taxRate', 'loans', 'population', 'money', 'day',
+  ] as const;
 
   /** State that shapes what happens next but isn't in the core save fields. */
   serializeExtra() {

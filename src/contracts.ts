@@ -160,6 +160,7 @@ export type FeedEventKind =
   | 'highwayBuilt'
   | 'bridgeBuilt'
   | 'laneAdded' // ONE MORE LANE
+  | 'laneFilled' // a widened road is as full as it was before its new lane
   | 'roadBulldozed'
   | 'zoned'
   | 'buildingOpened'

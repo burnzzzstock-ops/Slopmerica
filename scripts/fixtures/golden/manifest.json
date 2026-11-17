@@ -16,9 +16,9 @@
   },
   "shots": {
     "block-low-junction-noon": {
-      "sha256": "6685a9f9e156983cbcf1970d6d040a15fa286da99f17ac09029d083055aa80f0",
+      "sha256": "eab9df5a7ba1798e2df595ffa50b8e040baaff6e5b02af314bdf520c908eaa89",
       "camera": [
-        155,
+        485,
         15,
         110,
         2.4,
@@ -29,6 +29,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -36,16 +43,16 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "block-low-junction-golden": {
-      "sha256": "441f8c3530374e9db26ab83e03c2589ca55f2e8f77135b70f3617d58551fac1c",
+      "sha256": "fc33272d5b453a8d7a22a62fe6bc1a8dceba759f156e20bf0487674d8cf9dfe2",
       "camera": [
-        155,
+        485,
         15,
         110,
         2.4,
@@ -56,6 +63,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -63,16 +77,16 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "block-low-junction-moonless": {
-      "sha256": "469631aafde1b7639d3e8c9ffc03167f56ca5490ecf28a22a9dc07e550cc9c51",
+      "sha256": "8b096d31780de881fad7b461291a0e1956a72e11cda6b57150edbd86731e882d",
       "camera": [
-        155,
+        485,
         15,
         110,
         2.4,
@@ -83,6 +97,13 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -90,16 +111,16 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "block-low-junction-rain": {
-      "sha256": "cf90a02982ab802757ab55cdf6962cc97862d32438f84828db99f421402487e3",
+      "sha256": "4c3b80243961573a82776197379a03f648d04418c6fd5322793c7dfe41490775",
       "camera": [
-        155,
+        485,
         15,
         110,
         2.4,
@@ -110,6 +131,13 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -117,16 +145,16 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "block-low-mid-noon": {
-      "sha256": "2a2ea34fc22f123c7f678c5db220111b5bdf750f886f391b33d91c34baed5c81",
+      "sha256": "ef8698bea18ae979246709b03760d23a8009eaac82675964ad0d1ea94c187b2c",
       "camera": [
-        210,
+        540,
         55,
         245,
         0.95,
@@ -137,6 +165,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -144,16 +179,16 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "block-low-mid-golden": {
-      "sha256": "0cf701a3b9f63a6f16276f829dede491e896d85435a24d3b6134fe5c611287c9",
+      "sha256": "f85cc8aae18abdc18a6a8ce67ba3b43b64e29f78ab1bcf939cb347eca5e59a72",
       "camera": [
-        210,
+        540,
         55,
         245,
         0.95,
@@ -164,6 +199,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -171,16 +213,16 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "block-low-mid-moonless": {
-      "sha256": "3a80269aaaa7beee55061a6c6751aba7628eef929d09e7808ad924e14d5d53af",
+      "sha256": "ca0a0d0df80261005def4c6bb9b9694ecc9ef87d0181b512a78d78738a48b6ed",
       "camera": [
-        210,
+        540,
         55,
         245,
         0.95,
@@ -191,6 +233,13 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -198,16 +247,16 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "block-low-mid-rain": {
-      "sha256": "84620993f2240f89f5aad5a02d62d5d5e3faa87a96c178ef62e0e66325ce45ad",
+      "sha256": "1909418aa353eebc56df8a9197341952503d1a4d7b0d7e8886f388e140a1fad4",
       "camera": [
-        210,
+        540,
         55,
         245,
         0.95,
@@ -218,6 +267,13 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -225,16 +281,16 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "block-low-overview-noon": {
-      "sha256": "84622f7c73698a6b2ef6794b978981e7a3eba590c032b5f121000ec33cde9a02",
+      "sha256": "016a4ebaca8d02c84486c311592294a79c9ecf53b1b67eb151df763ddfbc5982",
       "camera": [
-        195,
+        525,
         45,
         600,
         0.7,
@@ -245,6 +301,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -252,16 +315,16 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "block-low-overview-golden": {
-      "sha256": "cb76535b2cb37f03ae219c22b95c23b441d5905af83df36f37904dc9243f9db4",
+      "sha256": "871a4817c2659d3b98e1174b048dff645599c2b2a31ad46d1a255bf9b98913dc",
       "camera": [
-        195,
+        525,
         45,
         600,
         0.7,
@@ -272,6 +335,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -279,16 +349,16 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "block-low-overview-moonless": {
-      "sha256": "5b05dc3cef4ff5195934c41611b81a265b1fd0ec32ccb7f22689b64c7affda1a",
+      "sha256": "718e243ef960871312aec890906374155b195937af7c1ae3731ac8c8e1eec7c9",
       "camera": [
-        195,
+        525,
         45,
         600,
         0.7,
@@ -299,6 +369,13 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -306,16 +383,16 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "block-low-overview-rain": {
-      "sha256": "3a3fd44b8112805d7d5133162015b905377f3f3d2dbfa3c308519fb6db5a286d",
+      "sha256": "3b8a737657ffec48e46eccfa367f945225e73b087442028f6955ab31eafd15b5",
       "camera": [
-        195,
+        525,
         45,
         600,
         0.7,
@@ -326,6 +403,13 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -333,16 +417,16 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "block-high-junction-noon": {
-      "sha256": "c642932f4bca5b914f681037f85fe2719f3c8f38b42936066f5ce9980bffad48",
+      "sha256": "556ce3cad74fa913432432622ce5f27c1b813deb5538596dcf9e8896e161134a",
       "camera": [
-        155,
+        485,
         15,
         110,
         2.4,
@@ -353,6 +437,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -360,16 +451,16 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "block-high-junction-golden": {
-      "sha256": "609e7dfa77475a793c19664ef139f6314f1f8cb14b7469af3a24f7600e89a32f",
+      "sha256": "c1370dbfefb6a271e7eea882a1b92ea9d6adb1fb6db34da5119f4dda6aca5403",
       "camera": [
-        155,
+        485,
         15,
         110,
         2.4,
@@ -380,23 +471,30 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
       ],
       "replayVerified": true,
       "replay": {
-        "exact": false,
+        "exact": true,
         "total": 921600,
-        "changed": 65,
-        "exactDifferences": 80,
+        "changed": 0,
+        "exactDifferences": 0,
         "failed": false
       }
     },
     "block-high-junction-moonless": {
-      "sha256": "d90c99d63c8554b83eee061f2ebb3ed8d91734b5b63b05159d3a5f28c49d8cdf",
+      "sha256": "7f08f1eaff91d3397feb599f761458caf8210e13a41ab3f200d0a56133e335ba",
       "camera": [
-        155,
+        485,
         15,
         110,
         2.4,
@@ -407,23 +505,30 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
       ],
       "replayVerified": true,
       "replay": {
-        "exact": false,
+        "exact": true,
         "total": 921600,
-        "changed": 8,
-        "exactDifferences": 57,
+        "changed": 0,
+        "exactDifferences": 0,
         "failed": false
       }
     },
     "block-high-junction-rain": {
-      "sha256": "fbb475f6c71087be2d8597096bf97ba49fbd08e07d968199a1cabe8ea9d2e965",
+      "sha256": "e575fdd9d6b98a1db975eae9de78c85c2a402c1961d909038baa3c372f711743",
       "camera": [
-        155,
+        485,
         15,
         110,
         2.4,
@@ -434,23 +539,30 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
       ],
       "replayVerified": true,
       "replay": {
-        "exact": false,
+        "exact": true,
         "total": 921600,
         "changed": 0,
-        "exactDifferences": 3662,
+        "exactDifferences": 0,
         "failed": false
       }
     },
     "block-high-mid-noon": {
-      "sha256": "cf2bede6455b451eb4831f861b7efbf4858cb0f663228638db22957b7a395d3b",
+      "sha256": "e5dc81e778e6044cf73598fef213284c3e5d9ae5016bb4103b198799e362563a",
       "camera": [
-        210,
+        540,
         55,
         245,
         0.95,
@@ -461,23 +573,30 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
       ],
       "replayVerified": true,
       "replay": {
-        "exact": false,
+        "exact": true,
         "total": 921600,
         "changed": 0,
-        "exactDifferences": 1883,
+        "exactDifferences": 0,
         "failed": false
       }
     },
     "block-high-mid-golden": {
-      "sha256": "82703d0c1238ebd49a01ee2b6fbf95a7ffbcbde673aea83d9a82d5c2bda8c08d",
+      "sha256": "6391045c90e9970f22833ba37174c6ffebf2079553d095991e47c3c619b7ad19",
       "camera": [
-        210,
+        540,
         55,
         245,
         0.95,
@@ -488,23 +607,30 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
       ],
       "replayVerified": true,
       "replay": {
-        "exact": false,
+        "exact": true,
         "total": 921600,
-        "changed": 2,
-        "exactDifferences": 2,
+        "changed": 0,
+        "exactDifferences": 0,
         "failed": false
       }
     },
     "block-high-mid-moonless": {
-      "sha256": "9df42a4e30aa5937cb51b882041b00c769162736a910c62601334219f317d4a3",
+      "sha256": "136bfecc3a886135f54b0f9b66f4d61aaf7d310661ff907f97a967d64cbbabbc",
       "camera": [
-        210,
+        540,
         55,
         245,
         0.95,
@@ -515,23 +641,30 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
       ],
       "replayVerified": true,
       "replay": {
-        "exact": false,
+        "exact": true,
         "total": 921600,
-        "changed": 2,
-        "exactDifferences": 8,
+        "changed": 0,
+        "exactDifferences": 0,
         "failed": false
       }
     },
     "block-high-mid-rain": {
-      "sha256": "c8554faf313fb0427c3c5516ef11723925a7a255413d387116bb9ca7916e15a9",
+      "sha256": "ac6dc1356e1fb42ff6e43f8ac24c106750ffda6d5670e42d70911c62bc1e47eb",
       "camera": [
-        210,
+        540,
         55,
         245,
         0.95,
@@ -542,23 +675,30 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
       ],
       "replayVerified": true,
       "replay": {
-        "exact": false,
+        "exact": true,
         "total": 921600,
-        "changed": 16,
-        "exactDifferences": 81,
+        "changed": 0,
+        "exactDifferences": 0,
         "failed": false
       }
     },
     "block-high-overview-noon": {
-      "sha256": "ddeda2da9bb1fc5fa44b898ecd98bcc4a1d7dda4451a7de691fb864509e8a85c",
+      "sha256": "e7b30f1eb4ec8a59c51fc48cff819588ec50fe6c4cc47d23a91478f43abbf157",
       "camera": [
-        195,
+        525,
         45,
         600,
         0.7,
@@ -569,23 +709,30 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
       ],
       "replayVerified": true,
       "replay": {
-        "exact": false,
+        "exact": true,
         "total": 921600,
-        "changed": 2,
-        "exactDifferences": 753,
+        "changed": 0,
+        "exactDifferences": 0,
         "failed": false
       }
     },
     "block-high-overview-golden": {
-      "sha256": "4dd6bb15b99c7edc3109e1a9341bd6a6208d40050265ff7a6c02091623c3eff4",
+      "sha256": "681c8e48968033059601919498b3dd0041f5ead6dae7f175fdebf17ce502623d",
       "camera": [
-        195,
+        525,
         45,
         600,
         0.7,
@@ -596,6 +743,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -610,9 +764,9 @@
       }
     },
     "block-high-overview-moonless": {
-      "sha256": "6b4e65812223a4c58827c098fed16c8d61b3935c4b500c01df9b9875a6233afb",
+      "sha256": "223d5d366325654a9dbcbf7b4a3e8804dd71e109e4c994667e80a535584914cd",
       "camera": [
-        195,
+        525,
         45,
         600,
         0.7,
@@ -623,23 +777,30 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
       ],
       "replayVerified": true,
       "replay": {
-        "exact": false,
+        "exact": true,
         "total": 921600,
-        "changed": 2,
-        "exactDifferences": 5,
+        "changed": 0,
+        "exactDifferences": 0,
         "failed": false
       }
     },
     "block-high-overview-rain": {
-      "sha256": "6002b7c6e735c558a614634c50908e19e12301c1d37cac0eab3cbe9f7b643e71",
+      "sha256": "583f5c842bef93044631cd8c700a68868ca126507c6873820196d322bfff6dc1",
       "camera": [
-        195,
+        525,
         45,
         600,
         0.7,
@@ -650,21 +811,28 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
       ],
       "replayVerified": true,
       "replay": {
-        "exact": false,
+        "exact": true,
         "total": 921600,
         "changed": 0,
-        "exactDifferences": 167,
+        "exactDifferences": 0,
         "failed": false
       }
     },
     "appalachia-low-overview-noon": {
-      "sha256": "9c19b6a65f9ea70f98311cfb782d775e14a0c87a00e43ac2adb1f05df7d7a473",
+      "sha256": "43be01824979adde481b155a6b59f914d817e2f257f0a8c2e244435a056b7a1a",
       "camera": [
         10,
         -170,
@@ -677,6 +845,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -684,14 +859,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "appalachia-low-overview-golden": {
-      "sha256": "6ed640d3a4e5f3a37fb0a962651e80f1f9bf1ed8be0d4984d6c4fe49f82a0c73",
+      "sha256": "df18d5898464cba484a519ad0ab864d9ad36bf9bbfb76766e78642879d3c236f",
       "camera": [
         10,
         -170,
@@ -704,6 +879,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -711,14 +893,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "appalachia-low-overview-moonless": {
-      "sha256": "e2debbb519724dd06946f5741e78b2d21ffc10b720b6e1d6cde0a74ead63b085",
+      "sha256": "9b93f2c95b33fa57b2f174bd24c5aa205596558c6ec1e3473b2e6dfb04b1efda",
       "camera": [
         10,
         -170,
@@ -731,6 +913,13 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -738,14 +927,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "appalachia-low-overview-rain": {
-      "sha256": "dde4ce7ed575c066d6df543e178b796eba25c794485db56fde3edf60d319cf2a",
+      "sha256": "0e2a34c85a97fda6cf1ff176c7853a11b4eb8d8968d3fe255a020b381717f15a",
       "camera": [
         10,
         -170,
@@ -758,6 +947,13 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -765,14 +961,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "appalachia-low-water-noon": {
-      "sha256": "5d06845ab5173a204ca1c9580466a1d6e08a0aca92fa8111d8cffc867f710799",
+      "sha256": "dc21b2e2251c31e63621e9c9cfe030333e1e44b6b38d6e7495556615cbd53276",
       "camera": [
         7,
         -170,
@@ -785,6 +981,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -792,14 +995,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "appalachia-low-water-golden": {
-      "sha256": "3fff05986c01844f368125087a59348311678bf1c876282db094d5318275136e",
+      "sha256": "6c8e884966986217c4f9cd90636c6103964d215cd736f01bcd99bc4e0818a929",
       "camera": [
         7,
         -170,
@@ -812,6 +1015,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -819,14 +1029,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "appalachia-low-water-moonless": {
-      "sha256": "dcc0bf3f797e1612d7d190f4a601dc4959fdddd1f494e02e6b7b40c7e7bfe2e1",
+      "sha256": "5c6a4bbacd8d2bc007355bf95a51c2dbfd97df0b3ce7353fe2cf891ef96a526b",
       "camera": [
         7,
         -170,
@@ -839,6 +1049,13 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -846,14 +1063,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "appalachia-low-water-rain": {
-      "sha256": "b4f3eed66053506940ec106465dac6494979b20168f3e3230a9785a8b5940a18",
+      "sha256": "0693757cfdff17df934c503f63fd2fc3fd91b7a06b60b4011e10e1b48609ff83",
       "camera": [
         7,
         -170,
@@ -866,6 +1083,13 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -873,14 +1097,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "appalachia-low-forest-noon": {
-      "sha256": "1e678269854c3d8df1a07a3d298da4cfefae0634b883905f7f9641c58a8c6714",
+      "sha256": "10d66625f8301ec31ba06ad6179fd51b19619dcce1381387e4c70b9c82aad3da",
       "camera": [
         140,
         380,
@@ -893,6 +1117,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -900,14 +1131,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "appalachia-low-forest-golden": {
-      "sha256": "1f01ab4aecf10a25b2ead3b6447d6fd321276625135840505f4c7ea54605a7d6",
+      "sha256": "efda18313d830a37c96c99170fad14b4785b01eb3fdbe034ff38fb46031aa433",
       "camera": [
         140,
         380,
@@ -920,6 +1151,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -927,14 +1165,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "appalachia-low-forest-moonless": {
-      "sha256": "f997a55f79db0f0c0ce9e3a9f23810e818a29e7f5970664d2bab3b24cb6bbccc",
+      "sha256": "6ecef51cde5a331164d4da83bd0e87b1ccaa4fd589c0da1eaf54aa1297042b32",
       "camera": [
         140,
         380,
@@ -947,6 +1185,13 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -954,14 +1199,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "appalachia-low-forest-rain": {
-      "sha256": "d2753ef7187eb759db09f3862b1ad10373accfdac1ebedaf5565bb2625ca3e00",
+      "sha256": "79931cf3e1dea7a9334cdcbcaaa563768d7c1cc9f19107557137e283205726aa",
       "camera": [
         140,
         380,
@@ -974,6 +1219,13 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -981,14 +1233,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "appalachia-high-overview-noon": {
-      "sha256": "40f338e6978e67ee1e79ac413ebac629771e98fdbc9e868523acc156d0ee90ac",
+      "sha256": "a71c8d4cecf057c16c2bc9e01a3e631657ead1ca20557c00984f0405c5caa011",
       "camera": [
         10,
         -170,
@@ -1001,6 +1253,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1008,14 +1267,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "appalachia-high-overview-golden": {
-      "sha256": "5f4db929df6b52d78c64ca2265dc62abaa1622d4a644a0f6c4943b543d012286",
+      "sha256": "9436f2d0a38e5a55c7f80e7142984999b1f5efadf4867d2ee364b89e22b31dea",
       "camera": [
         10,
         -170,
@@ -1028,6 +1287,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1035,14 +1301,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "appalachia-high-overview-moonless": {
-      "sha256": "68f4333d62230f450e35f8be99effd26501319bbc7e0d20c3bd6d86ec2bfa4a1",
+      "sha256": "a7232a873fd38323360de80e4e1e60003077825570033b0ff06a24c886a74f9a",
       "camera": [
         10,
         -170,
@@ -1055,6 +1321,13 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1062,14 +1335,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "appalachia-high-overview-rain": {
-      "sha256": "83577b55070159bd39a1e3c025054a5b748e54e79da0998d536e8fb900839140",
+      "sha256": "e0330a68221e4b8009b3fe41b2f6a6f3b74b4094fed11c2fabd796ab6c1a1e43",
       "camera": [
         10,
         -170,
@@ -1082,6 +1355,13 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1089,14 +1369,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "appalachia-high-water-noon": {
-      "sha256": "f6a05030bbf5ec666b68f992233198468e92793b918493fd06b4778136bd211a",
+      "sha256": "818b480e88d760dd20ae4a19bf4a2c5652f4dda56c9cc5f8272528e6853e89c7",
       "camera": [
         7,
         -170,
@@ -1109,6 +1389,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1116,14 +1403,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "appalachia-high-water-golden": {
-      "sha256": "b25858f4910e1b6fc664349e0f8422e7510d27681158b8f2e91b90debaf8a0a2",
+      "sha256": "ce1bf770df2735faffae55f6a9b5007bf53f5a3ca40f7b926de5388906b99bcd",
       "camera": [
         7,
         -170,
@@ -1136,6 +1423,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1143,14 +1437,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "appalachia-high-water-moonless": {
-      "sha256": "2729da9eccf172d1712abffe1580a8275723eb0fb3a399da646a1275c00c5f8d",
+      "sha256": "bca781f80dff10be4f8823bfac8cdd4411c6d6e7db839f87de39b9e2649b8fcc",
       "camera": [
         7,
         -170,
@@ -1163,6 +1457,13 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1170,14 +1471,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "appalachia-high-water-rain": {
-      "sha256": "b556ce8967e7c7a78459da068a9bc1379f46a1501ae06efd80845ac730fcf8e2",
+      "sha256": "cd1800c72c65dbc1cd7f82121f01ace23a15e7bc23a93abd20606c06a1c1ceab",
       "camera": [
         7,
         -170,
@@ -1190,6 +1491,13 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1197,14 +1505,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "appalachia-high-forest-noon": {
-      "sha256": "2c2376b68b873c13e30f988d7286ba33ae3b8e93f530e40c7c4ac58a05addb51",
+      "sha256": "7deaac3bef48b7a9d641f0607b48a55af49e5b2395b524299c5cd5a12f52e210",
       "camera": [
         140,
         380,
@@ -1217,6 +1525,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1224,14 +1539,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "appalachia-high-forest-golden": {
-      "sha256": "14acfe1a1955227dd3e2a2c7cc5519658c55637604970517a01b60e83b57ccca",
+      "sha256": "a83f1a224a2dfc8bdea3d7d512b0797a8c7fe46f7a70a133a639380c77a22f43",
       "camera": [
         140,
         380,
@@ -1244,6 +1559,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1251,14 +1573,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "appalachia-high-forest-moonless": {
-      "sha256": "c9d46b8272990d325f103dd4fefca3e64f7d79c61e17d823936d2da7ab376b53",
+      "sha256": "9a937069a683a63f915fd418c49934d798323b926740545a5d15a019b7f79dbc",
       "camera": [
         140,
         380,
@@ -1271,6 +1593,13 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1278,14 +1607,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "appalachia-high-forest-rain": {
-      "sha256": "1fe73041e8db6f7391a9acd81db5943291b86138ecc823fb5a09b07b9fb76c3b",
+      "sha256": "899cbe6822bac5fec81e20e3b9993212de6428c9a81dcd9872c58a06d5a45ab5",
       "camera": [
         140,
         380,
@@ -1298,6 +1627,13 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1305,14 +1641,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "norcal-low-overview-noon": {
-      "sha256": "bd781d26d471047b0bb5249e6d84c4f41bdf37693f3a8a267c56ededbf6f7c03",
+      "sha256": "e4e5c44929bbec1e6e8cb80b6191c04b863292150ff8fee28cf6c4b21eba5841",
       "camera": [
         480,
         100,
@@ -1325,6 +1661,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -1332,14 +1675,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "norcal-low-overview-golden": {
-      "sha256": "15dfa3140f1f9f40a06fd96f0d35611fc63bd0664ae24310ffb8a598d9e3284d",
+      "sha256": "1e6e611ab9bb2b526346cb044a00488f34f62a739eb0704474a0cadc9fde246d",
       "camera": [
         480,
         100,
@@ -1352,6 +1695,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -1359,14 +1709,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "norcal-low-overview-moonless": {
-      "sha256": "2311b182c9e671b4285c6b766d0f61f944491ebe1407b98e6d365b85019a5a6d",
+      "sha256": "dfc2391efc328553a4310ed2cc4ba6495dd4844105ca6f00f10af3d079968325",
       "camera": [
         480,
         100,
@@ -1379,6 +1729,13 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -1386,14 +1743,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "norcal-low-overview-rain": {
-      "sha256": "72db76b2d11c0a1fee2759b57e590cf015f4a307c2bea8d67ca065ae600bdd34",
+      "sha256": "5f796186ee8271521d38f7bfea47c1f2aa39d25fd82c9b98f2f59b7f4150c56f",
       "camera": [
         480,
         100,
@@ -1406,6 +1763,13 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -1413,14 +1777,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "norcal-low-water-noon": {
-      "sha256": "f736c144e16133357c5b740678b0bad66bfc110904f81eb62c430f88f84b23c7",
+      "sha256": "e625b6460518cbbcb23fa75cdc111dc56bf357133f0b494a9e65ed994913df48",
       "camera": [
         -1672,
         550,
@@ -1433,6 +1797,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -1440,14 +1811,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "norcal-low-water-golden": {
-      "sha256": "e769a47327991dc05efa32e87d50262887ae39d0e4de888fe54538902adc5c44",
+      "sha256": "6bcad6fa8f862d49de3949c8a50a378de57ead58986ee48579f4233aa902baaf",
       "camera": [
         -1672,
         550,
@@ -1460,6 +1831,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -1467,14 +1845,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "norcal-low-water-moonless": {
-      "sha256": "fc8091b6bf9cdae4fc29b02d847d4c5c7f7af3f4575479146b57bd2eeaa2098d",
+      "sha256": "408cc22b32149db87ddae0ee69456627932a76659e432f1c9e2748574f66a2cc",
       "camera": [
         -1672,
         550,
@@ -1487,6 +1865,13 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -1494,14 +1879,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "norcal-low-water-rain": {
-      "sha256": "062bc4c9e1f66875eba7bcdf7825b2325ad9916134f740c6c9ea859385bd38d9",
+      "sha256": "c11c04402e9a9aaefef2d14c145f499507fc3ef4f691e011dd313623be2539e6",
       "camera": [
         -1672,
         550,
@@ -1514,6 +1899,13 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -1521,14 +1913,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "norcal-low-forest-noon": {
-      "sha256": "95ea9589d3e500bbd38aca44d1dba105fdba481cf05e86233e91b7e554db3b70",
+      "sha256": "07c442a95c47cdc7f60ab593e2a13616bba0aa46060957549d0e1ff41d98fd0a",
       "camera": [
         1540,
         -220,
@@ -1541,6 +1933,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -1548,14 +1947,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "norcal-low-forest-golden": {
-      "sha256": "18d98619257a52ffded478e1aa81d78bbc5009a4864054cfad4f6fe40908acb1",
+      "sha256": "2fd1fd0b1b5af31efe233c7a2950a612aa26e1ab623495ca9204f15d525ea047",
       "camera": [
         1540,
         -220,
@@ -1568,6 +1967,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -1575,14 +1981,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "norcal-low-forest-moonless": {
-      "sha256": "3ca853be8ada4844793bff5fd7271053aa25944aa1c7d8ba8add49a090cd8971",
+      "sha256": "ac4567d93e5e417fb7904e258d32a3587fd82bd875c75408a0a071f2c7e7af46",
       "camera": [
         1540,
         -220,
@@ -1595,6 +2001,13 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -1602,14 +2015,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "norcal-low-forest-rain": {
-      "sha256": "36f2b7b495efc48d1fdccbbb66d5d26c9de73a2fcc4e5ce254a62d7168c8df94",
+      "sha256": "2ac5a71778c236a011a77d1702c246c9d8f381a76e5c37780a5f6abfcc21dc52",
       "camera": [
         1540,
         -220,
@@ -1622,6 +2035,13 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -1629,14 +2049,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "norcal-high-overview-noon": {
-      "sha256": "958ce2dd6f1eb9edddd5be88c3d09b4142d0f13655e90a743a1eb9a152241d1d",
+      "sha256": "21315b0aae33cac88798e2de7f4cc543e4b379401511bf82df02d61c76b24772",
       "camera": [
         480,
         100,
@@ -1649,6 +2069,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1656,14 +2083,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "norcal-high-overview-golden": {
-      "sha256": "48f18a43828c481e71a57d36762000fdc470ba88cf08762c1d07c733c7730146",
+      "sha256": "44ec8de770e895c5cf663fcb952952d92bba21c326dd67e29bc7aca5e7a210ce",
       "camera": [
         480,
         100,
@@ -1676,6 +2103,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1683,14 +2117,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "norcal-high-overview-moonless": {
-      "sha256": "5c7f0eac8921e632a98edbb077049d7ff121ffc64d73822a366d97dc61145f97",
+      "sha256": "107c57083b36fda6591a5583c261f8d5bf8314ee18f2423065516d4e608f54f4",
       "camera": [
         480,
         100,
@@ -1703,6 +2137,13 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1710,14 +2151,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "norcal-high-overview-rain": {
-      "sha256": "8ab5e60e8c74ee3bcff3691d09b7c60c2fad8af2df725e2465ec1843085b582c",
+      "sha256": "92eccd718fca9d11a75bb50fd3bc111f0b5d8e07064d83f6695f1d5eb1f43499",
       "camera": [
         480,
         100,
@@ -1730,6 +2171,13 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1737,14 +2185,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "norcal-high-water-noon": {
-      "sha256": "23326dd916372dc59b08e3fbd400eefbc57b7fc5673a5d28b706721f83754656",
+      "sha256": "fc440d9c5c74147958819c81b51d3d5fb188cb4059c5fadc680f3b0d5882028b",
       "camera": [
         -1672,
         550,
@@ -1757,6 +2205,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1764,14 +2219,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "norcal-high-water-golden": {
-      "sha256": "e4b7b16c71c71bacf205ff43d68485e69c1534edcd24c378dc4bd68e418d1d1a",
+      "sha256": "19ace4470ac6cc8e27bc0e46556e4cdcb035b96a7035cb08cbed170df0e724bb",
       "camera": [
         -1672,
         550,
@@ -1784,6 +2239,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1791,14 +2253,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "norcal-high-water-moonless": {
-      "sha256": "124932a5789898b061ee95139972fde6471a66b3da4eee4f0db12e42dbc34249",
+      "sha256": "8d56aa113ac234d3246fbbcc750d3205ada51f37dfc9f9f541283b4553fe356a",
       "camera": [
         -1672,
         550,
@@ -1811,6 +2273,13 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1818,14 +2287,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "norcal-high-water-rain": {
-      "sha256": "8292a84fbe1c72b95c306afd0985c399eca1caa93807cec0218a0825696a2560",
+      "sha256": "91c3e6ba72cf11089c478d9912288cb3458b51958fda4265d30c2fdfad017352",
       "camera": [
         -1672,
         550,
@@ -1838,6 +2307,13 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1845,14 +2321,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "norcal-high-forest-noon": {
-      "sha256": "e52ff5f8b57644ea96a6965d11397a154e521a289cfc1542f8d1be974440e6cd",
+      "sha256": "e811fbeca5c4d903b550ed8686da8529f5c4ed2fd3b4cd2cdcce66fd38b010fe",
       "camera": [
         1540,
         -220,
@@ -1865,6 +2341,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1872,14 +2355,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "norcal-high-forest-golden": {
-      "sha256": "b2dbbebe4070263a93f41546c0bcfc836adade9e998f77963ce9b089a742c5b3",
+      "sha256": "a00ab5759603c936ab3b4149b01525cb0c165db46784439f2b574991d987e049",
       "camera": [
         1540,
         -220,
@@ -1892,6 +2375,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1899,14 +2389,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "norcal-high-forest-moonless": {
-      "sha256": "663a7836575931cbde6296904a7eaebc997dabfa7d84d73ae6a32e679d9f8f6c",
+      "sha256": "ce72cd81429c8062c77e0526d1692e36265bcdcda7a3fad0cb874966f117898d",
       "camera": [
         1540,
         -220,
@@ -1919,6 +2409,13 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1926,14 +2423,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "norcal-high-forest-rain": {
-      "sha256": "8886d36df1d722e431a0a347f117db6adfa26b8b99452c88b1fe825591403047",
+      "sha256": "3e95942a18d60e006426478c4d577531817824bfab9e71063daaf07d96cfcfd3",
       "camera": [
         1540,
         -220,
@@ -1946,6 +2443,13 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -1953,14 +2457,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "florida-low-overview-noon": {
-      "sha256": "c2e3aaf5dbedb3c44d868a8ddcbb1c90c3f1d18102d5302134342efe4f0378d9",
+      "sha256": "a32968c29a3d25e54db1a95c0e7526ba513022fd3fcb99a6463d07e8297743f9",
       "camera": [
         300,
         950,
@@ -1973,6 +2477,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -1980,14 +2491,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "florida-low-overview-golden": {
-      "sha256": "d3d95157d395684bfce3b668c06b6a5cb92755b7bfc8e8dd81ecb639bc4338dc",
+      "sha256": "20a5dae04fd1a7c783359a7a1c72f5caf61da1dc65a1213c7eed14eeaff3f51c",
       "camera": [
         300,
         950,
@@ -2000,6 +2511,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -2007,14 +2525,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "florida-low-overview-moonless": {
-      "sha256": "871b99f889a913de644f2cc71314d53b43f6430ca28117ff4c004efa44827790",
+      "sha256": "e59d565cae369eef2638a9f8eebadc28a562eea37191bf9aa6a214152204f620",
       "camera": [
         300,
         950,
@@ -2027,6 +2545,13 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -2034,14 +2559,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "florida-low-overview-rain": {
-      "sha256": "36d892dc869a0d6bf57aa31b5a356559bc46457fec27cae8884041a0693e9586",
+      "sha256": "7e99b20b84a2225a31d552ef88d7b107dc1a4b7189534d691f2a192003cb7ca6",
       "camera": [
         300,
         950,
@@ -2054,6 +2579,13 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -2061,14 +2593,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "florida-low-water-noon": {
-      "sha256": "65b31664d7e7d37b1ddfa1f1daf591fc9872fe8c8b8cda1834c48aaeb164d55b",
+      "sha256": "011615c1069e5b4d5183ded66b2103a454ddac42ad64c24ccd1fa42040d390d7",
       "camera": [
         450,
         1552,
@@ -2081,6 +2613,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -2088,14 +2627,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "florida-low-water-golden": {
-      "sha256": "34bbda444dc819321c44f183e3be8e1b8395b078819903c601fe717afaaf717f",
+      "sha256": "1688e6668a508ae42e64884ef0b0df0aacb7500d394b289b8e7a4a38650ebba8",
       "camera": [
         450,
         1552,
@@ -2108,6 +2647,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -2115,14 +2661,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "florida-low-water-moonless": {
-      "sha256": "b8e93d7d1b5e77e7195448741bfc47c7502aed19b76faecbbc48537e19ef0afd",
+      "sha256": "bad3658d58293b2804901ba75a90b59355b0d1a62647607afcfbae6b835270f2",
       "camera": [
         450,
         1552,
@@ -2135,6 +2681,13 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -2142,14 +2695,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "florida-low-water-rain": {
-      "sha256": "ade5848a034864e6d331281d43fad921494389d17eb4cdd2fecb96de322d4240",
+      "sha256": "0bfa950dc11ceb588d4351293124ced33b4b03c3d91422569049ab4873c37491",
       "camera": [
         450,
         1552,
@@ -2162,6 +2715,13 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -2169,14 +2729,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "florida-low-forest-noon": {
-      "sha256": "89274b46145f3553422b03cf070ed3a67813793bbe96617e6a2f32f75afb0cd2",
+      "sha256": "0274a03afc3ebd047fb53c067fb20edcfb59ccf7a181f0ca4c1cda1be6e90f3d",
       "camera": [
         900,
         -860,
@@ -2189,6 +2749,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -2196,14 +2763,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "florida-low-forest-golden": {
-      "sha256": "fea8469def124cab7ea931768d9fa1c5fc79d3466d8e8f2b2c4ca6f0c8160936",
+      "sha256": "cb0e7b65d2ac843137b92946c48b2f28176488ded48fc99712cb9e15d9113568",
       "camera": [
         900,
         -860,
@@ -2216,6 +2783,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -2223,14 +2797,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "florida-low-forest-moonless": {
-      "sha256": "fd5c29804e982d06f143f609838a6bdac59b211b5fbebb0dffdd504143f64e25",
+      "sha256": "bc500bb67c0809ec35a46b62a5cca7cc9abb84ae8478b0a72c715410b6022f62",
       "camera": [
         900,
         -860,
@@ -2243,6 +2817,13 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -2250,14 +2831,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "florida-low-forest-rain": {
-      "sha256": "de53155dd5c78c39ce23a49e8c49dc7dc63ad3e90c87f036ce3370ae18038fcc",
+      "sha256": "6fb194058e47b72d4252995b26ba859470f2aa9d244c348dc9fc4e751208c687",
       "camera": [
         900,
         -860,
@@ -2270,6 +2851,13 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         585,
         1266
@@ -2277,14 +2865,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 2962440,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 2962440,
         "failed": false
       }
     },
     "florida-high-overview-noon": {
-      "sha256": "2780ef57bd90f38341d66d66e3560795d8a83d1d97bd1417b3fe6d0a99739b7b",
+      "sha256": "cb8d40cbe460e2444f24b449457358ff1e1574c593ce3f8a45d31ac8e5d10672",
       "camera": [
         300,
         950,
@@ -2297,6 +2885,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -2304,14 +2899,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "florida-high-overview-golden": {
-      "sha256": "755021bce44299d2c2dd087479cd966acfaa272202086846582901e9f515357a",
+      "sha256": "aaab378fb0fac84d5221ab370e31b43d2b392e6df1e2353020195f4e40bc78be",
       "camera": [
         300,
         950,
@@ -2324,6 +2919,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -2331,14 +2933,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "florida-high-overview-moonless": {
-      "sha256": "7ebbb9a17b7b031bd2077ab65ff2682b0756840a18b0c1a851056742b815f7b6",
+      "sha256": "f5eb13fade6816a2fbf8f54e7f019dfa2e0fb62a61eed6cfedac169d95dd1bca",
       "camera": [
         300,
         950,
@@ -2351,6 +2953,13 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -2358,14 +2967,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "florida-high-overview-rain": {
-      "sha256": "bb3180364bc6aa176edacdf199bfd885dd8081938cb60a1e8c738274665a3a67",
+      "sha256": "903f3ba7787280fac5ba87b984b1d8aeb171a2fb3c0f948e6f87525c09fae5d1",
       "camera": [
         300,
         950,
@@ -2378,6 +2987,13 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -2385,14 +3001,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "florida-high-water-noon": {
-      "sha256": "359ecb9a0a63091164ff2e942fbd07d14303d7120eb5791e130d8a9785d9dd9e",
+      "sha256": "7c09edcf213dd1d2d37048f09d779c3618bcc68617cc31f43f3b2426b3486c33",
       "camera": [
         450,
         1552,
@@ -2405,6 +3021,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -2412,14 +3035,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "florida-high-water-golden": {
-      "sha256": "e9cb9b4d07b0f09c0689809f753a20494929be507c6dee61beae410e30e189f1",
+      "sha256": "2a03ceaa7a8e5df9c02d9122995a09c019ef1a355fa50869f72c9ab88fd15fc3",
       "camera": [
         450,
         1552,
@@ -2432,6 +3055,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -2439,14 +3069,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "florida-high-water-moonless": {
-      "sha256": "5575628ce7e0b090f2285763282d10a124c5fb19edb25acb1c924bbe54cc4255",
+      "sha256": "65fecd8534406ba162e6929c0d94690909782796c2d5ae0bb9876e5013b3c009",
       "camera": [
         450,
         1552,
@@ -2459,6 +3089,13 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -2466,14 +3103,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "florida-high-water-rain": {
-      "sha256": "774da7c6744de9f86d8ccbe3ad5e754d29997619473f26afbeaf48d198181c1c",
+      "sha256": "ea66fcdd14894f52a1f4ddede90fdead2464ff01fea61d68baf22d2141f98b0f",
       "camera": [
         450,
         1552,
@@ -2486,6 +3123,13 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -2493,14 +3137,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "florida-high-forest-noon": {
-      "sha256": "1ddab740e17e81aef8a2eb2bd3562eb6d17d9cc61ac5775496b6e3ee74f9b16a",
+      "sha256": "57b95b8a652621ff9573e58afd418917749f227ab89412fa2422654f9c5dabc3",
       "camera": [
         900,
         -860,
@@ -2513,6 +3157,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -2520,14 +3171,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "florida-high-forest-golden": {
-      "sha256": "8cc2e6683fdec196a1f8bc6e150ad9be0745571f067c5696f310b19daed214bb",
+      "sha256": "956b0d8b8b2a1a0a9b74e6a172736e379cbeecde5a23542d885559987c98188d",
       "camera": [
         900,
         -860,
@@ -2540,6 +3191,13 @@
         0.5,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -2547,14 +3205,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "florida-high-forest-moonless": {
-      "sha256": "3c4f3219756239763cd861a9b0db816a934a0bda9ec061043b71c5c4c95d4024",
+      "sha256": "c78ed8b0b701e06e52cee371e5973ee6f6f30fbf9d86a961d41b4da8b42173d2",
       "camera": [
         900,
         -860,
@@ -2567,6 +3225,13 @@
         0,
         "clear"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 0,
+        "wet": 0,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -2574,14 +3239,14 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     },
     "florida-high-forest-rain": {
-      "sha256": "44f8f7a90ea02bb7c941fc01a6e3cdf81f6c3daf56eaf492935435df0cd50d27",
+      "sha256": "04061749cfac56e239bc2f80a390738bcf77ce293ef90da81536b721c33abe05",
       "camera": [
         900,
         -860,
@@ -2594,6 +3259,13 @@
         0.25,
         "rain"
       ],
+      "weatherSurface": {
+        "source": "climate-history",
+        "seed": 1776,
+        "historyDays": 84,
+        "wet": 0.9964871896634488,
+        "snow": 0
+      },
       "renderBuffer": [
         1280,
         720
@@ -2601,9 +3273,9 @@
       "replayVerified": true,
       "replay": {
         "exact": true,
+        "total": 921600,
         "changed": 0,
         "exactDifferences": 0,
-        "total": 921600,
         "failed": false
       }
     }

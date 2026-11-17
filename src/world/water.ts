@@ -29,6 +29,11 @@ export class WaterReflection {
   private size = new THREE.Vector2();
   private up = new THREE.Vector3();
   private vis: boolean[] = [];
+  private lastEye = new THREE.Vector3();
+  private lastOrientation = new THREE.Quaternion();
+  private lastProjection = new THREE.Matrix4();
+  private lastPlaneY = NaN;
+  private lastRefresh = -Infinity;
   private bias = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
   enabled = true;
 
@@ -61,13 +66,27 @@ export class WaterReflection {
   }
 
   /** Returns true when the reflection target was refreshed this frame. */
-  render(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, hide: THREE.Object3D[]): boolean {
-    if (!this.shouldRender(camera)) return false;
+  render(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, hide: THREE.Object3D[], seconds?: number): boolean {
+    if (!this.shouldRender(camera)) {
+      this.lastRefresh = -Infinity;
+      return false;
+    }
     renderer.getDrawingBufferSize(this.size);
     const w = Math.max(64, Math.min(1400, Math.floor(this.size.x * this.scale))), h = Math.max(64, Math.floor((w * this.size.y) / Math.max(1, this.size.x)));
-    if (this.rt.width !== w || this.rt.height !== h) this.rt.setSize(w, h);
     // Mirror about the current water height, including a hurricane surge.
     const planeY = hide[0]?.position.y ?? WATER;
+    const resized = this.rt.width !== w || this.rt.height !== h;
+    // Ripples, rain and specular highlights are evaluated afresh by the main
+    // water shader. On a stationary camera only moving scenery needs a new
+    // mirror image. Refresh it at 30 Hz; refresh every moving-camera frame.
+    const angularTolerance = Math.tan(THREE.MathUtils.degToRad(camera.fov) * 0.5) * 0.25 / h;
+    const positionTolerance = Math.max(1, Math.abs(camera.position.y - planeY)) * angularTolerance;
+    if (seconds !== undefined && seconds >= this.lastRefresh && seconds - this.lastRefresh < 1 / 30 - 1e-6 &&
+        !resized && planeY === this.lastPlaneY &&
+        this.lastEye.distanceToSquared(camera.position) <= positionTolerance ** 2 &&
+        1 - Math.abs(this.lastOrientation.dot(camera.quaternion)) <= angularTolerance ** 2 / 8 &&
+        this.lastProjection.equals(camera.projectionMatrix)) return false;
+    if (resized) this.rt.setSize(w, h);
     const c = this.cam;
     c.copy(camera, false);
     camera.getWorldDirection(this.t);
@@ -103,13 +122,22 @@ export class WaterReflection {
     }
     const prevTarget = renderer.getRenderTarget();
     const prevShadow = renderer.shadowMap.autoUpdate;
-    renderer.shadowMap.autoUpdate = false;
-    renderer.setRenderTarget(this.rt);
-    renderer.clear();
-    renderer.render(scene, c);
-    renderer.setRenderTarget(prevTarget);
-    renderer.shadowMap.autoUpdate = prevShadow;
-    for (let i = 0; i < hide.length; i++) hide[i].visible = vis[i];
+    this.lastRefresh = -Infinity;
+    try {
+      renderer.shadowMap.autoUpdate = false;
+      renderer.setRenderTarget(this.rt);
+      renderer.clear();
+      renderer.render(scene, c);
+    } finally {
+      renderer.setRenderTarget(prevTarget);
+      renderer.shadowMap.autoUpdate = prevShadow;
+      for (let i = 0; i < hide.length; i++) hide[i].visible = vis[i];
+    }
+    this.lastEye.copy(camera.position);
+    this.lastOrientation.copy(camera.quaternion);
+    this.lastProjection.copy(camera.projectionMatrix);
+    this.lastPlaneY = planeY;
+    this.lastRefresh = seconds ?? -Infinity;
     return true;
   }
 

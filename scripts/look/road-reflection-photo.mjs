@@ -19,20 +19,49 @@ try {
     page.on('console',message=>{if(/Shader Error|GL_INVALID|VALIDATE_STATUS/.test(message.text()))errors.push(message.text());});
     const result=await page.evaluate(async ()=>{
       const THREE=await import('/node_modules/three/build/three.module.js');
+      const { WATER, HALF } = await import('/src/config.ts');
       const g=window.__game,r=g.renderer,mirror=g.roads.surfaceState.reflection;
-      g.weather.wet=1;g.env.envT=-Infinity;g.env.envKey='';
+      await window.__weatherFixture(g.weather.kind, { surface: 'wet', keepKind: true });
+      g.env.envT=-Infinity;g.env.envKey='';
       for(let i=0;i<4;i++){g.time=(i+1)/30;g.frame(0);}
       const fingerprint=JSON.stringify(window.__dbg.fingerprint());
       const cameraState=()=>JSON.stringify([g.camera.position.toArray(),g.camera.quaternion.toArray(),g.camera.fov,g.camera.aspect]);
       const native=()=>({buffer:r.getDrawingBufferSize(new THREE.Vector2()).toArray(),
         viewport:r.getViewport(new THREE.Vector4()).toArray(),scissor:r.getScissor(new THREE.Vector4()).toArray(),
         scissorTest:r.getScissorTest(),target:r.getRenderTarget()?.uuid??null,
-        post:[g.post.sceneRT.width,g.post.sceneRT.height]});
+        post:[g.post.sceneRT.width,g.post.sceneRT.height],
+        water:[g.water.reflection.rt.width,g.water.reflection.rt.height],
+        refraction:g.waterRefraction.size, surface:g.waterRefraction.surfaceSize ?? null});
       const initial=native(),initialCamera=cameraState(),eye=g.camera.position.clone();
       const angles=new THREE.Euler().setFromQuaternion(g.camera.quaternion,'YXZ');
       const originalMirror=g.roads.renderReflection,originalPost=g.post.render;
+      const waterMirror = g.water.reflection;
+      const originalWater = waterMirror.render;
+      const originalScenePass = g.post.scenePass;
       const rows=[],images=[];
       let events=[];
+      let waterEvents=[];
+      waterMirror.render = function(renderer, scene, camera, ...args) {
+        const rendered = originalWater.call(this, renderer, scene, camera, ...args);
+        waterEvents.push({
+          kind: 'water', rendered,
+          buffer: renderer.getDrawingBufferSize(new THREE.Vector2()).toArray(),
+          target: [this.rt.width, this.rt.height], eye: camera.position.toArray(),
+          freshEye: this.lastEye.equals(camera.position),
+          freshProjection: this.lastProjection.equals(camera.projectionMatrix),
+        });
+        return rendered;
+      };
+      g.post.scenePass = (target, camera, draw) => {
+        const copies = g.waterRefraction.copies;
+        originalScenePass(target, camera, draw);
+        waterEvents.push({
+          kind: 'refraction', buffer: r.getDrawingBufferSize(new THREE.Vector2()).toArray(),
+          scene: [target.width, target.height], target: g.waterRefraction.size,
+          surface: g.waterRefraction.surfaceSize ?? null,
+          copies: g.waterRefraction.copies - copies, eye: camera.position.toArray(),
+        });
+      };
       g.roads.renderReflection=function(renderer,scene,camera,...args){
         const value=originalMirror.call(this,renderer,scene,camera,...args);
         events.push({kind:'mirror',buffer:renderer.getDrawingBufferSize(new THREE.Vector2()).toArray(),
@@ -51,7 +80,8 @@ try {
             g.photo.enter();g.photo.weather='rain';g.photo.hour=12.5;g.photo.focusDistance=65;
             g.photo.frame(0);
           } else {
-            g.photo.exit();g.weather.wet=1;
+            g.photo.exit();
+            await window.__weatherFixture(g.weather.kind, { surface: 'wet', keepKind: true });
           }
           const oldMatrix=mirror.uniforms.uRoadReflectionMatrix.value.toArray();
           // Change the real lens immediately before the first export, with no
@@ -65,7 +95,7 @@ try {
             g.camera.quaternion.setFromEuler(new THREE.Euler(angles.x,angles.y+.07,0,'YXZ'));
             g.camera.fov=61;g.camera.updateProjectionMatrix();g.camera.updateMatrixWorld();
           }
-          const expectedCamera=cameraState();events=[];
+          const expectedCamera=cameraState();events=[];waterEvents=[];
           const blob=await g.photo.capture(false,{width:3840,height:2160});
           const bitmap=await createImageBitmap(blob),dimensions=[bitmap.width,bitmap.height];bitmap.close();
           const png=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=reject;reader.readAsDataURL(blob);});
@@ -78,10 +108,72 @@ try {
           if(JSON.stringify(initial)!==JSON.stringify(restored)||JSON.stringify([mirror.target.width,mirror.target.height])!==JSON.stringify(initial.buffer))throw Error(mode+' did not restore native render state');
           if(cameraState()!==expectedCamera||(mode==='active'&&cameraState()!==initialCamera))throw Error(mode+' changed the game camera');
           if(JSON.stringify(window.__dbg.fingerprint())!==fingerprint)throw Error(mode+' changed simulation state');
-          rows.push({mode,dimensions,events,restored,simulationUnchanged:true,cameraUnchanged:true});
+          const copy = waterEvents.find(event => event.kind === 'refraction' && event.buffer[0] === 3840);
+          if (!copy || copy.copies !== 1 || copy.target.width !== 3840 || copy.target.height !== 2160
+            || !copy.surface || copy.surface.width !== 3840 || copy.surface.height !== 2160) throw Error(mode+' refraction or surface depth did not use the full export');
+          rows.push({subject:'road',mode,dimensions,events,waterEvents,restored,simulationUnchanged:true,cameraUnchanged:true});
           images.push({mode,png});
         }
-      } finally {g.roads.renderReflection=originalMirror;g.post.render=originalPost;g.photo.exit();}
+        // A separate real river camera makes the water mirror eligible. The
+        // street view above proves the road mirror at the same export size.
+        g.photo.exit();
+        const nearbyWater = [...waterMirror.waterBounds]
+          .sort((a, b) => a.distanceToPoint(g.camera.position) - b.distanceToPoint(g.camera.position));
+        let river = null;
+        for (const box of nearbyWater) {
+          for (let z = Math.max(-HALF, box.min.z); z <= Math.min(HALF, box.max.z); z += 8) {
+            for (let x = Math.max(-HALF, box.min.x); x <= Math.min(HALF, box.max.x); x += 8) {
+              const height = g.terrain.h(x, z);
+              if (height < WATER - 1 && (!river || height < river.y)) river = new THREE.Vector3(x, height, z);
+            }
+          }
+          if (river) break;
+        }
+        if (!river) throw Error('No submerged terrain point for the water export check');
+        g.rts.setView(river.x, river.z, 180, .6, .55, true);
+        g.frame(0);
+        const waterNative = native();
+        const waterFingerprint = JSON.stringify(window.__dbg.fingerprint());
+        for (const mode of ['active', 'direct']) {
+          if (mode === 'active') {
+            g.photo.enter();
+            g.photo.weather = 'rain';
+            g.photo.hour = 12.5;
+            g.photo.frame(0);
+          } else g.photo.exit();
+          const expectedCamera = cameraState();
+          waterEvents = [];
+          const blob = await g.photo.capture(false, { width: 3840, height: 2160 });
+          const bitmap = await createImageBitmap(blob);
+          const dimensions = [bitmap.width, bitmap.height];
+          bitmap.close();
+          const exported = waterEvents.filter(event => event.buffer[0] === 3840);
+          const reflected = exported.find(event => event.kind === 'water');
+          const copied = exported.find(event => event.kind === 'refraction');
+          if (!reflected?.rendered || !reflected.freshEye || !reflected.freshProjection
+            || JSON.stringify(reflected.target) !== '[3840,2160]') throw Error(mode+' water mirror did not use the full current export lens');
+          if (!copied || copied.copies !== 1 || copied.target.width !== 3840 || copied.target.height !== 2160
+            || !copied.surface || copied.surface.width !== 3840 || copied.surface.height !== 2160
+            || JSON.stringify(copied.eye) !== JSON.stringify(reflected.eye)) throw Error(mode+' water color/depth copy used the wrong export size or lens');
+          if (JSON.stringify(native()) !== JSON.stringify(waterNative)) throw Error(mode+' water resources did not restore native dimensions');
+          if (cameraState() !== expectedCamera) throw Error(mode+' water capture changed the game camera');
+          if (JSON.stringify(window.__dbg.fingerprint()) !== waterFingerprint) throw Error(mode+' water capture changed simulation state');
+          rows.push({ subject: 'water', mode, dimensions, waterPoint: river.toArray(), waterHeight: WATER, waterEvents, restored: native(), simulationUnchanged: true, cameraUnchanged: true });
+          const png = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          images.push({ mode: 'water-' + mode, png });
+        }
+      } finally {
+        g.roads.renderReflection=originalMirror;
+        g.post.render=originalPost;
+        waterMirror.render=originalWater;
+        g.post.scenePass=originalScenePass;
+        g.photo.exit();
+      }
       if(r.getContext().getError()!==0)throw Error('WebGL error after photo export');
       return {population:g.sim.population,buildings:g.buildings.list.size,rows,images};
     });
@@ -95,4 +187,4 @@ try {
   writeFileSync(`${out}/results.json`,JSON.stringify(report,null,2)+'\n');
   console.log(JSON.stringify(report));
 } finally {await browser.close();}
-console.log('PASS first active/direct 4K exports use the current road plane and lens, then restore native resources and exact simulation');
+console.log('PASS active/direct Ultra 4K road and water mirrors, color/depth copies, current lenses, native resources and exact simulation');

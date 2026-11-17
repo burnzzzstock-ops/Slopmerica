@@ -35,7 +35,7 @@ The final map sweep passes 11 cases across three High river/shore pairs, three L
 
 The hardware optical fixture uses a white submerged plane. At depths of 0.5, 4 and 12 m, mean luma is 218.17, 148.19 and 28.22. The above-water foreground pole preserves 9,747 pixels with a maximum channel difference of 1. Color and depth copies are distinct from the active render target.
 
-At a solar elevation of 3.507°, the dawn pass uses a 320×180 target. It adds 0.652 mean luma, with a maximum increase of 20.07, and changes 204,079 pixels by more than one luma value. Noon skips the pass. Live quality switching verifies High 640×360, Medium 320×180 and Ultra 1280×720 mirrors from a 1280×720 buffer. The CPU fixture additionally verifies a 2400×1200 Ultra mirror above the former 1400-pixel ceiling. Actual 4K verification is reserved for the final combined build.
+At a solar elevation of 3.507°, the dawn pass uses a 320×180 target. It adds 0.652 mean luma, with a maximum increase of 20.07, and changes 204,079 pixels by more than one luma value. Noon skips the pass. Live quality switching verifies High 640×360, Medium 320×180 and Ultra 1280×720 mirrors from a 1280×720 buffer. The CPU fixture additionally verifies a 2400×1200 Ultra mirror above the former 1400-pixel ceiling. The final combined build also passes actual Ultra 3840×2160 exports.
 
 All three `shoretest` runs pass. Mean sampled waterline-depth error is at or below 0.0001 m. The software moonless-houses probe passes with High luma 0.29917, Medium 0.28029 and Low 0.27968. Both differences stay within the 0.03 guard without lighting adjustments.
 
@@ -79,3 +79,11 @@ Concurrent desktop work produced large scheduler spikes. These measurements esta
 Full source hashes, pixel metrics, raw reports and review sheets are included in the Water-atmos output folder. The matched candidate is frozen at `work/water-after-1794945032884`. The baseline is `work/water-before-1794943680401`. `provenance.json` identifies the separate atmosphere, dawn and optics source snapshots.
 
 The candidate source-list fingerprint is `6f8a548e7e40b79277daf8c348df2d9fe19bf1f56805cf6d1b67cd635475b8d8`. The baseline fingerprint is `f5745278eb7b9db9dc78fda3b043ff44b12d6be956802c04b424b6644180e159`. Each is SHA-256 of the JSON-encoded ordered file/hash list.
+
+## Combined Ultra 4K exports
+
+Active photo mode and direct capture both export the actual reference town and a river camera at 3840×2160. The water mirror, resolved color/depth copy and transparent-surface depth target all use 3840×2160 during export. The wet-road mirror uses the same full buffer. Each returns to 1280×720 afterward. The checks preserve the current lens, native viewport, scissor, target, post resources and full simulation fingerprint. All four exports pass with no page or WebGL errors.
+
+The controlled town has 969 residents and 143 buildings. The wet-road fixture computes its surface state through the real Climate class before capture. The water camera targets terrain at (1272, -1.8, -280), below the water plane at zero. The exported view contains the actual channel. These checks measure resource dimensions and restoration while other tests run. They establish no frame-time budget.
+
+The combined source is `work/water-export4k-final-1794947936455`, with source-list fingerprint `fad1103f1e0720cbe1480417d42a166aed9e9d606c5fb26cef8a33e73bcad10e`. It includes the integrated tree and shadow changes and the final refraction helper `3ca0fdcde87730d4dc08c04216019b188dcda5723ba97d3a545bb93889464929`. Reports and full-resolution images are retained in `shots/water/combined-photo` and the `Water-atmos/Exports-4K` output folder.

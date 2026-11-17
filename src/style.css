@@ -3610,3 +3610,15 @@ a {
 @media (pointer: coarse) and (max-width: 760px) and (min-height: 700px) {
   .subpanel { max-height: min(36vh, 320px); }
 }
+
+/* ---- the smallest text (scripts/textfloor.mjs lists every size on the HUD) ----
+   What is read as a sentence or a figure in the inspector, the demand and budget cards, the More grid, the lists and the
+   small print of a drawer is 12 px at least; it was 10 to 11.7 px. Not raised: the labels of the one-row top bar and the
+   toolbar (8 to 11 px), which have no room until those two rows are laid out again; and the second line of a road, zone or
+   service card on a phone (11 px) and in a short desktop window (10.5 px), where a taller card takes the map's room: at
+   12 px the phone's Roads drawer took two more points of the screen (phonefree: 60.6% map to 58.4%). */
+.subpanel small, .inspector small, .li small, .sp-row small, .tax small, .svc-stat, .svc-stat small, .svc-trade, .land-hint,
+.in-stats span, .in-bind span, .in-kicker, .svc-covs span, .dp-h, .dp-base, .dp-trend, .dp-head b, .bg-top span, .budget tr.head td,
+.more-btn, .chip small { font-size: 12px; }
+@media (max-width: 760px) { .card small { font-size: 11px; } }
+@media (min-width: 761px) and (max-height: 760px) { .card small { font-size: 10.5px; } }

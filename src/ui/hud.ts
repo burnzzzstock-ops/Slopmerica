@@ -65,7 +65,7 @@ const soonness = (d: number | null) => (d === null ? 0 : d <= 0 ? 4 : d < 7 ? 3 
 /** the day the first-steps card stops asking for a look at the Budget: the second weekly close has gone by (the owner's roadmap of 17 Nov) */
 const FIRST_STEPS_DAYS = 15;
 
-type PanelId = 'roads' | 'zones' | 'landmarks' | 'views' | 'budget' | 'communes' | 'help' | 'more' | `ext:${string}` | null;
+type PanelId = 'roads' | 'zones' | 'landmarks' | 'views' | 'budget' | 'stats' | 'communes' | 'help' | 'more' | `ext:${string}` | null;
 
 /** Phones get these in the toolbar; everything else lives in the More drawer. */
 const PHONE_PRIMARY = ['inspect', 'roads', 'zones', 'ext:services', 'views', 'bulldoze'];
@@ -169,6 +169,8 @@ export class Hud implements UiSink {
   /** a finger is down on the map with a drawing tool in hand */
   private touchDraw = false;
   private budgetSeen = false;
+  /** the open Statistics drawer's own redraw (it does nothing until the county has a new day to show) */
+  private statsDraw: (() => void) | null = null;
   private firstStepsDone = (() => { try { return localStorage.getItem('slopmerica.firstSteps') === '1'; } catch { return false; } })();
   private nextStepT = -99;
   private domT = 0;
@@ -298,7 +300,7 @@ export class Hud implements UiSink {
       this.syncToolbar();
       // (a tool in hand makes the Next card one line on a phone, the same as an open drawer does)
       this.renderNextBar();
-      if (this.panel && this.panel !== 'budget' && this.panel !== 'help' && this.panel !== 'more' && this.panel !== 'communes') this.renderPanel();
+      if (this.panel && this.panel !== 'budget' && this.panel !== 'stats' && this.panel !== 'help' && this.panel !== 'more' && this.panel !== 'communes') this.renderPanel();
     };
     window.addEventListener('keydown', (e) => this.hotkey(e));
     game.renderer.domElement.addEventListener('pointermove', (e) => {
@@ -499,7 +501,8 @@ export class Hud implements UiSink {
 
   /** update the open panel's live numbers without re-rendering it (keeps focus and scroll) */
   private refreshPanelLive() {
-    if (this.panel === 'budget') {
+    if (this.panel === 'stats') this.statsDraw?.();
+    else if (this.panel === 'budget') {
       const live = this.sub.querySelector('.budget-live') as HTMLElement | null, rules = this.sub.querySelector('.bg-rules') as HTMLElement | null;
       if (live) {
         const open = [...live.querySelectorAll('details')].map((d) => d.open);
@@ -1197,6 +1200,8 @@ export class Hud implements UiSink {
     // (scripts/look/hud-icons.mjs) reads that list and wants drawn art for every id in it, and Photo has none yet
     // (asked for in docs/aaa/REQUESTS_FABLE.md). When it has, this line moves up into the list.
     withOrder.push({ it: ['photo', '📷', 'Photo'], o: (items.findIndex((x) => x[0] === 'views') + 1) * 10 + 5 });
+    // Statistics sits after Budget, and joins the list here for the same reason as Photo: it has no drawn icon yet.
+    withOrder.push({ it: ['stats', '📈', 'Statistics'], o: (items.findIndex((x) => x[0] === 'budget') + 1) * 10 + 5 });
     withOrder.sort((a, b) => a.o - b.o);
     const all = withOrder.map((x) => x.it);
     const btn = ([id, icon, label]: [string, string, string]) => `<button class="tbtn" data-t="${id}" title="${label}"><span class="ti">${uiIcon('toolbar', id, icon, 24)}</span><span class="tl">${label}</span>${id === 'feed' || id === 'more' ? '<i id="feed-badge" class="badge" hidden></i>' : ''}</button>`;
@@ -1332,6 +1337,16 @@ export class Hud implements UiSink {
       const ep = EXT.panels.find((x) => `ext:${x.id}` === p);
       this.sub.innerHTML = '';
       ep?.render(this.sub, g, () => this.renderPanel());
+      return;
+    }
+    if (p === 'stats') {
+      // The charts are loaded when the drawer is first opened (ui/statsPanel.ts): the main script does not carry them.
+      this.sub.innerHTML = `<div class="sp-title">Statistics <small>The county over time. ${IS_TOUCH ? 'Slide a finger' : 'Move the mouse'} across a chart to read a day.</small></div><div class="stats"><p class="st-empty">Drawing the charts…</p></div>`;
+      const body = this.sub.querySelector('.stats') as HTMLElement;
+      this.statsDraw = null;
+      import('./statsPanel')
+        .then((m) => { if (this.panel === 'stats' && body.isConnected) this.statsDraw = m.drawStats(body, g); })
+        .catch(() => { body.innerHTML = '<p class="st-empty">The charts could not be loaded.</p>'; });
       return;
     }
     if (p === 'more') {

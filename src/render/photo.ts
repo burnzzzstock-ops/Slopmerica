@@ -142,7 +142,17 @@ export class PhotoMode {
 
   capture(framed = true, size?: PhotoSize) {
     const g = this.g, renderer = g.renderer;
-    const draw = () => this.active ? this.frame(0) : g.post.render(g.env.night, g.rts.distance);
+    const draw = (aspect = g.camera.aspect) => {
+      if (this.active) return this.frame(0, aspect);
+      const camera = aspect === g.camera.aspect ? g.camera : g.camera.clone();
+      camera.aspect = aspect; camera.updateProjectionMatrix(); camera.updateMatrixWorld();
+      // Direct exports also need a mirror for this exact lens and buffer size.
+      // Warm it before the final scene draw, without stepping the game.
+      const mirror = g.water.reflection, wu = g.water.mat.uniforms;
+      wu.uReflOn.value = mirror?.shouldRender(camera) ? 1 : 0;
+      if (wu.uReflOn.value) mirror?.render(renderer, g.scene, camera, [g.water.mesh]);
+      g.post.render(g.env.night, g.rts.distance, camera);
+    };
     if (!size) return photoPNG(renderer.domElement, draw, g.map.def.name, framed);
     const { width, height } = size, max = Math.min(renderer.capabilities.maxTextureSize, 3840);
     if (![width, height].every(v => Number.isInteger(v) && v > 0 && v <= max) || width * height > 3840 * 2160) {
@@ -154,10 +164,8 @@ export class PhotoMode {
     try {
       renderer.setRenderTarget(null); renderer.setScissorTest(false);
       renderer.setDrawingBufferSize(width, height, 1); g.post.setSize(width, height);
-      const camera = g.camera.clone(); camera.aspect = aspect; camera.updateProjectionMatrix();
-      const atSize = () => this.active ? this.frame(0, aspect) : g.post.render(g.env.night, g.rts.distance, camera);
       // photoPNG copies the rendered pixels synchronously, before awaiting fonts or the encoder.
-      return photoPNG(renderer.domElement, atSize, g.map.def.name, framed);
+      return photoPNG(renderer.domElement, () => draw(aspect), g.map.def.name, framed);
     } finally {
       renderer.setDrawingBufferSize(old.x, old.y, ratio); g.post.setSize(old.x, old.y);
       renderer.setViewport(viewport); renderer.setScissor(scissor); renderer.setScissorTest(test);

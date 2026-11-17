@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'vite';
 import { comparePixels } from './golden-diff.mjs';
 
-const server = await createServer({server:{middlewareMode:true,watch:null,hmr:false,ws:false},appType:'custom',logLevel:'error'});
+const server = await createServer({cacheDir:'shots/tmp/vite/field-overlay-'+process.pid,server:{middlewareMode:true,watch:null,hmr:false,ws:false},appType:'custom',logLevel:'error'});
 try {
   const { sampleOverlayField, overlayLegend } = await server.ssrLoadModule('/src/render/overlays.ts');
   const { HALF } = await server.ssrLoadModule('/src/config.ts');

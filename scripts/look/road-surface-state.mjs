@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createServer } from 'vite';
 
-const server = await createServer({ server:{ middlewareMode:true, watch:null, hmr:false, ws:false }, appType:'custom', logLevel:'error' });
+const server = await createServer({ cacheDir:'shots/tmp/vite/road-surface-'+process.pid, server:{ middlewareMode:true, watch:null, hmr:false, ws:false }, appType:'custom', logLevel:'error' });
 try {
   const { RoadSurfaceState, roadDepression } = await server.ssrLoadModule('/src/roads/roadSurface.ts');
   const { lineCubic, sampleCubic } = await server.ssrLoadModule('/src/core/math.ts');

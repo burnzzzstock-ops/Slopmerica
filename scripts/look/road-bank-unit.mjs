@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'vite';
 
-const server = await createServer({ server:{ middlewareMode:true, watch:null, hmr:false, ws:false }, appType:'custom', logLevel:'error' });
+const server = await createServer({ cacheDir:'shots/tmp/vite/road-bank-'+process.pid, server:{ middlewareMode:true, watch:null, hmr:false, ws:false }, appType:'custom', logLevel:'error' });
 try {
   const { RoadRenderer } = await server.ssrLoadModule('/src/roads/roadMesh.ts');
   const { VERGE_RUN, GROUND_BELOW, WALK_TOP, edgeLift } = await server.ssrLoadModule('/src/roads/roadSection.ts');

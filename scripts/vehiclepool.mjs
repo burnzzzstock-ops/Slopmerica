@@ -1,7 +1,7 @@
 // BASE_URL is intentionally unused: this renderer contract test runs through Vite SSR, without a browser.
 import { createServer } from 'vite';
 import { mkdirSync, writeFileSync } from 'node:fs';
-const server = await createServer({ root: process.cwd(), server: { middlewareMode: true, watch: null, hmr: false, ws: false }, appType: 'custom', logLevel: 'error' });
+const server = await createServer({ root: process.cwd(), cacheDir: 'shots/tmp/vite/vehiclepool-' + process.pid, server: { middlewareMode: true, watch: null, hmr: false, ws: false }, appType: 'custom', logLevel: 'error' });
 const rows = [];
 const check = (name, pass, detail) => { rows.push({ name, pass, detail }); console.log(pass ? 'OK' : 'FAIL', name, detail ?? ''); };
 try {

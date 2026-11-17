@@ -1,6 +1,6 @@
 import { createServer } from 'vite';
 
-const server = await createServer({ root: process.cwd(), configFile: false, server: { middlewareMode: true, watch: null, hmr: false, ws: false }, appType: 'custom', logLevel: 'error' });
+const server = await createServer({ root: process.cwd(), cacheDir: 'shots/tmp/vite/construction-' + process.pid, configFile: false, server: { middlewareMode: true, watch: null, hmr: false, ws: false }, appType: 'custom', logLevel: 'error' });
 let failures = 0;
 function check(name, pass) {
   console.log(pass ? 'OK' : 'FAIL', name);

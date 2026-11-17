@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createServer } from 'vite';
 
-const server=await createServer({server:{middlewareMode:true,watch:null,hmr:false,ws:false},appType:'custom',logLevel:'error'});
+const server=await createServer({cacheDir:'shots/tmp/vite/road-reflection-'+process.pid,server:{middlewareMode:true,watch:null,hmr:false,ws:false},appType:'custom',logLevel:'error'});
 try {
   const {roadMirrorPlanes,RoadReflection}=await server.ssrLoadModule('/src/roads/roadReflection.ts');
   const geometry=new THREE.BufferGeometry();

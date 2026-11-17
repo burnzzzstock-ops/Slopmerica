@@ -8,7 +8,7 @@ import path from 'node:path';
 const root = path.resolve(process.env.SOURCE_ROOT || '.');
 const out = process.env.OUT || 'shots/look/skyline/models';
 await mkdir(out, { recursive: true });
-const server = await createServer({ root, configFile: false, server: { middlewareMode: true, watch: null, hmr: false, ws: false }, appType: 'custom', logLevel: 'error' });
+const server = await createServer({ root, cacheDir: path.resolve(out, '.vite-' + process.pid), configFile: false, server: { middlewareMode: true, watch: null, hmr: false, ws: false }, appType: 'custom', logLevel: 'error' });
 let bad = 0;
 const check = (label, ok, detail) => { console.log(ok ? 'OK  ' : 'FAIL', label, detail ?? ''); if (!ok) bad++; };
 try {

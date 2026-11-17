@@ -1,6 +1,6 @@
 // Geometry-only guards: preserve holes, winding, normalized attributes and source vertices.
 import { createServer } from 'vite';
-const server = await createServer({ root: process.cwd(), configFile: false, server: { middlewareMode: true, watch: null, hmr: false, ws: false }, appType: 'custom', logLevel: 'error' });
+const server = await createServer({ root: process.cwd(), cacheDir: 'shots/tmp/vite/building-lod-' + process.pid, configFile: false, server: { middlewareMode: true, watch: null, hmr: false, ws: false }, appType: 'custom', logLevel: 'error' });
 let bad = 0;
 const check = (label, ok) => { console.log(ok ? 'OK' : 'FAIL', label); if (!ok) bad++; };
 try {

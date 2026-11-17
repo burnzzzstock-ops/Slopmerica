@@ -7,6 +7,7 @@ A fresh session can take over from this file alone. Read "Where things are", "St
 - **Worktree:** `C:/Users/burnz/Slopmerica-fable`, branch `claude/aaa-play` (LF line endings: `core.autocrlf false` in the worktree config).
 - **Integration:** `C:/Users/burnz/Slopmerica-int`, branch `aaa/integration` (mine to merge and push). It has its own `node_modules` (`npm ci` there after a lock change). ASTRA works on `codex/aaa-world` in its own worktree.
 - **Main checkout:** `C:/Users/burnz/Slopmerica` is on `aaa/briefs`. Leave it alone.
+- **A second session worked this lane on 17 Nov** ("Claude FABLE handoff", worktree `C:/Users/burnz/Slopmerica/.claude/worktrees/play-ui`, local branch `claude/aaa-play-ui`): the owner pasted the same handoff into it. It built the HUD wiring in parallel; this branch's versions are the ones on integration, and its one new fix was cherry-picked (acc29c5). It was asked to cut a fresh branch from `claude/aaa-play` and offer only what this branch lacks (icons on the inspector rows, the tool badge and the top bar; a P key and lens controls for photo mode; the Next card re-placed when a drawer opens; step 5 ending on day 15), and to keep to UI polish while this session keeps to the simulation. Whether there are two sessions is the owner's call (`DECISIONS_FABLE.md`). **Check `git worktree list` and `git branch -a` for a parallel play-lane branch before starting UI work.**
 - **A third lane joined on 17 Nov:** ORION (Antigravity), the director and reviewer: it listens to rendered audio, looks at screenshots, plays the game in a live browser and generates 2D art. Workspace `C:/Users/burnz/.gemini/antigravity/scratch/Slopmerica`, ports 5170 to 5179, branch `agy/aaa-director` (not pushed yet). Its evaluation and its queue for this lane are in that workspace, untracked: `docs/aaa/EVAL_AND_AAA_FUN_ROADMAP.md` and `docs/aaa/HANDOFF_FABLE_CLAUDE.md`. The owner pasted the roadmap into this session on 17 Nov, so its priorities are the owner's ("fun first"); "Next" below follows them. Both files were written against `9b3f161` and are out of date on everything listed in "State of the work".
 - **Ports:** 5180 to 5189. `--serve` in the suite uses 5189 by default; pass another port for a second run.
 - **Brief:** `docs/aaa/FABLE.md`. ASTRA's: `docs/aaa/ASTRA.md`. Requests: `REQUESTS_FABLE.md` (mine to ASTRA), `REQUESTS_ASTRA.md` (ASTRA's to me, on its branch). Owner decisions: `DECISIONS_FABLE.md`. The rules both lanes share are in `AGENTS.md` / `CLAUDE.md` at the repo root.
@@ -29,7 +30,7 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 
 ## State of the work (17 Nov 2026)
 
-`aaa/integration` is pushed at `584ab95`: 123 of 129 on its suite (the six: photo-reflection and presetlight, the look lane's; carsolid, crosswalktest, lightstest and landmarktest, the traffic table below). `claude/aaa-play` is one commit ahead of it (the save slots), pushed. Everything below is committed. The registry has 191 entries on this branch (12 gate, 15 smoke, 89 full, 75 measure), 203 on the merge.
+`aaa/integration` is pushed at `584ab95`: 123 of 129 on its suite (the six: photo-reflection and presetlight, the look lane's; carsolid, crosswalktest, lightstest and landmarktest, the traffic table below). `claude/aaa-play` is pushed at `acc29c5` plus this file: two changes ahead of integration (the save slots and the held-press fix), gate and smoke passing, not yet through an integration suite. Everything below is committed. The registry has 191 entries on this branch (12 gate, 15 smoke, 89 full, 75 measure), 203 on the merge.
 
 | Item | State |
 |---|---|
@@ -82,6 +83,7 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 | 4ea05b4 | A household's trip can weigh a few places by today's drive: in the code, switched off (`TUNING.whereTo.choices: 1`) |
 | 7f727f1, c5a94a8 | `scripts/simperf.mjs`; the land value pass no longer searches 300 m round every building for a landmark (the same county, a third less hitch) |
 | 1ea4162 | **Saves:** slots on the title screen and in Settings; Start paving asks before a new city takes the old one's place; an unreadable stored city is said so and kept |
+| acc29c5 | A mouse press held on Bulldoze or One More Lane is no longer lost when the inspector redraws (`scripts/presstest.mjs`; from the second play-lane session) |
 
 ### How the simulation is built now
 

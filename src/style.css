@@ -1863,6 +1863,15 @@ a {
     max-height: 48vh;
     overflow-y: auto;
   }
+  /* The sheet scrolls when a card is taller than it. What the card offers (Bulldoze, One More Lane, Follow) stays at the
+     sheet's foot, in view, and the facts scroll under it: on a card a few lines too tall the buttons were under the fold. */
+  .inspector .in-actions {
+    position: sticky;
+    bottom: -14px;
+    margin: 10px -14px -14px;
+    padding: 8px 14px 14px;
+    background: #1e1b2d;
+  }
   .toasts {
     top: calc(100px + var(--safe-t));
   }

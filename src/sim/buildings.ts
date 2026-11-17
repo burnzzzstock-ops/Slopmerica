@@ -20,6 +20,7 @@ import { ROAD_TYPES } from '../roads/roadTypes';
 import { buildingLod, buildingSilhouette, timeBuildingLod, withBuildingLodRandom } from '../render/buildingLod';
 import { BuildingClip, addBuildingClipAttribute, constructionHeight } from '../render/buildingClip';
 import { constructionFrame } from '../render/constructionFrame';
+import { scaledTowerModel, towerInstanceScale } from '../render/towerScale';
 
 /** a building as saved (see Buildings.serialize) */
 export type BldRow = [string, string, number, number, number, number, number, number, number, string, number, number, number, number, number?, number?, number?, number?, number?, number?, number[]?, number?, string?];
@@ -87,7 +88,7 @@ class Batch {
   private usedIndices = 0;
   private count = 0;
   private lods = new Map<number, { far: number; silhouette: number; center: THREE.Vector3 }>();
-  private instances = new Map<number, { original: number; written: number; far: boolean }>();
+  private instances = new Map<number, { original: number; written: number; far: boolean; verticalScale: number }>();
   private lodMatrix = new THREE.Matrix4();
   private lodPoint = new THREE.Vector3();
   private shadowPass = false;
@@ -169,8 +170,12 @@ class Batch {
     this.count++;
     const id = this.mesh.addInstance(geoId);
     this.clip.set(id, null);
-    this.instances.set(id, { original: geoId, written: geoId, far: false });
+    this.instances.set(id, { original: geoId, written: geoId, far: false, verticalScale: 1 });
     return id;
+  }
+  setVerticalScale(id: number, scale: number) {
+    const state = this.instances.get(id);
+    if (state) state.verticalScale = scale;
   }
   deleteInstance(i: number) {
     const owner = this.owners.get(i);
@@ -240,7 +245,8 @@ class Batch {
         const distance = camera.position.distanceTo(this.lodPoint) * fovScale;
         // Construction and its separate scaffolds stay exact. A shadow's
         // sub-pixel furniture can disappear earlier than the visible facade.
-        const growing = this.clip.active(id) || Math.abs(this.lodMatrix.elements[5] - 1) > 0.001;
+        const collapsing = this.ghosts.some(ghost => ghost.handle === id);
+        const growing = this.clip.active(id) || collapsing || Math.abs(this.lodMatrix.elements[5] - state.verticalScale) > 0.001;
         useFar = !growing && distance > (shadow ? 300 : state.far ? 700 : 850);
         // Atlas repeats must stay exact in the visible scene. Coalesced wall
         // quads are silhouettes for the shadow pass only, never facade LODs.
@@ -537,14 +543,30 @@ export class Buildings {
     }
   }
 
+  private towerModels = new WeakMap<Bld, { model: BuildingModel; scale: number }>();
+
+  private towerScale(b: Bld): number {
+    const previous = this.towerModels.get(b);
+    if (previous?.model === b.model) return previous.scale;
+    const tower = b.level >= 4 && b.model.height > 35 &&
+      (b.zone === 'office' || b.zone === 'comHigh' || b.zone === 'resHigh');
+    if (!tower) return 1;
+    const scale = towerInstanceScale(b.id);
+    b.model = scaledTowerModel(b.model, scale);
+    this.towerModels.set(b, { model: b.model, scale });
+    return scale;
+  }
+
   private writeMatrix(b: Bld, grow: number) {
+    const verticalScale = this.towerScale(b);
     this.q.setFromAxisAngle(this.v.set(0, 1, 0), b.yaw);
-    this.s.set(1, 1, 1);
+    this.s.set(1, verticalScale, 1);
     this.m4.compose(this.v.set(b.x, b.y, b.z), this.q, this.s);
     const batch = this.batchOf(b);
     batch.mesh.setMatrixAt(b.inst, this.m4);
+    batch.setVerticalScale(b.inst, verticalScale);
     const height = grow >= 1 ? null : constructionHeight(b.model.height, grow);
-    batch.clip.set(b.inst, height);
+    batch.clip.set(b.inst, height === null ? null : height / verticalScale);
     if (b.buildInst >= 0) {
       const scale = b.model.height / Math.max(1, b.buildH);
       this.s.set(1, scale, 1);

@@ -7,7 +7,8 @@ import path from 'node:path';
 const root = path.resolve(process.env.SOURCE_ROOT || '.');
 const out = process.env.OUT || 'shots/look/skyline/identity-unit';
 await mkdir(out, { recursive: true });
-const server = await createServer({ root, configFile: false, server: { middlewareMode: true, watch: null, hmr: false, ws: false }, appType: 'custom', logLevel: 'error' });
+const server = await createServer({ root, cacheDir: path.resolve(out, '.vite'), configFile: false,
+  server: { middlewareMode: true, watch: null, hmr: false, ws: false }, appType: 'custom', logLevel: 'error' });
 let failures = 0;
 const check = (label, ok, value) => { console.log(ok ? 'OK' : 'FAIL', label, value ?? ''); if (!ok) failures++; };
 const hash = array => createHash('sha256').update(Buffer.from(array.buffer, array.byteOffset, array.byteLength)).digest('hex');

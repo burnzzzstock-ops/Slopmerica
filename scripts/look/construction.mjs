@@ -59,7 +59,9 @@ try {
       g.finishes.update = () => {};
       g.buildings.mesh.setColorAt(b.inst, new THREE.Vector4(.21, .33, .57, .18));
       window.__construction = { THREE, b, events, finishUpdate, handle: b.inst, model: b.model, position: Array.from(b.model.geometry.getAttribute('position').array) };
-      return { id: b.id, zone: b.zone, level: b.level, height: b.model.height, buildHeight: b.buildH };
+      const matrix = new THREE.Matrix4();
+      g.buildings.mesh.getMatrixAt(b.inst, matrix);
+      return { id: b.id, zone: b.zone, level: b.level, height: b.model.height, buildHeight: b.buildH, scaleY: matrix.elements[5] };
     });
     const stages = [];
     for (const progress of [.35, .5, .75, .95, 1]) {
@@ -119,14 +121,14 @@ try {
     const progressKept = progress.length === 7 && progress.every((value, i) => Math.abs(value - (.4 + i * .1)) < 1e-8);
     const removed = demolition.events.find(e => e.kind === 'demolished');
     const dimensionsKept = removed && Object.entries(demolition.before).every(([key, value]) => removed[key] === value);
-    const pass = !errs.length && stages.every(s => Math.abs(s.scaleY - 1) < 1e-6 && s.handleKept && s.modelKept && s.sourceKept
+    const pass = !errs.length && stages.every(s => Math.abs(s.scaleY - setup.scaleY) < 1e-6 && s.handleKept && s.modelKept && s.sourceKept
       && s.rgba.every((v, i) => Math.abs(v - [.21, .33, .57, .18][i]) < 1e-6))
-      && stages.slice(0, -1).every(s => s.clip !== null && s.clip < setup.height)
+      && stages.slice(0, -1).every(s => s.clip !== null && s.clip * setup.scaleY < setup.height)
       && stages.at(-1).clip > 1e8 && progressKept && counts('levelUp') === 1 && counts('demolished') === 1
       && dimensionsKept && removed.cause === 'bulldoze'
       && demolition.gone && demolition.ghosts === 1 && effects.every(e => e.stateKept)
       && demolition.ghostRgba?.every((v, i) => Math.abs(v - [.21, .33, .57, .18][i]) < 1e-6)
-      && effects[0].ghostScaleY > 0 && effects[0].ghostScaleY < 1
+      && effects[0].ghostScaleY > 0 && effects[0].ghostScaleY < setup.scaleY
       && effects[0].ghosts === 1 && effects[1].ghosts === 0 && effects[1].rubble === 6 && effects[2].rubble === 0;
     results.push({ quality, town, setup, stages, demolition, effects, errors: errs, pass });
     console.log(pass ? 'OK' : 'FAIL', quality, JSON.stringify({ setup, stages, demolition, effects }));

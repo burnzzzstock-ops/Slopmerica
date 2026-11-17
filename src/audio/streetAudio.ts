@@ -59,7 +59,9 @@ export interface StreetEnv {
   /** game speed (0 = paused, 1, 2, 4) */
   speed: number;
   /** Read the renderer's actual reverse-lamp state; absent in isolated clients. */
-  reversing?: (handle: number) => boolean;
+  reversing?: (handle: number, id?: number) => boolean;
+  /** Live presentation membership, when supplied. A selected car need not own a legacy handle. */
+  drawn?: (id: number) => boolean;
 }
 export interface StreetOpts {
   voices?: number;
@@ -251,7 +253,7 @@ class CarVoice extends Slot {
   refresh(S: StreetAudio, now: number, first: boolean) {
     const c = this.car!, p = this.p, L = S.view, E = S.env;
     const v = c.v > 0 ? c.v : 0;
-    const reversing = (c.dep ?? 0) > 0 && c.h !== undefined && !!E.reversing?.(c.h);
+    const reversing = (c.dep ?? 0) > 0 && c.h !== undefined && !!E.reversing?.(c.h, c.id);
     const acc = c.acc ?? 0;
     const dx = c.x - L.x, dz = c.z - L.z, dy = c.y + 0.9 - L.y;
     const hd = Math.sqrt(dx * dx + dz * dz);
@@ -418,6 +420,11 @@ class HornVoice extends Slot {
     if (first) this.lvl.snap(a, now); else this.lvl.to(a, now, 0.03);
     this.pn.to(pan, now, 0.03);
     this.dGain = a; this.dRatio = ratio; this.dPan = pan; this.dDist = d;
+  }
+
+  release(now: number) {
+    this.lvl.to(0, now, 0.03);
+    this.state = RELEASING; this.until = now + 0.2;
   }
 
   idle() {
@@ -668,6 +675,7 @@ export class StreetAudio {
     const E = this.env;
     E.rain = env.rain; E.wet = env.wet; E.hush = env.hush; E.speed = env.speed;
     E.reversing = env.reversing;
+    E.drawn = env.drawn;
     this.dopplerSpeed = Math.min(2, env.speed);
     // buses: zoomed out you hear the city, not the cars; paused you hear nothing
     const paused = env.speed <= 0;
@@ -722,11 +730,11 @@ export class StreetAudio {
   private settle(now: number) {
     for (const v of this.voices) if (v.state === RELEASING && now >= v.until) v.idle();
     for (const v of this.sirens) if (v.state === RELEASING && now >= v.until) v.idle();
-    for (const v of this.horns) if (v.state === LIVE && now >= v.until) v.idle();
+    for (const v of this.horns) if (v.state !== IDLE && now >= v.until) v.idle();
   }
 
   private alive(c: StreetCar) {
-    return (c.h === undefined || c.h >= 0) && c.crashed === 0 && !c.parked && c.yaw === c.yaw && c.x === c.x && c.z === c.z;
+    return (c.h === undefined || (this.env.drawn ? this.env.drawn(c.id) : c.h >= 0)) && c.crashed === 0 && !c.parked && c.yaw === c.yaw && c.x === c.x && c.z === c.z;
   }
 
   // ------------------------------------------------------------ 4 Hz: who gets a voice, who honks
@@ -747,7 +755,7 @@ export class StreetAudio {
         const dy = c.y + 0.9 - ly;
         const d = Math.sqrt(d2 + dy * dy);
         let sc = p.level * (p.idleLevel + (1 - p.idleLevel) * Math.min(1, c.v / 6)) * distGain(d, p.ref, p.reach);
-        if ((c.dep ?? 0) > 0 && c.h !== undefined && this.env.reversing?.(c.h)) sc = Math.max(sc, 0.06 * distGain(d, p.ref, p.reach));
+        if ((c.dep ?? 0) > 0 && c.h !== undefined && this.env.reversing?.(c.h, c.id)) sc = Math.max(sc, 0.06 * distGain(d, p.ref, p.reach));
         if (sc >= FLOOR) {
           for (let k = 0; k < V.length; k++) if (V[k].car === c && V[k].state === LIVE) { sc *= 1.35; break; }
           if (nc < K || sc > this.candScore[K - 1]) {
@@ -875,21 +883,23 @@ export class StreetAudio {
     for (const v of this.voices) {
       if (v.state === LIVE) {
         const c = v.car!;
-        if (c.id !== v.carId || c.crashed !== 0) v.release(now);
+        if (c.id !== v.carId || !this.alive(c)) v.release(now);
         else { v.refresh(this, now, false); nv++; }
       } else if (v.state === RELEASING && now >= v.until) v.idle();
     }
     for (const v of this.sirens) {
       if (v.state === LIVE) {
         const c = v.car!;
-        if (c.id !== v.carId || c.crashed !== 0 || c.v < 0.4) v.release(now);
+        if (c.id !== v.carId || !this.alive(c) || c.v < 0.4) v.release(now);
         else { v.refresh(this, now, dt, false); nsr++; }
       } else if (v.state === RELEASING && now >= v.until) v.idle();
     }
     for (const h of this.horns) {
       if (h.state === LIVE) {
-        if (now >= h.until) h.idle(); else { h.refresh(this, now, false); nh++; }
-      }
+        if (now >= h.until) h.idle();
+        else if (!h.car || h.car.id !== h.carId || !this.alive(h.car)) h.release(now);
+        else { h.refresh(this, now, false); nh++; }
+      } else if (h.state === RELEASING && now >= h.until) h.idle();
     }
     this.stats.voices = nv; this.stats.sirens = nsr; this.stats.horns = nh;
   }

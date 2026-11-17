@@ -102,9 +102,14 @@ try {
         if (destination === thru || destination.state !== 'active') continue;
         const car = tr.dispatch(parked.kind, thru, destination, 'leaving a parking spot', destination.label, 12.5, { local: true, sober: true });
         if (!car) continue;
-        tr.update(0.05, 1, 12.5, g.sim.population, g.sim.jobsFilled, g.rts.target); tr.draw(1);
-        await focus(car);
+        // One complete fixed step establishes the departure pose before aiming.
+        tr.update(0.1, 1, 12.5, g.sim.population, g.sim.jobsFilled, g.rts.target); tr.draw(1);
+        // Let renderer selection and the old voice's release finish while the
+        // actual departure advances only0.6 game seconds (its reverse phase is short).
+        aim(car);
+        for (let i = 0; i < 80; i++) { frame(0.0075); await sleep(20); }
         const voice = peek().street.find(v => v.id === car.id && v.reversing);
+        result.parkingFixture.departure = { id: car.id, dep: car.dep, posed: car.posed, fromSpot: !!car.fromSpot, drawn: tr.renderer.isCarDrawn?.(car.id) ?? car.h >= 0, reverse: tr.renderer.isReversing(car.h), voices: peek().street.map(v => [v.id, v.reversing]) };
         if (voice && car.fromSpot) result.reversing = { id: car.id, fromBuilding: car.fromSpot.b.id, handle: car.h, voice, dispatched: true };
         break;
       }

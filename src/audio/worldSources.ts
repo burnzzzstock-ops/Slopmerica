@@ -18,7 +18,7 @@ export class WorldSoundSources {
     const target = game.rts.target;
     for (const car of game.traffic.cars) {
       const lane = car.thru?.L, building = lane?.b;
-      if (!lane || !building || car.h < 0 || car.crashed !== 0 || car.thru!.out >= 0 || !lane.q.includes(car)) continue;
+      if (!lane || !building || !game.traffic.renderer.isCarDrawn(car.id) || car.crashed !== 0 || car.thru!.out >= 0 || !lane.q.includes(car)) continue;
       if (building.state !== 'active' || building.offNet || building.inst < 0) continue;
       const point = lane.slots[0];
       if (point) this.offer(building.id, 'intercom', point.x, building.y + 1.6, point.z, target.x, target.z);

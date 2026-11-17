@@ -27,7 +27,8 @@ export class AudioEngine {
   private amb?: Ambience;
   private streetVoices?: StreetAudio;
   private worldVoices?: WorldSound;
-  reverseState?: (handle: number) => boolean;
+  reverseState?: (handle: number, id?: number) => boolean;
+  carDrawn?: (id: number) => boolean;
   private streetView: StreetView = { x: 0, y: 0, z: 0, rx: 1, rz: 0, dist: 60 };
   private streetEnv: StreetEnv = { rain: 0, wet: 0, hush: 0, speed: 1 };
   private rainNow = 0;
@@ -228,6 +229,7 @@ export class AudioEngine {
     V.rx = Math.cos(cam.yaw); V.rz = -Math.sin(cam.yaw); V.dist = cam.distance;
     E.rain = this.rainNow; E.wet = wet; E.hush = this.hushNow;
     E.reversing = this.reverseState;
+    E.drawn = this.carDrawn;
     E.speed = this.muted || !this.soundOn_ || this.ctx.state !== 'running' ? 0 : speed; // muted, sound off or suspended = paused: the voices are released, then disconnected
     st.update(Math.min(dt, 0.1), cars, V, E);
   }

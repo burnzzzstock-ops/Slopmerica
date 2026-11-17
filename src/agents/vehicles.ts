@@ -8,6 +8,8 @@ import type { LampSet, V3 } from './models/vehicleKit';
 import { pickLook, type Look } from './models/vehiclePaint';
 import { WHEEL_GLSL } from './models/vehicleWheel';
 import { VehicleFx, type FxEnvironment } from './vehicleFx';
+import { VehiclePresentation, type VehicleCandidate } from './vehiclePresentation';
+import type { Car } from './traffic';
 
 export interface VehicleSpec { length: number; width: number; height: number; maxSpeed: number; label: string }
 
@@ -308,6 +310,7 @@ interface LodBatch {
 interface VariantBatch { id: string; kind: VehicleKind; lamps: LampSet; wheelRadius: number; nearTriangles: number; closeTriangles: number; close?: LodBatch; near: LodBatch }
 interface KindBatch {
   kind: VehicleKind; used: number; free: number[];
+  presentation?: boolean;
   far: LodBatch; variants: Map<string, VariantBatch>;
   pickMesh: THREE.InstancedMesh; wheelRadius: number; farTriangles: number;
   active: Uint8Array; initialized: Uint8Array; handleByInstance: Int32Array; variantOf: Uint8Array;
@@ -320,6 +323,20 @@ interface KindBatch {
   reverseTimer: Float32Array; speed: Float32Array; accel: Float32Array; fxTimer: Float32Array; fxTimer2: Float32Array; surfaceTimer: Float32Array; onGravel: Uint8Array;
 }
 interface Slot { kind: VehicleKind; instance: number }
+
+/** CPU instance state can have a separate presentation owner while sharing the same GPU meshes. */
+function vehicleState(n: number) {
+  return {
+    active: new Uint8Array(n), initialized: new Uint8Array(n), handleByInstance: new Int32Array(n).fill(-1), variantOf: new Uint8Array(n),
+    matrices: new Float32Array(n * 16), paint: new Float32Array(n * 3), look: new Float32Array(n * 4), seed: new Float32Array(n),
+    previousX: new Float32Array(n), previousY: new Float32Array(n), previousZ: new Float32Array(n), previousYaw: new Float32Array(n),
+    spin: new Float32Array(n), steer: new Float32Array(n), braking: new Uint8Array(n), turn: new Int8Array(n), damaged: new Uint8Array(n),
+    parked: new Uint8Array(n), reversing: new Uint8Array(n), headlights: new Uint8Array(n), siren: new Uint8Array(n),
+    heave: new Float32Array(n), heaveV: new Float32Array(n), pitch: new Float32Array(n), pitchV: new Float32Array(n), roll: new Float32Array(n), rollV: new Float32Array(n), vy: new Float32Array(n),
+    lod: new Int8Array(n), revision: new Uint32Array(n),
+    reverseTimer: new Float32Array(n), speed: new Float32Array(n), accel: new Float32Array(n), fxTimer: new Float32Array(n), fxTimer2: new Float32Array(n), surfaceTimer: new Float32Array(n), onGravel: new Uint8Array(n),
+  };
+}
 
 const inst = (capacity: number, size: number) => new THREE.InstancedBufferAttribute(new Float32Array(capacity * size), size).setUsage(THREE.DynamicDrawUsage);
 
@@ -398,6 +415,20 @@ export class VehicleRenderer {
   private pending: string[] = [];
   private readonly closeQueue: VariantBatch[] = [];
   private readonly fx: VehicleFx;
+  private presentation?: VehiclePresentation;
+  private readonly presentationBatches = new Map<VehicleKind, KindBatch>();
+  private readonly presentationSlots = new Map<VehicleKind, Array<VehicleCandidate | undefined>>();
+  private readonly presentationLists = new Map<VehicleKind, VehicleCandidate[]>();
+  private readonly presentationPickIds = new Map<VehicleKind, Int32Array>();
+  private readonly presentationPickHandles = new Map<VehicleKind, Int32Array>();
+  private readonly appearance = new WeakMap<Car, { look: Look; seed: number; variant: number }>();
+  private readonly observedHandles = new Set<number>();
+  private readonly observedCars = new WeakMap<Car, number>();
+  private presentationFrame = 0;
+  private readonly drawnSlots = new Map<number, VehicleCandidate>();
+  private presentationCars: readonly Car[] = [];
+  private presentationCamera?: THREE.Camera;
+  private presentationAlpha = 1;
   /** Optional: the game tells the renderer what the road under a point is (dust off gravel). Called at most twice a second per near car. */
   surfaceAt?: (x: number, z: number) => 'gravel' | 'paved';
 
@@ -442,14 +473,7 @@ export class VehicleRenderer {
     const n = this.perKind;
     const kb: KindBatch = {
       kind, used: 0, free: [], far, variants: new Map(), pickMesh, wheelRadius: nearModel.wheelRadius, farTriangles: farModel.triangles,
-      active: new Uint8Array(n), initialized: new Uint8Array(n), handleByInstance: new Int32Array(n).fill(-1), variantOf: new Uint8Array(n),
-      matrices: new Float32Array(n * 16), paint: new Float32Array(n * 3), look: new Float32Array(n * 4), seed: new Float32Array(n),
-      previousX: new Float32Array(n), previousY: new Float32Array(n), previousZ: new Float32Array(n), previousYaw: new Float32Array(n),
-      spin: new Float32Array(n), steer: new Float32Array(n), braking: new Uint8Array(n), turn: new Int8Array(n), damaged: new Uint8Array(n),
-      parked: new Uint8Array(n), reversing: new Uint8Array(n), headlights: new Uint8Array(n), siren: new Uint8Array(n),
-      heave: new Float32Array(n), heaveV: new Float32Array(n), pitch: new Float32Array(n), pitchV: new Float32Array(n), roll: new Float32Array(n), rollV: new Float32Array(n), vy: new Float32Array(n),
-      lod: new Int8Array(n), revision: new Uint32Array(n),
-      reverseTimer: new Float32Array(n), speed: new Float32Array(n), accel: new Float32Array(n), fxTimer: new Float32Array(n), fxTimer2: new Float32Array(n), surfaceTimer: new Float32Array(n), onGravel: new Uint8Array(n),
+      ...vehicleState(n),
     };
     this.batches.set(kind, kb);
     this.attachVariant(kb, base.id, nearModel);
@@ -528,15 +552,18 @@ export class VehicleRenderer {
     batch.seed[instance] = this.rnd();
     const id = this.pickVariant(kind, options?.variant);
     batch.variantOf[instance] = Math.max(0, variantsOf(kind).findIndex((d) => d.id === id));
-    batch.pickMesh.count = batch.used; this.activeTotal++; return handle;
+    if (!this.presentation) batch.pickMesh.count = batch.used;
+    this.activeTotal++; return handle;
   }
 
   remove(handle: number): void {
     const slot = this.slots[handle]; if (!slot) return;
     const batch = this.batches.get(slot.kind)!;
     batch.active[slot.instance] = 0; batch.initialized[slot.instance] = 0; batch.handleByInstance[slot.instance] = -1; batch.free.push(slot.instance);
-    this.matrix.makeScale(0, 0, 0); batch.pickMesh.setMatrixAt(slot.instance, this.matrix);
-    markAttributeRange(batch.pickMesh.instanceMatrix, 0, (slot.instance + 1), 16);
+    if (!this.presentation) {
+      this.matrix.makeScale(0, 0, 0); batch.pickMesh.setMatrixAt(slot.instance, this.matrix);
+      markAttributeRange(batch.pickMesh.instanceMatrix, 0, (slot.instance + 1), 16);
+    }
     this.slots[handle] = undefined; this.freeHandles.push(handle); this.activeTotal--;
   }
 
@@ -544,6 +571,11 @@ export class VehicleRenderer {
     const slot = this.slots[handle]; if (!slot) return;
     if (!Number.isFinite(x + y + z + yaw + pitch + roll)) return; // one bad number must not latch NaN into the spring and the steering
     const batch = this.batches.get(slot.kind)!; const i = slot.instance;
+    this.setPose(batch, i, x, y, z, yaw, pitch, roll);
+    if (!this.presentation) batch.pickMesh.setMatrixAt(i, this.matrix);
+  }
+
+  private setPose(batch: KindBatch, i: number, x: number, y: number, z: number, yaw: number, pitch: number, roll: number): void {
     if (batch.initialized[i]) {
       const dx = x - batch.previousX[i], dz = z - batch.previousZ[i], distance = Math.hypot(dx, dz);
       if (distance < 30 && !batch.parked[i]) {
@@ -564,7 +596,7 @@ export class VehicleRenderer {
     batch.previousX[i] = x; batch.previousY[i] = y; batch.previousZ[i] = z; batch.previousYaw[i] = yaw;
     this.euler.set(pitch, yaw, roll, 'YXZ'); this.quaternion.setFromEuler(this.euler);
     this.matrix.makeRotationFromQuaternion(this.quaternion).setPosition(x, y, z);
-    this.matrix.toArray(batch.matrices, i * 16); batch.pickMesh.setMatrixAt(i, this.matrix);
+    this.matrix.toArray(batch.matrices, i * 16);
   }
 
   setBraking(handle: number, on: boolean): void {
@@ -628,8 +660,119 @@ export class VehicleRenderer {
     this.lodClose = 46 * scale; this.lodNear = 180 * scale; this.lodCull = 1500 * scale; this.cameraValid = true;
   }
 
+  /** Game supplies observations before Traffic.draw; flush consumes its already interpolated shown poses. */
+  observeTraffic(cars: readonly Car[], camera: THREE.Camera, alpha: number, quality: 'high' | 'low'): void {
+    if (!this.presentation) {
+      this.presentation = new VehiclePresentation(this.maxTotal, this.perKind);
+      for (const [kind, batch] of this.batches) {
+        this.presentationBatches.set(kind, { ...batch, ...vehicleState(this.perKind), used: 0, free: [], presentation: true });
+        this.presentationSlots.set(kind, []); this.presentationLists.set(kind, []);
+        this.presentationPickIds.set(kind, new Int32Array(this.perKind).fill(-1));
+        this.presentationPickHandles.set(kind, new Int32Array(this.perKind).fill(-1));
+      }
+    }
+    this.presentationCars = cars; this.presentationCamera = camera; this.presentationAlpha = clamp(alpha, 0, 1);
+    this.updateLod(camera, quality);
+    if (quality === 'low') { this.lodClose = 36; this.lodNear = 112; this.lodCull = 930; }
+  }
+
+  /** This gate describes this frame's actual packed cars, including cars without a legacy allocation. */
+  isCarDrawn(id: number): boolean { return !this.presentation || this.drawnSlots.get(id)?.drawnFrame === this.presentationFrame; }
+
+  isCarReversing(id: number, handle: number): boolean {
+    if (handle >= 0) return this.isReversing(handle);
+    const candidate = this.drawnSlots.get(id);
+    if (!candidate || candidate.drawnFrame !== this.presentationFrame || candidate.slot < 0) return false;
+    const b = this.presentationBatches.get(candidate.kind)!, i = candidate.slot;
+    return !!(b.reversing[i] || b.reverseTimer[i] > 0);
+  }
+
+  private preparePresentation(): void {
+    const selection = this.presentation!, camera = this.presentationCamera!;
+    this.presentationFrame++;
+    for (const car of this.presentationCars) this.observedCars.set(car, this.presentationFrame);
+    if (selection.begin(camera, this.dt, this.lodCull)) {
+      this.observedHandles.clear();
+      for (const car of this.presentationCars) {
+        if (car.h >= 0 && !car.parked) this.observedHandles.add(car.h);
+        if (car.crashed < 0 || car.parked || !car.posed) continue;
+        const p = car.shown;
+        selection.offer(car.h, car.kind, p[0], p[1], p[2], car);
+      }
+      // Parking keeps its handles, capacity accounting and transfer-to-trip semantics.
+      for (const batch of this.batches.values()) for (let i = 0; i < batch.used; i++) {
+        if (!batch.active[i] || !batch.initialized[i]) continue;
+        const h = batch.handleByInstance[i];
+        if (this.observedHandles.has(h)) continue;
+        const o = i * 16;
+        selection.offer(h, batch.kind, batch.matrices[o + 12], batch.matrices[o + 13], batch.matrices[o + 14]);
+      }
+      selection.finish();
+      for (const [id, candidate] of this.drawnSlots) if (!candidate.selected) this.drawnSlots.delete(id);
+      for (const list of this.presentationLists.values()) list.length = 0;
+      for (const candidate of selection.selected) this.presentationLists.get(candidate.kind)!.push(candidate);
+    }
+    for (const [kind, slots] of this.presentationSlots) {
+      const batch = this.presentationBatches.get(kind)!;
+      for (let i = 0; i < slots.length; i++) {
+        const c = slots[i];
+        if (c && (!c.selected || !c.car || c.car.h >= 0 || this.observedCars.get(c.car) !== this.presentationFrame)) {
+          c.slot = -1; slots[i] = undefined; batch.active[i] = 0; batch.free.push(i);
+        }
+      }
+    }
+    for (const candidate of selection.selected) {
+      const car = candidate.car;
+      if (!car || car.h >= 0 || car.crashed < 0 || car.parked || this.observedCars.get(car) !== this.presentationFrame) continue;
+      const batch = this.presentationBatches.get(car.kind)!;
+      let i = candidate.slot;
+      if (i < 0) {
+        i = batch.free.length ? batch.free.pop()! : batch.used++;
+        candidate.slot = i; this.presentationSlots.get(car.kind)![i] = candidate;
+        batch.active[i] = 1; batch.initialized[i] = 0; batch.lod[i] = 1; batch.revision[i]++;
+        batch.spin[i] = batch.steer[i] = batch.reverseTimer[i] = batch.speed[i] = batch.accel[i] = batch.vy[i] = 0;
+        batch.heave[i] = batch.heaveV[i] = batch.pitch[i] = batch.pitchV[i] = batch.roll[i] = batch.rollV[i] = 0;
+        batch.fxTimer[i] = batch.fxTimer2[i] = batch.surfaceTimer[i] = 0; batch.onGravel[i] = 0;
+        let appearance = this.appearance.get(car);
+        if (!appearance) {
+          let seed = (Math.imul(car.id, 2654435761) ^ car.paint ^ 0x51ed270b) >>> 0 || 1;
+          const rng = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return (seed >>> 0) / 4294967296; };
+          const liveried = FIXED_PAINT[car.kind] !== undefined;
+          const look = pickLook(car.kind, liveried ? FIXED_PAINT[car.kind] : RANDOM_PAINT_REQUEST.has(car.paint) ? undefined : car.paint, liveried, rng);
+          const variants = variantsOf(car.kind);
+          let weight = 0; for (const v of variants) if (batch.variants.has(v.id)) weight += v.weight;
+          let r = rng() * weight, variant = 0;
+          for (let k = 0; k < variants.length; k++) {
+            if (!batch.variants.has(variants[k].id)) continue;
+            r -= variants[k].weight; if (r <= 0) { variant = k; break; }
+          }
+          appearance = { look, seed: rng(), variant }; this.appearance.set(car, appearance);
+        }
+        const look = appearance.look;
+        for (let k = 0; k < 3; k++) batch.paint[i * 3 + k] = look.rgb[k];
+        batch.look[i * 4] = look.finish; batch.look[i * 4 + 1] = look.age; batch.look[i * 4 + 2] = look.dirt; batch.look[i * 4 + 3] = look.special;
+        batch.seed[i] = appearance.seed; batch.variantOf[i] = appearance.variant;
+      }
+      // shown has already been interpolated by Traffic.draw. Only pitch/roll need the same alpha once.
+      const p = car.shown, a = this.presentationAlpha, p0 = car.pose0, p1 = car.pose;
+      this.setPose(batch, i, p[0], p[1], p[2], p[3], p0[4] + (p1[4] - p0[4]) * a, p0[5] + (p1[5] - p0[5]) * a);
+      batch.braking[i] = car.v < 3 || car.brakeT > 0 ? 1 : 0;
+      // The public placement reason validates junction intent. Exact lot/lane blinkers need a producer hook.
+      const reason = car.drawn?.why;
+      batch.turn[i] = car.crashed > 0 || (reason !== 'approach' && reason !== 'box' && reason !== 'queue') ? 0 : Math.sign(car.turn);
+      batch.damaged[i] = car.crashed > 0 ? 1 : 0;
+    }
+  }
+
+  presentationStats() {
+    const drawn = [...this.drawnSlots.values()].filter(c => c.drawnFrame === this.presentationFrame);
+    return { capacity: this.maxTotal, selected: this.presentation?.selected.length ?? 0, drawnCars: drawn.map(c => c.car!.id), scans: this.presentation?.scans ?? 0,
+      unallocatedDrawn: drawn.filter(c => c.car!.h < 0).length };
+  }
+
   private lampCode(b: KindBatch, i: number): number {
-    const siren = this.warningOn(b, i, this.lampsOf(b.handleByInstance[i])) ? 1 : 0;
+    const model = variantsOf(b.kind)[b.variantOf[i]];
+    const siren = this.warningOn(b, i, b.variants.get(model?.id)?.lamps) ? 1 : 0;
     return (b.braking[i] && !b.parked[i] ? 1 : 0) + (b.turn[i] + 1) * 2 + (b.parked[i] ? 1 : b.headlights[i]) * 6 + (!b.parked[i] && (b.reversing[i] || b.reverseTimer[i] > 0) ? 18 : 0) + siren * 36;
   }
 
@@ -660,10 +803,11 @@ export class VehicleRenderer {
 
   private pack(b: KindBatch, source: number, lod: LodBatch, target: number, length: number): void {
     this.matrix.fromArray(b.matrices, source * 16); lod.mesh.setMatrixAt(target, this.matrix);
-    const staticChanged = lod.sourceByRender[target] !== source || lod.revisionByRender[target] !== b.revision[source];
+    const sourceKey = source + (b.presentation ? this.perKind : 0);
+    const staticChanged = lod.sourceByRender[target] !== sourceKey || lod.revisionByRender[target] !== b.revision[source];
     const a = lod.attrs;
     if (staticChanged) {
-      lod.sourceByRender[target] = source; lod.revisionByRender[target] = b.revision[source];
+      lod.sourceByRender[target] = sourceKey; lod.revisionByRender[target] = b.revision[source];
       const pa = a.paint.array as Float32Array, la = a.look.array as Float32Array;
       pa[target * 3] = b.paint[source * 3]; pa[target * 3 + 1] = b.paint[source * 3 + 1]; pa[target * 3 + 2] = b.paint[source * 3 + 2];
       la[target * 4] = b.look[source * 4]; la[target * 4 + 1] = b.look[source * 4 + 1]; la[target * 4 + 2] = b.look[source * 4 + 2]; la[target * 4 + 3] = b.look[source * 4 + 3];
@@ -778,20 +922,34 @@ export class VehicleRenderer {
     this.cameraCaptured = false;
     if (this.closeQueue.length) this.buildClose(this.closeQueue.shift()!);
     else if (this.pending.length) this.warm();
+    // Keep reverse decay independent of whether a logical allocation is selected this frame.
+    for (const batch of this.batches.values()) for (let i = 0; i < batch.used; i++) {
+      if (batch.reverseTimer[i] > 0) batch.reverseTimer[i] = Math.max(0, batch.reverseTimer[i] - this.dt);
+    }
+    if (this.presentation) this.preparePresentation();
     this.fx.begin();
     const close2 = this.lodClose * this.lodClose, near2 = this.lodNear * this.lodNear, far2 = this.lodCull * this.lodCull;
     // Keep one far vehicle as a camera-capture sentinel when every real instance
     // is beyond the cull radius. At >1.5 km it is sub-pixel, but onBeforeRender
     // still sees the new camera so the fleet can re-enter on the following frame.
     let sentinelClaimed = false;
-    for (const batch of this.batches.values()) {
-      const kindVariants = variantsOf(batch.kind);
-      const length = VEHICLE_SPECS[batch.kind].length;
-      let farCount = 0;
-      for (const vb of batch.variants.values()) { if (vb.close) vb.close.count = 0; vb.near.count = 0; }
-      for (let i = 0; i < batch.used; i++) {
+    for (const logical of this.batches.values()) {
+      const kindVariants = variantsOf(logical.kind);
+      const length = VEHICLE_SPECS[logical.kind].length;
+      const selected = this.presentation ? this.presentationLists.get(logical.kind)! : undefined;
+      let farCount = 0, pickCount = 0;
+      for (const vb of logical.variants.values()) { if (vb.close) vb.close.count = 0; vb.near.count = 0; }
+      for (let j = 0; j < (selected ? selected.length : logical.used); j++) {
+        const candidate = selected?.[j], car = candidate?.car;
+        if (car && (this.observedCars.get(car) !== this.presentationFrame || car.crashed < 0 || car.parked)) continue;
+        const handle = car ? car.h : candidate?.handle ?? -1;
+        const slot = candidate && handle >= 0 ? this.slots[handle] : undefined;
+        if (candidate && handle >= 0 && (!slot || slot.kind !== logical.kind)) continue;
+        const batch = candidate && handle < 0 ? this.presentationBatches.get(logical.kind)! : logical;
+        const i = candidate ? slot?.instance ?? candidate.slot : j;
+        if (i < 0) continue;
         if (!batch.active[i] || !batch.initialized[i]) continue;
-        if (batch.reverseTimer[i] > 0) batch.reverseTimer[i] -= this.dt; // (for every car, so a far one backing out does not flash its lamps when it comes near)
+        if (batch.presentation && batch.reverseTimer[i] > 0) batch.reverseTimer[i] = Math.max(0, batch.reverseTimer[i] - this.dt);
         // 0 close, 1 near, 2 far, 3 beyond the cull radius (drawn only as the camera-capture sentinel)
         let nextLod = 1;
         if (this.lodOverride >= 0) nextLod = Math.min(2, this.lodOverride);
@@ -816,11 +974,18 @@ export class VehicleRenderer {
         else if (nextLod === 2 || !sentinelClaimed) {
           this.pack(batch, i, batch.far, farCount++, length);
           if (nextLod === 3) sentinelClaimed = true;
+        } else continue;
+        if (candidate) {
+          this.matrix.fromArray(batch.matrices, i * 16); logical.pickMesh.setMatrixAt(pickCount, this.matrix);
+          this.presentationPickIds.get(logical.kind)![pickCount] = car?.id ?? -1;
+          this.presentationPickHandles.get(logical.kind)![pickCount++] = handle;
+          if (car) { candidate.drawnFrame = this.presentationFrame; this.drawnSlots.set(car.id, candidate); }
         }
       }
-      for (const vb of batch.variants.values()) { if (vb.close) markLod(vb.close, vb.close.count); markLod(vb.near, vb.near.count); }
-      markLod(batch.far, farCount);
-      markAttributeRange(batch.pickMesh.instanceMatrix, 0, batch.used, 16);
+      for (const vb of logical.variants.values()) { if (vb.close) markLod(vb.close, vb.close.count); markLod(vb.near, vb.near.count); }
+      markLod(logical.far, farCount);
+      if (selected) logical.pickMesh.count = pickCount;
+      markAttributeRange(logical.pickMesh.instanceMatrix, 0, selected ? pickCount : logical.used, 16);
     }
     this.fx.end(this.dt);
   }
@@ -831,10 +996,23 @@ export class VehicleRenderer {
       batch.pickMesh.boundingSphere = null; // three caches it from the first ray on: rebuild it, cars have moved and kinds have come and gone
       const hit = ray.intersectObject(batch.pickMesh, false)[0];
       if (!hit || hit.instanceId === undefined || hit.distance >= nearestDistance) continue;
-      const handle = batch.handleByInstance[hit.instanceId];
+      const handle = this.presentation ? this.presentationPickHandles.get(batch.kind)![hit.instanceId] : batch.handleByInstance[hit.instanceId];
       if (handle >= 0) { nearestHandle = handle; nearestDistance = hit.distance; }
     }
     return nearestHandle;
+  }
+
+  /** Game selection can identify a drawn car that never owned a legacy renderer handle. */
+  pickCarId(ray: THREE.Raycaster): number | null {
+    if (!this.presentation) return null;
+    let id = -1, nearest = Infinity;
+    for (const batch of this.batches.values()) {
+      batch.pickMesh.boundingSphere = null;
+      const hit = ray.intersectObject(batch.pickMesh, false)[0];
+      if (!hit || hit.instanceId === undefined || hit.distance >= nearest) continue;
+      nearest = hit.distance; id = this.presentationPickIds.get(batch.kind)![hit.instanceId];
+    }
+    return id >= 0 ? id : null;
   }
 
   /** Lamp positions of a car's model (body space), for the effects pass and tests. */
@@ -866,6 +1044,9 @@ export class VehicleRenderer {
   dispose(): void {
     this.object.removeFromParent();
     this.closeQueue.length = 0; this.pending.length = 0;
+    this.presentationCars = []; this.presentation = undefined;
+    this.presentationBatches.clear(); this.presentationSlots.clear(); this.presentationLists.clear();
+    this.presentationPickIds.clear(); this.presentationPickHandles.clear(); this.drawnSlots.clear();
     this.fx.mesh.geometry.dispose(); (this.fx.mesh.material as THREE.Material).dispose();
     for (const batch of this.batches.values()) {
       // (an InstancedMesh owns its matrix buffer, which is not one of its geometry's attributes)

@@ -67,6 +67,10 @@ const templates: Record<FeedEventKind, readonly string[]> = {
     'The woke mob said geometry has limits. {road} said hold my energy drink.',
     'We defeated congestion by giving it more habitat.',
   ],
+  // (the design's own headline, GAME_DESIGN.md "Route 9 Widening Complete...": {count} is the months it took)
+  laneFilled: [
+    '{road} Widening Complete; Traffic Back to Normal Within {count} Months, Experts Stunned',
+  ],
   roadBulldozed: [
     'RIP {road}. You were young, over budget, and already full of potholes.',
     'They removed {road}; traffic discovered every residential side street.',

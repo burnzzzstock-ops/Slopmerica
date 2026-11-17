@@ -39,7 +39,7 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 | F0.4 presets never change the sim | **Open.** People still exist only near the camera and are capped by the preset |
 | F0.5 saves | Exact state, versions and migration, packing, quota fallbacks and IndexedDB slot storage are done. Open: the slots UI, the confirm before New city, the message for an unreadable save, the golden-save test |
 | F0.6 ship like a game | Done: no debug hooks or playtest tools in a player's build, one-file build with packs inside, README, `shiptest` |
-| F0.7 sim hot spots | Open. The 10,000-person town to measure on is at `shots/towns/florida-10k.json` (gitignored; 14,632 people, 635 buildings) |
+| F0.7 sim hot spots | Started: `scripts/simperf.mjs` and `docs/aaa/PERF_SIM.md`. On the 14,440-person town a step is 3.85 ms (traffic four fifths), 49% of a core at top speed; the every-third-day hitch is 41 ms, down from 62 (c5a94a8). Left: spread the land value pass over its three days, the daily tick, traffic inside, the save hitch, a 50,000-person town |
 | F0.8 AGENTS.md / CLAUDE.md | Done |
 | Contracts for ASTRA | Types, `game.fields` and 11 of 14 world events are live. Not emitted yet: `flood`, `collapseStage`, `paradisePaved` (they come with the systems that cause them) |
 | U1, U4 the phone screen | First pass done (1edb035): see "The phone screen" below |
@@ -79,6 +79,8 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 | 556917f | The toolbar is as tall as it was before it got drawn icons (an open drawer lay 3 px over it) |
 | 5c44154 | Photo joins the toolbar apart from the core list (the look lane's icon test reads that list and wants art for every id) |
 | ab8573e, 2c54bcc | **Roads:** ONE MORE LANE is remembered, stamped and watched for 78 weeks (`src/sim/widening.ts`, `scripts/onemorelane.mjs`) |
+| 4ea05b4 | A household's trip can weigh a few places by today's drive: in the code, switched off (`TUNING.whereTo.choices: 1`) |
+| 7f727f1, c5a94a8 | `scripts/simperf.mjs`; the land value pass no longer searches 300 m round every building for a landmark (the same county, a third less hitch) |
 
 ### How the simulation is built now
 
@@ -154,6 +156,22 @@ None of these thresholds was loosened. They are what the traffic does on a town 
 
 113 of 122. The nine: photo-reflection (fails on `codex/aaa-world` alone: `mirror.lastEye` is undefined in `photoPNG`), presetlight and carsolid (as on the base), phonetargets and trashcliff (fixed by commits after ecdc0e6), parkingtest and lightstest (old-town aim), costtest (fixed, 98fb177), weathertest (fixed, 17e194e).
 
+## What induced demand needs
+
+The design: "widen the road and the traffic comes back", "it always works for about 18 months", and "it isn't scripted: it falls out of the model". Measured (`scripts/onemorelane.mjs`), it does not happen, and three things in the model are why:
+
+1. **The county keeps a set number of cars on the road.** `targetCars` in `src/agents/traffic.ts` is people and jobs times the hour of day times `induced = 0.6 + 0.6 * flowEma`. A wider road gives the same cars more room (a third less full going from four lanes to six) and clears its queues faster (less full again). Trips end sooner, so more are made in an hour, but the roads never hold more cars than before. The one thing that answers to speed is that county-wide factor, worth at most a doubling between the worst flow and the best.
+2. **Most trips on a town's main road come in from out of town** when jobs outnumber the workers who live there (up to 85% of trips), and they pass through the road wherever they are bound, so where they choose to go changes nothing on it.
+3. **Nothing in the demand for homes, shops or jobs listens to traffic.** `src/sim/sim.ts` has no traffic term at all: a jammed county grows as fast as a flowing one, and a relieved one grows no faster. This is the loop the design means ("traffic, one more lane, growth, traffic") and it is not closed.
+
+What was tried: every household trip weighing three places by today's drive (`Traffic.whereTo`, in the code, switched off). It sways two thirds of those trips and does not refill the road, for reasons 1 and 2.
+
+What would do it, in the order I would try them:
+- **Demand listens to the drive (reason 3).** A demand part for travel time: a county whose roads are slow draws fewer households and shops, and one whose roads have just been relieved draws more, so it grows into the new lane over the following months and the cars come with the people. This is the design's own mechanism and it makes the widening a real choice. It changes how every town grows, so it is the owner's to approve: measure on the scripted-player town first.
+- **Then turn `whereTo` on**, so the growth lands along the faster road.
+- **A test town with room to grow.** The reference town is full; onemorelane needs a second scenario with zoned empty land.
+- Not proposed: extra cars written in per widened road. It would make the chart look right and would be the scripted version the design rules out.
+
 ## Findings still to act on
 
 1. People hold cars at crossings and trigger signal phases, and exist only when the camera is within 900 m. This is F0.4. The plan: town-wide seeded walkers in `peds` that do not depend on the camera; camera-local cosmetic extras in a separate list on the `fx` stream; a renderer handle of -1 for a walker not drawn; handles assigned at draw time. Then extend `qualitytest` to fingerprint the whole sim on Low and Ultra.
@@ -170,7 +188,7 @@ The order below follows the owner's "fun first" roadmap of 17 Nov: what a player
 2. Done: the re-pointed lightstest, parkingtest and landmarktest are in (be5dbff, ef3b669, 03ecb16).
 3. **The phone screen (U1, U4):** first pass done (1edb035). What is left is listed under "The phone screen" above.
 4. **Wire what the look lane has built (U5):** done (bf298e1, 13032ad, ea27287, 087e9cf). Left over: icons on the inspector's utility and status rows, the speed buttons and policies; Follow on buses.
-5. **One More Lane as a loop (F1):** the first slice is in (2c54bcc): the stamp, the taped button, the record, the chart, the headline. **What it shows is that the traffic does not come back**: on the reference town (not growing) the widened piece got 35 to 45% full at its busiest before and at most 31% in the 78 weeks after, on three seeds. Trips pick where to go at random (`spawnTrip` in `src/agents/traffic.ts`: `pick(jobs)`, `pick(shops)`), and the only thing that answers to speed is one county-wide factor (`induced = 0.6 + 0.6 * flowEma`). The next slice makes where people go depend on the drive: sample a few candidate destinations and weigh them by today's travel time, so a faster road draws trips until it is slow again. Measure with onemorelane on six seeds and on the 10,000-person town before proposing numbers.
+5. **One More Lane as a loop (F1):** the first slice is in (2c54bcc): the stamp, the taped button, the record, the chart, the headline. **What it shows is that the traffic does not come back**: on the reference town (not growing) the widened piece got 35 to 45% full at its busiest before and at most 31% in the 78 weeks after, on three seeds. Trips pick where to go at random (`spawnTrip` in `src/agents/traffic.ts`: `pick(jobs)`, `pick(shops)`), and the only thing that answers to speed is one county-wide factor (`induced = 0.6 + 0.6 * flowEma`). That was tried (4ea05b4, switched off) and is not enough on its own: see "What induced demand needs". The next slice is a demand part for travel time, measured on a town with room to grow, for the owner to approve.
 6. **Honest Mode (F8):** a table of euphemism and plain word, a toggle that flips the whole UI, unlocked by Earl; the value-per-acre view.
 7. **The Growth Ponzi made visible (F2):** real road condition, the unfunded-liabilities curve in the budget, Cousin Dale's Paving LLC, tax abatements.
 8. **The Plat-o-Matic and Old Main** (`GAME_DESIGN.md` 5.2 and 7): a subdivision stamped from one drag; a courthouse square to start beside.

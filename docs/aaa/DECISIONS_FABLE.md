@@ -26,7 +26,9 @@ Nothing here is decided by the agent. Each item has a recommendation and the evi
 
 The design says: "Induced demand really works (widen the road and the traffic comes back)" and "it always works for about 18 months". The game now measures it (the road inspector's chart, `scripts/onemorelane.mjs`), and **today it is not true on a town that is not growing**: three seeds, the fullest stroad piece widened from four lanes to six, 35 to 45% full at its busiest before, at most 31% in the 78 weeks after. The lane works for good.
 
-The cause is in how trips are made: a trip picks its shop or its job at random, whatever the drive takes. The fix that matches the design ("where people go and how they get there both depend on travel time") is to weigh a few candidate destinations by today's drive. It changes traffic in every town, so it comes as its own piece of work with before and after numbers on six seeds and the large town. **Nothing to decide yet; this is so you are not surprised by a chart that says the lane worked.**
+Weighing a few destinations by today's drive was tried (it is in the code, switched off) and is not enough: the county keeps a set number of cars on its roads, most cars on a main road come from out of town, and **nothing in the demand for homes, shops or jobs listens to traffic at all**, so a jammed county grows as fast as a flowing one. `LOG_FABLE.md`, "What induced demand needs", has the measurements.
+
+**The decision coming your way:** to make the traffic come back the way the design says, demand has to listen to the drive: slow roads draw fewer people and shops, a relieved road draws more, and the county grows into the new lane. That changes how every town grows. I will bring it with before and after numbers on the scripted-player town; until you say yes it stays out. If you would rather the lane simply worked, say so and the chart already tells that story.
 
 ## Proposed numbers (`src/sim/tuning.ts`)
 
@@ -37,6 +39,7 @@ The cause is in how trips are made: a trip picks its shop or its job at random, 
 | `derelictDays` | 90 | Days for an abandoned building to read as fully derelict | The same 90 days an abandoned building stands before it is cleared | Matches the existing trash-cliff timing |
 | `roadWearYears` | 22 | Years for an untouched road to read as fully worn (provisional, look only) | The middle of the design's 20 to 25 year maintenance cliff | Replaced by the road-condition system in the Ponzi work |
 | `crashWreckSpeed` | 40 | The crashed cars' speeds added up (m/s) at which the look and sound treat a crash as a full wreck | Two cars at a Freedom Stroad's 20 m/s | Nothing in the simulation reads it |
+| `whereTo.choices` | 1 (off) | How many jobs or shops come to mind for a household's trip; above 1, the shorter drive is favoured | 1 is exactly the old behaviour. 3 was measured: it sways two thirds of household trips and does not refill a widened road | `scripts/onemorelane.mjs` with `CHOICES=3` |
 | `widening.weeks` | 78 | How long a widening is followed, one reading a week | The design's "about 18 months" | `scripts/onemorelane.mjs` |
 | `widening.minBefore` | 0.33 | How full a road must have been at its busiest for "traffic is back" to be worth a headline | A road nobody used is "back" the first week otherwise | Reasoned; no town has reached it yet |
 | `widening.minWeeks` | 4 | No "back to normal" headline in the first month | The works clear the road of cars, and they take a while to return | Reasoned |

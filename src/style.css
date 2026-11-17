@@ -3434,8 +3434,24 @@ a {
   .tb-demand { gap: 3px; }
   .mtrack { width: 26px; }
 }
+/* ---- a phone's map stays in view (scripts/phonefree.mjs measures the share of the screen that is free map) ---- */
+@media (pointer: coarse) and (max-width: 760px) {
+  /* beside an open drawer the step is one line, and a tap opens it */
+  .next-bar.compact { padding-block: 2px; }
+  .next-bar.compact .nb-step { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .next-bar.compact.act-open .chip { display: none; }
+  /* under a drawing finger: no step card, and a readout of two lines */
+  .hud.touch-draw .next-bar { display: none; }
+  .ta-tip.clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+  /* a tool drawer's name is on the lit toolbar button under it: the title row shows only when the drawer is folded to its pill */
+  .subpanel:not(.min):has(> .sp-title + .sp-row) > .sp-title { display: none; }
+  /* a row of choices is one row that scrolls sideways, not three that wrap */
+  .sp-row.svc-cats, .sp-row.modes:not(.grid-blocks), .sp-row.views-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: -2px; padding-inline: 2px; }
+  .sp-row.svc-cats::-webkit-scrollbar, .sp-row.modes::-webkit-scrollbar, .sp-row.views-row::-webkit-scrollbar { display: none; }
+  .sp-row.svc-cats > .chip, .sp-row.modes:not(.grid-blocks) > .chip, .sp-row.views-row > .chip { flex: none; }
+}
 /* 44 px chips take more room: a portrait phone's drawer may grow a little before it scrolls
-   (40% of the screen; half hid too much map to place a service by touch) */
+   (36% of the screen, now that a row of choices is one line; half hid too much map to place a service by touch) */
 @media (pointer: coarse) and (max-width: 760px) and (min-height: 700px) {
-  .subpanel { max-height: min(40vh, 360px); }
+  .subpanel { max-height: min(36vh, 320px); }
 }

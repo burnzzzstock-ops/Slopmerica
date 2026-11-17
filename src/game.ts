@@ -327,7 +327,7 @@ export class Game {
     this.peds.canCross = (node, segs, secs, impatient) => this.traffic.canCross(node, segs, secs, impatient);
     // Civic Foundry street furniture, street trees and bus shelters (streamed in; low quality skips it)
     this.civic = new CivicLayer(this);
-    if (this.q.name !== 'low') this.civic.load();
+    this.civic.load();
     this.vaultScenery = new VaultScenery(this);
     this.overlays = new Overlays(this);
     this.fields = makeFields(this);

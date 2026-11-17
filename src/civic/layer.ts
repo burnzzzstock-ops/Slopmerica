@@ -32,23 +32,55 @@ export interface CivicItem { asset: string; x: number; y: number; z: number; yaw
 
 /** LOD1 inside this range (m), LOD2 out to the cull range. */
 const NEAR = 150, FAR = 720;
+const LOW_FAR = 245;
+
+// Mean sRGB albedo of the pack's material swatches. At phone scale the slats,
+// branches and metal rails still have separate colours in one LOD2 draw.
+const ALBEDO: Record<string, number> = {
+  bark: 0x3d1e11, 'brick-cream': 0xb19771, 'brick-red': 0x7b3120, concrete: 0x797c76,
+  foliage: 0x1a511a, 'glass-blue': 0x4a5860, limestone: 0xac9d7e, 'metal-copper': 0x78472b,
+  'metal-dark': 0x42494c, 'metal-galvanized': 0x909693, 'roof-metal': 0x303d42, soil: 0x25190d,
+  'wood-oak': 0x633b1a, 'wood-painted': 0x4c6d74,
+};
+
+function lowGeometry(prims: PackPrim[], bin: ArrayBuffer) {
+  const size = prims.reduce((n, p) => n + p.count, 0);
+  const positions = new Float32Array(size * 3), normals = new Int8Array(size * 3), colors = new Uint8Array(size * 3);
+  let vertex = 0;
+  for (const p of prims) {
+    const packed = new Int8Array(bin, p.nrm, p.count * 4);
+    const color = new THREE.Color(ALBEDO[p.mat] ?? 0x888888);
+    positions.set(new Float32Array(bin, p.pos, p.count * 3), vertex * 3);
+    for (let i = 0; i < p.count; i++, vertex++) {
+      const j = vertex * 3;
+      normals[j] = packed[i * 4]; normals[j + 1] = packed[i * 4 + 1]; normals[j + 2] = packed[i * 4 + 2];
+      colors[j] = Math.round(color.r * 255); colors[j + 1] = Math.round(color.g * 255); colors[j + 2] = Math.round(color.b * 255);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3, true));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3, true));
+  geo.computeBoundingSphere();
+  return geo;
+}
 
 class AssetBatch {
   /** [lod][prim] */
   meshes: THREE.InstancedMesh[][] = [];
   items: CivicItem[] = [];
   cap = 0;
-  constructor(readonly id: string, readonly geos: { geo: THREE.BufferGeometry; mat: THREE.Material }[][], readonly group: THREE.Group) {}
+  constructor(readonly id: string, readonly geos: { geo: THREE.BufferGeometry; mat: THREE.Material }[][], readonly group: THREE.Group, readonly firstLod = 1) {}
   ensure(n: number) {
     if (n <= this.cap) return;
     const cap = Math.max(8, Math.ceil(n * 1.5));
     for (const lod of this.meshes) for (const m of lod) { m.removeFromParent(); m.dispose(); }
     this.meshes = this.geos.map((prims, li) => prims.map(({ geo, mat }) => {
       const m = new THREE.InstancedMesh(geo, mat, cap);
-      m.name = `civic-${this.id}-lod${li + 1}`;
+      m.name = `civic-${this.id}-lod${li + this.firstLod}`;
       m.count = 0;
       m.visible = false;
-      m.castShadow = li === 0;
+      m.castShadow = li + this.firstLod === 1;
       m.receiveShadow = true;
       m.frustumCulled = false;
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -62,11 +94,18 @@ class AssetBatch {
 export class CivicLayer {
   readonly group = new THREE.Group();
   status: 'off' | 'loading' | 'ready' | 'failed' = 'off';
-  private pack: Pack | null = null;
+  private source?: { pack: Pack; bin: ArrayBuffer; base: URL };
+  private low = false;
+  private qualityBatches = new Map<boolean, Map<string, AssetBatch>>();
   private batches = new Map<string, AssetBatch>();
   private dirty = true;
   private t = 0;
   private lastCam = new THREE.Vector3(Infinity, 0, 0);
+  private lowFrustum = new THREE.Frustum();
+  private lastRotation = new THREE.Quaternion();
+  private lastFov = 0;
+  private lastAspect = 0;
+  private lowBounds = new THREE.Sphere();
   private m4 = new THREE.Matrix4();
   private q = new THREE.Quaternion();
   private up = new THREE.Vector3(0, 1, 0);
@@ -81,13 +120,14 @@ export class CivicLayer {
     g.net.events.on('changed', () => (this.dirty = true));
   }
 
-  /** Start streaming the pack (once). Low quality never loads it. */
+  /** Stream the geometry once. Low uses vertex colours and requests no material textures. */
   load(base = new URL('civic/', document.baseURI)) {
     if (this.status !== 'off') return;
     this.status = 'loading';
     (async () => {
       const { json, bin } = await fetchPack<Pack>(base);
-      this.build(json, bin, base);
+      this.source = { pack: json, bin, base };
+      this.selectQuality();
       this.status = 'ready';
       this.dirty = true;
       // the transit stops swap their box shelters for these
@@ -99,8 +139,31 @@ export class CivicLayer {
     });
   }
 
+  private selectQuality() {
+    if (!this.source) return;
+    for (const b of this.batches.values()) for (const lod of b.meshes) for (const mesh of lod) mesh.visible = false;
+    this.low = (this.g.pendingQuality ?? this.g.q.name) === 'low';
+    const cached = this.qualityBatches.get(this.low);
+    if (cached) this.batches = cached;
+    else {
+      this.batches = new Map();
+      const { pack, bin, base } = this.source;
+      if (this.low) {
+        const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88 });
+        applyAtmosphere(mat);
+        litByLamps(mat, { name: 'uTreeLamp', u: TREE_LAMP });
+        for (const [id, a] of Object.entries(pack.assets)) {
+          const lod = a.lods.find(l => l.level === 2);
+          if (lod) this.batches.set(id, new AssetBatch(id, [[{ geo: lowGeometry(lod.prims, bin), mat }]], this.group, 2));
+        }
+      } else this.build(pack, bin, base);
+      this.qualityBatches.set(this.low, this.batches);
+    }
+    this.dirty = true;
+    this.t = 0;
+  }
+
   private build(pack: Pack, bin: ArrayBuffer, base: URL) {
-    this.pack = pack;
     const loader = new THREE.TextureLoader();
     const tex = (path: string, srgb: boolean) => {
       const t = loader.load(new URL(path, base).href);
@@ -141,6 +204,7 @@ export class CivicLayer {
 
   update(dt: number) {
     if (this.status !== 'ready') return;
+    if (this.low !== ((this.g.pendingQuality ?? this.g.q.name) === 'low')) this.selectQuality();
     this.t -= dt;
     // the town changes under the furniture: re-place when buildings come and go (and now and then)
     this.refreshT -= dt;
@@ -153,8 +217,17 @@ export class CivicLayer {
       this.lastCam.set(Infinity, 0, 0);
     }
     const cam = this.g.camera.position;
-    if (cam.distanceToSquared(this.lastCam) > 16) {
+    const camera = this.g.camera;
+    const rotated = this.low && (1 - Math.abs(this.lastRotation.dot(camera.quaternion)) > 0.00004 ||
+      this.lastFov !== camera.fov || this.lastAspect !== camera.aspect);
+    if (rotated || cam.distanceToSquared(this.lastCam) > 16) {
       this.lastCam.copy(cam);
+      if (this.low) {
+        this.lastRotation.copy(camera.quaternion);
+        this.lastFov = camera.fov;
+        this.lastAspect = camera.aspect;
+        this.lowFrustum.setFromProjectionMatrix(this.m4.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+      }
       this.relod(cam);
     }
   }
@@ -202,6 +275,9 @@ export class CivicLayer {
     for (const side of [-1, 1] as const) {
       let k = 0;
       for (let d = s0 + 5 + hash(seg.id, side) * 6; d < s1; d += 12, k++) {
+        // Thin sites before querying nearby buildings. A tree and its grate
+        // share the same site, and transit shelters are placed separately.
+        if (this.low && hash(seg.id * 31 + k, side * 17) < 0.5) continue;
         if (drives.some((dr) => dr.side === side && Math.abs(dr.d - d) < 3.4)) continue;
         if (lamps.some((l) => l.side === side && Math.abs(l.d - d) < 2.6)) continue;
         const { i, f } = locate(seg.samp, clamp(d, 0, seg.length));
@@ -246,8 +322,15 @@ export class CivicLayer {
       if (!b.meshes.length) continue;
       const n = [0, 0];
       for (const it of b.items) {
-        const d = Math.hypot(it.x - cam.x, it.z - cam.z);
-        if (d > FAR) continue;
+        const d = this.low ? Math.hypot(it.x - cam.x, it.y - cam.y, it.z - cam.z) : Math.hypot(it.x - cam.x, it.z - cam.z);
+        if (d > (this.low ? LOW_FAR : FAR)) continue;
+        if (this.low) {
+          const sphere = b.geos[0][0].geo.boundingSphere!;
+          // Enclose the yaw-rotated asset about its placement, including its crown.
+          this.lowBounds.center.set(it.x, it.y + sphere.center.y, it.z);
+          this.lowBounds.radius = sphere.radius + Math.hypot(sphere.center.x, sphere.center.z) + 6;
+          if (!this.lowFrustum.intersectsSphere(this.lowBounds)) continue;
+        }
         const li = d < NEAR || b.meshes.length < 2 ? 0 : 1;
         this.q.setFromAxisAngle(this.up, it.yaw);
         this.m4.compose(this.v.set(it.x, it.y, it.z), this.q, this.one);

@@ -70,6 +70,34 @@ test('rows of like-shaped objects are written as a table and come back as object
   assert.ok(r[3].id === 3 && r[3].s === 3.75 && Number.isNaN(r[3].lat) && r[3].hold === undefined && r[3].path[0].seg === 3);
 });
 
+test('rows that are also pointed at from elsewhere stay rows, and the pointers still land on them', () => {
+  const cars = Array.from({ length: 6 }, (_, i) => ({ id: i, s: i * 2.5, lead: null }));
+  cars[1].lead = cars[4];   // a row points at a later row
+  cars[4].lead = cars[1];   // and back: a cycle between rows
+  const state = { cars, buckets: new Map([[7, [cars[2], cars[0]]]]), tail: cars[5] };
+  const j = encode(state);
+  assert.ok('$t' in j.cars, 'still a table');
+  assert.equal(JSON.stringify(j).split('"lead"').length - 1, 1, 'each key once');
+  const r = round(state);
+  assert.equal(r.cars[1].lead, r.cars[4]);
+  assert.equal(r.cars[4].lead, r.cars[1]);
+  assert.equal(r.buckets.get(7)[0], r.cars[2]);
+  assert.equal(r.buckets.get(7)[1], r.cars[0]);
+  assert.equal(r.tail, r.cars[5]);
+  assert.equal(r.cars[3].s, 7.5);
+});
+
+test('a Map of like-shaped records is a table too', () => {
+  const m = new Map(Array.from({ length: 8 }, (_, i) => [100 + i, { bad: i, cov: { fire: i / 3, police: NaN }, trash: 'queued' }]));
+  const j = encode({ m });
+  assert.ok('$mt' in j.m, 'a map table');
+  assert.equal(JSON.stringify(j).split('"trash"').length - 1, 1);
+  const r = round({ m });
+  assert.ok(r.m instanceof Map && r.m.size === 8);
+  assert.deepEqual([...r.m.keys()], [100, 101, 102, 103, 104, 105, 106, 107]);
+  assert.ok(r.m.get(105).bad === 5 && r.m.get(105).cov.fire === 5 / 3 && Number.isNaN(r.m.get(105).cov.police) && r.m.get(105).trash === 'queued');
+});
+
 test('things that live elsewhere go out as names and come back as the live objects', () => {
   const bank = { id: 12, label: 'First Slop Bank' }, shop = { id: 30, label: 'Slop Mart' };
   const live = new Map([[12, bank], [30, shop]]);

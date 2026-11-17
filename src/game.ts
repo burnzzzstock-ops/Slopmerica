@@ -515,6 +515,7 @@ export class Game {
       if (this.near(b.x, b.z, 400)) this.particles.emit('confetti', b.x, b.y + b.model.height, b.z, { count: 20, spread: 4 });
     })(this.buildings.onLevel);
     this.buildings.onDemolish = (b, reason) => {
+      this.traffic.forget(b);
       if (reason === 'road' && fx.float() < 0.6) this.feed.push('buildingDemolished', { building: b.label });
       if (this.selection?.kind === 'building' && this.selection.b === b) this.select(null);
       // the people who lived there are gone too (abandoned homes were already counted)

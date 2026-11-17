@@ -1242,6 +1242,16 @@ export class Traffic {
   private owed = 0;
   /** the traffic's own random stream: seeded from the county's seed, saved with the cars */
   readonly rng = new Rng(0x7a11);
+  /**
+   * A building is gone: stop planning around it (its visit counts, its event crowd, its grand opening). Cars already on their way
+   * keep their destination and finish the trip as before. Its drive-thru lanes go once the last car has left them.
+   */
+  forget(b: Bld) {
+    this.visits.delete(b); this.crowdDue.delete(b); this.crowdPlan.delete(b); this.crowdIn.delete(b); this.openings.delete(b); this.spilledAt.delete(b);
+    const T = this.thruLanes.get(b);
+    if (T === null || (T && T.lanes.every((L) => !L.q.length) && !this.cars.some((c) => c.thruB === b || c.thru?.L.b === b))) this.thruLanes.delete(b);
+  }
+
   /** what ends a dispatched trip, by name (see DispatchOpts.done): the systems that send vehicles register theirs once */
   readonly handlers = new Map<string, (c: Car, arrived: boolean, ...args: number[]) => void>();
 

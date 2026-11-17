@@ -9,6 +9,7 @@ import type { Game } from '../game';
 import { fromBase64, toBase64, type Json, type Refs } from '../core/snapshot';
 import { transitFor } from '../transit/system';
 import { EXT } from '../ext/registry';
+import type { Bld, BldRow } from './buildings';
 
 export interface ExactState {
   /** fixed steps since the county began */
@@ -31,13 +32,15 @@ export interface ExactState {
   people: Json;
   /** each extension system's exact state, by id (ExtSystem.saveExact) */
   ext: Record<string, Json>;
+  /** demolished buildings something still points at (a car on its way there), as building rows */
+  ghosts: BldRow[];
 }
 
 /**
  * How the moving parts name what they point at: a building, a road, a junction, a building's model. Those are rebuilt from the
  * save's rows; a car's destination comes back as the building itself, not a copy of it.
  */
-export function refsFor(g: Game, cars = true): Refs {
+export function refsFor(g: Game, cars = true, ghosts: Map<number, Bld> = new Map()): Refs {
   // (the traffic's own snapshot holds the cars themselves; everyone else names a car by its number)
   const carIds = new Map<object, number>(), carById = new Map<number, object>();
   if (cars) for (const c of g.traffic.cars) { carIds.set(c, c.id); carById.set(c.id, c); }
@@ -49,6 +52,8 @@ export function refsFor(g: Game, cars = true): Refs {
       const x = o as { id?: unknown; zone?: unknown; hw?: unknown; samp?: unknown; segs?: unknown; geometry?: unknown; emitters?: unknown };
       if (typeof x.id === 'number') {
         if (x.zone !== undefined && x.hw !== undefined && g.buildings.list.get(x.id) === o) return ['b', x.id];
+        // a building that has been demolished but is still pointed at: named, and saved once as a row (a bus stop's stand-in has id < 0: plain data)
+        if (x.zone !== undefined && x.hw !== undefined && x.id > 0 && x.geometry === undefined) { ghosts.set(x.id, o as Bld); return ['g', x.id]; }
         if (x.samp !== undefined && g.net.segs.get(x.id) === o) return ['s', x.id];
         if (Array.isArray(x.segs) && g.net.nodes.get(x.id) === o) return ['n', x.id];
       }
@@ -64,6 +69,7 @@ export function refsFor(g: Game, cars = true): Refs {
       if (kind === 'n') return g.net.nodes.get(id as number) ?? null;
       if (kind === 'm') return g.buildings.list.get(id as number)?.model ?? stopModel;
       if (kind === 'c') return carById.get(id as number) ?? null;
+      if (kind === 'g') return ghosts.get(id as number) ?? null;
       return null;
     },
   };
@@ -123,7 +129,8 @@ function applyTrees(g: Game, b64: string) {
 
 /** Everything that is not in the save's rows and shapes what happens next. */
 export function captureState(g: Game): ExactState {
-  return {
+  const ghosts = new Map<number, Bld>();
+  const state: Omit<ExactState, 'ghosts'> = {
     steps: g.steps,
     dice: g.dice.state,
     climate: g.climate.save(),
@@ -133,10 +140,11 @@ export function captureState(g: Game): ExactState {
     communes: g.communes.list.map((c) => [c.id, c.state, c.nextProtest, c.leaveT]),
     terrain: terrainDiff(g),
     trees: treeBits(g),
-    traffic: g.traffic.serialize(refsFor(g, false)),
-    people: g.peds.serialize(refsFor(g)),
-    ext: Object.fromEntries(EXT.systems.filter((x) => x.saveExact).map((x) => [x.id, x.saveExact!(g, refsFor(g))])),
+    traffic: g.traffic.serialize(refsFor(g, false, ghosts)),
+    people: g.peds.serialize(refsFor(g, true, ghosts)),
+    ext: Object.fromEntries(EXT.systems.filter((x) => x.saveExact).map((x) => [x.id, x.saveExact!(g, refsFor(g, true, ghosts))])),
   };
+  return { ...state, ghosts: [...ghosts.values()].map((b) => g.buildings.rowOf(b)) };
 }
 
 /** After the save's rows have rebuilt the town: put back the exact state. */
@@ -156,8 +164,10 @@ export function restoreState(g: Game, s: ExactState, roads?: ReturnType<Game['ne
   applyTerrain(g, s.terrain);
   applyTrees(g, s.trees);
   g.zones.restoreExact(s.zones);
-  g.traffic.restore(s.traffic, refsFor(g, false));
-  const refs = refsFor(g);
+  const ghosts = new Map<number, Bld>();
+  for (const row of s.ghosts ?? []) { const b = g.buildings.ghostFrom(row); if (b) ghosts.set(b.id, b); }
+  g.traffic.restore(s.traffic, refsFor(g, false, ghosts));
+  const refs = refsFor(g, true, ghosts);
   g.peds.restore(s.people, refs);
   for (const x of EXT.systems) if (x.loadExact && s.ext && x.id in s.ext && s.ext[x.id] !== null) x.loadExact(g, s.ext[x.id], refs);
   // (a disaster's load() blocks its roads afresh; the roads' own rows say how long each is still blocked)

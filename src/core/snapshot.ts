@@ -101,7 +101,12 @@ export function encode(value: unknown, refs: Refs = NO_REFS, opts: EncodeOptions
       if (t) return wrap(t);
       return wrap(o.map((x, i) => { path.push(String(i)); const e = enc(x); path.pop(); return e; }));
     }
-    if (o instanceof Map) return wrap({ $map: [...o].map(([k, x], i) => { path.push(`<map ${i}>`); const e: Json = [enc(k), enc(x)]; path.pop(); return e; }) });
+    if (o instanceof Map) {
+      // a Map of like-shaped records (per-building counters): the keys once, then [key, ...values] each
+      const vals = [...o.values()], t = vals.length >= 4 ? rowsOf(vals) : null;
+      if (t) return wrap({ $mt: [t.keys, [...o.keys()].map((k, i) => { path.push(`<map ${i}>`); const e: Json = [enc(k), ...t.row(vals[i], i)]; path.pop(); return e; }), ...(t.ids ? [t.ids] : [])] });
+      return wrap({ $map: [...o].map(([k, x], i) => { path.push(`<map ${i}>`); const e: Json = [enc(k), enc(x)]; path.pop(); return e; }) });
+    }
     if (o instanceof Set) return wrap({ $set: [...o].map((x, i) => { path.push(`<set ${i}>`); const e = enc(x); path.pop(); return e; }) });
     if (!isPlain(o)) return fail(`a ${o.constructor?.name ?? 'class instance'} (name it in Refs, or skip the field)`);
     const out: { [k: string]: Json } = {};
@@ -114,17 +119,30 @@ export function encode(value: unknown, refs: Refs = NO_REFS, opts: EncodeOptions
     }
     return wrap(out);
   };
-  const table = (a: unknown[]): Json | null => {
-    if (a.length < 4) return null;
-    let keys: string[] | null = null;
+  /**
+   * Like-shaped plain objects as rows: their keys, a function that writes one as its values, and (when some are also pointed at
+   * from elsewhere) each row's number, so those pointers still land on it. Null when they are not all plain, same-keyed objects
+   * not yet written.
+   */
+  const rowsOf = (a: unknown[]): { keys: string[]; ids: number[] | null; row: (x: unknown, i: number) => Json[] } | null => {
+    let keys: string[] | null = null, anyShared = false;
     for (const x of a) {
-      if (x === null || typeof x !== 'object' || Array.isArray(x) || !isPlain(x) || refs.out(x) || (seen.get(x) ?? 0) > 1) return null;
+      if (x === null || typeof x !== 'object' || Array.isArray(x) || ArrayBuffer.isView(x) || x instanceof Map || x instanceof Set || !isPlain(x) || refs.out(x) || ids.has(x)) return null;
+      if ((seen.get(x) ?? 0) > 1) anyShared = true;
       const ks = Object.keys(x).filter((k) => !skip?.(k, x));
       if (!keys) { keys = ks; if (ks.some((k) => k[0] === '$')) return null; }
       else if (ks.length !== keys.length || ks.some((k, i) => k !== keys![i])) return null;
     }
+    if (new Set(a).size !== a.length) return null;   // (the same object twice in one list: not rows)
     const ks = keys!;
-    return { $t: [ks, a.map((x, i) => ks.map((k) => { path.push(`${i}.${k}`); const e = enc((x as Record<string, unknown>)[k]); path.pop(); return e; }))] };
+    // number the shared rows before any is written: a row may point at a later one
+    const rowIds = anyShared ? a.map((x) => { if ((seen.get(x as object) ?? 0) <= 1) return 0; const id = nextId++; ids.set(x as object, id); return id; }) : null;
+    return { keys: ks, ids: rowIds, row: (x, i) => ks.map((k) => { path.push(`${i}.${k}`); const e = enc((x as Record<string, unknown>)[k]); path.pop(); return e; }) };
+  };
+  const table = (a: unknown[]): Json | null => {
+    if (a.length < 4) return null;
+    const t = rowsOf(a);
+    return t ? { $t: [t.keys, a.map((x, i) => t.row(x, i)), ...(t.ids ? [t.ids] : [])] } : null;
   };
   return enc(value);
 }
@@ -173,11 +191,21 @@ export function decode<T = unknown>(json: Json, refs: Refs = NO_REFS): T {
       return s;
     }
     if ('$t' in j) {
-      const [keys, rows] = j.$t as [string[], Json[][]];
+      const [keys, rows, rowIds] = j.$t as [string[], Json[][], number[]?];
       const a: unknown[] = [];
       if (def) byId.set(def, a);
-      for (const row of rows) { const o: Record<string, unknown> = {}; for (let i = 0; i < keys.length; i++) o[keys[i]] = dec(row[i]); a.push(o); }
+      // (every row exists, and the numbered ones are known, before any is filled: a row may point at another)
+      const made = rows.map((_, r) => { const o: Record<string, unknown> = {}; if (rowIds?.[r]) byId.set(rowIds[r], o); return o; });
+      rows.forEach((row, r) => { const o = made[r]; for (let i = 0; i < keys.length; i++) o[keys[i]] = dec(row[i]); a.push(o); });
       return a;
+    }
+    if ('$mt' in j) {
+      const [keys, rows, rowIds] = j.$mt as [string[], Json[][], number[]?];
+      const m = new Map<unknown, unknown>();
+      if (def) byId.set(def, m);
+      const made = rows.map((_, r) => { const o: Record<string, unknown> = {}; if (rowIds?.[r]) byId.set(rowIds[r], o); return o; });
+      rows.forEach((row, r) => { const o = made[r]; for (let i = 0; i < keys.length; i++) o[keys[i]] = dec(row[i + 1]); m.set(dec(row[0]), o); });
+      return m;
     }
     const o: Record<string, unknown> = {};
     if (def) byId.set(def, o);

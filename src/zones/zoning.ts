@@ -467,23 +467,31 @@ export class Zoning {
    * same county: a lot checked long ago against ground that has since changed would be checked again on load, and could differ).
    */
   serializeExact() {
-    const cells = [...this.cells.values()].sort((a, b) => a.id - b.id);
-    const ids = new Float64Array(cells.length), state = new Uint8Array(cells.length);
-    cells.forEach((c, i) => { ids[i] = c.id; state[i] = (c.valid ? 128 : 0) | (c.zone ? ZONE_TYPES.indexOf(c.zone) + 1 : 0); });
-    return { ids: toBase64(ids), state: toBase64(state) };
+    // road by road in id order, each road's lots in id order (side, then along, then deep): a byte a lot, and no ids to write
+    const segs = [...this.bySeg.keys()].sort((a, b) => a - b), counts: number[] = [], bytes: number[] = [];
+    for (const id of segs) {
+      const cells = this.bySeg.get(id)!.flat(2).sort((a, b) => a.id - b.id);
+      counts.push(cells.length);
+      for (const c of cells) bytes.push((c.valid ? 128 : 0) | (c.zone ? ZONE_TYPES.indexOf(c.zone) + 1 : 0));
+    }
+    return { segs, counts, state: toBase64(new Uint8Array(bytes)) };
   }
 
   /** after restore(): put back each lot's validity and zone as saved (a lot the save does not know is left as rebuilt) */
-  restoreExact(d: { ids: string; state: string } | undefined) {
-    if (!d) return;
-    const ids = new Float64Array(fromBase64(d.ids).buffer), state = fromBase64(d.state);
-    for (let i = 0; i < ids.length; i++) {
-      const c = this.cells.get(ids[i]);
-      if (!c) continue;
-      c.valid = (state[i] & 128) !== 0;
-      const z = state[i] & 127;
-      c.zone = z ? ZONE_TYPES[z - 1] : null;
-    }
+  restoreExact(d: { segs: number[]; counts: number[]; state: string } | undefined) {
+    if (!d || !Array.isArray(d.segs)) return;
+    const state = fromBase64(d.state);
+    let at = 0;
+    d.segs.forEach((id, k) => {
+      const n = d.counts[k], cells = this.bySeg.get(id)?.flat(2).sort((a, b) => a.id - b.id);
+      // (a road whose lots do not match the save's count is left as rebuilt)
+      if (cells && cells.length === n) cells.forEach((c, i) => {
+        const v = state[at + i];
+        c.valid = (v & 128) !== 0;
+        c.zone = v & 127 ? ZONE_TYPES[(v & 127) - 1] : null;
+      });
+      at += n;
+    });
     this.revalidate.clear();
     this.overlayDirty = true;
     this.version++;

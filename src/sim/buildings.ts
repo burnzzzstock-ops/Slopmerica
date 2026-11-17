@@ -534,10 +534,47 @@ export class Buildings {
    * and how long it has stood abandoned (-1: lived in). A row without them (an older save) is rebuilt the old way.
    */
   serialize() {
-    return [...this.list.values()].map((b) => [
+    return [...this.list.values()].map((b) => this.rowOf(b));
+  }
+  rowOf(b: Bld): BldRow {
+    return [
       b.zone, b.landmark ?? b.kind ?? '', b.level, b.w, b.d, b.x, b.z, b.y, b.yaw, b.brand ?? '', b.occ, b.progress, b.seg, b.levelProgress,
       b.id, b.variant ?? -1, b.buildDays, b.lv, b.born, b.state === 'active' ? 1 : 0, b.cells.map((c) => c.id), b.abandoned ?? -1, b.ask ?? b.brand ?? '',
-    ] as BldRow);
+    ];
+  }
+
+  /**
+   * A demolished building that something still points at (a car on its way there, a truck leaving it): rebuilt from its row as an
+   * object that stands nowhere. It is not in the list, has no lot, no mesh and no effect on the ground; it only answers what the
+   * car asks of it (where it was, its model's parking spots).
+   */
+  ghostFrom(r: BldRow): Bld | null {
+    const [zone, what, level, w, d, x, z, y, yaw, brand, occ, prog, seg, lp, id, variant, buildDays, lv, born, open, , abandoned, ask] = r;
+    if (id === undefined) return null;
+    let model: BuildingModel, kind: string | undefined, landmark: LandmarkId | undefined, onMain: boolean | undefined;
+    if (zone === 'service') {
+      const def = CUSTOM_BUILDINGS.get(what);
+      if (!def) return null;
+      onMain = !!def.main?.();
+      const key = `custom|${what}|${onMain ? 'main' : 'kit'}`;
+      let e = this.geoIds.get(key);
+      if (!e) { const m = def.model(); this.geoIds.set(key, (e = { id: (onMain ? this.main : this.kit).addGeometry(m.geometry), model: m })); }
+      model = e.model; kind = what;
+    } else if (zone === 'landmark') {
+      const key = `landmark|${what}`;
+      let e = this.geoIds.get(key);
+      if (!e) { const m = generateLandmark(what as LandmarkId, 1); this.geoIds.set(key, (e = { id: this.main.addGeometry(m.geometry), model: m })); }
+      model = e.model; landmark = what as LandmarkId;
+    } else model = this.modelFor(zone as ZoneType, level, w, d, variant ?? 0, ask || undefined).model;
+    const b: Bld = {
+      id, zone: zone as Bld['zone'], level, w, d, x, z, y, yaw, hw: (w * CELL) / 2, hd: (d * CELL) / 2, cells: [], seg, variant: variant !== undefined && variant >= 0 ? variant : undefined, ask,
+      label: model.label, brand: brand || undefined, model, state: open ? 'active' : 'building', progress: prog, buildDays: buildDays ?? 5,
+      cap: isZoned({ zone } as Bld) ? capacityFor(zone as ZoneType, level, w * d) : 0, occ, lv: lv ?? 30, levelProgress: lp, born: born ?? 0, inst: -1, buildInst: -1, buildH: 1, emitT: 0,
+    };
+    if (kind !== undefined) { b.kind = kind; b.onMain = onMain; }
+    if (landmark !== undefined) b.landmark = landmark;
+    if (abandoned !== undefined && abandoned >= 0) b.abandoned = abandoned;
+    return b;
   }
   /** what the rows do not hold: the next id to give out and where the dice stand */
   serializeState() { return { nextId: this.nextId, rng: this.rng.state }; }

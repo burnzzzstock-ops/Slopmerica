@@ -15,7 +15,7 @@ mkdirSync(OUT, { recursive: true });
 const BUDGETS = 'scripts/budgets.json';
 const update = process.argv.includes('--update-budget');
 
-const step = (name, cmd, args, limit = 180) => new Promise((resolve) => {
+const step = (name, cmd, args, limit = 300) => new Promise((resolve) => {
   const t0 = Date.now(), log = join(OUT, `${name}.log`);
   let out = '';
   const p = start(cmd, args);

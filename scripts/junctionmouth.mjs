@@ -24,7 +24,7 @@ import { REFBLOCK } from './lib/fixtures.mjs';
 const args = process.argv.slice(2);
 const opt = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : undefined; };
 const jsonOut = opt('--json'), pngDir = opt('--png'), quiet = args.includes('--quiet');
-const server = await createServer({ root: process.cwd(), server: { middlewareMode: true, watch: null, hmr: false }, appType: 'custom', logLevel: 'error' });
+const server = await createServer({ root: process.cwd(), server: { middlewareMode: true, watch: null, hmr: false, ws: false }, appType: 'custom', logLevel: 'error' });
 const NET = await server.ssrLoadModule('/src/roads/network.ts');
 const RJ = await server.ssrLoadModule('/src/roads/roadJunction.ts');
 const RT = await server.ssrLoadModule('/src/roads/roadTypes.ts');

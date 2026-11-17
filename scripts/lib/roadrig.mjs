@@ -18,7 +18,7 @@ export async function makeRig({ roads } = {}) {
     set: (t, k, v) => { t[k] = v; return true; },
   });
   globalThis.document = { createElement: () => ({ width: 0, height: 0, getContext: () => ctx, style: {} }) };
-  const server = await createServer({ root: process.cwd(), server: { middlewareMode: true, watch: null, hmr: false }, appType: 'custom', logLevel: 'error' });
+  const server = await createServer({ root: process.cwd(), server: { middlewareMode: true, watch: null, hmr: false, ws: false }, appType: 'custom', logLevel: 'error' });
   const THREE = await server.ssrLoadModule('three');
   const NET = await server.ssrLoadModule('/src/roads/network.ts');
   const MESH = await server.ssrLoadModule('/src/roads/roadMesh.ts');

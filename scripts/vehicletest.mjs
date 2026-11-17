@@ -10,7 +10,7 @@
 //   * wheels: forwards spins the top of the tyre forwards, backing up spins it back, a left turn steers toward the left.
 // usage: node scripts/vehicletest.mjs      exits 1 on a failure
 import { createServer } from 'vite';
-const server = await createServer({ root: process.cwd(), server: { middlewareMode: true, watch: null, hmr: false }, appType: 'custom', logLevel: 'error' });
+const server = await createServer({ root: process.cwd(), server: { middlewareMode: true, watch: null, hmr: false, ws: false }, appType: 'custom', logLevel: 'error' });
 const V = await server.ssrLoadModule('/src/agents/vehicles.ts');
 const M = await server.ssrLoadModule('/src/agents/models/vehicleModels.ts');
 const P = await server.ssrLoadModule('/src/agents/models/vehiclePaint.ts');
@@ -132,7 +132,7 @@ const now = await drawsFor(V, THREE);
 console.log(`     100-car town, new renderer: ${now.calls} draw calls (${now.close} for close-range models, ${now.fx} effects), ${now.tris} triangles drawn`);
 try {
   const oldRoot = process.env.OLD || '../snap/before';
-  const oldServer = await createServer({ root: oldRoot, configFile: false, server: { middlewareMode: true, watch: null, hmr: false, port: 5299 }, appType: 'custom', logLevel: 'silent' });
+  const oldServer = await createServer({ root: oldRoot, configFile: false, server: { middlewareMode: true, watch: null, hmr: false, ws: false, port: 5299 }, appType: 'custom', logLevel: 'silent' });
   const OV = await oldServer.ssrLoadModule('/src/agents/vehicles.ts');
   const OT = await oldServer.ssrLoadModule('three');
   const before = await drawsFor(OV, OT);

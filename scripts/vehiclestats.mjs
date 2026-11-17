@@ -3,7 +3,7 @@
 // and its bounding box next to the size the simulation gives that kind (VEHICLE_SPECS: a model may never poke out of it).
 // usage: node scripts/vehiclestats.mjs   (exits 1 when a model is over budget or outside its kind's size)
 import { createServer } from 'vite';
-const server = await createServer({ root: process.cwd(), server: { middlewareMode: true, watch: null, hmr: false }, appType: 'custom', logLevel: 'error' });
+const server = await createServer({ root: process.cwd(), server: { middlewareMode: true, watch: null, hmr: false, ws: false }, appType: 'custom', logLevel: 'error' });
 const V = await server.ssrLoadModule('/src/agents/vehicles.ts');
 const M = await server.ssrLoadModule('/src/agents/models/vehicleModels.ts');
 const THREE = await server.ssrLoadModule('three');

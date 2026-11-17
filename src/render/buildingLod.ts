@@ -1,18 +1,6 @@
 import * as THREE from 'three';
 import { T, tileNames, type Tile } from '../art';
-import { Rng } from '../core/rng';
-
-const geometryRng = new Rng(0x10d6e0);
-let geometryRandomDepth = 0;
-/** Three's proxy UUIDs (including an upload's capacity growth) must not draw
- * from the traffic/citizen stream. The callback is strictly synchronous. */
-export function withBuildingLodRandom<T>(build: () => T): T {
-  if (geometryRandomDepth) return build();
-  const random = Math.random;
-  geometryRandomDepth++;
-  Math.random = () => geometryRng.float();
-  try { return build(); } finally { geometryRandomDepth--; Math.random = random; }
-}
+export { withVisualRandom as withBuildingLodRandom } from './visualRandom';
 
 let tiles: Tile[] | undefined;
 const tileCache = new Map<string, string>();

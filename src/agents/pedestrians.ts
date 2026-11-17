@@ -3,8 +3,9 @@
 import * as THREE from 'three';
 import type { PersonAction } from '../contracts';
 import { clamp, closestOnSampled, lerp, locate, norm, sub, type V2 } from '../core/math';
-import { Rng } from '../core/rng';
+import { fx, Rng } from '../core/rng';
 import { TOP_SPEED } from '../core/time';
+import { decode, encode, type Json, type Refs } from '../core/snapshot';
 import type { RoadNetwork, RSeg } from '../roads/network';
 import { armCrossing, sidewalkEnds } from '../roads/roadJunction';
 import { carriageHalf, ROAD_TYPES } from '../roads/roadTypes';
@@ -16,6 +17,9 @@ import type { Communes } from './communes';
 
 /** a person about to be added: add() gives them their number and their place in the draw pool */
 type NewPed = Omit<Ped, 'h' | 'id'>;
+
+/** The people system's fields that are not state: what it is wired to and what it draws with. */
+const PEOPLE_NOT_SAVED = new Set(['renderer', 'net', 'b', 'terrain', 'communes', 'rng', 'rnd', 'max', 'hip', 'merch', 'norm', 'group']);
 
 export interface Ped {
   /** this person's number: unique for the session, never reused (follow-cam targets name people by it) */
@@ -241,6 +245,25 @@ export class Pedestrians {
   }
   /** the people's own random stream, seeded from the county's seed */
   readonly rng = new Rng(0x9ed5);
+
+  /** Everyone out and about, exactly, and the clocks and dice that decide who comes out next (what is only drawn is made again on load). */
+  serialize(refs: Refs): Json {
+    const part: Record<string, unknown> = {};
+    const self = this as unknown as Record<string, unknown>;
+    for (const k of Object.keys(self)) if (!PEOPLE_NOT_SAVED.has(k) && typeof self[k] !== 'function') part[k] = self[k];
+    return { rng: this.rng.state, v: encode(part, refs, { skip: (k, holder) => (k === 'h' || k === 'shown') && 'arch' in holder && 'life' in holder }) };
+  }
+
+  restore(j: Json | undefined, refs: Refs) {
+    const d = j as { rng: number; v: Json } | undefined;
+    if (!d || typeof d !== 'object' || !d.v) return;
+    for (const p of this.peds) this.renderer.remove(p.h);
+    const part = decode<Record<string, unknown>>(d.v, refs);
+    const self = this as unknown as Record<string, unknown>;
+    for (const k of Object.keys(part)) self[k] = part[k];
+    this.rng.state = d.rng;
+    for (const p of this.peds) p.h = this.renderer.add(p.arch, Math.floor(fx.float() * 1e6));
+  }
   private readonly rnd = () => this.rng.float();
 
   /** One fixed step of `dt` game seconds. (The clocks below were written in real seconds at a speed; they run at the pace they had at top speed.) */

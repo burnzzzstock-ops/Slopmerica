@@ -7,6 +7,7 @@ import type { LandmarkId, VehicleKind } from '../contracts';
 import { clamp, closestOnSampled, lerp, locate, norm, sub, V2 } from '../core/math';
 import { fx, Rng } from '../core/rng';
 import { STEP_SECONDS } from '../core/time';
+import { decode, encode, type Json, type Refs } from '../core/snapshot';
 import type { RNode, RoadNetwork, RSeg } from '../roads/network';
 import { carriageHalf, laneOffset, ROAD_TYPES, type RoadType } from '../roads/roadTypes';
 // where cars stop short of a junction (m before the box): behind the crosswalk at the box's edge, and the paint's too
@@ -20,6 +21,10 @@ import { HALF } from '../config';
 
 /** Cars the simulation runs at once, whatever the graphics preset can draw. */
 const SIM_MAX_CARS = 1000;
+/** Traffic's fields that are not state: what it is wired to, what it draws with, and caches it rebuilds as it goes. */
+const TRAFFIC_NOT_SAVED = new Set(['renderer', 'net', 'b', 'parking', 'rng', 'rnd', 'handlers', 'listPool', 'segDirIndex', 'bendCuts', 'stopBacks', 'maxCars', 'ppA', 'ppB']);
+/** A car's fields that are only how it is drawn (made again on load). */
+const CAR_NOT_SAVED = new Set(['h', 'toSpot', 'fromSpot', 'parked', 'drawn', 'sent', 'shown', 'smokeT']);
 
 interface Step {
   seg: number;
@@ -32,6 +37,8 @@ export type Hold = 'lead' | 'side' | 'box tail' | 'box merge' | 'drive-thru' | '
 export interface Car {
   id: number;
   h: number;
+  /** its colour (a look, kept so a car is the same colour after a reload) */
+  paint: number;
   /** live parking (drawn only): the stall it pulls into, the one it backs out of, and whether parking kept its handle */
   toSpot?: WorldSpot | null;
   fromSpot?: WorldSpot | null;
@@ -124,6 +131,8 @@ export interface Car {
   fromB?: Bld | null;
   /** set when the trip reached its destination */
   arrived?: boolean;
+  /** what to do when the trip ends: [handler name, ...numbers] (Traffic.handlers); unset for an ordinary trip */
+  done?: (string | number)[];
   /** seconds of brake lights left (set when slowing hard) */
   brakeT: number;
   /** last acceleration (m/s²) and the body's lean out of turns / nose dive under braking (radians) */
@@ -148,7 +157,11 @@ export interface DispatchOpts {
   sober?: boolean;
   /** counts as a town car (true) or an out-of-towner (false); default true */
   local?: boolean;
-  onDone?: (c: Car, arrived: boolean) => void;
+  /**
+   * What to do when the trip ends, as a name and numbers: [handler, ...args]. The handler is looked up in Traffic.handlers
+   * and called with (car, arrived, ...args). A name, not a function, so a trip under way can be saved and picked up again.
+   */
+  done?: (string | number)[];
 }
 
 /** Direction of a road between samples i and i+1; repeated samples borrow their neighbours' (a zero-length step has no direction). */
@@ -1117,7 +1130,7 @@ export class Traffic {
     const o = end(from), d = end(to);
     if (!o || !d) return null;
     const car = this.launch(o, d, from === 'edge' ? null : from, to === 'edge' ? null : to, kind, purpose, dest, opts.local ?? true, hour, opts.sober);
-    if (car && opts.onDone) car.onDone = opts.onDone;
+    if (car && opts.done) car.done = opts.done;
     return car;
   }
 
@@ -1152,12 +1165,13 @@ export class Traffic {
     const spec = VEHICLE_SPECS[kind];
     // a trip happens whether or not the graphics preset has a free vehicle
     // to draw it: -1 = simulated but not drawn (set/remove ignore it)
-    const h = this.renderer.add(kind, FIXED_PAINT[kind] ?? PAINT[Math.floor(fx.float() * PAINT.length)]);
+    const paint = FIXED_PAINT[kind] ?? PAINT[Math.floor(fx.float() * PAINT.length)];
+    const h = this.renderer.add(kind, paint);
     const night = hour > 21 || hour < 4;
     const drunk = !sober && this.rnd() < (night ? DRUNK_NIGHT : DRUNK_DAY);
     const firstSeg = this.net.segs.get(rt.steps[0].seg)!;
     const car: Car = {
-      id: this.nextId++, h, kind, path: rt.steps, pi: 0, s: rt.startS, startS: rt.startS, endS: rt.endS,
+      id: this.nextId++, h, paint, kind, path: rt.steps, pi: 0, s: rt.startS, startS: rt.startS, endS: rt.endS,
       lane: Math.floor(this.rnd() * ROAD_TYPES[firstSeg.type].lanesPerDir), v: 4, v0mul: (0.9 + this.rnd() * 0.25) * (drunk ? 1.25 : 1),
       // codex:policies begin -- a smoke-free endpoint disables the visible in-car smoking effect
       len: spec.length, drunk, reckless: drunk || (!sober && this.rnd() < RECKLESS), smoker: !sober && (!oB || this.policySmokingAllowed?.(oB) !== false) && (!dB || this.policySmokingAllowed?.(dB) !== false) && this.rnd() < 0.2, redsRun: 0, wob: this.rnd() * 10,
@@ -1170,7 +1184,7 @@ export class Traffic {
       // read one kind of object; added as they came up, they made a dozen, and every read checked which)
       toSpot: undefined, fromSpot: undefined, parked: undefined, destB: undefined, thruB: undefined, thru: undefined, thruWait: undefined,
       drawn: undefined, pedNode: undefined, hold: undefined, boxWait: undefined, boxPath: undefined, prevJ: undefined, prevEntryS: undefined,
-      wait: undefined, committed: undefined, lotLeft: undefined, fromB: undefined, arrived: undefined, onDone: undefined,
+      wait: undefined, committed: undefined, lotLeft: undefined, fromB: undefined, arrived: undefined, done: undefined,
     };
     // pull out of the origin lot / pull into the destination lot
     if (oB) {
@@ -1228,6 +1242,38 @@ export class Traffic {
   private owed = 0;
   /** the traffic's own random stream: seeded from the county's seed, saved with the cars */
   readonly rng = new Rng(0x7a11);
+  /** what ends a dispatched trip, by name (see DispatchOpts.done): the systems that send vehicles register theirs once */
+  readonly handlers = new Map<string, (c: Car, arrived: boolean, ...args: number[]) => void>();
+
+  /**
+   * All of it, exactly: every car where it is and what it is doing, the signals, the queues, the lists the next step reads from
+   * the last one, the clocks and the dice. Buildings and roads go out as names (refs). What is only drawn is left out and made
+   * again on load (the renderer's handle, the parking stall a car was drawn in).
+   */
+  serialize(refs: Refs): Json {
+    const part: Record<string, unknown> = {};
+    const self = this as unknown as Record<string, unknown>;
+    for (const k of Object.keys(self)) if (!TRAFFIC_NOT_SAVED.has(k) && typeof self[k] !== 'function') part[k] = self[k];
+    return { rng: this.rng.state, v: encode(part, refs, { skip: (k, holder) => CAR_NOT_SAVED.has(k) && 'crashed' in holder && 'path' in holder }) };
+  }
+
+  /** Put back what serialize() wrote (after the roads and buildings it names exist). */
+  restore(j: Json | undefined, refs: Refs) {
+    const d = j as { rng: number; v: Json } | undefined;
+    if (!d || typeof d !== 'object' || !d.v) return;
+    for (const c of this.cars) if (c.h >= 0) this.renderer.remove(c.h);
+    const part = decode<Record<string, unknown>>(d.v, refs);
+    const self = this as unknown as Record<string, unknown>;
+    for (const k of Object.keys(part)) self[k] = part[k];
+    this.rng.state = d.rng;
+    for (const c of this.cars) {
+      c.h = this.renderer.add(c.kind, c.paint);
+      c.toSpot = null; c.fromSpot = null; c.parked = false; c.drawn = undefined;
+      c.sent = 0; c.shown = new Float64Array(4); c.smokeT = fx.float() * 2;
+    }
+    this.listPool.length = 0;
+    this.segDirIndex = null;
+  }
   private readonly rnd = () => this.rng.float();
 
   /** why blinkers are on (debug tallies) */
@@ -1727,7 +1773,7 @@ export class Traffic {
         if (c.toSpot) this.parking?.release(c.toSpot);
         if (!c.parked) this.renderer.remove(c.h);
         else (this.renderer as { setReversing?: (h: number, on: boolean) => void }).setReversing?.(c.h, false);
-        c.onDone?.(c, !!c.arrived);
+        if (c.done) this.handlers.get(String(c.done[0]))?.(c, !!c.arrived, ...(c.done.slice(1) as number[]));
         this.cars[i] = this.cars[this.cars.length - 1];
         this.cars.pop();
       }

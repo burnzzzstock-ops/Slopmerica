@@ -152,6 +152,8 @@ export class Game {
   readonly climate: Climate;
   /** the county's seed: every stream of dice in the simulation is drawn from it */
   readonly seed: number;
+  /** the valley's ground as generated, before anything was built on it (a save keeps only where today's ground differs) */
+  readonly pristine: Float32Array;
   private skySpell = -1;
   readonly post: PostFX;
   readonly particles: Particles;
@@ -241,6 +243,7 @@ export class Game {
     let tLap = performance.now();
     const lap = (n: string) => { const t = performance.now(); console.info(`[boot] ${n} ${(t - tLap).toFixed(0)}ms`); tLap = t; };
     this.map = generateMap(opts.map);
+    this.pristine = new Float32Array(this.map.heights);
     lap('map');
     this.cityName = opts.cityName || defaultCityName(opts.map);
 

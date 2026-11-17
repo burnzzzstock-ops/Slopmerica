@@ -3,7 +3,8 @@
 // water, steep ground, communes or other blocks.
 import * as THREE from 'three';
 import { CELL, WATER } from '../config';
-import type { ZoneType } from '../contracts';
+import { ZONE_TYPES, type ZoneType } from '../contracts';
+import { fromBase64, toBase64 } from '../core/snapshot';
 import { clamp, closestOnSampled, locate, lerp, norm, SpatialHash, sub } from '../core/math';
 import type { RoadNetwork, RSeg } from '../roads/network';
 import { ROAD_TYPES } from '../roads/roadTypes';
@@ -30,6 +31,12 @@ export const ZONE_LABEL: Record<ZoneType, string> = {
 };
 
 const DEPTH = 4;
+/**
+ * A lot's id says where it is: its road, the side, how far along and how deep. So the same lot has the same id however the lots
+ * came to be (drawn road by road over a year, or all at once from a save), and anything that goes by id (which of two overlapping
+ * lots wins, the order growth considers them in) comes out the same.
+ */
+const cellId = (segId: number, sideIndex: number, col: number, row: number) => ((segId * 2 + sideIndex) * 2048 + col) * 8 + row;
 
 export interface ZCell {
   id: number;
@@ -149,7 +156,6 @@ export class Zoning {
   cells = new Map<number, ZCell>();
   bySeg = new Map<number, ZCell[][][]>(); // seg -> [sideIdx][col][row]
   private hash = new SpatialHash<ZCell>(24);
-  private nextId = 1;
   private memory = new Map<number, ZoneType>(); // remembered zoning across rebuilds
   private dirtySegs = new Set<number>();
   private revalidate = new Set<number>();
@@ -275,7 +281,7 @@ export class Zoning {
           const off = hw + CELL / 2 + 0.4 + row * CELL;
           const x = p.x + r.x * off, z = p.z + r.z * off;
           const c: ZCell = {
-            id: this.nextId++, seg: seg.id, side, col, row, x, z, y: this.terrain.h(x, z),
+            id: cellId(seg.id, si, col, row), seg: seg.id, side, col, row, x, z, y: this.terrain.h(x, z),
             yaw: Math.atan2(-r.x, -r.z), valid: false, zone: null, bld: 0,
           };
           column.push(c);
@@ -434,7 +440,8 @@ export class Zoning {
   candidates(zone: ZoneType, out: ZCell[] = []): ZCell[] {
     out.length = 0;
     for (const c of this.cells.values()) if (c.row === 0 && c.valid && c.zone === zone && !c.bld) out.push(c);
-    return out;
+    // in id order, not the order the lots were made in (which a reload does not keep): growth draws from this list by index
+    return out.sort((a, b) => a.id - b.id);
   }
 
   counts() {
@@ -453,6 +460,33 @@ export class Zoning {
     const out: [number, number, string][] = [];
     for (const c of this.cells.values()) if (c.valid && c.zone) out.push([+c.x.toFixed(1), +c.z.toFixed(1), c.zone]);
     return out;
+  }
+
+  /**
+   * Every lot's validity and zone, exactly, in id order (what serialize() keeps is enough to redraw the zoning, not to continue the
+   * same county: a lot checked long ago against ground that has since changed would be checked again on load, and could differ).
+   */
+  serializeExact() {
+    const cells = [...this.cells.values()].sort((a, b) => a.id - b.id);
+    const ids = new Float64Array(cells.length), state = new Uint8Array(cells.length);
+    cells.forEach((c, i) => { ids[i] = c.id; state[i] = (c.valid ? 128 : 0) | (c.zone ? ZONE_TYPES.indexOf(c.zone) + 1 : 0); });
+    return { ids: toBase64(ids), state: toBase64(state) };
+  }
+
+  /** after restore(): put back each lot's validity and zone as saved (a lot the save does not know is left as rebuilt) */
+  restoreExact(d: { ids: string; state: string } | undefined) {
+    if (!d) return;
+    const ids = new Float64Array(fromBase64(d.ids).buffer), state = fromBase64(d.state);
+    for (let i = 0; i < ids.length; i++) {
+      const c = this.cells.get(ids[i]);
+      if (!c) continue;
+      c.valid = (state[i] & 128) !== 0;
+      const z = state[i] & 127;
+      c.zone = z ? ZONE_TYPES[z - 1] : null;
+    }
+    this.revalidate.clear();
+    this.overlayDirty = true;
+    this.version++;
   }
 
   restore(rows: [number, number, string][]) {

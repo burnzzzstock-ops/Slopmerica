@@ -3,6 +3,7 @@
 // intersections, upgrades (ONE MORE LANE) and removal.
 import { WATER } from '../config';
 import { Emitter } from '../core/events';
+import { fromBase64, toBase64 } from '../core/snapshot';
 import {
   bezPoint, clamp, closestOnSampled, Cubic, dist, lerp, lineCubic, norm, Sampled, sampleCubic, segIntersect,
   smoothstep, SpatialHash, splitCubic, sub, tAt, tangentAt, V2,
@@ -86,7 +87,14 @@ type Events = {
   changed: void;
 };
 
-type SegRow = [number, number, number, RoadTypeId, [number, number][], string, number, number, number?];
+/**
+ * A road as saved: id, its two nodes, type, the curve's four points, name, street, the day it was built, the overpass height (0 for
+ * none), then what makes a reload exact (saves from before had none of it): the surface and ground profiles as the bytes of
+ * Float32Arrays (base64), congestion, the seconds a lane is still blocked and the cars on it each way.
+ */
+type SegRow = [number, number, number, RoadTypeId, [number, number][], string, number, number, number?, string?, string?, number?, number?, number?, number?];
+const f32 = (a: readonly number[]) => toBase64(new Float32Array(a));
+const unf32 = (s: string) => Array.from(new Float32Array(fromBase64(s).buffer));
 
 const MAX_PIECE = 110; // long strokes are split into pieces this long
 const BRIDGE_DECK = WATER + 5.5;
@@ -425,8 +433,9 @@ export class RoadNetwork {
   // ------------------------------------------------------------------ save / load
   serialize() {
     return {
-      nodes: [...this.nodes.values()].map((n): [number, number, number, number] => [n.id, +n.x.toFixed(2), +n.z.toFixed(2), +n.y.toFixed(2)]),
-      segs: [...this.segs.values()].map((s): SegRow => [s.id, s.a, s.b, s.type, [s.curve.p0, s.curve.p1, s.curve.p2, s.curve.p3].map((p) => [+p.x.toFixed(2), +p.z.toFixed(2)] as [number, number]), s.name, s.street, Math.round(s.builtDay), ...(s.over ? [s.over] : [])] as SegRow),
+      // (every number whole: a curve rounded to the centimetre comes back a slightly different length, and every car on it is elsewhere)
+      nodes: [...this.nodes.values()].map((n): [number, number, number, number] => [n.id, n.x, n.z, n.y]),
+      segs: [...this.segs.values()].map((s): SegRow => [s.id, s.a, s.b, s.type, [s.curve.p0, s.curve.p1, s.curve.p2, s.curve.p3].map((p) => [p.x, p.z] as [number, number]), s.name, s.street, s.builtDay, s.over ?? 0, f32(s.hs), f32(s.ground), s.vc, s.blocked, s.load[0], s.load[1]]),
       next: [this.nextNode, this.nextSeg, this.nextStreet] as [number, number, number],
     };
   }
@@ -434,13 +443,20 @@ export class RoadNetwork {
   restore(data: ReturnType<RoadNetwork['serialize']>) {
     for (const [id, x, z, y] of data.nodes) this.nodes.set(id, { id, x, z, y, segs: [] });
     const made: RSeg[] = [];
-    for (const [id, a, b, type, pts, name, street, built, over] of data.segs) {
+    for (const [id, a, b, type, pts, name, street, built, over, hs, ground, vc, blocked, load0, load1] of data.segs) {
       const A = this.nodes.get(a), B = this.nodes.get(b);
       if (!A || !B) continue;
       this.nextSeg = id;
       const curve = { p0: { x: pts[0][0], z: pts[0][1] }, p1: { x: pts[1][0], z: pts[1][1] }, p2: { x: pts[2][0], z: pts[2][1] }, p3: { x: pts[3][0], z: pts[3][1] } };
-      const s = this.addSeg(A, B, curve, type, name, street, over);
-      if (s) { s.builtDay = built; made.push(s); }
+      const s = this.addSeg(A, B, curve, type, name, street, over || undefined);
+      if (!s) continue;
+      s.builtDay = built;
+      // the profile it was built with (the ground has changed since: worked out again today it would come out different)
+      if (hs && ground) { const H = unf32(hs), G = unf32(ground); if (H.length === s.hs.length && G.length === s.ground.length) { s.hs = H; s.ground = G; } }
+      if (vc !== undefined) s.vc = vc;
+      if (blocked !== undefined) s.blocked = blocked;
+      if (load0 !== undefined && load1 !== undefined) s.load = [load0, load1];   // (cars on it at the last step: the next step's routing reads it before it is counted again)
+      made.push(s);
     }
     [this.nextNode, this.nextSeg, this.nextStreet] = data.next;
     for (const s of made) this.finalizeSeg(s);
@@ -533,8 +549,9 @@ export class RoadNetwork {
     }
     y[0] = A.y;
     y[n - 1] = B.y;
-    seg.hs = y;
-    seg.ground = ground;
+    // (single precision, as the terrain is: a save holds them as they are, in half the room)
+    seg.hs = y.map(Math.fround);
+    seg.ground = ground.map(Math.fround);
   }
 
   private finalizeSeg(seg: RSeg) {

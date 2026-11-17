@@ -210,13 +210,13 @@ export class Climate {
   }
 
   save() {
-    return { kind: this.kind, intensity: this.intensity, temperature: this.temperature, wet: this.wet, snowCover: this.snowCover, spell: this.spell, spellDays: this.spellDays,
+    return { kind: this.kind, season: this.season, intensity: this.intensity, temperature: this.temperature, wet: this.wet, snowCover: this.snowCover, spell: this.spell, spellDays: this.spellDays,
       start: this.start, end: this.end, ease: this.ease, strength: this.strength, cal: this.cal, forced: this.forced, windAngle: this.windAngle, rng: this.rng.state };
   }
 
   load(d: ReturnType<Climate['save']> | undefined) {
     if (!d) return;
-    this.kind = d.kind; this.intensity = d.intensity; this.temperature = d.temperature; this.wet = d.wet; this.snowCover = d.snowCover; this.spell = d.spell; this.spellDays = d.spellDays;
+    this.kind = d.kind; this.season = d.season ?? this.season; this.intensity = d.intensity; this.temperature = d.temperature; this.wet = d.wet; this.snowCover = d.snowCover; this.spell = d.spell; this.spellDays = d.spellDays;
     this.start = d.start; this.end = d.end; this.ease = d.ease; this.strength = d.strength; this.cal = d.cal; this.forced = d.forced; this.windAngle = d.windAngle; this.rng.state = d.rng;
     const w = 0.9 * (1 + (FALL[isFlakeJoke(this.map, this.kind) ? 'cloudy' : this.kind].wind - 1) * this.intensity);
     this.wind.x = Math.cos(this.windAngle) * w; this.wind.y = Math.sin(this.windAngle) * w;

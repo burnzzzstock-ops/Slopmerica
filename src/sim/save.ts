@@ -4,6 +4,8 @@ import type { Game } from '../game';
 import { EXT } from '../ext/registry';
 import type { MapId } from '../world/maps';
 import type { Mode } from './sim';
+import type { BldRow } from './buildings';
+import { captureState, restoreState, type ExactState } from './state';
 
 const KEY = 'slopmerica.save.v1';
 
@@ -25,7 +27,7 @@ export interface SaveData {
   sprawl: number;
   roads: ReturnType<Game['net']['serialize']>;
   zones: ReturnType<Game['zones']['serialize']>;
-  buildings: ReturnType<Game['buildings']['serialize']>;
+  buildings: BldRow[];
   communes: [number, string, number, number, number][];
   /** the town site and the county road's way in (communes are placed around it; saves before this rebuild it the old way) */
   start?: { x: number; z: number; yaw: number; edge: { x: number; z: number }; route?: { x: number; z: number }[] };
@@ -33,17 +35,20 @@ export interface SaveData {
   ext?: Record<string, unknown>;
   /** sim state beyond the core fields (streaks, accumulators, RNG, ledgers, history) */
   simx?: ReturnType<Game['sim']['serializeExtra']>;
+  /** everything else that shapes the next step, bit for bit (src/sim/state.ts). With it a reload carries on as the same county. */
+  state?: ExactState;
 }
 
 export function snapshot(g: Game): SaveData {
   return {
-    v: 1, savedAt: Date.now(), map: g.map.def.id, mode: g.sim.mode, city: g.cityName, day: g.sim.day, hour: g.hour,
+    v: 1, savedAt: Date.now(), map: g.map.def.id, mode: g.sim.mode, city: g.cityName, seed: g.seed, day: g.sim.day, hour: g.hour,
     money: g.sim.money === Infinity ? null : g.sim.money, tax: g.sim.taxRate, loans: g.sim.loans, pop: g.sim.population,
     nature: g.sim.naturePct, sprawl: g.sim.sprawlPct, roads: g.net.serialize(), zones: g.zones.serialize(), buildings: g.buildings.serialize(),
-    communes: g.communes.list.map((c) => [c.id, c.state === 'leaving' ? 'gone' : c.state, c.stubborn, c.suitDays, c.suitOdds]),
+    communes: g.communes.list.map((c) => [c.id, c.state, c.stubborn, c.suitDays, c.suitOdds]),
     start: (({ x, z, yaw, edge, route }) => ({ x, z, yaw, edge, route: route?.map((p) => ({ x: Math.round(p.x * 10) / 10, z: Math.round(p.z * 10) / 10 })) }))(g.startView()),
     ext: Object.fromEntries(EXT.systems.filter((s) => s.save).map((s) => [s.id, s.save!(g)])),
     simx: g.sim.serializeExtra(),
+    state: captureState(g),
   };
 }
 
@@ -197,6 +202,7 @@ export function applySave(g: Game, d: SaveData) {
   g.sim.restoreState(d.day, d.money, d.tax, d.loans, d.pop, d.nature, d.sprawl);
   g.sim.restoreExtra(d.simx);
   for (const s of EXT.systems) if (s.load && d.ext && s.id in d.ext) s.load(g, d.ext[s.id]);
+  if (d.state) restoreState(g, d.state, d.roads);
 }
 
 export function autosave(g: Game) {

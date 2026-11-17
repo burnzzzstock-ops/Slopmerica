@@ -18,6 +18,9 @@ import type { ZCell, Zoning } from '../zones/zoning';
 import type { RoadNetwork } from '../roads/network';
 import { ROAD_TYPES } from '../roads/roadTypes';
 
+/** a building as saved (see Buildings.serialize) */
+export type BldRow = [string, string, number, number, number, number, number, number, number, string, number, number, number, number, number?, number?, number?, number?, number?, number?, number[]?, number?, string?];
+
 export interface Bld {
   id: number;
   zone: ZoneType | 'landmark' | 'service';
@@ -51,6 +54,13 @@ export interface Bld {
   occ: number;
   lv: number; // land value 0..100 (sim writes)
   levelProgress: number;
+  /** which of its zone's models it wears (zoned buildings; rolled when it is built and again at each level) */
+  variant?: number;
+  /**
+   * The brand its model was asked for ('' for none). Not always the brand it has: the generator swaps in one that fits the lot and
+   * says so in the model. Asking again for the brand it ended up with gives another building, so a save keeps what was asked.
+   */
+  ask?: string;
   born: number;
   inst: number; // BatchedMesh instance id
   buildInst: number; // temporary scaffold/crane instance (always in the Kit batch)
@@ -402,8 +412,8 @@ export class Buildings {
     const brand = zone === 'resLow' || zone === 'resHigh' ? undefined : this.brandFor(zone, this.rng)?.id;
     const e = this.modelFor(zone, level, w, d, variant, brand);
     const b: Bld = {
-      id: this.nextId++, zone, level, w, d, x, z, y, yaw, hw: (w * CELL) / 2, hd: (d * CELL) / 2, cells, seg: mid.seg,
-      label: e.model.label, brand: e.model.brand ?? brand, model: e.model, state: 'building', progress: 0,
+      id: this.nextId++, zone, level, w, d, x, z, y, yaw, hw: (w * CELL) / 2, hd: (d * CELL) / 2, cells, seg: mid.seg, variant, ask: brand ?? '',
+      label: e.model.label, brand: (e.model.brand ?? brand) || undefined, model: e.model, state: 'building', progress: 0,
       buildDays: this.rng.range(3, 7) * (1 + level * 0.25), cap: capacityFor(zone, level, w * d), occ: 0, lv: 20, levelProgress: 0,
       born: this.day, inst: -1, buildInst: -1, buildH: 1, emitT: fx.float() * 5,
     };
@@ -518,18 +528,37 @@ export class Buildings {
   }
 
   // ------------------------------------------------------------------ save / load
+  /**
+   * One row a building. The first 14 entries are what saves have always held (now at full precision); the rest makes a reload
+   * exact: its id, model variant, construction time, land value, the day it was built, whether it is open, the lots it stands on
+   * and how long it has stood abandoned (-1: lived in). A row without them (an older save) is rebuilt the old way.
+   */
   serialize() {
     return [...this.list.values()].map((b) => [
-      b.zone, b.landmark ?? b.kind ?? '', b.level, b.w, b.d, +b.x.toFixed(2), +b.z.toFixed(2), +b.y.toFixed(2), +b.yaw.toFixed(4), b.brand ?? '', b.occ, b.state === 'active' ? 1 : +b.progress.toFixed(2), b.seg, +b.levelProgress.toFixed(2),
-    ] as const);
+      b.zone, b.landmark ?? b.kind ?? '', b.level, b.w, b.d, b.x, b.z, b.y, b.yaw, b.brand ?? '', b.occ, b.progress, b.seg, b.levelProgress,
+      b.id, b.variant ?? -1, b.buildDays, b.lv, b.born, b.state === 'active' ? 1 : 0, b.cells.map((c) => c.id), b.abandoned ?? -1, b.ask ?? b.brand ?? '',
+    ] as BldRow);
   }
+  /** what the rows do not hold: the next id to give out and where the dice stand */
+  serializeState() { return { nextId: this.nextId, rng: this.rng.state }; }
+  restoreState(d: { nextId: number; rng: number } | undefined) { if (d) { this.nextId = d.nextId; this.rng.state = d.rng; } }
 
-  restore(rows: ReturnType<Buildings['serialize']>) {
+  restore(rows: readonly BldRow[]) {
     for (const r of rows) {
-      const [zone, landmark, level, w, d, x, z, y, yaw, brand, occ, prog, seg, lp] = r;
+      const [zone, landmark, level, w, d, x, z, y, yaw, brand, occ, prog, seg, lp, id, variant, buildDays, lv, born, open, cellIds, abandoned, ask] = r;
+      const exact = id !== undefined;
+      if (exact) this.nextId = id;   // (the id it had: other systems' saves name buildings by it)
+      const settle = (b: Bld) => {
+        if (!exact) return;
+        b.progress = prog; b.state = open ? 'active' : 'building'; b.buildDays = buildDays!; b.lv = lv!; b.born = born!; b.seg = seg; b.occ = occ; b.levelProgress = lp;
+        if (abandoned !== undefined && abandoned >= 0) b.abandoned = abandoned;
+        if (b.state === 'active') this.dropScaffold(b);
+        this.writeMatrix(b, b.state === 'active' ? 1 : easeGrow(b.progress));
+      };
       if (zone === 'service') {
         const b = this.placeCustom(landmark, x, z, yaw, y);
         if (!b) continue;
+        if (exact) { settle(b); continue; }
         b.progress = Math.min(1, prog);
         if (b.progress >= 1) {
           b.state = 'active';
@@ -540,6 +569,7 @@ export class Buildings {
       }
       if (zone === 'landmark') {
         const b = this.placeLandmark(landmark as LandmarkId, x, z, yaw, y);
+        if (exact) { settle(b); continue; }
         b.state = 'active';
         b.progress = 1;
         this.dropScaffold(b);
@@ -547,18 +577,23 @@ export class Buildings {
         continue;
       }
       const zt = zone as ZoneType;
-      const e = this.modelFor(zt, level, w, d, this.rng.int(0, variantsFor(zt) - 1), brand || undefined);
+      // (an older save does not say which model it wore: roll one, as loading always did)
+      const v = exact && variant! >= 0 ? variant! : this.rng.int(0, variantsFor(zt) - 1);
+      const asked = exact && ask !== undefined ? ask : brand;
+      const e = this.modelFor(zt, level, w, d, v, asked || undefined);
       const b: Bld = {
-        id: this.nextId++, zone: zt, level, w, d, x, z, y, yaw, hw: (w * CELL) / 2, hd: (d * CELL) / 2, cells: [], seg,
-        label: e.model.label, brand: e.model.brand ?? (brand || undefined), model: e.model, state: prog >= 1 ? 'active' : 'building', progress: Math.min(1, prog),
+        id: this.nextId++, zone: zt, level, w, d, x, z, y, yaw, hw: (w * CELL) / 2, hd: (d * CELL) / 2, cells: [], seg, variant: v, ask: asked,
+        label: e.model.label, brand: exact ? brand || undefined : e.model.brand ?? (brand || undefined), model: e.model, state: prog >= 1 ? 'active' : 'building', progress: Math.min(1, prog),
         buildDays: 5, cap: capacityFor(zt, level, w * d), occ, lv: 30, levelProgress: lp, born: this.day, inst: -1, buildInst: -1, buildH: 1, emitT: fx.float() * 5,
       };
       this.list.set(b.id, b);
       this.hash.insert(b, x - b.hw - b.hd, z - b.hw - b.hd, x + b.hw + b.hd, z + b.hw + b.hd);
-      for (const c of this.zones.cellsNear(x, z, b.hw + b.hd + 4)) if (this.contains(b, c.x, c.z, -1)) { c.bld = b.id; b.cells.push(c); }
+      if (exact && cellIds) { for (const cid of cellIds) { const c = this.zones.cells.get(cid); if (c) { c.bld = b.id; b.cells.push(c); } } }
+      else for (const c of this.zones.cellsNear(x, z, b.hw + b.hd + 4)) if (this.contains(b, c.x, c.z, -1)) { c.bld = b.id; b.cells.push(c); }
       this.terrain.flattenLot(this.corners(b), y, zt.startsWith('res') ? Paint.Lawn : Paint.Paved);
       this.trees.cut(x - b.hw - b.hd, z - b.hw - b.hd, x + b.hw + b.hd, z + b.hw + b.hd, (tx, tz) => this.contains(b, tx, tz, 1.5));
       this.placeInstance(b, e.id);
+      if (exact) { b.progress = prog; b.state = open ? 'active' : 'building'; b.buildDays = buildDays!; b.lv = lv!; b.born = born!; if (abandoned! >= 0) b.abandoned = abandoned; this.writeMatrix(b, b.state === 'active' ? 1 : easeGrow(b.progress)); if (b.state === 'active') this.dropScaffold(b); }
     }
     this.zones.markOverlayDirty();
   }
@@ -658,7 +693,9 @@ export class Buildings {
     const max = MAX_LEVEL[b.zone];
     if (b.level >= max) return;
     b.level++;
-    const e = this.modelFor(b.zone, b.level, b.w, b.d, this.rng.int(0, variantsFor(b.zone) - 1), b.brand);
+    b.variant = this.rng.int(0, variantsFor(b.zone) - 1);
+    b.ask = b.brand ?? '';
+    const e = this.modelFor(b.zone, b.level, b.w, b.d, b.variant, b.brand);
     b.model = e.model;
     b.label = e.model.label;
     b.cap = capacityFor(b.zone, b.level, b.w * b.d);

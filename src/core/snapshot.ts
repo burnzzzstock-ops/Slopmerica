@@ -29,6 +29,22 @@ const TYPED: Record<string, new (n: number) => ArrayLike<number> & { set(a: Arra
   Float64Array, Float32Array, Int32Array, Uint32Array, Int16Array, Uint16Array, Int8Array, Uint8Array, Uint8ClampedArray,
 };
 const NO_REFS: Refs = { out: () => undefined, in: () => null };
+/** a typed array this long or longer is written as its bytes (base64): exact, and a fifth of the text */
+const BYTES_FROM = 16;
+
+/** the bytes of a typed array as base64 */
+export function toBase64(a: ArrayBufferView): string {
+  const u = new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
+  let s = '';
+  for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+/** base64 back to bytes */
+export function fromBase64(b64: string): Uint8Array {
+  const s = atob(b64), u = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
+  return u;
+}
 const isPlain = (o: object) => { const p = Object.getPrototypeOf(o); return p === Object.prototype || p === null; };
 
 /** `value` as JSON that decode() turns back into the same structure. */
@@ -76,6 +92,7 @@ export function encode(value: unknown, refs: Refs = NO_REFS, opts: EncodeOptions
     if (ArrayBuffer.isView(o)) {
       const name = o.constructor.name;
       if (!TYPED[name]) return fail(`a ${name}`);
+      if ((o as unknown as ArrayLike<number>).length >= BYTES_FROM) return wrap({ $tb: [name, toBase64(o)] });
       return wrap({ $ta: [name, Array.from(o as unknown as ArrayLike<number>, num)] });
     }
     if (Array.isArray(o)) {
@@ -133,6 +150,13 @@ export function decode<T = unknown>(json: Json, refs: Refs = NO_REFS): T {
       const [name, vals] = j.$ta as [string, Json[]];
       const a = new TYPED[name](vals.length);
       a.set(vals.map(num));
+      if (def) byId.set(def, a);
+      return a;
+    }
+    if ('$tb' in j) {
+      const [name, b64] = j.$tb as [string, string];
+      const bytes = fromBase64(b64);
+      const a = new (TYPED[name] as unknown as new (b: ArrayBufferLike) => ArrayBufferView)(bytes.buffer);
       if (def) byId.set(def, a);
       return a;
     }

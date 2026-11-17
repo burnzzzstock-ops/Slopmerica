@@ -4,6 +4,7 @@ import { MAX_LEVEL, ZONE_TYPES, type GameTime, type WorldEvents, type ZoneType }
 import { Emitter } from '../core/events';
 import { clamp } from '../core/math';
 import { Rng } from '../core/rng';
+import { decodeFields, encodeFields, type Json } from '../core/snapshot';
 import { isZoned, type Bld, type Buildings } from './buildings';
 import type { RoadNetwork } from '../roads/network';
 import type { Zoning, ZCell } from '../zones/zoning';
@@ -825,6 +826,25 @@ export class Sim {
     // milestones already passed (saves from before milestones get theirs back, without the grants)
     MILESTONES.forEach((m, i) => { if (i > 0 && Math.max(pop, this.peakSeen) >= m.pop) this.unlocked.add(tierKey(i)); });
   }
+
+  /**
+   * Every field that shapes the next day, whole (serializeExtra() below keeps the last few hundred entries and rounds the cash:
+   * enough to carry on plausibly, not to carry on identically). A save has both; this one wins when it is there.
+   */
+  serializeExact(): Json {
+    return encodeFields(this as unknown as Record<string, unknown>, Sim.EXACT);
+  }
+  restoreExact(j: Json | undefined) {
+    decodeFields(this as unknown as Record<string, unknown>, j);
+    this.fcCache = null;
+    this.growthCache = null;
+  }
+  private static readonly EXACT = [
+    'workers', 'jobsCap', 'jobsFilled', 'unemployment', 'demand', 'demandRaw', 'demandWhy', 'demandParts', 'demandHistory',
+    'ledger', 'lastWeek', 'transactions', 'weekStartCash', 'lastWeekCash', 'ledgerDrift', 'history', 'coverage', 'maxedPct', 'sprawlPct',
+    'naturePct', 'ended', 'bankruptWeeks', 'dayAcc', 'lastWhole', 'popMarks', 'natureMarks', 'sprawlMarks', 'unlocked', 'growthMul', 'growthAcc',
+    'peakSeen', 'popLog', 'alerts', 'sprawlSeen', 'sprawlCovered', 'sprawlCursor', 'taxRate', 'loans', 'population', 'money', 'day',
+  ] as const;
 
   /** State that shapes what happens next but isn't in the core save fields. */
   serializeExtra() {

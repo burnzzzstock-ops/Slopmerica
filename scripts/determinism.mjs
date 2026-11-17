@@ -42,7 +42,7 @@ async function open(quality, save) {
   }, { quality, save: save ?? null });
   await page.addInitScript(seededInit, { seed, rng: seededRandom.toString() });
   if (save) {
-    await page.goto(`${base}/#seed=${seed}`, { waitUntil: 'load', timeout: 180000 });
+    await page.goto(`${base}/`, { waitUntil: 'load', timeout: 180000 });   // (no seed on the address: the save carries it)
     await page.waitForSelector('#continue', { timeout: 180000 });
     await page.click('#continue', { timeout: 240000 });
   } else {
@@ -80,7 +80,8 @@ const layBlock = () => {
  */
 const advance = ({ to, how, player }) => {
   const g = window.__game, d = window.__dbg;
-  const D = (window.__det ??= { base: g.steps, want: new Map(), prints: {}, hooked: false });
+  // (days are counted from step 0 of the county, which a save carries: a reloaded page goes on counting from where the save was)
+  const D = (window.__det ??= { base: 0, want: new Map(), prints: {}, hooked: false });
   const at = (day) => D.base + g.stepsFor(day);
   if (!D.hooked) {
     D.hooked = true;
@@ -109,6 +110,7 @@ const advance = ({ to, how, player }) => {
 };
 
 const runs = {};
+const roundTrips = [];
 for (const mode of MODES) {
   const how = mode === 'f30' || mode === 'f144' ? mode : 'stepped';
   const quality = mode === 'low' || mode === 'ultra' ? mode : QUALITY;
@@ -120,12 +122,31 @@ for (const mode of MODES) {
   let lastReload = 0;
   for (const to of marks) {
     if (mode === 'reload' && to - lastReload >= RELOAD) {
+      const before = await page.evaluate(() => window.__dbg.fingerprint());
+      const partsBefore = await page.evaluate(() => window.__dbg.dump());
       const save = await page.evaluate(() => { window.__dbg.save(); return localStorage.getItem('slopmerica.save.v1'); });
       const view = await page.evaluate(() => { const r = window.__game.rts; return [r.target.x, r.target.z, r.distance, r.yaw, r.pitch]; });
       await page.close();
       page = await open(quality, save);
       await page.evaluate(([x, z, dist, yaw, pitch]) => window.__game.rts.setView(x, z, dist, yaw, pitch, true), view);
       if (TOWN === 'player') await page.evaluate(installLatePlayer, { resume: true });
+      // what came back different, before a single step: state the save did not carry (or did not put back)
+      const after = await page.evaluate(() => window.__dbg.fingerprint());
+      const lost = Object.keys(before).filter((k) => before[k] !== after[k]);
+      const diffs = [];
+      if (lost.length) {
+        const partsAfter = await page.evaluate(() => window.__dbg.dump());
+        for (const sys of lost) {
+          const A = partsBefore[sys], B = partsAfter[sys];
+          if (!A || !B) continue;
+          const at = [];
+          for (let i = 0; i < Math.max(A.length, B.length) && at.length < 6; i++) if (A[i] !== B[i]) at.push(`[${i}] ${String(A[i]).slice(0, 60)} -> ${String(B[i]).slice(0, 60)}`);
+          diffs.push(`    ${sys} (${A.length} values before, ${B.length} after): ${at.join('; ')}`);
+          // DUMP=dir: every value of each differing system, before and after, one a line (diff the two files)
+          if (process.env.DUMP) { writeFileSync(`${process.env.DUMP}/${sys}.before.txt`, A.join('\n')); writeFileSync(`${process.env.DUMP}/${sys}.after.txt`, B.join('\n')); }
+        }
+      }
+      roundTrips.push({ day: before.day, bytes: save.length, lost, diffs });
       lastReload = to;
     }
     prints[to] = await page.evaluate(advance, { to, how, player: TOWN === 'player' });
@@ -150,6 +171,11 @@ for (const sys of systems) {
     return String(at ?? '-').padEnd(9);
   });
   console.log(`${sys.padEnd(16)}${cells.join('')}`);
+}
+for (const r of roundTrips) {
+  console.log(`save at day ${r.day} (${(r.bytes / 1024).toFixed(0)} kB): ${r.lost.length ? `came back different in ${r.lost.join(', ')}` : 'every system came back the same'}`);
+  for (const d of r.diffs ?? []) console.log(d);
+  if (r.lost.length) bad++;
 }
 if (pageErrors.length) { bad++; console.log(`page errors: ${[...new Set(pageErrors)].slice(0, 3).join(' | ')}`); }
 console.log(bad ? `FAIL ${bad} system/mode pairs differ` : `OK   every mode gives the same city as "${ref}" on every system to day ${DAYS}`);

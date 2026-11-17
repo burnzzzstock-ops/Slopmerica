@@ -33,6 +33,19 @@ test('Maps, Sets and typed arrays keep their kind, their order and their values'
   assert.deepEqual([...r.u], [0, 255]);
 });
 
+test('a long typed array is written as its bytes and comes back bit for bit', () => {
+  const f = new Float32Array(5000);
+  for (let i = 0; i < f.length; i++) f[i] = Math.sin(i * 1.7) * 1000 + (i % 97 === 0 ? NaN : 0);
+  const d = new Float64Array([Math.PI, -0, 1e-310, Infinity, 5e-324, ...Array(20).fill(0.1)]);
+  const j = encode({ f, d });
+  assert.ok('$tb' in j.f && '$tb' in j.d, 'as bytes');
+  assert.ok(JSON.stringify(j).length < f.length * 6, 'and smaller than the numbers as text');
+  const r = round({ f, d });
+  assert.ok(r.f instanceof Float32Array && r.d instanceof Float64Array && r.f.length === 5000 && r.d.length === d.length);
+  assert.deepEqual(new Uint8Array(r.f.buffer), new Uint8Array(f.buffer));
+  assert.deepEqual(new Uint8Array(r.d.buffer), new Uint8Array(d.buffer));
+});
+
 test('two fields pointing at one object still point at one object; a cycle is a cycle', () => {
   const curve = { node: 7, t: 0.25 };
   const car = { junction: curve, prevJ: curve, self: null, list: [] };

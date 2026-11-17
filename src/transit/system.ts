@@ -4,6 +4,7 @@ import { WATER } from '../config';
 import { closestOnSampled, clamp, lerp, locate, norm, sub } from '../core/math';
 import { hash2, Rng, streamSeed } from '../core/rng';
 import { TOP_SPEED } from '../core/time';
+import { decode, encode, type Json } from '../core/snapshot';
 import type { Game, Selection } from '../game';
 import type { RSeg } from '../roads/network';
 import { ROAD_TYPES } from '../roads/roadTypes';
@@ -340,6 +341,18 @@ export class TransitSystem {
     }
   }
 
+  /** The buses in service (where each run is, how long it still dwells), the counters and the dice: what save() leaves out. */
+  saveExact(): Json {
+    return encode({ runs: this.runs, stats: this.stats, fleetT: this.fleetT, rng: this.rng.state, modeRoll: this.modeRoll });
+  }
+  loadExact(data: Json) {
+    const d = decode<{ runs: Map<string, BusRun>; stats: TransitStats; fleetT: number; rng: number; modeRoll: number }>(data);
+    this.runs.clear();
+    for (const [k, v] of d.runs) this.runs.set(k, v);
+    Object.assign(this.stats, d.stats);
+    this.fleetT = d.fleetT; this.rng.state = d.rng; this.modeRoll = d.modeRoll;
+  }
+
   save(): TransitSave {
     return { fare: this.fare, nextLine: this.nextLine, nextStop: this.nextStop, modeRoll: this.modeRoll, lines: [...this.lines.values()].map((l) => ({ ...l, stopIds: [...l.stopIds] })), stops: [...this.stops.values()].map((s) => ({ ...s })) };
   }
@@ -613,9 +626,22 @@ export class TransitSystem {
     if (!depot || !stop) { run.dwell = 2; return; }
     const from = run.currentStop === null ? depot : this.stopProxy(this.stops.get(run.currentStop) ?? stop);
     run.driving = true;
-    const car = this.g.traffic.dispatch('cityBus', from, this.stopProxy(stop), `running ${line.name}`, `Stop ${run.nextIndex + 1}`, this.g.hour, { sober: true, local: true, onDone: (_car, arrived) => {
+    const car = this.g.traffic.dispatch('cityBus', from, this.stopProxy(stop), `running ${line.name}`, `Stop ${run.nextIndex + 1}`, this.g.hour, { sober: true, local: true, done: ['busAtStop', run.lineId, run.slot, stop.id] });
+    if (!car) { run.driving = false; run.dwell = 2; }
+  }
+
+  /** called once the system exists: register how its buses finish their trips */
+  wire() { this.tripHandlers(); }
+
+  /** How buses finish their trips: by name, so a bus on the road survives a save (Traffic.handlers). */
+  private tripHandlers() {
+    // a bus reached its next stop (or could not): riders board, it dwells, the run moves on
+    this.g.traffic.handlers.set('busAtStop', (_car, arrived, lineId, slot, stopId) => {
+      const run = this.runs.get(`${lineId}:${slot}`);
+      if (!run) return;
+      const line = this.lines.get(lineId), stop = this.stops.get(stopId);
       run.driving = false;
-      if (arrived) {
+      if (arrived && line && stop) {
         run.currentStop = stop.id;
         stop.boardings += Math.max(1, Math.round(line.lastWeekRiders / Math.max(1, line.stopIds.length * 14)));
         run.nextIndex = (run.nextIndex + 1) % line.stopIds.length;
@@ -623,8 +649,9 @@ export class TransitSystem {
         run.dwell = 8 + this.rng.float() * 12;
       } else run.dwell = 3;
       if (!this.lines.has(run.lineId)) run.returning = true;
-    } });
-    if (!car) { run.driving = false; run.dwell = 2; }
+    });
+    // a bus taken off its line is back at the depot
+    this.g.traffic.handlers.set('busHome', (_car, _arrived, lineId, slot) => { this.runs.delete(`${lineId}:${slot}`); this.cleanupUnusedStops(); });
   }
 
   private returnRun(run: BusRun) {
@@ -632,7 +659,7 @@ export class TransitSystem {
     const depot = this.depots()[0], stop = run.currentStop !== null ? this.stops.get(run.currentStop) : null;
     if (!depot || !stop) { this.runs.delete(run.key); this.cleanupUnusedStops(); return; }
     run.driving = true; run.returning = true;
-    const car = this.g.traffic.dispatch('cityBus', this.stopProxy(stop), depot, 'deadheading to depot', depot.label, this.g.hour, { sober: true, local: true, onDone: () => { this.runs.delete(run.key); this.cleanupUnusedStops(); } });
+    const car = this.g.traffic.dispatch('cityBus', this.stopProxy(stop), depot, 'deadheading to depot', depot.label, this.g.hour, { sober: true, local: true, done: ['busHome', run.lineId, run.slot] });
     if (!car) { this.runs.delete(run.key); this.cleanupUnusedStops(); }
   }
 
@@ -839,11 +866,13 @@ registerInspector((sel, g) => transitFor(g)?.inspector(sel) ?? null);
 
 registerSystem({
   id: 'transit',
-  init(g) { new TransitSystem(g).rng.state = streamSeed(g.seed, 'transit'); },
+  init(g) { const t = new TransitSystem(g); t.rng.state = streamSeed(g.seed, 'transit'); t.wire(); },
   frame(g, dt) { transitFor(g)?.frame(dt); },
   step(g, dt) { transitFor(g)?.step(dt); },
   daily(g) { transitFor(g)?.daily(); },
   weekly(g) { transitFor(g)?.weekly(); },
   save(g) { return transitFor(g)?.save(); },
+  saveExact(g) { return transitFor(g)?.saveExact() ?? null; },
+  loadExact(g, data) { transitFor(g)?.loadExact(data); },
   load(g, data) { transitFor(g)?.load(data); },
 });

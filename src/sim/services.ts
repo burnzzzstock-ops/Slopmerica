@@ -25,6 +25,7 @@ import { CELL, HALF, WATER, WORLD } from '../config';
 import { INFO_OVERLAY, Paint } from '../world/terrain';
 import { Fields } from './pollution';
 import { fx, Rng, streamSeed } from '../core/rng';
+import { decode, encode, fromBase64, toBase64, type Json } from '../core/snapshot';
 import { ProblemIcons, type Problem, type ProblemItem } from './serviceIcons';
 import type { FeedContext, FeedEventKind, VehicleKind, ZoneType } from '../contracts';
 import type { DemandKey, LossCause } from './sim';
@@ -382,6 +383,10 @@ const S = {
   loaded: false,
   checkedLegacy: false,
 };
+
+/** the fields of S that are the services' state (the rest is wiring, drawing and things rebuilt each day) */
+const SERVICES_EXACT = ['b', 'f', 'graphDirty', 'compDirty', 'linksSeen', 'linkSaid', 'linked', 'facSig', 'comp', 'compEdge', 'utilT', 'covT', 'fullT', 'util', 'week', 'counts',
+  'garbage', 'crisis', 'abandonedDays', 'demolishWarned', 'cutWas', 'graceUntil', 'day', 'loaded', 'checkedLegacy'] as const;
 
 function bsOf(b: Bld): BS {
   let s = S.b.get(b.id);
@@ -951,7 +956,7 @@ function garbage(g: Game, fac: Fac[], zoned: ZB[]) {
   S.week.trash += exported;
   if (exported > 0 && uncovered.length && S.rng.float() < 0.25) {
     const b = uncovered[0];
-    g.traffic.dispatch('garbageTruck', 'edge', b, 'county waste contract', b.label, g.hour, { sober: true, local: false, onDone: (_c, ok) => { if (ok && g.buildings.list.has(b.id)) g.traffic.dispatch('garbageTruck', b, 'edge', 'hauling trash out of county', 'the next county', g.hour, { sober: true, local: false }); } });
+    g.traffic.dispatch('garbageTruck', 'edge', b, 'county waste contract', b.label, g.hour, { sober: true, local: false, done: ['contractHaul', b.id] });
   }
   // why each building's trash is where it is (the panel, the card and the icons say it)
   const why: Record<TrashWhy, number> = { full: 0, reach: 0, capacity: 0, clearing: 0, queued: 0 };
@@ -1106,14 +1111,24 @@ function dispatchFrom(g: Game, from: Bld, to: Bld, purpose: string, dest: string
   const fs = fsOf(from);
   if (fs.out >= 3) return;
   const kind = d.vehicle;
-  const car = g.traffic.dispatch(kind, from, to, purpose, dest, g.hour, {
-    sober: true,
-    onDone: (_c, arrived) => {
-      fs.out = Math.max(0, fs.out - 1);
-      if (arrived && g.buildings.list.has(from.id) && g.buildings.list.has(to.id)) g.traffic.dispatch(kind, to, from, 'heading back to base', from.label, g.hour, { sober: true });
-    },
-  });
+  const car = g.traffic.dispatch(kind, from, to, purpose, dest, g.hour, { sober: true, done: ['serviceCall', from.id, to.id] });
   if (car) fs.out++;
+}
+
+/** How the vehicles the services send finish their trips: by name, so a trip under way survives a save (Traffic.handlers). */
+function tripHandlers(g: Game) {
+  // the county contractor's truck has loaded up: it hauls the trash out of the county
+  g.traffic.handlers.set('contractHaul', (_c, ok, bldId) => {
+    const b = g.buildings.list.get(bldId);
+    if (ok && b) g.traffic.dispatch('garbageTruck', b, 'edge', 'hauling trash out of county', 'the next county', g.hour, { sober: true, local: false });
+  });
+  // a service vehicle reached its call (or gave up): it is no longer out, and drives back to base
+  g.traffic.handlers.set('serviceCall', (_c, arrived, fromId, toId) => {
+    const from = g.buildings.list.get(fromId), to = g.buildings.list.get(toId), fs = S.f.get(fromId);
+    if (fs) fs.out = Math.max(0, fs.out - 1);
+    const kind = from && defOf(from)?.vehicle;
+    if (arrived && from && to && kind) g.traffic.dispatch(kind, to, from, 'heading back to base', from.label, g.hour, { sober: true });
+  });
 }
 
 function fields(g: Game, fac: Fac[], zoned: ZB[]) {
@@ -2367,6 +2382,7 @@ registerSystem({
     if (S.inited) return;
     S.inited = true;
     S.rng.state = streamSeed(g.seed, 'services');
+    tripHandlers(g);
     initHooks(g);
     S.icons = new ProblemIcons(g.scene);
     g.problemAt = (cx, cy) => {
@@ -2390,6 +2406,20 @@ registerSystem({
     const fac: [number, number, number][] = [];
     for (const [id, fs] of S.f) { const b = g.buildings.list.get(id); if (b && fs.stored > 0) fac.push([Math.round(b.x), Math.round(b.z), Math.round(fs.stored)]); }
     return { v: 1, bld, fac, pol: S.fields.save(), counts: S.counts, grace: S.graceUntil, week: { ...S.week }, crisis: { ...S.crisis } };
+  },
+  // the counters, the fires, the air, the coverage worked out at the last rebuild, the dice: what save() above rounds or drops
+  saveExact(_g, refs) {
+    const part: Record<string, unknown> = {};
+    for (const k of SERVICES_EXACT) part[k] = (S as unknown as Record<string, unknown>)[k];
+    return { rng: S.rng.state, v: encode(part, refs), pol: toBase64(S.fields.pol), noise: toBase64(S.fields.noise) };
+  },
+  loadExact(_g, data, refs) {
+    const d = data as { rng: number; v: Json; pol: string; noise: string };
+    const part = decode<Record<string, unknown>>(d.v, refs);
+    for (const k of Object.keys(part)) (S as unknown as Record<string, unknown>)[k] = part[k];
+    S.rng.state = d.rng;
+    S.fields.pol.set(new Float32Array(fromBase64(d.pol).buffer));
+    S.fields.noise.set(new Float32Array(fromBase64(d.noise).buffer));
   },
   load(g, data) {
     const d = data as { bld?: [number, number, number, number, number, number, number?][]; fac?: [number, number, number][]; pol?: [number, number][]; counts?: typeof S.counts; grace?: number; week?: typeof S.week; crisis?: typeof S.crisis } | undefined;

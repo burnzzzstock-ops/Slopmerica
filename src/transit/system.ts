@@ -5,6 +5,8 @@ import { closestOnSampled, clamp, lerp, locate, norm, sub } from '../core/math';
 import { hash2, Rng, streamSeed } from '../core/rng';
 import { TOP_SPEED } from '../core/time';
 import { decode, encode, type Json } from '../core/snapshot';
+import type { Car } from '../agents/traffic';
+import type { BusInfo } from '../contracts';
 import type { Game, Selection } from '../game';
 import type { RSeg } from '../roads/network';
 import { ROAD_TYPES } from '../roads/roadTypes';
@@ -48,6 +50,9 @@ interface BusRun {
   driving: boolean;
   returning: boolean;
 }
+
+/** a line runs ten buses at most, so a bus is told from the others on its line by a number under 16 (busOf, bus) */
+const BUS_SLOTS = 16;
 
 interface WalkAccess { lineId: number; distance: number }
 interface RouteResult { distance: number; nodes: number[] }
@@ -628,6 +633,42 @@ export class TransitSystem {
     run.driving = true;
     const car = this.g.traffic.dispatch('cityBus', from, this.stopProxy(stop), `running ${line.name}`, `Stop ${run.nextIndex + 1}`, this.g.hour, { sober: true, local: true, done: ['busAtStop', run.lineId, run.slot, stop.id] });
     if (!car) { run.driving = false; run.dwell = 2; }
+  }
+
+  // ---- the buses, for the camera and the inspector: read-only, nothing here changes the simulation ----
+
+  /** The bus a car is driving a leg for, as a number that lasts for as long as the bus is in service, or null. */
+  busOf(c: Car): number | null {
+    if (c.kind !== 'cityBus' || !c.done || (c.done[0] !== 'busAtStop' && c.done[0] !== 'busHome')) return null;
+    return this.runs.has(`${c.done[1]}:${c.done[2]}`) ? Number(c.done[1]) * BUS_SLOTS + Number(c.done[2]) : null;
+  }
+
+  private runOf(id: number) { return this.runs.get(`${Math.floor(id / BUS_SLOTS)}:${id % BUS_SLOTS}`); }
+
+  private busInfo(run: BusRun): BusInfo {
+    const line = this.lines.get(run.lineId);
+    const car = run.driving ? this.g.traffic.cars.find((c) => c.kind === 'cityBus' && !!c.done && c.done[1] === run.lineId && c.done[2] === run.slot) : undefined;
+    const at = !run.driving && run.currentStop !== null && line ? line.stopIds.indexOf(run.currentStop) : -1;
+    return {
+      id: run.lineId * BUS_SLOTS + run.slot, lineId: run.lineId, line: line?.name ?? '', carId: car?.id ?? null,
+      atStop: at >= 0 ? at + 1 : null, nextStop: line && !run.returning ? run.nextIndex + 1 : null, stops: line?.stopIds.length ?? 0, returning: run.returning || !line,
+    };
+  }
+
+  /** what a bus is doing now, or null once it has left service */
+  bus(id: number): BusInfo | null { const run = this.runOf(id); return run ? this.busInfo(run) : null; }
+
+  /** every bus in service */
+  buses(): BusInfo[] { return [...this.runs.values()].map((run) => this.busInfo(run)); }
+
+  /** Where a bus that is not on the road waits: at the stop it reached, facing the way it drives on, or at its depot before the first. */
+  busWaitsAt(id: number): { x: number; y: number; z: number; yaw: number } | null {
+    const run = this.runOf(id);
+    if (!run) return null;
+    const stop = run.currentStop !== null ? this.stops.get(run.currentStop) : undefined;
+    if (stop) return { x: stop.x, y: stop.y, z: stop.z, yaw: stop.yaw + (stop.side < 0 ? Math.PI : 0) };
+    const depots = this.depots(), depot = depots[run.slot % Math.max(1, depots.length)];
+    return depot ? { x: depot.x, y: depot.y, z: depot.z, yaw: depot.yaw } : null;
   }
 
   /** called once the system exists: register how its buses finish their trips */

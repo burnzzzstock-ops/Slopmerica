@@ -100,7 +100,7 @@ export interface Car {
   posed: boolean;
   /** how many frames running draw() has sent this standing pose (after STILL_FRAMES it is left alone) */
   sent: number;
-  /** where it was last drawn: x, y, z, heading (between its last two steps; what a camera following it, or a test of smooth motion, reads) */
+  /** where it was last drawn: x, y, z, heading (between its last two steps; what a camera following it, or a test of smooth motion, reads). Its place itself until it is first drawn; nothing before `posed` */
   shown: Float64Array;
   crashYaw: number;
   crashRoll: number;
@@ -1326,7 +1326,7 @@ export class Traffic {
     for (const c of this.cars) {
       c.h = this.renderer.add(c.kind, c.paint);
       c.toSpot = null; c.fromSpot = null; c.parked = false; c.drawn = undefined;
-      c.sent = 0; c.shown = new Float64Array(4); c.smokeT = fx.float() * 2;
+      c.sent = 0; c.shown = c.posed ? Float64Array.of(c.pose[0], c.pose[1], c.pose[2], c.pose[3]) : new Float64Array(4); c.smokeT = fx.float() * 2;
     }
     this.listPool.length = 0;
     this.segDirIndex = null;
@@ -2436,7 +2436,8 @@ export class Traffic {
   private setPose(c: Car, x: number, y: number, z: number, yaw: number, pitch: number, roll: number) {
     const P = c.pose;
     P[0] = x; P[1] = y; P[2] = z; P[3] = yaw; P[4] = pitch; P[5] = roll;
-    if (!c.posed) { c.pose0.set(P); c.posed = true; }
+    // (its first place is also where it is first shown: a camera told to follow it before its first frame is not sent to 0, 0)
+    if (!c.posed) { c.pose0.set(P); c.posed = true; const S = c.shown; S[0] = x; S[1] = y; S[2] = z; S[3] = yaw; }
     c.sent = 0;
   }
 

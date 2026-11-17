@@ -347,10 +347,33 @@ export interface ScalarField {
   version: number;
 }
 
-/** Something the camera can follow. Ids: `game.traffic.cars[].id`, `game.peds.peds[].id`, `game.buildings.list` keys. */
-export type ViewTarget = { kind: 'car'; id: number } | { kind: 'person'; id: number } | { kind: 'building'; id: number };
+/**
+ * Something the camera can follow. Ids: `game.traffic.cars[].id`, `game.peds.peds[].id`, `game.buildings.list` keys, and for a
+ * bus `game.fields.busOf(car id)`. A bus is followed for as long as it is in service: a new car drives each leg of its line
+ * (the one before it ends at the stop), so following the car lets go at the first stop and following the bus does not.
+ */
+export type ViewTarget = { kind: 'car'; id: number } | { kind: 'person'; id: number } | { kind: 'building'; id: number } | { kind: 'bus'; id: number };
 /** Where a ViewTarget is right now: position (m), heading (radians, 0 = +z, as the models face), speed (m/s) and its size (m). */
 export interface ViewPose { x: number; y: number; z: number; yaw: number; speed: number; radius: number }
+
+/** A bus in service (`game.fields.bus`). Stops are numbered from 1 in the order the line visits them. */
+export interface BusInfo {
+  /** the id a ViewTarget of kind 'bus' takes; it lasts until the bus leaves service */
+  id: number;
+  lineId: number;
+  /** the line's name */
+  line: string;
+  /** the car driving this leg (`game.traffic.cars[].id`), or null while the bus waits at a stop or at the depot */
+  carId: number | null;
+  /** the stop it is waiting at, or null while it drives and before its first stop */
+  atStop: number | null;
+  /** the stop it is driving to or will leave for, or null when it is going back to the depot for good */
+  nextStop: number | null;
+  /** how many stops its line has */
+  stops: number;
+  /** taken off its line (the line was deleted or given fewer buses): it drives to the depot and leaves service there */
+  returning: boolean;
+}
 
 /**
  * `game.fields`: the simulation's state, read-only, for rendering and audio. Cheap enough to call per frame unless
@@ -373,4 +396,10 @@ export interface WorldFields {
   naturePct(): number;
   /** where a follow target is now, or null when it no longer exists (stop following) */
   poseOf(target: ViewTarget): ViewPose | null;
+  /** the bus a car is driving a leg for (the id of a ViewTarget of kind 'bus'), or null when the car is no bus in service */
+  busOf(carId: number): number | null;
+  /** what a bus is doing now, or null once it has left service */
+  bus(id: number): BusInfo | null;
+  /** every bus in service, in the order they entered it */
+  buses(): BusInfo[];
 }

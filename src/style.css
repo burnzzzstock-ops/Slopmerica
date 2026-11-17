@@ -3496,6 +3496,10 @@ a {
 .ui-icon svg { display: block; }
 .chip .ui-icon { margin: -3px 4px -3px -2px; }
 .more-btn .ui-icon, .ti .ui-icon, .ci .ui-icon { margin: 0; }
+/* on the toolbar the icon takes the line box the emoji had (1.1em), so the bar is as tall as it was and every drawer and card
+   placed against it still clears it (overlaptest: 3 px of drawer over the bar); the drawing itself is 1.4em and overhangs */
+.ti .ui-icon { height: 1.1em; align-items: center; }
+.ti .ui-icon svg { width: 1.4em; height: 1.4em; flex: none; }
 
 /* ---- a phone's map stays in view (scripts/phonefree.mjs measures the share of the screen that is free map) ---- */
 @media (pointer: coarse) and (max-width: 760px) {

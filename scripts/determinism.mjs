@@ -37,6 +37,7 @@ async function open(quality, save) {
     try {
       localStorage.setItem('slopmerica.quality', quality); localStorage.setItem('slopmerica.onboarded', '1'); localStorage.setItem('slopmerica.firstSteps', '1');
       localStorage.setItem('slopmerica.emergencySpeed', 'off');
+      localStorage.setItem('slopmerica.packFrom', '0');   // every save in this test goes through the packer, however small the town
       if (save) localStorage.setItem('slopmerica.save.v1', save);
     } catch { /* */ }
   }, { quality, save: save ?? null });

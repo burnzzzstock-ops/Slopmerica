@@ -77,9 +77,9 @@ export class Ambience {
     this.rainHiss = bed(s.loop('white'), filt('highpass', 1000), filt('lowpass', 8000));
     this.rainDrum = bed(s.loop('pink'), filt('bandpass', 420, 0.6));
     const babble = c.createGain();
-    babble.gain.value = 0.55;
-    wander(7, 1.6, babble.gain);
-    this.creek = bed(s.loop('pink'), filt('bandpass', 1300, 1.1), babble);
+    babble.gain.value = 0.65;
+    wander(3.2, 0.55, babble.gain);
+    this.creek = bed(s.loop('pink'), filt('bandpass', 620, 0.75), filt('lowpass', 1850), babble);
     this.traffic = bed(s.loop('brown'), filt('lowpass', 240));
     const buzz = c.createGain();
     buzz.gain.value = 0.5;

@@ -39,15 +39,15 @@ function honk(s: Synth, out: AudioNode, v: number, pitch = 1, t = 0, len = 0.32,
 
 export const SFX: Record<SfxKind, SfxRecipe> = {
   click(s, out, _rev, v) {
-    s.tone(out, { f0: 2300, f1: 1500, dur: 0.035, a: 0.001, gain: 0.16 * v });
-    s.burst(out, { type: 'highpass', f0: 5200, dur: 0.018, a: 0.001, gain: 0.04 * v });
+    s.tone(out, { type: 'triangle', f0: 1850, f1: 1120, dur: 0.042, a: 0.001, gain: 0.24 * v });
+    s.burst(out, { type: 'bandpass', f0: 3800, q: 1.5, dur: 0.022, a: 0.001, gain: 0.08 * v });
   },
   build(s, out, rev, v) {
-    s.tone(out, { f0: 170, f1: 58, dur: 0.2, a: 0.002, gain: 0.5 * v });
-    s.burst(out, { type: 'bandpass', f0: 950, q: 2.2, dur: 0.07, gain: 0.22 * v });
-    s.tone(out, { type: 'triangle', f0: 784, dur: 0.24, t: 0.05, gain: 0.1 * v });
-    s.tone(out, { type: 'triangle', f0: 1175, dur: 0.34, t: 0.11, gain: 0.09 * v });
-    s.tone(rev, { type: 'triangle', f0: 1175, dur: 0.3, t: 0.11, gain: 0.05 * v });
+    s.tone(out, { f0: 165, f1: 58, dur: 0.19, a: 0.002, gain: 0.48 * v });
+    s.burst(out, { type: 'bandpass', f0: 1050, q: 2.0, dur: 0.06, gain: 0.24 * v });
+    s.tone(out, { type: 'triangle', f0: 587.3, f1: 592, t: 0.025, dur: 0.18, a: 0.003, gain: 0.13 * v });
+    s.tone(out, { type: 'triangle', f0: 880, dur: 0.26, t: 0.07, a: 0.003, gain: 0.12 * v });
+    s.tone(rev, { type: 'triangle', f0: 880, dur: 0.24, t: 0.07, a: 0.003, gain: 0.05 * v });
   },
   bulldoze(s, out, rev, v) {
     s.burst(out, { color: 'brown', type: 'lowpass', f0: 1100, f1: 180, dur: 0.75, a: 0.01, gain: 0.8 * v });
@@ -55,22 +55,25 @@ export const SFX: Record<SfxKind, SfxRecipe> = {
     for (let i = 0; i < 6; i++) s.burst(out, { type: 'bandpass', f0: rnd(1200, 3400), q: 3, t: rnd(0, 0.4), dur: rnd(0.04, 0.09), gain: rnd(0.08, 0.16) * v });
     s.burst(rev, { color: 'brown', type: 'lowpass', f0: 600, dur: 0.5, gain: 0.3 * v });
   },
-  zone(s, out, _rev, v) {
-    s.burst(out, { color: 'pink', type: 'bandpass', f0: 600, f1: 3400, q: 1.4, dur: 0.24, a: 0.05, gain: 0.14 * v });
-    s.tone(out, { type: 'sine', f0: 1320, dur: 0.09, t: 0.12, gain: 0.07 * v });
+  zone(s, out, rev, v) {
+    s.burst(out, { color: 'pink', type: 'bandpass', f0: 700, f1: 2400, q: 1.4, dur: 0.16, a: 0.02, gain: 0.14 * v });
+    s.tone(out, { type: 'triangle', f0: 523.25, f1: 659.25, dur: 0.11, t: 0.01, a: 0.003, gain: 0.16 * v });
+    s.tone(out, { type: 'sine', f0: 1046.5, dur: 0.14, t: 0.055, a: 0.003, gain: 0.11 * v });
+    s.tone(rev, { type: 'sine', f0: 1046.5, dur: 0.14, t: 0.055, a: 0.003, gain: 0.04 * v });
   },
   cash(s, out, rev, v) {
-    s.burst(out, { type: 'bandpass', f0: 2600, q: 1, dur: 0.05, a: 0.001, gain: 0.22 * v });
-    s.tone(out, { type: 'square', f0: 180, f1: 120, dur: 0.06, a: 0.001, gain: 0.04 * v });
-    const bells = [2093, 2637, 3136, 4186, 5274];
+    s.burst(out, { type: 'bandpass', f0: 2400, q: 1.2, dur: 0.045, a: 0.001, gain: 0.2 * v });
+    s.tone(out, { type: 'triangle', f0: 220, f1: 140, dur: 0.055, a: 0.001, gain: 0.12 * v });
+    const bells = [1567.98, 2093, 2637, 3136];
     bells.forEach((f, i) => {
-      s.tone(out, { f0: f * rnd(0.998, 1.002), t: 0.07, dur: 0.9 - i * 0.1, a: 0.002, gain: (0.09 - i * 0.012) * v });
-      s.tone(rev, { f0: f, t: 0.07, dur: 0.6, a: 0.002, gain: 0.03 * v });
+      const onset = 0.045 + i * 0.022;
+      s.tone(out, { type: 'triangle', f0: f * rnd(0.999, 1.001), t: onset, dur: 0.65 - i * 0.08, a: 0.003, gain: (0.11 - i * 0.016) * v });
+      s.tone(rev, { type: 'sine', f0: f, t: onset, dur: 0.45, a: 0.003, gain: 0.035 * v });
     });
   },
   error(s, out, _rev, v) {
-    s.tone(out, { type: 'square', f0: 330, dur: 0.12, a: 0.004, gain: 0.06 * v });
-    s.tone(out, { type: 'square', f0: 233, dur: 0.22, t: 0.13, a: 0.004, gain: 0.06 * v });
+    s.tone(out, { type: 'triangle', f0: 293.66, f1: 277.18, dur: 0.11, a: 0.004, gain: 0.16 * v });
+    s.tone(out, { type: 'triangle', f0: 220, f1: 196, dur: 0.19, t: 0.11, a: 0.004, gain: 0.15 * v });
   },
   notify(s, out, rev, v) {
     s.tone(out, { type: 'triangle', f0: 988, dur: 0.2, a: 0.004, gain: 0.1 * v });
@@ -147,12 +150,12 @@ export const SFX: Record<SfxKind, SfxRecipe> = {
   },
   levelUp(s, out, rev, v) {
     const notes = [523.25, 659.25, 783.99, 1046.5];
-    notes.forEach((f, i) => s.tone(out, { type: 'triangle', f0: f, t: i * 0.085, dur: 0.32, a: 0.004, gain: 0.1 * v }));
+    notes.forEach((f, i) => s.tone(out, { type: 'triangle', f0: f, t: i * 0.075, dur: 0.36, a: 0.004, gain: 0.11 * v }));
     notes.forEach((f) => {
-      s.tone(out, { f0: f, t: 0.36, dur: 1.0, a: 0.02, gain: 0.05 * v });
-      s.tone(rev, { f0: f, t: 0.36, dur: 1.0, a: 0.02, gain: 0.04 * v });
+      s.tone(out, { f0: f, t: 0.32, dur: 0.95, a: 0.02, gain: 0.055 * v });
+      s.tone(rev, { f0: f, t: 0.32, dur: 0.95, a: 0.02, gain: 0.04 * v });
     });
-    s.tone(out, { f0: 2100, f1: 4200, t: 0.3, dur: 0.45, a: 0.01, gain: 0.025 * v });
+    s.tone(out, { type: 'triangle', f0: 1567.98, t: 0.34, dur: 0.55, a: 0.012, gain: 0.045 * v });
   },
 };
 

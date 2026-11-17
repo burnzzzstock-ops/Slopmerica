@@ -9,6 +9,7 @@ import { SFX } from './sfx';
 import { Ambience, RAIN } from './ambience';
 import { StreetAudio, type StreetCar, type StreetEnv, type StreetView } from './streetAudio';
 import { AmbientPiano } from './piano';
+import { SlopRadio, type RadioStation } from './radio';
 
 export class AudioEngine {
   muted = false;
@@ -29,6 +30,9 @@ export class AudioEngine {
   /** Graphics preset name; the street voice pool is sized from it (Low = phone = fewer voices). */
   quality = 'high';
   private piano?: AmbientPiano;
+  radio?: SlopRadio;
+  /** Radio station ('piano' = default felt piano; 'banjo' | 'muzak' | 'country' = adaptive SlopRadio stems) */
+  station: RadioStation = 'piano';
   /** Settings → Music (remembered): ambient piano on/off and its volume */
   musicOn = true;
   musicVolume = 0.55;
@@ -91,8 +95,12 @@ export class AudioEngine {
     this.amb = new Ambience(s, this.ambBus, this.soundRev);
     this.streetVoices = new StreetAudio(s, this.ambBus, StreetAudio.poolFor(this.quality));
     this.piano = new AmbientPiano(s, this.master, this.revIn);
-    this.piano.enabled = this.musicOn;
+    this.piano.enabled = this.musicOn && this.station === 'piano';
     this.piano.volume = this.musicVolume;
+    this.radio = new SlopRadio(s, this.master, this.revIn);
+    this.radio.station = this.station;
+    this.radio.enabled = this.musicOn && this.station !== 'piano';
+    this.radio.volume = this.musicVolume;
     this.amb.mapId = this.mapId;
     if (c.state === 'suspended') void c.resume();
   }
@@ -138,9 +146,15 @@ export class AudioEngine {
     this.rainNow = (RAIN[mix.weather] ?? 0) * mix.weatherIntensity;
     this.hushNow = mix.weather === 'snow' || mix.weather === 'blizzard' ? 0.5 * mix.weatherIntensity : 0;
     if (this.piano) {
-      this.piano.enabled = this.musicOn;
+      this.piano.enabled = this.musicOn && this.station === 'piano';
       this.piano.volume = this.musicVolume;
       this.piano.update(mix.night);
+    }
+    if (this.radio) {
+      this.radio.station = this.station;
+      this.radio.enabled = this.musicOn && this.station !== 'piano';
+      this.radio.volume = this.musicVolume;
+      this.radio.update(mix.night);
     }
   }
 

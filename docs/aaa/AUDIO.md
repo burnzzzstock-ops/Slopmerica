@@ -168,3 +168,71 @@ node scripts/soundtest.mjs
 - Check `score-muzak.wav` and `score-country.wav` for repetition, harshness and balance against city sounds.
 - Check `score-tension.wav` for financial/disaster mood and `score-jingle.wav` for the station-break character.
 - In the game, test Music off/on, Music volume and Sound off while music continues. Owner listening is still pending.
+
+## A3 action vocabulary and positional feedback
+
+The production audio graph now supports `playAt(kind, x, z, volume)`, a persistent `zonePaint(x, z, cells)` voice and `duck(seconds)`. Existing `play`, Settings and Music APIs remain usable. Position follows the current street-audio listener and camera-right direction, with distance attenuation and a distant-source cutoff.
+
+Positional effects use 17 fixed stereo lanes, created at unlock, with pan rounded to the nearest 0.125. An event never allocates a routing panner or changes the pan of a still-playing effect. This bounds routing graph lifetime without relying on downstream garbage collection. Recipe one-shot nodes retain their existing scheduled stops. A 20-event positioned-build sweep creates zero additional panners; all 20 recipes play. Both centered and positional `notify`/`levelUp` requests duck music, including when Sound is disabled.
+
+The typed event binder handles completed construction, demolition, building level-up, crash, zoning, positive income, weekly close, road creation, lane additions, tree clearing, final paving and collapse stages. Reinstalling the binder is idempotent. Existing milestone announcements keep their fanfare. Building level-up uses a quieter positional version. The error recipe now uses two short triangle tones, with 12–18 ms attacks.
+
+Quality's W10 bridges supply real building completion, level-up and demolition events. The redundant legacy completion and building-bulldoze sounds are removed. Undoing a placed building relies on its demolition event. Existing road, lane, crash and landmark callbacks now use positional audio. Their direct calls remain the live source until the matching typed producers are integrated. The existing 35 ms same-kind burst guard continues to coalesce rapid sound requests.
+
+The zone voice allocates its pink-noise source, filter, gain and panner during audio unlock. Successful paint updates retune and extend a 160 ms envelope. It fades on release, mute or Sound off. Repeated painting creates zero audio nodes. Feed display already plays `notify`, which now ducks Music to 0.45 and the ambience bus to 0.6. The attack is 60 ms, the default hold 1.6 seconds, and recovery uses a 450 ms time constant. Music and its reverb both duck. The banner hook is requested from the UI owner.
+
+All SFX random choices now use the injected synth RNG. Street audio receives its own seeded RNG when the engine opens. The full action render consumes zero global random draws.
+
+### Exact-once checks
+
+`action-events` uses the actual reference town. It calls real building level-up and construction advancement, public building/road demolition, road upgrade, weekly close and milestone paths. It records one audio request for each operation. Advancing completed construction again and demolishing an already-removed building produce zero further requests. Calling the binder twice retains one listener per event. Pending money, zoning, tree, crash and ending consumers are separately tested with typed payloads.
+
+| Live source | Requests |
+| --- | ---: |
+| Building level-up | 1 |
+| Construction completion | 1 |
+| Repeated completion tick | 0 |
+| Building demolition | 1 |
+| Repeated demolition | 0 |
+| Road upgrade | 1 |
+| Road demolition, including retry | 1 |
+| Weekly close | 1 |
+| Milestone | 1 |
+
+### Peak and graph checks
+
+`action-audio` renders the actual `AudioEngine` graph through an `OfflineAudioContext`, including the master compressor and final peak ceiling. Background ambience and score scheduling are held inactive to isolate the action path. Eight cases pass, with zero nodes created by idle updates or paint updates. All 13 SFX recipes are rendered, followed by a simultaneous maximum-supported-volume stress case.
+
+The stress case exposed a pre-existing compressor-attack overshoot of 1.10550 linear amplitude and +0.8 dBFS reconstructed true peak. A four-times-oversampled soft ceiling now preserves unity gain below 0.7 linear amplitude and rolls off higher excursions. The accepted stress render peaks at 0.85225 and −1.1 dBFS true peak. The scripted gate checks both sample peak and measured true peak.
+
+| Render | Peak | True peak | LUFS |
+| --- | ---: | ---: | ---: |
+| 22-second action montage | 0.77183 | −1.9 dBFS | −26.2 |
+| All 13 recipes, separated | 0.73722 | −2.5 dBFS | −21.4 |
+| All 13 recipes at volume 1.5 together | 0.85225 | −1.1 dBFS | −12.9 |
+| Isolated positional build | 0.32193 | −9.8 dBFS | −29.3 |
+| Zone-paint loop | 0.01500 | −36.4 dBFS | −46.4 |
+
+The left-positioned build sends 0.179% of its energy to the right channel, and the right-positioned build sends 99.808%. The source 20 km away and the muted zone case both render exact silence. Paint audio reaches silence by the fourth second after the scripted two-second stroke. Notification Music gain measures 0.45013 during the hold and 0.98032 after recovery. TypeScript, registry lint and all 17 phone Settings assertions pass.
+
+### Remaining producer integration
+
+Live zone-paint, per-income and generic banner acceptance await the FABLE-owned tools, simulation and HUD hooks listed in `REQUESTS_ASTRA.md`. Other typed world events also need their actual producers before event-wide A3 acceptance can be claimed. The working callbacks and typed consumer tests above are verified independently.
+
+### Listening montage
+
+`outputs/Audio/action-montage.wav` contains build at 1 s, bulldoze at 3 s, error at 5 s, cash at 6.5 s, milestone at 8 s, crash at 10 s, zone painting from 13–15 s and notification at 17 s. Individual spatial and zone clips are included. The maximum-volume stress render remains in the measured test folder.
+
+- Assess whether build, demolition, cash, milestone and error are distinguishable and comfortable.
+- Check left/right placement on headphones using `action-left.wav` and `action-right.wav`.
+- Check `action-zone.wav` for continuity during the stroke and a smooth release.
+- Test an actual feed notification with Music playing and listen for a natural duck and recovery.
+- Review the peak ceiling during a busy action sequence in the game. Perceptual balance remains open for owner listening.
+
+```powershell
+node scripts/look/action-events.mjs
+node scripts/look/action-audio.mjs
+node scripts/soundtest.mjs
+```
+
+`action-events` and `action-audio` are registered in the full tier. Detailed measurements and the pre-ceiling failure are retained in `shots/audio/actions/`.

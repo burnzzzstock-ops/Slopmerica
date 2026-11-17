@@ -4,7 +4,7 @@ import type { Synth } from './synth';
 
 export type SfxRecipe = (s: Synth, out: AudioNode, rev: AudioNode, v: number) => void;
 
-const rnd = (a: number, b: number) => a + Math.random() * (b - a);
+const rnd = (s: Synth, a: number, b: number) => a + s.random() * (b - a);
 
 function honk(s: Synth, out: AudioNode, v: number, pitch = 1, t = 0, len = 0.32, pan?: number) {
   const c = s.ctx;
@@ -52,7 +52,7 @@ export const SFX: Record<SfxKind, SfxRecipe> = {
   bulldoze(s, out, rev, v) {
     s.burst(out, { color: 'brown', type: 'lowpass', f0: 1100, f1: 180, dur: 0.75, a: 0.01, gain: 0.8 * v });
     s.tone(out, { type: 'sawtooth', f0: 72, f1: 38, dur: 0.55, a: 0.01, gain: 0.07 * v });
-    for (let i = 0; i < 6; i++) s.burst(out, { type: 'bandpass', f0: rnd(1200, 3400), q: 3, t: rnd(0, 0.4), dur: rnd(0.04, 0.09), gain: rnd(0.08, 0.16) * v });
+    for (let i = 0; i < 6; i++) s.burst(out, { type: 'bandpass', f0: rnd(s, 1200, 3400), q: 3, t: rnd(s, 0, 0.4), dur: rnd(s, 0.04, 0.09), gain: rnd(s, 0.08, 0.16) * v });
     s.burst(rev, { color: 'brown', type: 'lowpass', f0: 600, dur: 0.5, gain: 0.3 * v });
   },
   zone(s, out, _rev, v) {
@@ -64,13 +64,13 @@ export const SFX: Record<SfxKind, SfxRecipe> = {
     s.tone(out, { type: 'square', f0: 180, f1: 120, dur: 0.06, a: 0.001, gain: 0.04 * v });
     const bells = [2093, 2637, 3136, 4186, 5274];
     bells.forEach((f, i) => {
-      s.tone(out, { f0: f * rnd(0.998, 1.002), t: 0.07, dur: 0.9 - i * 0.1, a: 0.002, gain: (0.09 - i * 0.012) * v });
+      s.tone(out, { f0: f * rnd(s, 0.998, 1.002), t: 0.07, dur: 0.9 - i * 0.1, a: 0.002, gain: (0.09 - i * 0.012) * v });
       s.tone(rev, { f0: f, t: 0.07, dur: 0.6, a: 0.002, gain: 0.03 * v });
     });
   },
   error(s, out, _rev, v) {
-    s.tone(out, { type: 'square', f0: 330, dur: 0.12, a: 0.004, gain: 0.06 * v });
-    s.tone(out, { type: 'square', f0: 233, dur: 0.22, t: 0.13, a: 0.004, gain: 0.06 * v });
+    s.tone(out, { type: 'triangle', f0: 392, dur: 0.1, a: 0.012, gain: 0.045 * v });
+    s.tone(out, { type: 'triangle', f0: 330, dur: 0.16, t: 0.1, a: 0.018, gain: 0.04 * v });
   },
   notify(s, out, rev, v) {
     s.tone(out, { type: 'triangle', f0: 988, dur: 0.2, a: 0.004, gain: 0.1 * v });
@@ -80,12 +80,12 @@ export const SFX: Record<SfxKind, SfxRecipe> = {
   crash(s, out, rev, v) {
     s.burst(out, { type: 'lowpass', f0: 7000, f1: 380, dur: 0.75, a: 0.002, gain: 0.75 * v });
     s.tone(out, { f0: 95, f1: 38, dur: 0.35, a: 0.002, gain: 0.55 * v });
-    for (const f of [311, 587, 919, 1373, 1861]) s.tone(out, { type: 'triangle', f0: f * rnd(0.97, 1.03), dur: rnd(0.35, 0.8), a: 0.002, gain: 0.06 * v });
-    for (let i = 0; i < 8; i++) s.tone(out, { f0: rnd(3000, 7200), t: rnd(0.04, 0.5), dur: rnd(0.06, 0.16), a: 0.001, gain: rnd(0.02, 0.05) * v, pan: rnd(-0.6, 0.6) });
+    for (const f of [311, 587, 919, 1373, 1861]) s.tone(out, { type: 'triangle', f0: f * rnd(s, 0.97, 1.03), dur: rnd(s, 0.35, 0.8), a: 0.002, gain: 0.06 * v });
+    for (let i = 0; i < 8; i++) s.tone(out, { f0: rnd(s, 3000, 7200), t: rnd(s, 0.04, 0.5), dur: rnd(s, 0.06, 0.16), a: 0.001, gain: rnd(s, 0.02, 0.05) * v, pan: rnd(s, -0.6, 0.6) });
     s.burst(rev, { type: 'lowpass', f0: 3000, dur: 0.5, gain: 0.3 * v });
   },
   honk(s, out, _rev, v) {
-    honk(s, out, v, rnd(0.94, 1.06));
+    honk(s, out, v, rnd(s, 0.94, 1.06));
   },
   siren(s, out, rev, v) {
     const c = s.ctx;
@@ -127,16 +127,16 @@ export const SFX: Record<SfxKind, SfxRecipe> = {
     let t = t0 + 0.06;
     g.gain.exponentialRampToValueAtTime(1.2 * v, t);
     // the rumble rolls on in uneven swells for several seconds
-    const swells = 5 + Math.floor(Math.random() * 3);
+    const swells = 5 + Math.floor(s.random() * 3);
     for (let i = 0; i < swells; i++) {
-      t += rnd(0.35, 0.9);
-      g.gain.exponentialRampToValueAtTime(rnd(0.5, 1.4) * v * (1 - i / (swells + 5)), t);
+      t += rnd(s, 0.35, 0.9);
+      g.gain.exponentialRampToValueAtTime(rnd(s, 0.5, 1.4) * v * (1 - i / (swells + 5)), t);
     }
-    g.gain.exponentialRampToValueAtTime(0.0001, t + rnd(1.8, 2.8));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + rnd(s, 1.8, 2.8));
     src.connect(lp).connect(g);
     g.connect(out);
     g.connect(rev);
-    src.start(t0, Math.random() * 2);
+    src.start(t0, s.random() * 2);
     src.stop(t + 3);
   },
   cannon(s, out, rev, v) {

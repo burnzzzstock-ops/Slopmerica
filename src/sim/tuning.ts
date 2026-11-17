@@ -12,4 +12,8 @@ export const TUNING = {
   derelictDays: 90,
   /** PROPOSED until road wear lands (the Ponzi pass): years for an untouched road to read as fully worn */
   roadWearYears: 22,
+
+  // ---- world events (what the look and the sound are told; nothing in the simulation reads these)
+  /** PROPOSED: the crashed cars' speeds added up (m/s) at which a crash reads as a full wreck: two cars at a Freedom Stroad's 20 m/s */
+  crashWreckSpeed: 40,
 };

@@ -18,6 +18,7 @@ import { FIXED_PAINT, randomVehicleKind, VEHICLE_SPECS, VehicleRenderer } from '
 import { LANDMARK_EVENTS, type Parking, type WorldSpot } from './parking';
 import { ARCHETYPES } from './people';
 import { HALF } from '../config';
+import { TUNING } from '../sim/tuning';
 
 /** Cars the simulation runs at once, whatever the graphics preset can draw. */
 const SIM_MAX_CARS = 1000;
@@ -639,7 +640,8 @@ export class Traffic {
   totalTrips = 0;
   crashes = 0;
   /** game wiring */
-  onCrash?: (cars: Car[], seg: RSeg | undefined, drunk: boolean) => void;
+  /** a crash: the cars in it, where (the middle of the cars that crashed just now) and how bad, 0..1 (see crash()) */
+  onCrash?: (cars: Car[], seg: RSeg | undefined, drunk: boolean, severity: number, x: number, z: number) => void;
   onJam?: (seg: RSeg) => void;
   onEmit?: (kind: 'cigarette' | 'smoke' | 'spark' | 'fire', x: number, y: number, z: number, n: number) => void;
   // codex:freight begin - real goods scheduler owns freight spawning when set
@@ -2425,6 +2427,14 @@ export class Traffic {
   }
 
   crash(cars: Car[], seg: RSeg | undefined, drunk: boolean) {
+    // How bad it looks: the speeds of the cars that crash now, added up, against TUNING.crashWreckSpeed (two cars at
+    // stroad speed), so severity = min(1, sum of v / crashWreckSpeed). More cars and faster ones both make it worse; a
+    // car that was already wrecked adds nothing. Read before the loop stops them; only numbers, nothing allocated.
+    let n = 0, sumV = 0, mx = 0, mz = 0;
+    for (const c of cars) {
+      if (c.crashed !== 0) continue;
+      n++; sumV += Math.abs(c.v); mx += c.x; mz += c.z;
+    }
     for (const c of cars) {
       if (c.crashed !== 0) continue;
       c.crashed = 16 + this.rnd() * 12;
@@ -2437,7 +2447,8 @@ export class Traffic {
     }
     if (seg) seg.blocked = Math.max(seg.blocked, 8);
     this.crashes++;
-    this.onCrash?.(cars, seg, drunk);
+    const severity = Math.min(1, sumV / TUNING.crashWreckSpeed);
+    this.onCrash?.(cars, seg, drunk, n ? severity : 0, n ? mx / n : cars[0]?.x ?? 0, n ? mz / n : cars[0]?.z ?? 0);
   }
 
   /** Debug: why are cars stopped? */

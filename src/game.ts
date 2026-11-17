@@ -541,7 +541,8 @@ export class Game {
     this.sim.events.on('lowMoney', () => this.feed.push('lowMoney'));
     this.sim.events.on('bankrupt', () => { this.feed.push('bankrupt'); this.ui.ending('bankrupt'); });
     this.sim.events.on('ending', () => this.ui.ending('sprawl'));
-    this.traffic.onCrash = (cars, seg, drunk) => {
+    this.traffic.onCrash = (cars, seg, drunk, severity, x, z) => {
+      this.sim.events.emit('crash', { x, z, severity, segId: seg?.id ?? -1 });
       this.feed.push(drunk ? 'drunkCrash' : 'crash', { road: seg?.name });
       const c = cars[0];
       if (c && this.near(c.x, c.z, 450)) {

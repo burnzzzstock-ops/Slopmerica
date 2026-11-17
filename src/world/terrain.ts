@@ -10,6 +10,7 @@ import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from './atmos';
 import { hash2 } from '../core/rng';
 import type { MapData } from './maps';
 import { createGroundTextures } from './groundTextures';
+import { ForestFloor } from './forestFloor';
 
 export const enum Paint {
   None = 0,
@@ -87,6 +88,7 @@ export class Terrain {
   readonly heightTex: THREE.DataTexture;
   readonly material: THREE.MeshStandardMaterial;
   readonly detail: THREE.DataArrayTexture;
+  readonly forestFloor = new ForestFloor();
   /** Increments when grading or ground paint changes near-surface scenery. */
   surfaceVersion = 0;
   private chunks: Chunk[] = [];
@@ -136,6 +138,8 @@ export class Terrain {
     const detail = this.detail;
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.tDetail = { value: detail };
+      sh.uniforms.tForestFloor = { value: this.forestFloor.texture };
+      sh.uniforms.tClearedForest = { value: this.forestFloor.clearedTexture };
       sh.uniforms.tInfo = INFO_OVERLAY.tex;
       sh.uniforms.uInfoOn = INFO_OVERLAY.on;
       sh.uniforms.tLand = LAND_MASK.tex;
@@ -154,6 +158,9 @@ export class Terrain {
           `#include <common>
 precision highp sampler2DArray;
 uniform sampler2DArray tDetail;
+uniform sampler2D tForestFloor;
+uniform sampler2D tClearedForest;
+float gCanopy;
 varying vec4 vMats;
 varying vec4 vPaintDelta;
 varying vec3 vWPos;
@@ -255,6 +262,32 @@ uniform float uLandOn;`,
   diffuseColor.rgb *= 0.88 + macro * 0.22;
   // seasons: grass browns in winter, NorCal hills green up in the rainy season
   diffuseColor.rgb *= mix(vec3(1.0), uGrassTint, w.x);
+  // Live crowns shelter a darker, less saturated needle-and-moss floor.
+  // Understory albedo is 35–45% darker in linear light, before ambient AO.
+  // Changing the terrain beneath trees preserves their rich crown shading.
+  vec2 forestUv = vWPos.xz / ${WORLD.toFixed(1)} + 0.5;
+  // Keep the actual crown footprint. Open ground receives no forest tint.
+  vec2 floorMask = vec2(texture(tForestFloor, forestUv).r, texture(tClearedForest, forestUv).r);
+  float county = 1.0 - smoothstep(${HALF.toFixed(1)} - 24.0, ${HALF.toFixed(1)}, max(abs(vWPos.x), abs(vWPos.z)));
+  // Material weights are grass/dirt/rock/sand. Paved paint contributes rock;
+  // only a predominantly vegetated or earthen surface receives understory.
+  float soil = county * smoothstep(0.45, 0.75, w.x + w.y) * smoothstep(0.02, 0.3, vWPos.y);
+  float crownNoise = tn(vWPos.xz * 0.092);
+  gCanopy = smoothstep(0.35, 0.70, floorMask.r) * soil;
+  float groundLuma = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+  vec3 understory = mix(diffuseColor.rgb, vec3(groundLuma), 0.38);
+  understory *= mix(vec3(0.91, 0.98, 1.02), vec3(1.03, 0.97, 0.83), crownNoise);
+  understory *= groundLuma * mix(0.55, 0.65, crownNoise) / max(0.001, dot(understory, vec3(0.2126, 0.7152, 0.0722)));
+  diffuseColor.rgb = mix(diffuseColor.rgb, understory, gCanopy);
+  float cleared = smoothstep(0.04, 0.65, floorMask.g) * soil * (1.0 - 0.75 * gCanopy);
+  if (cleared > 0.005) {
+    vec3 litter = mix(vec3(0.072, 0.042, 0.020), vec3(0.16, 0.10, 0.048), tn(vWPos.xz * 0.32));
+    // Faded slivers of logging slash in the exposed soil, resolved only
+    // within street view to keep subpixel marks off distant hills.
+    float slash = smoothstep(0.73, 0.88, tn(vec2(vWPos.x + 0.62*vWPos.z, vWPos.z - 0.62*vWPos.x) * vec2(0.8, 4.2)));
+    litter += vec3(0.10, 0.065, 0.024) * slash * fadeFine;
+    diffuseColor.rgb = mix(diffuseColor.rgb, litter, cleared * 0.85);
+  }
   // wildflowers: a Golden Coast superbloom, phlox and daisies in the hollers,
   // tickseed in the Florida grass. Dots up close, a haze of color from afar.
   if (uFlowers > 0.003) {
@@ -307,6 +340,7 @@ uniform float uLandOn;`,
   }
 }`,
         )
+        .replace('#include <aomap_fragment>', '#include <aomap_fragment>\nreflectedLight.indirectDiffuse *= mix(1.0, 0.52, gCanopy * (1.0 - gSnow));')
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.45, uWet * 0.7 * (1.0 - gSnow));\nroughnessFactor = mix(roughnessFactor, 0.06, gPuddle);\nroughnessFactor = mix(roughnessFactor, 0.5, gShoreWet * 0.65);')
         .replace(
           '#include <opaque_fragment>',

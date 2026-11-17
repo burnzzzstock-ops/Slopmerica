@@ -93,6 +93,7 @@ export class Trees {
   private Z!: Float32Array;
   private Y!: Float32Array;
   private S!: Float32Array;
+  private crownRadius!: Float32Array;
   private Rt!: Float32Array;
   private K!: Uint8Array;
   private Vr!: Uint8Array;
@@ -229,6 +230,17 @@ vCanopy = canopy;`)
     const depthMats = [mkDepthMat(false), mkDepthMat(true)];
     const nearMats = [mkNearMat(false), mkNearMat(true)];
     const models: THREE.BufferGeometry[][] = KINDS.map((k) => Array.from({ length: VARIANTS }, (_, v) => makeTreeModel(k, v)));
+    const radii = models.map(variants => variants.map(model => {
+      const position = model.getAttribute('position'), canopy = model.getAttribute('canopy');
+      let radius = 1;
+      for (let i = 0; i < position.count; i++) {
+        if (canopy.getX(i) > .5) radius = Math.max(radius, Math.hypot(position.getX(i), position.getZ(i)));
+      }
+      return radius;
+    }));
+    this.crownRadius = new Float32Array(this.n);
+    for (let i = 0; i < this.n; i++) this.crownRadius[i] = radii[this.K[i]][this.Vr[i]] * this.S[i] * this.Asp[i] * 1.12;
+    this.terrain.forestFloor.bake(this.X, this.Z, this.crownRadius);
     KINDS.forEach((kind, ki) => {
       for (let v = 0; v < VARIANTS; v++) {
         const cap = Math.max(200, Math.ceil((share[ki] * q.treeNearCap * 1.6) / VARIANTS));
@@ -248,10 +260,11 @@ vCanopy = canopy;`)
     const spriteTex = this.bakeSprites(renderer, models.map((m) => m[0]), atlas);
     const farMat = new THREE.MeshLambertMaterial({ map: spriteTex, alphaTest: 0.3, side: THREE.DoubleSide, alphaToCoverage: msaa });
     farMat.onBeforeCompile = (sh) => {
+      sh.uniforms.uCanopyDensity = { value: this.terrain.forestFloor.texture };
       sh.uniforms.uLeaf = { value: 1 };
       bindAtmos(sh);
       sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', `#include <common>\nuniform float uLeaf, uSnow, uSnowLine;\nconst float vCanopy = 0.0;\nconst float FAR_FOOT = ${FAR_FOOT.toFixed(2)};\nconst float FAR_TOP = ${FAR_TOP.toFixed(2)};\nvarying vec3 vTWPos;\nvarying float vTop;\nvarying float vK;\n${CLOUD_GLSL}`)
+        .replace('#include <common>', `#include <common>\nuniform float uLeaf, uSnow, uSnowLine;\nconst float vCanopy = 0.0;\nconst float FAR_FOOT = ${FAR_FOOT.toFixed(2)};\nconst float FAR_TOP = ${FAR_TOP.toFixed(2)};\nvarying vec3 vTWPos;\nvarying float vTop;\nvarying float vK;\nvarying float vSkirt;\n${CLOUD_GLSL}`)
         // two baked views: the side (row 0) and from above (row 1), blended by
         // how steeply the camera looks down at the tree
         .replace('#include <map_fragment>', `#ifdef USE_MAP
@@ -265,7 +278,17 @@ vCanopy = canopy;`)
         // the picture is read from: without it far canopies covered ~55-60% of
         // the ground the detailed trees do (scripts/treelod.mjs); the cap keeps
         // a small picture from filling its card (the playtest's rectangles)
-        .replace('#include <alphatest_fragment>', IMPOSTOR_BOOST + LEAF_ALPHA.replace('0.42', '0.3'))
+        .replace('#include <alphatest_fragment>', IMPOSTOR_BOOST + `
+// A sparse alpha fringe joins distant crown masses without filling the
+// transparent corners of the card. The baked colour and interior contrast
+// stay untouched, and the rooted trunk has no skirt.
+if (vSkirt > 0.001 && diffuseColor.a < 0.3) {
+  float coverage = smoothstep(0.3 - 0.16 * vSkirt, 0.3, diffuseColor.a);
+  float dither = fract(52.9829189 * fract(dot(floor(gl_FragCoord.xy), vec2(0.06711056, 0.00583715))));
+  if (dither >= coverage) discard;
+  diffuseColor.a = 0.3 + max(fwidth(diffuseColor.a), 0.001);
+}
+` + LEAF_ALPHA.replace('0.42', '0.3'))
         .replace('#include <color_fragment>', `#include <color_fragment>
 diffuseColor.rgb *= cloudShade(vTWPos);
 // the dark under a crown: the detailed trees shade their own lower halves and the ground below them, a flat picture
@@ -274,7 +297,7 @@ diffuseColor.rgb *= cloudShade(vTWPos);
 diffuseColor.rgb *= mix(FAR_FOOT, FAR_TOP, vTop);
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.88, 0.93), uSnow * 0.55 * vTop * smoothstep(uSnowLine - 30.0, uSnowLine + 60.0, vTWPos.y));`);
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vTWPos;\nvarying float vTop;\nvarying float vK;\nattribute vec2 aSprite;')
+        .replace('#include <common>', '#include <common>\nuniform sampler2D uCanopyDensity;\nvarying vec3 vTWPos;\nvarying float vTop;\nvarying float vK;\nvarying float vSkirt;\nattribute vec2 aSprite;')
         .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = vec3(0.0, 1.0, 0.0);')
         .replace('#include <project_vertex>', `
 vec4 instP = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
@@ -284,10 +307,15 @@ vec3 camU = normalize(vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1])
 // looking down on a tree shows its canopy, not its trunk (the side view read
 // as dark flags on poles from the usual camera angle)
 vec3 toCam = cameraPosition - instP.xyz;
+// Beyond the near/far transition, distant crowns overlap into a ridgeline.
+// Widen the crown only; its trunk stays rooted at its original position.
+float standDensity = texture2D(uCanopyDensity, instP.xz / ${WORLD.toFixed(1)} + 0.5).r;
+vSkirt = smoothstep(380.0, 1500.0, length(toCam)) * smoothstep(0.04, 0.46, uv.y);
+float crownWidth = 1.0 + mix(0.12, 0.22, smoothstep(0.23, 0.8, standDensity)) * vSkirt;
 vK = smoothstep(0.34, 0.7, toCam.y / max(length(toCam), 1e-3));
 // side view stands on the base; the top view faces the camera around the canopy centre
-vec3 sideP = instP.xyz + camR * position.x * sc + vec3(0.0, position.y * sc, 0.0);
-vec3 topP = instP.xyz + camR * position.x * sc + camU * (position.y - aSprite.x) * sc + vec3(0.0, aSprite.y * sc, 0.0);
+vec3 sideP = instP.xyz + camR * position.x * sc * crownWidth + vec3(0.0, position.y * sc, 0.0);
+vec3 topP = instP.xyz + camR * position.x * sc * crownWidth + camU * (position.y - aSprite.x) * sc + vec3(0.0, aSprite.y * sc, 0.0);
 vec3 wp = mix(sideP, topP, vK);
 vec4 mvPosition = viewMatrix * vec4(wp, 1.0);
 gl_Position = projectionMatrix * mvPosition;
@@ -891,6 +919,7 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
       const h = this.terrain.h(this.X[i], this.Z[i]);
       if (h < WATER - 1.2) continue;
       this.A[i] = 1;
+      this.terrain.forestFloor.edit(this.X[i], this.Z[i], 1, this.crownRadius[i]);
       this.Y[i] = h - 0.25;
       if (this.isRef(i)) ref++;
     }
@@ -921,6 +950,7 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
     this.forCells(minX, minZ, maxX, maxZ, (i) => {
       if (!this.A[i] || !inside(this.X[i], this.Z[i])) return;
       this.A[i] = 0;
+      this.terrain.forestFloor.edit(this.X[i], this.Z[i], -1, this.crownRadius[i]);
       this.cutLog?.push(i);
       gone.push(i);
       n++;
@@ -952,7 +982,12 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
       // planted 0.25 m into the ground; gone where it's now deeper than a cypress stands
       const h = this.terrain.h(x, z);
       if (Math.abs(h - 0.25 - this.Y[i]) < 0.12) return;
-      if (h < WATER - 1.2) { this.A[i] = 0; if (this.isRef(i)) ref++; drowned.push(i); }
+      if (h < WATER - 1.2) {
+        this.A[i] = 0;
+        this.terrain.forestFloor.edit(x, z, -1, this.crownRadius[i]);
+        if (this.isRef(i)) ref++;
+        drowned.push(i);
+      }
       else { this.Y[i] = h - 0.25; moved.push(i); }
     });
     this.alive -= ref;

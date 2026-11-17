@@ -23,7 +23,7 @@ import { TUNING } from '../sim/tuning';
 /** Cars the simulation runs at once, whatever the graphics preset can draw. */
 const SIM_MAX_CARS = 1000;
 /** Traffic's fields that are not state: what it is wired to, what it draws with, and caches it rebuilds as it goes. */
-const TRAFFIC_NOT_SAVED = new Set(['renderer', 'net', 'b', 'parking', 'rng', 'rnd', 'handlers', 'listPool', 'segDirIndex', 'bendCuts', 'stopBacks', 'maxCars', 'ppA', 'ppB']);
+const TRAFFIC_NOT_SAVED = new Set(['renderer', 'net', 'b', 'parking', 'rng', 'rnd', 'handlers', 'listPool', 'segDirIndex', 'bendCuts', 'stopBacks', 'maxCars', 'ppA', 'ppB', 'errands']);
 /** A car's fields that are only how it is drawn (made again on load). */
 const CAR_NOT_SAVED = new Set(['h', 'toSpot', 'fromSpot', 'parked', 'drawn', 'sent', 'shown', 'smokeT']);
 
@@ -1113,7 +1113,9 @@ export class Traffic {
       dest = dB.label;
     } else if (res.length && jobs.length) {
       const home = pick(res);
-      const other = morning || evening ? pick(jobs) : shops.length && this.rnd() < 0.7 ? pick(shops) : pick(jobs);
+      // where the trip's other end is: a job at the rush hours, a shop or a job between them; of a few that come to mind,
+      // likelier the one with the short drive today (whereTo, below)
+      const other = this.whereTo(home, morning || evening ? jobs : shops.length && this.rnd() < 0.7 ? shops : jobs, evening);
       if (evening) { oB = other; dB = home; purpose = 'going home'; dest = home.label; }
       else { oB = home; dB = other; purpose = morning ? 'going to work' : this.rnd() < 0.5 ? 'getting drive-thru' : 'shopping'; dest = other.label; }
       o = this.anchor(oB);
@@ -1129,6 +1131,39 @@ export class Traffic {
     if (local && oB && dB && kind !== 'semi' && kind !== 'boxTruck' && this.transitModeChoice?.(oB, dB)) return true;
     // codex:transit end
     return !!this.launch(o, d, oB, dB, kind, purpose, dest, local, hour);
+  }
+
+  /** trips that weighed more than one place to go, and those that did not take the first place they thought of (tests) */
+  errands = { weighed: 0, swayed: 0 };
+
+  /**
+   * The other end of a household's trip, out of `pool` (jobs, or shops): a few places come to mind at random, and the
+   * shorter today's drive, the likelier it is the one (weight 1 / (seconds + floor)^power). The drive is the route the car
+   * would take right now, at the speeds the roads are doing right now (to the place, or `back` home from it in the
+   * evening). So a road that has just been widened pulls trips onto itself until it is as slow as the others: where people
+   * work and shop depends on the drive, and induced demand falls out of that. (A trip here has no memory: nobody keeps a
+   * job from one morning to the next, so weighing the job by the drive is the county sorting itself by commute.)
+   */
+  private whereTo(home: Bld, pool: Bld[], back = false): Bld {
+    const T = TUNING.whereTo, first = pool[Math.floor(this.rnd() * pool.length)];
+    if (T.choices <= 1 || pool.length < 2) return first;
+    const o = this.anchor(home);
+    if (!o) return first;
+    const cand: Bld[] = [first], w: number[] = [];
+    for (let k = 1; k < T.choices; k++) cand.push(pool[Math.floor(this.rnd() * pool.length)]);
+    let sum = 0;
+    for (const b of cand) {
+      const d = this.anchor(b), rt = d && (back ? this.route(d.seg, d.s, o.seg, o.s) : this.route(o.seg, o.s, d.seg, d.s));
+      let secs = Infinity;
+      if (rt) { secs = 0; for (const st of rt.steps) { const s = this.net.segs.get(st.seg); if (s) secs += this.segCost(s, st.dir > 0 ? 0 : 1); } }
+      const wt = Number.isFinite(secs) ? 1 / Math.pow(secs + T.floorSecs, T.power) : 0;
+      w.push(wt); sum += wt;
+    }
+    this.errands.weighed++;
+    if (sum <= 0) return first;
+    let x = this.rnd() * sum;
+    for (let i = 0; i < cand.length; i++) { x -= w[i]; if (x <= 0) { if (cand[i] !== first) this.errands.swayed++; return cand[i]; } }
+    return first;
   }
 
   /**

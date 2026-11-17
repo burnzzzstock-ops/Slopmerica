@@ -13,6 +13,19 @@ export const TUNING = {
   /** PROPOSED until road wear lands (the Ponzi pass): years for an untouched road to read as fully worn */
   roadWearYears: 22,
 
+  // ---- where a trip goes (src/agents/traffic.ts whereTo())
+  /**
+   * PROPOSED, and OFF (choices: 1). choices: how many jobs or shops come to mind for a household's trip (1 = the first, at
+   * random, exactly as it was before the drive counted: the same trips, the same dice). power: how hard a shorter drive
+   * pulls (0 = not at all; 2 = a drive half as long is four times as likely). floorSecs: seconds added to every drive, so
+   * two places a block apart are not ten to one.
+   * Measured with choices 3 on the reference town (scripts/onemorelane.mjs, CHOICES=3, seeds 1 to 3): two thirds of the
+   * household trips that weighed three places went somewhere other than the first, and the widened road still did not fill
+   * again (fullest in 78 weeks 25 to 31% against 38 to 47% before). It stays off until the traffic work has a town where it
+   * can be shown to matter: docs/aaa/LOG_FABLE.md, "What induced demand needs".
+   */
+  whereTo: { choices: 1, power: 2, floorSecs: 20 },
+
   // ---- ONE MORE LANE, remembered (src/sim/widening.ts: it watches the traffic and changes nothing)
   /**
    * PROPOSED. weeks: how long a widening is followed, one reading a week: the design's "it always works for about 18

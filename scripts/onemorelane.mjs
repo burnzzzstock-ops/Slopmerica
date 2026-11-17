@@ -4,17 +4,22 @@
 // hazard tape, and that the record survives a save. Then runs the 78 weeks the design gives a new lane and prints the weekly
 // readings: how full the road is against how full it was. Exits nonzero on failure.
 //
-//   BASE_URL=http://127.0.0.1:5173 node scripts/onemorelane.mjs   (WEEKS=78; SEED=n)
+//   BASE_URL=http://127.0.0.1:5173 node scripts/onemorelane.mjs   (WEEKS=78; SEED=n; CHOICES=1 runs it with every trip
+//   taking the first place that comes to mind, as before the drive counted, to compare)
 import { launch } from './lib/browser.mjs';
 import { openBlock, testSeed } from './refblock.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
-const SEED = testSeed(), WEEKS = Number(process.env.WEEKS || 78);
+const SEED = testSeed(), WEEKS = Number(process.env.WEEKS || 78), CHOICES = process.env.CHOICES ? Number(process.env.CHOICES) : null;
 let bad = 0;
 const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, ok || extra === undefined ? '' : JSON.stringify(extra).slice(0, 600)); if (!ok) bad++; };
 const browser = await launch();
 const { page, errs } = await openBlock(browser, { base, seed: SEED, quality: 'low' });
-await page.evaluate(() => { for (const e of document.querySelectorAll('.hud')) e.style.display = ''; });
+await page.evaluate(async (CHOICES) => {
+  for (const e of document.querySelectorAll('.hud')) e.style.display = '';
+  if (CHOICES !== null) { const { TUNING } = await import('/src/sim/tuning.ts'); TUNING.whereTo.choices = CHOICES; }
+}, CHOICES);
+if (CHOICES !== null) console.log(`  (trips weigh ${CHOICES} place${CHOICES === 1 ? '' : 's'})`);
 
 // one turn of the day-and-night clock first (144 days), so every road has had its rush hours in this run; then the stroad
 // piece that got fullest at its busiest and can take a lane
@@ -65,11 +70,12 @@ const run = await page.evaluate(async ({ id, WEEKS }) => {
   sys.loadExact(g, JSON.parse(saved));
   const again = JSON.stringify(sys.saveExact(g));
   const posts = (g.feed.posts ?? []).slice(0, Math.max(0, (g.feed.posts?.length ?? 0) - feed0)).map((p) => p.text ?? '').filter((t) => /Widening Complete/.test(t));
-  return { rows, w: w ? { ...w } : null, roundTrip: saved === again && saved.length > 20, posts, feedKnown: Array.isArray(g.feed.posts) };
+  return { rows, w: w ? { ...w } : null, roundTrip: saved === again && saved.length > 20, posts, feedKnown: Array.isArray(g.feed.posts), errands: g.traffic.errands ? { ...g.traffic.errands } : null };
 }, { id: pick.id, WEEKS });
 const rows = run.rows.filter(Boolean);
 for (const r of rows.filter((r) => r.wk === 1 || r.wk % 6 === 0 || r.wk === rows.length)) console.log(`  week ${String(r.wk).padStart(2)}: ${String(Math.round(r.vc * 100)).padStart(3)}% full at its busiest (it was ${Math.round(pick.before * 100)}%), ${String(Math.round(r.now * 100)).padStart(3)}% right now, ${r.cars} cars in the county, ${r.pop} people`);
 const peak = rows.reduce((m, r) => Math.max(m, r.vc), 0);
+if (run.errands) console.log(`  trips that weighed more than one place: ${run.errands.weighed}; ${run.errands.swayed} of them went somewhere other than the first that came to mind`);
 console.log(`  fullest in the ${rows.length} weeks: ${Math.round(peak * 100)}%; back to what it was: ${run.w?.back !== null && run.w ? `yes, after ${Math.round((run.w.back - run.w.day) / 7)} weeks` : 'no'}`);
 check(`a reading is kept for each of the ${WEEKS} weeks (${run.w?.weeks.length})`, run.w?.weeks.length === Math.min(WEEKS, 78) && rows.length === WEEKS, { weeks: run.w?.weeks.length, rows: rows.length });
 check('the record is the same after a save and a load', run.roundTrip);

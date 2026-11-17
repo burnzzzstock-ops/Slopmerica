@@ -76,10 +76,13 @@ async function forestStats(page, frame, before, fixedMask) {
     if (n < 1000) throw Error('Camera contains fewer than 1,000 forest pixels');
     const mean = sums.map(v => v/n);
     const sd = squares.map((v, i) => Math.sqrt(Math.max(0, v/n - mean[i] ** 2)));
-    const reduction = 1 - (sd[1] / mean[1]) / (sd[0] / mean[0]);
+    // The brief requires a raw luma standard-deviation drop. Mean normalization
+    // is useful as a diagnostic, but is not the acceptance criterion.
+    const reduction = 1 - sd[1] / sd[0];
+    const normalizedReduction = 1 - (sd[1] / mean[1]) / (sd[0] / mean[0]);
     // Local contrast is diagnostic only. Include every complete 32/64 px tile
     // with at least 50% mask coverage, retain equal-mean comparison per tile,
-    // and pool variance by pixel count. Global acceptance remains unchanged.
+    // and pool variance by pixel count. These tiles do not determine acceptance.
     const regional = [];
     for (const side of [32, 64]) {
       let regions = 0, pixels = 0, variance0 = 0, variance1 = 0;
@@ -141,7 +144,9 @@ async function forestStats(page, frame, before, fixedMask) {
       }
     }
     const ground = { pixels: groundN, shadedMean: groundOn / groundN, unshadedMean: groundOff / groundN, reduction: 1 - groundOn / groundOff };
-    return { n, mean, sd, reduction, rawReduction: 1 - sd[1] / sd[0], regional, ground, calls, triangles, mask: mask.toDataURL().split(',')[1] };
+    return { n, mean, sd, reduction, rawReduction: reduction, normalizedReduction,
+      criterion: 'raw luma standard-deviation drop', regional, ground, calls, triangles,
+      mask: mask.toDataURL().split(',')[1] };
   }, [before.toString('base64'), frame.png.toString('base64'), fixedMask?.toString('base64')]);
 }
 
@@ -166,7 +171,8 @@ try {
     const { mask, ...stats } = after.measurement;
     writeFileSync(file('mask.png'), Buffer.from(mask, 'base64'));
     writeFileSync(file('metrics.json'), JSON.stringify({ camera: after.camera, original, maskSource: maskPath, ...stats }, null, 2));
-    console.log(shot.id, 'equal-mean contrast reduction', (100 * stats.reduction).toFixed(1) + '%',
+    console.log(shot.id, 'raw luma SD reduction', (100 * stats.reduction).toFixed(1) + '%',
+      'CV diagnostic', (100 * stats.normalizedReduction).toFixed(1) + '%',
       'luma', stats.mean.map(x => x.toFixed(1)), 'calls', original.calls, stats.calls, 'triangles', original.triangles, stats.triangles);
     if (stats.reduction < 0.4 || stats.calls > original.calls || stats.triangles > original.triangles) process.exitCode = 1;
   }

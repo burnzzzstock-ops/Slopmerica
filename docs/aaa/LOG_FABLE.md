@@ -17,6 +17,7 @@ A fresh session can take over from this file alone. Read "Where things are", "St
 - **A server on a port does not die with `pkill`.** Find the PID with `netstat -ano` and use `taskkill //F //PID`.
 - **NOT PUSHED, waiting on the owner:** from the evening of 17 Nov, GitHub sign-in on this PC stopped working (the credential manager wants a sign-in, and `gh auth status` says the token is invalid). `aaa/integration` and `claude/aaa-play` are both at c17d707 locally (or later for the play branch) and verified; origin has 584ab95 and 699ec0e. When the owner has signed in again: `git push origin aaa/integration` in `Slopmerica-int` and `git push origin claude/aaa-play` in `Slopmerica-fable`. A push that hangs is the credential manager waiting for a window nobody is looking at: run it with `GCM_INTERACTIVE=never GIT_TERMINAL_PROMPT=0` to get the error instead.
 - **Do not wait for a suite with a shell loop that starts a process every few seconds.** Two of those running at once ended with "fork: Resource temporarily unavailable" and took the session down with the suite. Wait on the background task's own notice, or with one process that reads the log.
+- **Run the full list of UI tests on a merged interface batch, not the ones its author ran.** The second batch's fourth commit (c8581ed, text at 12 px at least) passed its own checks and smoke, and on the merged tree pushed the phone inspector's Bulldoze button under the fold on one home in seven (presstest caught it; it was bisected in ten minutes with a throwaway worktree). It is left out of the merge and is the interface session's to fix; the other three are in.
 - **Keep the machine quiet while an integration suite runs.** Running my own gates and tests beside it made the look lane's frame-cost test (reflecttest) fail; it passes alone.
 - **nightglow is a coin toss.** On one commit it reads the night street at 103 (pass) or 110.1 (fail) from run to run: three runs at bda104b gave fail, pass, fail. Do not chase it as a regression (it cost an hour); it is reported to the look lane.
 - **Do not export a test's setting for a whole suite run.** `DAYS=120`, meant for the determinism test, also reached trashcliff and made it fail (it needs 133 days). The determinism entry in the registry carries its own settings now.
@@ -32,7 +33,7 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 
 ## State of the work (17 Nov 2026)
 
-`aaa/integration` is pushed at `584ab95`: 123 of 129 on its suite (the six: photo-reflection and presetlight, the look lane's; carsolid, crosswalktest, lightstest and landmarktest, the traffic table below). `claude/aaa-play` is pushed at `699ec0e` plus this file, with the save slots, the held-press fix and the polish branch on top of what integration had. Everything below is committed. The registry has 191 entries on this branch (12 gate, 15 smoke, 89 full, 75 measure), 203 on the merge.
+`aaa/integration` is pushed at `584ab95`: 123 of 129 on its suite (the six: photo-reflection and presetlight, the look lane's; carsolid, crosswalktest, lightstest and landmarktest, the traffic table below). `claude/aaa-play` and `aaa/integration` are both at a72d28e locally (or later for the play branch); origin has 699ec0e and 584ab95, because pushing has not worked since the evening of 17 Nov (see the first working rule below). Everything below is committed. The registry has 191 entries on this branch (12 gate, 15 smoke, 89 full, 75 measure), 203 on the merge.
 
 | Item | State |
 |---|---|
@@ -86,6 +87,7 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 | 7f727f1, c5a94a8 | `scripts/simperf.mjs`; the land value pass no longer searches 300 m round every building for a landmark (the same county, a third less hitch) |
 | 1ea4162 | **Saves:** slots on the title screen and in Settings; Start paving asks before a new city takes the old one's place; an unreadable stored city is said so and kept |
 | cd31237 | playtest4 reads the inspector's garbage sign, not the emoji the row used to start with |
+| 446cf12, 6f94512, 6e65a63 (merged at a72d28e) | From the interface session's second batch: drawn icons on the cards' buttons (`actLabel` in `src/ui/icons.ts`), toasts that stay up long enough to read (`toastMs` in `src/ui/copy.ts`; `scripts/toasttest.mjs`), and a planned road's readout on its own row on a phone |
 | e00bd90 | **People:** who is out on foot no longer depends on the camera or the graphics preset; determinism gains the `away` and `ultra` modes |
 | acc29c5 | A mouse press held on Bulldoze or One More Lane is no longer lost when the inspector redraws (`scripts/presstest.mjs`; from the second play-lane session) |
 | d1f1e09, 94d36e7, de0376d, f9fef47 (merged at 699ec0e) | From the second session's polish branch: drawn icons on the tool badge, the top bar and the inspector; photo mode gets a Focus slider (after Street level the Blur slider did nothing, and nothing could move the focus back) and opens on P; the step card changes shape the moment a drawer opens or closes; the last first step ends by itself on day 15 |
@@ -159,6 +161,10 @@ None of these thresholds was loosened. They are what the traffic does on a town 
 ### Integration at 556917f (the HUD wiring), `--gpu`, seed 1
 
 119 of 128. The nine: hud-icon-art (Photo had no drawn icon; fixed in 5c44154), reflecttest (slowed by my own work running beside the suite; passes alone), nightglow (the coin toss above), photo-reflection and presetlight (the look lane's, failing before), carsolid, crosswalktest, lightstest and landmarktest (the traffic table above).
+
+### Integration at a72d28e (people on foot everywhere, the interface session's second batch), `--gpu`, seed 1
+
+126 of 132. The six: photo-reflection and presetlight (the look lane's, as before), nightglow (the coin toss), and carsolid, landmarktest and lightstest (the traffic table). crosswalktest passes at seed 1 for the first time: people on foot are spread over the town, and the one walker who ended up inside a car is gone.
 
 ### Integration at c17d707 (save slots, the held-press fix, the interface session's polish branch), `--gpu`, seed 1
 

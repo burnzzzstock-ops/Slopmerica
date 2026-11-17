@@ -1863,6 +1863,15 @@ a {
     max-height: 48vh;
     overflow-y: auto;
   }
+  /* The sheet scrolls when a card is taller than it. What the card offers (Bulldoze, One More Lane, Follow) stays at the
+     sheet's foot, in view, and the facts scroll under it: on a card a few lines too tall the buttons were under the fold. */
+  .inspector .in-actions {
+    position: sticky;
+    bottom: -14px;
+    margin: 10px -14px -14px;
+    padding: 8px 14px 14px;
+    background: #1e1b2d;
+  }
   .toasts {
     top: calc(100px + var(--safe-t));
   }
@@ -3609,4 +3618,32 @@ a {
    (36% of the screen, now that a row of choices is one line; half hid too much map to place a service by touch) */
 @media (pointer: coarse) and (max-width: 760px) and (min-height: 700px) {
   .subpanel { max-height: min(36vh, 320px); }
+}
+
+/* ---- the smallest text (scripts/textfloor.mjs lists every size on the HUD) ----
+   What is read as a sentence or a figure in the inspector, the demand and budget cards, the More grid, the lists and the
+   small print of a drawer is 12 px at least; it was 10 to 11.7 px. Not raised: the labels of the one-row top bar and the
+   toolbar (8 to 11 px), which have no room until those two rows are laid out again; and the second line of a road, zone or
+   service card on a phone (11 px) and in a short desktop window (10.5 px), where a taller card takes the map's room: at
+   12 px the phone's Roads drawer took two more points of the screen (phonefree: 60.6% map to 58.4%). */
+.subpanel small, .inspector small, .li small, .sp-row small, .tax small, .svc-stat, .svc-stat small, .svc-trade, .land-hint,
+.in-stats span, .in-bind span, .in-kicker, .svc-covs span, .dp-h, .dp-base, .dp-trend, .dp-head b, .bg-top span, .budget tr.head td,
+.more-btn, .chip small { font-size: 12px; }
+@media (max-width: 760px) { .card small { font-size: 11px; } }
+@media (min-width: 761px) and (max-height: 760px) { .card small { font-size: 10.5px; } }
+
+/* ---- every control answers a press, and a mouse over it (scripts/presslook.mjs) ----
+   A finger has no hover, and the tap highlight is switched off for the whole page: until now a touch changed nothing on a
+   button until whatever it did had happened. Pressed, a control brightens and the plain buttons sink a little; under a
+   mouse it brightens a shade. A disabled one does neither. With reduced motion the brightening stays and the sinking goes.
+   `.pressed` is set by the HUD the moment a pointer goes down (hud.ts): on a touch screen :active waits for the browser's
+   own press timer, and on some phones never comes. :active stays for a press from the keyboard. */
+.hud :is(button:not(:disabled), [role='button']):is(:active, .pressed) { filter: brightness(1.35); }
+:is(.tbtn, .chip, .card, .more-btn, .li, .in-actions button, .tool-actions button):not(:disabled):is(:active, .pressed) { transform: scale(0.96); }
+@media (hover: hover) {
+  .hud :is(button:not(:disabled), [role='button']):hover { filter: brightness(1.14); }
+  .hud :is(button:not(:disabled), [role='button']):is(:active, .pressed) { filter: brightness(1.35); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.tbtn, .chip, .card, .more-btn, .li, .in-actions button, .tool-actions button):is(:active, .pressed) { transform: none; }
 }

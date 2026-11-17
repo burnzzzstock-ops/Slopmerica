@@ -22,6 +22,12 @@ Nothing here is decided by the agent. Each item has a recommendation and the evi
 | How early fans set off for a game (`EVENT_SLACK` in `src/agents/traffic.ts`, 6 times the free-flow drive) | On the reference town with its traffic moving, 16 to 22 of 29 fans are in their seats by kickoff (seeds 1 to 6); the test asks two in three. On the first reference town, which had little traffic, 18 to 21 of 21 were | Leave the number until the traffic phase has dealt with driveway waits and junction losses, then measure again: the slack may be fine once a car is not held 5 minutes in its own driveway |
 | How much actuated traffic lights should help | At their best junction they carry 11 to 33% more cars than fixed greens (six seeds); the test asks a fifth more. Leading greens for left turns cost all the lights 10 to 19% of their cars on two seeds of six | A finding for the traffic phase, not a number to change now |
 
+## What ONE MORE LANE's record shows
+
+The design says: "Induced demand really works (widen the road and the traffic comes back)" and "it always works for about 18 months". The game now measures it (the road inspector's chart, `scripts/onemorelane.mjs`), and **today it is not true on a town that is not growing**: three seeds, the fullest stroad piece widened from four lanes to six, 35 to 45% full at its busiest before, at most 31% in the 78 weeks after. The lane works for good.
+
+The cause is in how trips are made: a trip picks its shop or its job at random, whatever the drive takes. The fix that matches the design ("where people go and how they get there both depend on travel time") is to weigh a few candidate destinations by today's drive. It changes traffic in every town, so it comes as its own piece of work with before and after numbers on six seeds and the large town. **Nothing to decide yet; this is so you are not surprised by a chart that says the lane worked.**
+
 ## Proposed numbers (`src/sim/tuning.ts`)
 
 | Name | Value | What it does | Why this value | Evidence |
@@ -31,6 +37,10 @@ Nothing here is decided by the agent. Each item has a recommendation and the evi
 | `derelictDays` | 90 | Days for an abandoned building to read as fully derelict | The same 90 days an abandoned building stands before it is cleared | Matches the existing trash-cliff timing |
 | `roadWearYears` | 22 | Years for an untouched road to read as fully worn (provisional, look only) | The middle of the design's 20 to 25 year maintenance cliff | Replaced by the road-condition system in the Ponzi work |
 | `crashWreckSpeed` | 40 | The crashed cars' speeds added up (m/s) at which the look and sound treat a crash as a full wreck | Two cars at a Freedom Stroad's 20 m/s | Nothing in the simulation reads it |
+| `widening.weeks` | 78 | How long a widening is followed, one reading a week | The design's "about 18 months" | `scripts/onemorelane.mjs` |
+| `widening.minBefore` | 0.33 | How full a road must have been at its busiest for "traffic is back" to be worth a headline | A road nobody used is "back" the first week otherwise | Reasoned; no town has reached it yet |
+| `widening.minWeeks` | 4 | No "back to normal" headline in the first month | The works clear the road of cars, and they take a while to return | Reasoned |
+| `widening.peakDays` | 144 | The stretch of days a road's "busiest lately" covers (this one and the one before) | One turn of the day-and-night clock, so it always holds a whole day's rush hours | Weekly readings swung between 0% and 26% without it |
 | `disasterLook` | hurricane 4345 m / 1.0, wildfire 35 m / 0.8, landslide 30 m / 0.6, Florida Man 40 m / 0.2 | The reach and strength of a disaster as the look and sound are told them | Each matches what the disaster does in the simulation (a wildfire front burns 35 m round) | Nothing in the simulation reads it |
 
 ## Defaults
@@ -47,4 +57,5 @@ Nothing here is decided by the agent. Each item has a recommendation and the evi
 | The third lane (the director and reviewer) and files the other lanes own | It reviews, generates art and plays; a change it wants in a file another lane owns goes in as a request, or as a commit on its own branch that touches only that file. `aaa/integration` is still merged and pushed from the play lane only | Its handoff also lists "cross-branch integration" as its job. Two agents pushing one branch is how work gets lost. **Say if you want it otherwise** |
 | The order of work after the roadmap of 17 Nov | Phone screen first, then the look lane's waiting features, One More Lane, Honest Mode, the visible Ponzi, the Plat-o-Matic and Old Main; the rest of the foundation (people independent of the camera, save slots UI, hot spots) fitted in between | The roadmap asks for fun first, and the phone is where you play. The remaining foundation items block none of these |
 | Words the roadmap proposes that are not in `GAME_DESIGN.md` | Used as written where the roadmap you pasted gives them ("80% FEDERAL HIGHWAY GRANT APPROVED", "Whispering Oaks Estates: 0 Oaks Remaining"); any other new line is marked PROPOSED in `src/content/` and listed here before it ships | Content is your call |
+| The build's size budget (`scripts/budgets.json`: 2,255,099 bytes, 5% over allowed) | Raise the baseline to today's size at the next integration, and keep 5% | The main bundle is 2,334 kB, 3.5% over the baseline set before either lane added a feature: the look lane's icons and photo mode and this lane's HUD wiring and widening record. It will cross 5% with the next feature, and the budget is there to catch an accident, not to refuse features |
 | Fast-forward `main` to `aaa/integration` | Not yet | The integration suite has three failures that are also on the base (two look tests, one traffic test on some seeds) and one new look test that fails on its own branch |

@@ -14,6 +14,8 @@ A fresh session can take over from this file alone. Read "Where things are", "St
 - **Never pipe the gate through `tail` in a command that then pushes.** The pipe hides the gate's exit code. This pushed one commit past a failing gate on day one.
 - **Long text goes through a file writer, not a shell heredoc.** Git Bash on this PC drops backslashes and trips on apostrophes in long heredocs. Edit scripts live in the session scratchpad; small edits go through a split/join helper that reports a missed match.
 - **A server on a port does not die with `pkill`.** Find the PID with `netstat -ano` and use `taskkill //F //PID`.
+- **Keep the machine quiet while an integration suite runs.** Running my own gates and tests beside it made the look lane's frame-cost test (reflecttest) fail; it passes alone.
+- **nightglow is a coin toss.** On one commit it reads the night street at 103 (pass) or 110.1 (fail) from run to run: three runs at bda104b gave fail, pass, fail. Do not chase it as a regression (it cost an hour); it is reported to the look lane.
 - **Do not export a test's setting for a whole suite run.** `DAYS=120`, meant for the determinism test, also reached trashcliff and made it fail (it needs 133 days). The determinism entry in the registry carries its own settings now.
 - **Merge `origin/aaa/integration` into `claude/aaa-play` before every push** (done at 29cc868; the push at `03ecb16` went without it).
 
@@ -74,6 +76,9 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 | 13032ad | **HUD:** a Follow button on cars and people, and a pill for who the camera rides with (`scripts/followtest.mjs`) |
 | ea27287 | **HUD:** photo mode has a way in (More) and a bar of controls (`src/ui/photoBar.ts`, `scripts/phototest.mjs`) |
 | 087e9cf | The content audit no longer reads a drawn icon's outline as a line of copy |
+| 556917f | The toolbar is as tall as it was before it got drawn icons (an open drawer lay 3 px over it) |
+| 5c44154 | Photo joins the toolbar apart from the core list (the look lane's icon test reads that list and wants art for every id) |
+| ab8573e, 2c54bcc | **Roads:** ONE MORE LANE is remembered, stamped and watched for 78 weeks (`src/sim/widening.ts`, `scripts/onemorelane.mjs`) |
 
 ### How the simulation is built now
 
@@ -141,6 +146,10 @@ None of these thresholds was loosened. They are what the traffic does on a town 
 
 119 of 125. The six: photo-reflection (fails on the look lane's branch alone) and presetlight (fails on the base), both the look lane's; carsolid, lightstest and landmarktest (the table above); crosswalktest (one walker inside a car once on seed 1; it was seed 6 on the base: one seed in six on both).
 
+### Integration at 556917f (the HUD wiring), `--gpu`, seed 1
+
+119 of 128. The nine: hud-icon-art (Photo had no drawn icon; fixed in 5c44154), reflecttest (slowed by my own work running beside the suite; passes alone), nightglow (the coin toss above), photo-reflection and presetlight (the look lane's, failing before), carsolid, crosswalktest, lightstest and landmarktest (the traffic table above).
+
 ### First integration merge (`codex/aaa-world` 9fd06ea + `claude/aaa-play` ecdc0e6), `--gpu`, seed 1
 
 113 of 122. The nine: photo-reflection (fails on `codex/aaa-world` alone: `mirror.lastEye` is undefined in `photoPNG`), presetlight and carsolid (as on the base), phonetargets and trashcliff (fixed by commits after ecdc0e6), parkingtest and lightstest (old-town aim), costtest (fixed, 98fb177), weathertest (fixed, 17e194e).
@@ -161,7 +170,7 @@ The order below follows the owner's "fun first" roadmap of 17 Nov: what a player
 2. Done: the re-pointed lightstest, parkingtest and landmarktest are in (be5dbff, ef3b669, 03ecb16).
 3. **The phone screen (U1, U4):** first pass done (1edb035). What is left is listed under "The phone screen" above.
 4. **Wire what the look lane has built (U5):** done (bf298e1, 13032ad, ea27287, 087e9cf). Left over: icons on the inspector's utility and status rows, the speed buttons and policies; Follow on buses.
-5. **One More Lane as a loop (F1):** the grant stamp, the corridor's volume before and after in the road inspector, traffic climbing back over about 18 game months, the feed line when it saturates. This needs the mesoscopic trip layer.
+5. **One More Lane as a loop (F1):** the first slice is in (2c54bcc): the stamp, the taped button, the record, the chart, the headline. **What it shows is that the traffic does not come back**: on the reference town (not growing) the widened piece got 35 to 45% full at its busiest before and at most 31% in the 78 weeks after, on three seeds. Trips pick where to go at random (`spawnTrip` in `src/agents/traffic.ts`: `pick(jobs)`, `pick(shops)`), and the only thing that answers to speed is one county-wide factor (`induced = 0.6 + 0.6 * flowEma`). The next slice makes where people go depend on the drive: sample a few candidate destinations and weigh them by today's travel time, so a faster road draws trips until it is slow again. Measure with onemorelane on six seeds and on the 10,000-person town before proposing numbers.
 6. **Honest Mode (F8):** a table of euphemism and plain word, a toggle that flips the whole UI, unlocked by Earl; the value-per-acre view.
 7. **The Growth Ponzi made visible (F2):** real road condition, the unfunded-liabilities curve in the budget, Cousin Dale's Paving LLC, tax abatements.
 8. **The Plat-o-Matic and Old Main** (`GAME_DESIGN.md` 5.2 and 7): a subdivision stamped from one drag; a courthouse square to start beside.

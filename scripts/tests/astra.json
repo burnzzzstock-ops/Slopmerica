@@ -1,4 +1,5 @@
 [
+  {"name":"people-fov","command":"node scripts/look/people-fov.mjs","tier":"full","timeout":1800,"needsBrowser":true,"needsKey":false,"env":{},"what":"Live Game.frame scales citizen detail with FOV, retains hysteresis and draws each visible person once across all presets"},
   {"name":"civic-normals","command":"node scripts/look/civic-normals.mjs","tier":"full","timeout":600,"needsBrowser":true,"needsKey":false,"env":{},"what":"Civic geometry attributes read the packed XYZ normals with stride four for every vertex and LOD"},
   {"name":"postcards","command":"node scripts/look/postcards.mjs","tier":"full","timeout":1200,"needsBrowser":true,"needsKey":false,"env":{},"what":"Native-resolution county postcards on all three maps restore clock, weather, camera and HUD"},
   {"name":"photo-resolution","command":"node scripts/look/photo-resolution.mjs","tier":"measure","timeout":600,"needsBrowser":true,"needsKey":false,"env":{},"what":"True 4K scene export and target restoration on success and failure","why":"Large GPU render target and machine-specific hardware proof"},

@@ -277,9 +277,13 @@ export class PeopleRendererCore {
     old.dispose();
   }
 
-  /** kept for callers of the old API: only the switch distance */
-  updateLod(_camera: THREE.Camera, quality: 'low' | 'medium' | 'high' | number = 'high'): void {
-    this.detail.near = typeof quality === 'number' ? quality : quality === 'low' ? 48 : quality === 'medium' ? 58 : 66;
+  /** Preserve the near figure's projected size as the player changes field of view. */
+  updateLod(camera: THREE.Camera, quality: 'low' | 'medium' | 'high' | number = 'high'): void {
+    const near = typeof quality === 'number' ? quality : quality === 'low' ? 48 : quality === 'medium' ? 58 : 66;
+    const perspective = camera as THREE.PerspectiveCamera;
+    const fov = perspective.isPerspectiveCamera ? perspective.getEffectiveFOV() : 50;
+    const scale = fov > 0 && fov < 180 ? Math.tan(25 * Math.PI / 180) / Math.tan(fov * Math.PI / 360) : 1;
+    this.detail.near = near * scale;
   }
 
   /** remember a camera the figure is being drawn from (see flush) */

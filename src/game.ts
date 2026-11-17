@@ -1118,6 +1118,7 @@ export class Game {
     this.peds.population = this.sim.population;
     this.peds.update(dt, spd, this.rts.target, this.rts.distance, this.time);
     this.civic.update(dt);
+    this.peds.renderer.updateLod(this.camera, this.q.peopleNear);
     this.vaultScenery.update(dt);
     P.lap('people');
     this.communes.update(dt, this.env.night, this.time, this.camera.position);

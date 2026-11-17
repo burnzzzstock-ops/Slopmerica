@@ -7,7 +7,7 @@
 // in the commit). Shared by lookbook.mjs, nighttest.mjs and the traffic tests.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { readSave, REFBLOCK, REFBLOCK_CENTER, writeSave } from './lib/fixtures.mjs';
+import { OLD_TOWN, readSave, REFBLOCK, REFBLOCK_CENTER, writeSave } from './lib/fixtures.mjs';
 
 export const SAVE = REFBLOCK;
 export { EXE, ARGS } from './lib/browser.mjs';
@@ -78,14 +78,33 @@ async function grow(browser, base) {
     { const u = (shore.x - C.x) * ax.x + (shore.z - C.z) * ax.z, v = (shore.x - C.x) * nx.x + (shore.z - C.z) * nx.z; near('sewageOutfall', u, v, 240); }
     g.sim.growthMul = 3;
     // a year and 120 days: a grown town, saved in mid-summer (day 0 is March 20), so it opens in summer light with no clock set by hand
-    for (let i = 0; i < 24; i++) d.run(20);
+    for (let i = 0; i < 20; i++) d.run(20);
+    // over the last 85 days (about three and a half minutes of traffic), how long each car on the road has stood still: the
+    // first town grown this way was saved with its main street locked for good behind three cars, and every traffic test
+    // then measured a jam
+    const stood = new Map();
+    let stoodMost = 0;
+    const watch = () => {
+      const live = new Set();
+      for (const c of g.traffic.cars) {
+        live.add(c.id);
+        if (c.parked || c.thru || c.crashed !== 0 || c.dep > 0 || c.v >= 0.05) stood.delete(c.id);
+        else { const s = (stood.get(c.id) ?? 0) + 0.078125; stood.set(c.id, s); if (s > stoodMost) stoodMost = s; }
+      }
+      for (const id of stood.keys()) if (!live.has(id)) stood.delete(id);
+    };
+    g.onStep.push(watch);
+    for (let i = 0; i < 4; i++) d.run(20);
     d.run(5);
+    g.onStep.splice(g.onStep.indexOf(watch), 1);
+    const standing = [...stood.values()].filter((s) => s > 60).length;
     // a town worth looking at, or no fixture
     const all = [...g.buildings.list.values()], zoned = all.filter((b) => b.zone !== 'service' && b.zone !== 'landmark');
     const U = SV.snapshot().util, off = all.filter((b) => b.offNet).map((b) => b.label);
     const abandoned = zoned.filter((b) => b.abandoned !== undefined).length;
-    const facts = { people: g.sim.population, buildings: all.length, zoned: zoned.length, abandoned, roads: g.net.segs.size, junctions: g.net.nodes.size, cars: g.traffic.cars.length, day: Math.round(g.sim.day), cutOff: { power: U.power.unserved, water: U.water.unserved, sewage: U.sewage.unserved }, notLinked: off };
+    const facts = { people: g.sim.population, buildings: all.length, zoned: zoned.length, abandoned, roads: g.net.segs.size, junctions: g.net.nodes.size, cars: g.traffic.cars.length, standingOver60s: standing, longestStand: Math.round(stoodMost), day: Math.round(g.sim.day), cutOff: { power: U.power.unserved, water: U.water.unserved, sewage: U.sewage.unserved }, notLinked: off };
     if (off.length || U.power.unserved || U.water.unserved || U.sewage.unserved || abandoned > zoned.length * 0.05 || g.sim.population < 500) throw new Error(`refblock: the town is not running: ${JSON.stringify(facts)}`);
+    if (standing > 0 || stoodMost > 120) throw new Error(`refblock: the town's traffic is jammed (cars standing on the road for over a minute at the save, or one that stood over two): ${JSON.stringify(facts)}`);
     return { center: { x: Math.round(C.x), z: Math.round(C.z) }, facts, save: d.snapshot() };
   });
   await page.close();
@@ -151,10 +170,14 @@ export function testSeed() {
  * test. `town` fingerprints the buildings as loaded (printed with a seed): a
  * run whose asset pack timed out builds other models, and isn't a replay.
  */
-export async function openBlock(browser, { base, quality = 'high', width = 1280, height = 720, phone = false, dpr = 1, seed }) {
-  if (!existsSync(SAVE)) await grow(browser, base);
-  const save = readSave(SAVE);
-  const center = JSON.parse(readFileSync(REFBLOCK_CENTER, 'utf8'));
+export async function openBlock(browser, { base, quality = 'high', width = 1280, height = 720, phone = false, dpr = 1, seed, save: other, center: otherCenter }) {
+  // (save and center: another saved town to open the same way, for a test about one particular town)
+  if (!other && !existsSync(SAVE)) {
+    if (OLD_TOWN) throw new Error(`refblock: REFTOWN=v1 asks for the old reference town and ${SAVE} is missing (it is a committed file; it is never grown again)`);
+    await grow(browser, base);
+  }
+  const save = readSave(other ?? SAVE);
+  const center = other ? otherCenter ?? { x: 0, z: 0 } : JSON.parse(readFileSync(REFBLOCK_CENTER, 'utf8'));
   // phone: a real touch context (3x screen, touch, mobile UA), which is what makes the game pick the phone's pixel ratio and MSAA
   const page = await browser.newPage(phone ? { viewport: { width, height }, deviceScaleFactor: 3, isMobile: true, hasTouch: true } : { viewport: { width, height }, deviceScaleFactor: dpr });
   const errs = [], vault = [];

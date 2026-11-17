@@ -1,79 +1,130 @@
 # FABLE log: the AAA push
 
-A fresh session can take over from this file alone. Newest entries are at the bottom of each section.
+A fresh session can take over from this file alone. Read "Where things are", "State of the work" and "Next" first; the rest is reference.
 
 ## Where things are
 
 - **Worktree:** `C:/Users/burnz/Slopmerica-fable`, branch `claude/aaa-play` (LF line endings: `core.autocrlf false` in the worktree config).
-- **Integration:** `aaa/integration` (mine to merge and push). ASTRA works on `codex/aaa-world` in its own worktree.
+- **Integration:** `C:/Users/burnz/Slopmerica-int`, branch `aaa/integration` (mine to merge and push). It has its own `node_modules` (`npm ci` there after a lock change). ASTRA works on `codex/aaa-world` in its own worktree.
+- **Main checkout:** `C:/Users/burnz/Slopmerica` is on `aaa/briefs`. Leave it alone.
+- **A third lane joined on 17 Nov:** ORION (Antigravity), the director and reviewer: it listens to rendered audio, looks at screenshots, plays the game in a live browser and generates 2D art. Workspace `C:/Users/burnz/.gemini/antigravity/scratch/Slopmerica`, ports 5170 to 5179, branch `agy/aaa-director` (not pushed yet). Its evaluation and its queue for this lane are in that workspace, untracked: `docs/aaa/EVAL_AND_AAA_FUN_ROADMAP.md` and `docs/aaa/HANDOFF_FABLE_CLAUDE.md`. The owner pasted the roadmap into this session on 17 Nov, so its priorities are the owner's ("fun first"); "Next" below follows them. Both files were written against `9b3f161` and are out of date on everything listed in "State of the work".
 - **Ports:** 5180 to 5189. `--serve` in the suite uses 5189 by default; pass another port for a second run.
-- **Brief:** `docs/aaa/FABLE.md`. ASTRA's: `docs/aaa/ASTRA.md`. Requests: `REQUESTS_FABLE.md` (mine to ASTRA), `REQUESTS_ASTRA.md` (ASTRA's to me, on its branch). Owner decisions: `DECISIONS_FABLE.md`.
-- **Before a commit:** `npm run gate` (about 50 s). **Before a push:** `npm run smoke:gpu` (about 2 min on this PC; `npm run smoke` is the software-rendering run, about 6 min).
-- **Never pipe the gate through `tail` in a command that then pushes.** The pipe hides the gate's exit code. This pushed one commit past a failing gate on day one; the failure was the port clash described below, not the code.
-- **Long text goes through a file writer, not a shell heredoc.** Git Bash on this PC drops backslashes and trips on apostrophes in long heredocs.
+- **Brief:** `docs/aaa/FABLE.md`. ASTRA's: `docs/aaa/ASTRA.md`. Requests: `REQUESTS_FABLE.md` (mine to ASTRA), `REQUESTS_ASTRA.md` (ASTRA's to me, on its branch). Owner decisions: `DECISIONS_FABLE.md`. The rules both lanes share are in `AGENTS.md` / `CLAUDE.md` at the repo root.
+- **Before a commit:** `npm run gate` (about 50 s). **Before a push:** `npm run smoke:gpu` (about 2 min). **At a merge:** the full suite on the merged tree (about 18 min with `--gpu`).
+- **Never pipe the gate through `tail` in a command that then pushes.** The pipe hides the gate's exit code. This pushed one commit past a failing gate on day one.
+- **Long text goes through a file writer, not a shell heredoc.** Git Bash on this PC drops backslashes and trips on apostrophes in long heredocs. Edit scripts live in the session scratchpad; small edits go through a split/join helper that reports a missed match.
+- **A server on a port does not die with `pkill`.** Find the PID with `netstat -ano` and use `taskkill //F //PID`.
 
 ## This PC
 
 Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwright Chromium installed). `scripts/lib/browser.mjs` finds it.
 
-- Software WebGL (SwiftShader) draws a live game page at **0.7 fps**; the real card (`GPU=1`, ANGLE D3D11, "NVIDIA GeForce RTX 5090") at **55 fps**. Boot is 14.9 s against 10.3 s.
-- `node scripts/suite.mjs --gpu` uses the card for every test not marked `"pixels": true` in the registry (14 are; they always use SwiftShader so their numbers are the same on every machine).
-- Smoke tier, 4 at a time: 370 s on SwiftShader, **131 s with `--gpu`**, 15 of 15 pass both ways.
+- Software WebGL (SwiftShader) draws a live game page at **0.7 fps**; the real card (`GPU=1`, ANGLE D3D11) at **55 fps**.
+- `node scripts/suite.mjs --gpu` uses the card for every test not marked `"pixels": true` in the registry (those always use SwiftShader, so their numbers are the same on every machine).
+- Smoke tier, 4 at a time: 370 s on SwiftShader, **131 s with `--gpu`**. The full suite: about 18 minutes with `--gpu` (two pixel tests, yellowflash and presetlight, take 10 minutes each on SwiftShader and set the floor).
 
-## Phase 0
+## State of the work (17 Nov 2026)
 
-### F0.1 Harness on Windows: done
+`claude/aaa-play` is at `65e2c58` plus this file. Everything below is committed. The registry has 189 entries on this branch (12 gate, 15 smoke, 87 full, 75 measure), 201 on the merge.
+
+| Item | State |
+|---|---|
+| F0.1 harness on Windows | Done |
+| F0.2 gates | Done, except `noUnusedLocals` / `noUnusedParameters`, a `tsconfig.scripts.json` and a `scripts/worktree.sh` without symlinks |
+| F0.3 determinism | Done for frame rate and for save and reload on the norcal test town. Open: the other two maps, a two-year scripted-player town, the Low and Ultra modes (blocked on F0.4) |
+| F0.4 presets never change the sim | **Open.** People still exist only near the camera and are capped by the preset |
+| F0.5 saves | Exact state, versions and migration, packing, quota fallbacks and IndexedDB slot storage are done. Open: the slots UI, the confirm before New city, the message for an unreadable save, the golden-save test |
+| F0.6 ship like a game | Done: no debug hooks or playtest tools in a player's build, one-file build with packs inside, README, `shiptest` |
+| F0.7 sim hot spots | Open. The 10,000-person town to measure on is at `shots/towns/florida-10k.json` (gitignored; 14,632 people, 635 buildings) |
+| F0.8 AGENTS.md / CLAUDE.md | Done |
+| Contracts for ASTRA | Types, `game.fields` and 11 of 14 world events are live. Not emitted yet: `flood`, `collapseStage`, `paradisePaved` (they come with the systems that cause them) |
+| Phases 1 to 4 | Not started |
+
+### What changed, by commit
 
 | Commit | What |
 |---|---|
-| 2238295 | `.gitattributes`: every text file LF in every checkout (renormalize touched nothing else) |
-| 463b011 | `scripts/lib/slots.mjs` (Node lock files, first-come queue, stale-pid cleanup, `SLOTS=4` per checkout) and `scripts/lib/proc.mjs` (`start`, `killTree`) |
-| f00fd76 | `scripts/lib/browser.mjs` (`EXE`, `ARGS`, `launch`); 156 launch calls in 155 scripts rewritten; `grep pw-browsers scripts` now finds only that file |
-| 18e87a3, 8810fbc | suite: CRLF-safe, 0 tests exits 1, an unknown `--only` name exits 1, timeouts kill the whole process tree |
-| 4acd751 | `shadercheck` path (`fileURLToPath`) |
-| 0d7e4d2 | `snapshot.mjs` without tar or symlinks (a junction for `node_modules`); default folder `../snap/<checkout>-<name>` |
-| 10c8b8e | the reference town is `scripts/fixtures/refblock-town.json` (norcal, day 195, 262 buildings, 97 nodes, 111 segments) |
-| dac96e4 | `SEED` defaults to 1 in every seeded test; `FUZZ=1` picks a random one |
-| 8810fbc | registry moved to `scripts/tests/{fable,astra,shared}.json`; 49 unregistered scripts triaged (10 real tests now run); `--tier`, `--serve`, `--gpu`, `--owner` |
-| 332a155 | node rigs pass `ws: false` to Vite (two rigs at once clashed on port 24678 and one hung) |
+| 2238295 to 92920c7 | Harness: LF everywhere, slots and process helpers, one browser launcher (156 call sites), suite hardening, snapshot without tar, the registry as three JSON files with tiers, `--gpu`, `--serve`, the gate and smoke commands |
+| 332a155 | Node rigs pass `ws: false` to Vite (two rigs at once clashed on port 24678) |
+| 906954e | **One fixed step.** `Game.step()` is the only place the county changes; `Game.frame()` turns real time into whole steps and draws. Per-system seeded dice from one county seed. `src/sim/climate.ts` is the weather the sim runs on. `scripts/determinism.mjs`, `scripts/simpure.mjs` (gate) |
+| b60851a | `src/core/snapshot.ts`: an exact serializer (typed arrays, maps, sets, references by id) with unit tests |
+| f82d1ac | Review and suite fixes: a day is exactly 32 steps (0.078125 game seconds), `weather.force()` reaches the sim, the sky cannot drift from it, and a dozen draw-side fixes |
+| c7da844 | **Exact saves.** A reload at any point carries on as the same county: every system saves its full state (`src/sim/state.ts`, `saveExact` / `loadExact`), trips in progress are saved by handler name, zone cells have stable ids |
+| fc9b8a6 | Saves 25% smaller (1,361 kB to 1,024 kB raw on the test town); demolished buildings a car is still driving to are saved once as ghosts |
+| 9f5be49 | `SEED=n` reaches the county's dice again; feedtest runs on Windows |
+| a5961f6 | Save version 2 with a migration chain, packed with `src/core/lz.ts` above 1,000,000 characters (4.4x), quota fallbacks |
+| 6964345 to 14d4e1b | World events wired: crash, levelUp, construction, demolished, roadBuilt, laneAdded, moneyTick, zonePainted, treesCleared, disaster, fireFront |
+| ecdc0e6 | `src/sim/slots.ts`: named save slots in IndexedDB (no UI yet) |
+| 1a50bfb to eefdc4a | Ship hygiene: `src/core/flags.ts`, hooks and playtest tools off in a player's build, packs inlined in `build:single` (one 12.1 MB file), README, vite 8.3.1 to 8.3.8 and source-map-js 1.2.2 (clears `npm audit`), `scripts/shiptest.mjs`, the phone population stat is finger-sized |
+| 1cbdb6b | **A new reference town** (see below) |
+| 321eec7 | `AGENTS.md` and `CLAUDE.md` |
+| 98fb177 | costtest points its cursor at the spot the game's finder returns |
+| 17e194e | A weather spell's floor is 12 real seconds at the player's speed again (19 days at top speed, under 5 at normal), so rain is days long at normal speed |
+| 65e2c58 | `REFTOWN=v1` opens the old reference town; the suite sets it for every test in `astra.json` until the look lane has measured again on today's town |
 
-Registry today: 185 entries: 10 gate, 15 smoke, 85 full, 75 measure.
+### How the simulation is built now
 
-Not done in F0.1: `scripts/worktree.sh` still uses a symlink (replace it with a Node script when a helper needs a worktree); `scripts/withslot.sh` is still on disk but nothing calls it.
+- `STEPS_PER_DAY = 32`, `STEP_SECONDS = 2.5 / 32` (`src/core/time.ts`). `Game.step()` order: `onStep` hooks, `zones.sync()`, the hour, `sim.step`, `climate.step`, weather effects, communes, `zones.sync()`, `traffic.step`, `peds.step`, every extension system's `step`.
+- `Game.runSteps(n)` and `Game.stepsFor(days)`; `__dbg.run(days)` uses them.
+- Dice: `streamSeed(game.seed, name)` per system; `fx` for looks and words. The seed comes from `window.__seed`, `#seed=N`, or 1 under automation, and is saved.
+- Cars and people keep `pose0` and `pose`; `traffic.draw(alpha, dtReal, cam)` and `peds.draw(alpha, dtReal)` draw between them and record `shown`.
+- Saves: `snapshot()` in `src/sim/save.ts` holds the legacy fields plus `seed` and `state` (`ExactState`). `SAVE_VERSION = 2`. `readSaveText` unpacks and migrates. `localStorage['slopmerica.packFrom']` overrides the packing threshold (tests set `'0'`).
+- Debug: `src/core/flags.ts` (`DEBUG`, `PLAYTEST`). The test launcher asks for both on every page.
 
-### F0.2 Gates: done, except the stricter typecheck
+### The reference town
 
-- 92920c7: `npm run gate` (typecheck, build and `scripts/budgets.json` at 2,255,099 bytes / 707,280 gzip with +5% allowed, the 10 node-only tests, the registry lint) and `npm run smoke` / `smoke:gpu` / `suite` / `suite:gpu`.
-- Open: `noUnusedLocals` / `noUnusedParameters`, a `tsconfig.scripts.json`.
+`scripts/fixtures/refblock-town.json.gz`, read through `scripts/lib/fixtures.mjs`. Norcal, seed 1: 969 people, 143 buildings, 128 roads, 112 junctions, 173 cars, centre `{x: 525, z: 45}`. Its main street, plants, wells, landfill and sewage works all stand and work. `scripts/refblock.mjs` grows it and refuses to save a broken town.
 
-### Baseline
+The town it replaced (262 buildings, no main street, no working utilities: the stroad had been drawn on top of the county road and every service aimed at ground with no road) is kept as `scripts/fixtures/saves/v1-norcal-block.json`, a version 1 save for the migration test.
 
-A full-suite run of commit 92920c7 (harness only, no `src/` change) writes to `shots/suite/base-92920c7/` (`summary.tsv` and one log per test). `shots/` is gitignored, so its table is copied into this file when the run finishes. Any later failure is compared against it.
+A first fully serviced version grew to 2,277 people and 363 cars and made the traffic tests fail for load reasons, so the zones were cut back to about 1,000 people.
 
-### Contracts (for ASTRA): first version in
+## Test results
 
-- `src/contracts.ts`: `WorldEvents`, `WorldFields`, `ScalarField`, `FieldLegend`, `InfoViewId`, `ViewTarget`, `ViewPose`, `MoneyKind`, `DisasterKind`.
-- `game.fields` is live (`src/sim/fields.ts`): pollution, noise and land value fields; `roadCondition` (age only, provisional), `buildingAge`, `buildingCondition`, `pollutionAt`, `smog`, `naturePct`, `poseOf`.
-- `game.sim.events` is typed with the world events. **None is emitted yet.** `scripts/contracttest.mjs` lists which have fired and checks each payload shape as it appears.
-- People have a stable `id` (`game.peds.peds[].id`).
+### Baseline: commit 92920c7 (harness only), `--gpu`, seed 1
 
-## Findings to act on
+101 of 109 pass. The eight that did not:
 
-From the determinism inventory (a read of the code; nothing was run). The list is longer than the brief's:
+| Test | Why | Now |
+|---|---|---|
+| feedtest | `import()` of a `C:\` path | Fixed (9f5be49) |
+| phonetargets | The population stat was narrower than a finger with the emoji font on this PC | Fixed (eefdc4a) |
+| trashcliff | The old town had no landfill | Passes on the new town |
+| landmarktest, lightstest, parkingtest | Aim at places in the old town | Being re-pointed at the new town |
+| yellowflash | Real: parked cars flash at night with bloom | ASTRA's (requested) |
+| presetlight | Real: Low is brighter than the other presets at the noon shore | ASTRA's (requested) |
 
-1. Building ids are renumbered 1..N on load, and freight looks its saved stock up by the old id first, so a shop can get another shop's stock.
-2. Traffic depends on frame rate beyond substep size: spawns are capped per substep, the drunk weave advances once per frame, and positions are written once per frame while T-bone checks run every substep.
-3. Weather drives speed, crash odds, construction, demand, fires, solar and wind, and is never saved. Parts of it advance on real time, even while paused.
-4. Pedestrians hold cars and trigger signal phases, and exist only when the camera is within 900 m. Touch devices start at exactly 900.
-5. After a load the first daily tick runs on default demand, construction times are forced to 5 days and land value to 30, model variants are re-rolled (which decides drive-thru lanes), and landmarks under construction come back finished.
-6. Services lose abandonment counters, fires, the noise field and dispatched trucks on load.
-7. Some state changes run on wall-clock time: a 4.5 s `setTimeout` for commune road blockers, wildfire ignition in an async import callback, communes vanishing after 4 real seconds, bus dwell on real time, road links refreshed every 0.6 real seconds. Pause leaves traffic at 0.0001x, pedestrians at 0.3x and buses at 0.25x.
-8. On load, zone cells get new ids and a new order (which changes where buildings grow), and trees or terrain cut by since-demolished roads come back.
-9. One unseeded `Math.random` stream is shared by the sim and by camera-dependent cosmetics (161 call sites, 116 in sim scope). Only the sim's `Rng(777)` and transit's roll are saved.
-10. `__dbg.run(days)` calls `frame(0.1)` at 4x speed, which is not the path live play takes.
+### Seeded traffic tests against the base, six seeds
+
+- carsolid: fails on 3 of 6 seeds on the base and on this branch (overlapping pairs per car: base 0.00 to 0.07, now 0.00 to 0.02).
+- crosswalktest: fails on 1 of 6 seeds on both (seed 6).
+
+### Determinism (`scripts/determinism.mjs`)
+
+Seed 1, norcal, a street grid with zones and services. Stepped, stepped again, 30 fps, 144 fps and a reload every 45 days agree on all 17 system fingerprints at every checkpoint for 180 days. Before the fixed step, 30 fps and 144 fps differed from day 1.
+
+### First integration merge (`codex/aaa-world` 9fd06ea + `claude/aaa-play` ecdc0e6), `--gpu`, seed 1
+
+113 of 122. The nine: photo-reflection (fails on `codex/aaa-world` alone: `mirror.lastEye` is undefined in `photoPNG`), presetlight and carsolid (as on the base), phonetargets and trashcliff (fixed by commits after ecdc0e6), parkingtest and lightstest (old-town aim), costtest (fixed, 98fb177), weathertest (fixed, 17e194e).
+
+## Findings still to act on
+
+1. People hold cars at crossings and trigger signal phases, and exist only when the camera is within 900 m. This is F0.4. The plan: town-wide seeded walkers in `peds` that do not depend on the camera; camera-local cosmetic extras in a separate list on the `fx` stream; a renderer handle of -1 for a walker not drawn; handles assigned at draw time. Then extend `qualitytest` to fingerprint the whole sim on Low and Ultra.
+2. The interchange tool (`net.together()`) and communes clearing trees do not raise `roadBuilt` / `treesCleared`.
+3. The sky module rolls nothing of its own any more but still owns the look of a spell; it is handed each spell through `weather.force`. It should read `game.climate` (requested).
 
 ## Next
 
-1. Wire the world events as each system is touched (cheap ones first: crash, levelUp, construction, demolished, roadBuilt, laneAdded, moneyTick, zonePainted).
-2. F0.3 determinism: fixed timestep in `game.ts`, seeded streams per system, stable ids, complete saves, `scripts/determinism.mjs`.
-3. F0.4 (pedestrian sim independent of preset and camera), F0.5 saves, F0.6 debug gating, F0.7 hot spots, F0.8 AGENTS.md / CLAUDE.md.
+The order below follows the owner's "fun first" roadmap of 17 Nov: what a player sees and touches comes before the rest of the foundation. Each item names the brief's code for it.
+
+1. Finish the integration merge: full suite on the merged tree, push `claude/aaa-play` and `aaa/integration`. Nothing after 9b3f161 is visible to the other two lanes until this is done.
+2. Cherry-pick the re-pointed lightstest, parkingtest and landmarktest once they pass on several seeds.
+3. **The phone screen (U1, U4).** At 390 x 844 the tutorial card, an open drawer and the bottom bar stack up and cover more than half the screen. The tutorial step becomes one compact pill while a drawer is open; the drawer slides down to a slim bar while a finger is drawing on the map; step 5 of 5 dismisses itself once Budget has been opened. A test measures the share of the screen that is free map.
+4. **Wire what the look lane has built (U5):** the drawn HUD icons, a Follow button in the car, person and bus inspectors with a "Following" pill, photo mode and postcards.
+5. **One More Lane as a loop (F1):** the grant stamp, the corridor's volume before and after in the road inspector, traffic climbing back over about 18 game months, the feed line when it saturates. This needs the mesoscopic trip layer.
+6. **Honest Mode (F8):** a table of euphemism and plain word, a toggle that flips the whole UI, unlocked by Earl; the value-per-acre view.
+7. **The Growth Ponzi made visible (F2):** real road condition, the unfunded-liabilities curve in the budget, Cousin Dale's Paving LLC, tax abatements.
+8. **The Plat-o-Matic and Old Main** (`GAME_DESIGN.md` 5.2 and 7): a subdivision stamped from one drag; a courthouse square to start beside.
+9. **The Waffle Hut Index and floods the player caused (F4).** Then endings (F3), American roads (F5), parking (F6), citizens (F7), the headless sim (F9).
+10. Foundation still owed, fitted in between: F0.4 (people do not depend on the camera or the preset), the rest of F0.3 (three maps, the scripted-player town, Low and Ultra), F0.5 (slots UI, confirm before New city, the unreadable-save message, golden saves), F0.7 (hot spots on the 10,000-person town).
+11. Phase 3 (writing), Phase 4 (proof).

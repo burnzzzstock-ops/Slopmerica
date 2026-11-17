@@ -29,12 +29,19 @@ const pct = (x) => `${Math.round(x * 100)}%`;
 
 // ---- behaviour (once, on the first preset)
 {
-  const { page, errs } = await openBlock(browser, { base, seed: SEED, quality: presets[0] });
-  const r = await page.evaluate(async (seed) => {
+  const { page, errs, center } = await openBlock(browser, { base, seed: SEED, quality: presets[0] });
+  const r = await page.evaluate(async ({ seed, center }) => {
     const { occupancy } = await import('/src/agents/parking.ts');
+    const { VEHICLE_SPECS } = await import('/src/agents/vehicles.ts');
+    const { generateBuilding } = await import('/src/buildings/generator.ts');
+    const { BRANDS } = await import('/src/art/brands.ts');
     // (the import yields to the page: seed again after it, so nothing that ran meanwhile shifts the numbers)
     window.__reseed?.(seed);
-    const g = window.__game, tr = g.traffic, P = g.parking, tgt = g.rts.target;
+    const g = window.__game, tr = g.traffic, P = g.parking;
+    // (the camera over the block's middle: the town opens looking at the end of the county road, which was the block's
+    // middle only on the first reference town)
+    const tgt = g.rts.target.clone();
+    tgt.x = center.x; tgt.z = center.z;
     tr.crosswalkWalkers = undefined; // cars only (people and cars: crosswalktest)
     P.inView = () => false; // every lot off screen: they follow the hour
     const step = (hour) => { tr.update(1 / 20, 1, hour, g.sim.population, g.sim.jobsFilled, tgt); P.update(1 / 20, hour, tgt.x, tgt.z, 500, () => tr.renderer.stats().active); };
@@ -42,6 +49,18 @@ const pct = (x) => `${Math.round(x * 100)}%`;
     const occ = {};
     let pulledIn = 0, backedOut = 0;
     const seen = new Set();
+    // trips that left a lot with a car parked in it as long as theirs (parking.ts take: the same kind, or one within
+    // 0.4 m), and how many of them backed out of its stall: every one should
+    const lots = P.lots, launch0 = tr.launch;
+    let couldBack = 0, didBack = 0;
+    tr.launch = function (...a) {
+      const oB = a[2], len = VEHICLE_SPECS[a[4]]?.length ?? 0;
+      const could = !!oB && !!lots.get(oB)?.taken.some((p) => p && p !== 'held' && Math.abs(VEHICLE_SPECS[p.kind].length - len) <= 0.4);
+      const c = launch0.apply(this, a);
+      if (c && could) { couldBack++; if (c.fromSpot) didBack++; }
+      return c;
+    };
+    const lotsAt = [...g.buildings.list.values()].filter((b) => P.parkedAt(b).spots > 0).map((b) => `${b.label} (${P.parkedAt(b).spots})`);
     for (const hour of [3, 7, 9, 12.5, 16, 19, 23]) {
       for (let f = 0; f < 1200; f++) {
         step(hour);
@@ -64,7 +83,42 @@ const pct = (x) => `${Math.round(x * 100)}%`;
       occ[hour].all = { share: Object.values(t).reduce((n, [a]) => n + a, 0) / all, spots: all, want: want / all };
     }
     // a grand opening at a drive-thru: the line spills onto the road, then clears
-    const thru = [...g.buildings.list.values()].filter((b) => tr.thruAt(b));
+    // (the block's own drive-thru if it has one. The town regrown in 1cbdb6b has none: its one McDougal's became a
+    // Brisket Bunker, with no lane, when it levelled up. Then a shop lot gets one here, built by the game's own
+    // generator as a drive-thru brand's building (fast food, or a coffee kiosk), on the stroad if it can be. Its lane
+    // as the first town's: a coffee kiosk with four places; the shortest lane of four or more the generator gives a
+    // stroad lot, the first such lot by id. (Cars already on their way to the lot pull into it as before: only trips
+    // that set off once it has a lane go through the line. Not a lot cars are waiting at the kerb of for its drive-thru:
+    // the Brisket Bunker has three since it lost its lane, and giving it one back would let them go and hide what they do
+    // to the stroad.))
+    let thru = [...g.buildings.list.values()].filter((b) => tr.thruAt(b)), made = null;
+    if (!thru.length) {
+      const food = BRANDS.filter((x) => (x.arch ?? []).some((a) => a === 'fastFood' || a === 'coffee') && x.zones.includes('comLow')).map((x) => x.id);
+      const all = [...g.buildings.list.values()].filter((b) => b.zone === 'comLow' && b.state === 'active' && !tr.cars.some((c) => c.thruB === b));
+      const onStroad = all.filter((b) => g.net.segs.get(b.seg)?.type === 'stroad4');
+      let best = null;
+      for (const b of (onStroad.length ? onStroad : all).sort((a, c) => a.id - c.id)) {
+        for (const brand of food) {
+          for (let k = 0; k < 3; k++) {
+            const m = generateBuilding({ zone: 'comLow', level: b.level, widthCells: b.w, depthCells: b.d, seed: b.id * 7919 + k, brand });
+            const n = (m.spots ?? []).filter((p) => p.kind === 'thru').length;
+            if (n >= 4 && n < (best?.n ?? Infinity)) best = { b, m, n };
+          }
+        }
+      }
+      if (best) {
+        const b = best.b;
+        made = { was: b.label, road: g.net.segs.get(b.seg)?.name };
+        b.model = best.m; b.label = best.m.label;
+        thru = [b];
+        // the traffic's answer for the rebuilt lot (a level-up swaps a building's model the same way). It had asked
+        // this lot for a drive-thru before (above, and at every trip there) and kept "none"; the lot's new lanes are
+        // only seen if that answer goes with the old model. Where it doesn't, the stale answer is dropped here so the
+        // grand opening can be measured, and the check below fails with it.
+        made.lane = !!tr.thruAt(b);
+        if (!made.lane) tr.thruLanes.delete(b);
+      }
+    }
     let spill = null;
     if (thru.length) {
       const b = thru[0];
@@ -83,10 +137,10 @@ const pct = (x) => `${Math.round(x * 100)}%`;
         }
         if (f > 20 * 300 && s.onRoad === 0) clearedAt = f / 20;
       }
-      spill = { b: b.label, places: tr.thruStats().find((x) => x.b === b).places, maxRoad, heldBehind, spills, clearedAt };
+      spill = { b: b.label, made, places: tr.thruStats().find((x) => x.b === b).places, maxRoad, heldBehind, spills, clearedAt };
     }
-    return { occ, pulledIn, backedOut, spill, parked: P.count, cap: P.cap };
-  }, SEED);
+    return { occ, pulledIn, backedOut, couldBack, didBack, lotsAt, spill, parked: P.count, cap: P.cap };
+  }, { seed: SEED, center });
   const row = (h) => Object.entries(r.occ[h]).map(([k, v]) => `${k} ${pct(v.share)} of ${v.spots}${v.want !== undefined ? ` (its curves: ${pct(v.want)})` : ''}`).join(', ');
   for (const h of Object.keys(r.occ).sort((a, b) => a - b)) console.log(`  ${String(h).padStart(4)}:00  ${row(h)}`);
   const o = (h, k) => r.occ[h]?.[k]?.share ?? NaN;
@@ -97,8 +151,16 @@ const pct = (x) => `${Math.round(x * 100)}%`;
   check(`every hour, lots are as full as their curves say (within ${pct(Math.max(...off))}; 12% allowed: cars that drove in stay)`, Math.max(...off) <= 0.12);
   if (r.occ[3].home) check(`homes are full at night, emptier by day (${pct(o(3, 'home'))} at 3 am, ${pct(o(12.5, 'home'))} at noon)`, o(3, 'home') > o(12.5, 'home'));
   check(`arriving cars pull into stalls and stay (${r.pulledIn} in 7 hours)`, r.pulledIn > 5);
-  check(`leaving cars back out of their stalls (${r.backedOut})`, r.backedOut > 3);
+  // (every trip that left a lot with a car its length parked in it backs that car out of its stall, and more than three of
+  // them, as before: the first reference town had lots at its offices and shops, and 17 backed out in the 7 hours. The
+  // town regrown in 1cbdb6b has only the lots printed above, at three shops and a house, so how many back out is how many
+  // trips leave those: 1 to 6 on seeds 1-6, and 5 to 10 with the three cars stranded at the Brisket Bunker's kerb let go,
+  // which shut the stroad westward and keep the town over its traffic budget, so it starts few new trips at all)
+  console.log(`  lots: ${r.lotsAt.join(', ')}`);
+  check(`leaving cars back out of their stalls (${r.didBack} of the ${r.couldBack} trips that left a lot with a car their length in it; ${r.backedOut} backed out in all)`, r.didBack === r.couldBack && r.couldBack > 3);
+  if (r.spill?.made) check(`a shop lot rebuilt as a drive-thru gets its lane (traffic.ts thruAt: ${r.spill.made.lane ? 'it does' : 'a "no drive-thru" kept from its old model hides the new lane'})`, r.spill.made.lane);
   if (r.spill) {
+    if (r.spill.made) console.log(`  (the block has no drive-thru: ${r.spill.made.was} on ${r.spill.made.road} is rebuilt as ${r.spill.b} for the grand opening)`);
     console.log(`  grand opening at ${r.spill.b}: ${r.spill.places} places in the lane, up to ${r.spill.maxRoad} cars waiting on the road, ${r.spill.spills} feed posts, clear after ${r.spill.clearedAt} s`);
     check(`a grand opening spills the drive-thru line onto the road (${r.spill.maxRoad} waiting on it)`, r.spill.maxRoad > 0);
     check(`the spill holds the lane behind it (${r.spill.heldBehind} car-seconds held)`, r.spill.heldBehind > 0);

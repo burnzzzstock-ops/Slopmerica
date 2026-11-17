@@ -43,6 +43,11 @@ const list = (name) => String(opt(name) === true ? '' : opt(name) || '').split('
 const only = list('--only'), skipArg = list('--skip'), owner = opt('--owner');
 const gpu = flag('--gpu') || process.env.GPU === '1';
 
+// What every test in one registry file runs with unless its own entry says otherwise.
+// astra.json: the look lane's numbers, budgets and thresholds were recorded on the reference town as it was before it got its
+// main street and utilities, so its tests open that town (REFTOWN=v1, scripts/lib/fixtures.mjs) until they are measured again.
+// A test moves to today's town with "env": {"REFTOWN": "new"} in its entry; when all have moved, this line goes.
+const LANE_ENV = { astra: { REFTOWN: 'v1' } };
 // a script that opens a browser (it launches one itself, or opens the reference block, which does)
 const BROWSER = /\blaunch\(|openBlock\(/;
 const REG = 'scripts/tests';
@@ -114,7 +119,7 @@ console.log(`suite (${tier}${gpu ? ', real GPU except pixel tests' : ''}) on ${b
 const run = (t) => new Promise((resolve) => {
   const log = join(dir, `${t.name}.log`);
   const limit = (t.timeout || TIMEOUT) * 1000;
-  const env = { ...process.env, BASE_URL: base, GPU: gpu && !t.pixels ? '1' : '', ...(t.env ?? {}) };
+  const env = { ...process.env, BASE_URL: base, GPU: gpu && !t.pixels ? '1' : '', ...(LANE_ENV[t.owner] ?? {}), ...(t.env ?? {}) };
   const cmd = t.command.split(/\s+/).filter((a) => !/^[<[]/.test(a));   // (a placeholder argument like <folder> is not passed)
   writeFileSync(log, `$ ${cmd.join(' ')}\n`);
   const t0 = Date.now();

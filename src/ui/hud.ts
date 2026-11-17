@@ -66,6 +66,15 @@ const PHONE_PRIMARY = ['inspect', 'roads', 'zones', 'ext:services', 'views', 'bu
 const DESK_PRIMARY = ['inspect', 'roads', 'zones', 'ext:services', 'landmarks', 'upgrade', 'bulldoze', 'views', 'budget', 'help', 'bug'];
 const BUILD_TOOLS = ['roads', 'zones', 'ext:services', 'landmarks'];
 const COMPACT = IS_TOUCH || (typeof window !== 'undefined' && window.innerWidth < 700);
+/** A tool's readout with its warnings moved up behind the first two facts (length, price), for a space that shows two lines. */
+function briefTip(text: string) {
+  const parts = text.split(' · ');
+  if (parts.length <= 3) return text;
+  const head = parts.slice(0, 2), rest = parts.slice(2);
+  // (the shortest warning first: "not connected to any road" must not be the one that falls off the end)
+  const warns = rest.filter((p) => p.trimStart().startsWith('⚠')).sort((a, b) => a.length - b.length);
+  return [...head, ...warns, ...rest.filter((p) => !p.trimStart().startsWith('⚠'))].join(' · ');
+}
 
 /**
  * What the clock does when a city-wide emergency begins (Settings →
@@ -131,6 +140,10 @@ export class Hud implements UiSink {
   private nextBarObs?: ResizeObserver;
   private nextHidden = '';
   private nextKey = '';
+  /** the step a phone player tapped open while a drawer was up, and the drawer it was (it shows in full until either changes) */
+  private nextOpen = '';
+  /** a finger is down on the map with a drawing tool in hand */
+  private touchDraw = false;
   private budgetSeen = false;
   private firstStepsDone = (() => { try { return localStorage.getItem('slopmerica.firstSteps') === '1'; } catch { return false; } })();
   private nextStepT = -99;
@@ -852,7 +865,10 @@ export class Hud implements UiSink {
       this.nextBar.setAttribute('role', 'status');
       this.nextBar.addEventListener('click', (e) => {
         const el = (e.target as HTMLElement).closest('[data-act]') as HTMLElement | null;
-        if (!el) return;
+        if (!el) {
+          if (this.nextBar!.classList.contains('compact')) { this.nextOpen = `${this.panel}|${this.nextKey}`; this.renderNextBar(); }
+          return;
+        }
         const act = el.dataset.act!;
         if (act === 'hide') { this.nextHidden = this.nextKey; this.nextBar!.hidden = true; return; }
         this.doAction(act);
@@ -866,6 +882,14 @@ export class Hud implements UiSink {
     this.nextKey = key;
     const busy = this.game.tools.active !== 'inspect' || !!this.game.tools.placingLabel;
     this.nextBar.hidden = this.nextHidden === key || (busy && !fs);
+    // a phone with a drawer open or a tool in hand: the step is one line, so the card and the drawer never stack up over the
+    // map (they covered 45% of a 390 x 844 screen between them); a tap on it shows it in full until the step or the drawer changes
+    if (this.nextOpen && this.nextOpen !== `${this.panel}|${key}`) this.nextOpen = '';
+    const compact = IS_TOUCH && window.innerWidth <= 760 && (busy || !this.sub.hidden) && !this.nextOpen;
+    this.nextBar.classList.toggle('compact', compact);
+    // its button is left out when what it would open is already open
+    const P = this.panel, act = a.act ?? '';
+    this.nextBar.classList.toggle('act-open', compact && (act === 'road' ? P === 'roads' : act.startsWith('zone:') ? P === 'zones' && this.game.tools.zoneType === act.slice(5) : act === 'budget' ? P === 'budget' : false));
     const html = `<span class="nb-step">${fs ? `<b>Step ${fs.n}/${fs.of}</b>` : '<b>Next</b>'} ${esc(a.text)}</span>${a.act ? `<button class="chip on" data-act="${a.act}">${esc(a.label ?? 'Go')}</button>` : ''}${unlock}<button class="nb-x" data-act="hide" aria-label="Hide until the next step" title="Hide until the next step">✕</button>`;
     if (this.nextBar.innerHTML !== html) this.nextBar.innerHTML = html;
     this.placeNextBar();
@@ -1131,9 +1155,15 @@ export class Hud implements UiSink {
   /** Phones: an open panel shrinks to its title pill while you work on the map. */
   private wirePanelMinimize() {
     this.game.renderer.domElement.addEventListener('pointerdown', (e) => {
-      if (e.pointerType === 'mouse' || this.sub.hidden || this.panel === 'more') return;
+      if (e.pointerType === 'mouse') return;
+      // a finger drawing on the map: the step card steps aside and the cost readout keeps to two lines until it lifts
+      if (this.game.tools.active !== 'inspect') { this.touchDraw = true; this.root.classList.add('touch-draw'); }
+      if (this.sub.hidden || this.panel === 'more') return;
       if (this.sub.querySelector(':scope > .sp-title')) this.sub.classList.add('min');
     });
+    const lift = () => { if (this.touchDraw) { this.touchDraw = false; this.root.classList.remove('touch-draw'); } };
+    window.addEventListener('pointerup', lift);
+    window.addEventListener('pointercancel', lift);
     this.sub.addEventListener('click', (e) => {
       if (!this.sub.classList.contains('min')) return;
       e.stopPropagation();
@@ -1825,7 +1855,11 @@ export class Hud implements UiSink {
     if (showActions) {
       const tipEl = this.actions.querySelector('#ta-tip') as HTMLElement;
       const badge = !IS_TOUCH && placingLabel ? `Placing ${placingLabel} · Esc or right-click to cancel` : '';
-      tipEl.textContent = IS_TOUCH ? tip?.text ?? '' : badge;
+      // under a drawing finger the readout is two lines: length and price first, then the warnings, then the rest
+      // (in full it ran to five lines across the top of a phone); it is whole again when the finger lifts
+      const tipText = IS_TOUCH ? (this.touchDraw && tip ? briefTip(tip.text) : tip?.text ?? '') : badge;
+      if (tipEl.textContent !== tipText) tipEl.textContent = tipText;
+      tipEl.classList.toggle('clamp', this.touchDraw);
       tipEl.classList.toggle('bad', IS_TOUCH && !!tip?.bad);
       tipEl.classList.toggle('good', IS_TOUCH && !tip?.bad && !!tip?.good);
       tipEl.hidden = IS_TOUCH ? !tip : !badge;

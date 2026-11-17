@@ -1372,7 +1372,7 @@ export class Game {
     wu.uSky.value.copy(this.env.fog.color);
     wu.uSunColor.value.copy(this.env.sunColor);
     wu.uSkyTop.value.copy(this.env.hemi.color).multiplyScalar(0.55 * (1 - n * 0.9)).lerp(this.env.fog.color, this.env.overcast * 0.8);
-    this.roads.setWet(this.weather.wet);
+    this.roads.setWet(this.weather.wet, (this.pendingQuality ?? this.q.name) === 'ultra');
     this.post.aoRadius = THREE.MathUtils.clamp(this.rts.distance * 0.011, 2.2, 16);
     wu.uPollution.value = Math.min(0.7, (1 - this.sim.naturePct) * 0.6 + this.buildings.counts().active / 4000);
 
@@ -1454,6 +1454,8 @@ export class Game {
       // for this frame and refresh it after the main scene has rendered.
       this.water.reflection?.render(this.renderer, this.scene, this.camera, [this.water.mesh], this.time);
       P.lap('water reflection');
+      this.roads.renderReflection(this.renderer, this.scene, this.camera, this.time);
+      P.lap('road reflection');
       this.perf.calls = this.renderer.info.render.calls;
       this.perf.triangles = this.renderer.info.render.triangles;
     }

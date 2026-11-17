@@ -1,4 +1,5 @@
 [
+  {"name":"hud-icon-art","command":"node scripts/look/hud-icons.mjs","tier":"full","timeout":180,"needsBrowser":true,"needsKey":false,"env":{},"selfHosted":true,"pixels":true,"what":"Checks HUD icon coverage and the pairwise distinction of seven status marks at three sizes, on both themes, in three CVD simulations and in monochrome"},
   {"name":"people-fov","command":"node scripts/look/people-fov.mjs","tier":"full","timeout":1800,"needsBrowser":true,"needsKey":false,"env":{},"what":"Live Game.frame scales citizen detail with FOV, retains hysteresis and draws each visible person once across all presets"},
   {"name":"civic-normals","command":"node scripts/look/civic-normals.mjs","tier":"full","timeout":600,"needsBrowser":true,"needsKey":false,"env":{},"what":"Civic geometry attributes read the packed XYZ normals with stride four for every vertex and LOD"},
   {"name":"postcards","command":"node scripts/look/postcards.mjs","tier":"full","timeout":1200,"needsBrowser":true,"needsKey":false,"env":{},"what":"Native-resolution county postcards on all three maps restore clock, weather, camera and HUD"},

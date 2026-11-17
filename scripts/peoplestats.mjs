@@ -5,7 +5,7 @@
 // usage: node scripts/peoplestats.mjs [--all]   (--all lists every archetype; exits 1 when a budget is broken)
 // The budget is the brief's: a person near costs at most about 2x the old code's 1 body + its accessories, measured here.
 import { createServer } from 'vite';
-const server = await createServer({ root: process.cwd(), server: { middlewareMode: true, watch: null, hmr: false }, appType: 'custom', logLevel: 'error' });
+const server = await createServer({ root: process.cwd(), server: { middlewareMode: true, watch: null, hmr: false, ws: false }, appType: 'custom', logLevel: 'error' });
 const P = await server.ssrLoadModule('/src/agents/people.ts');
 const M = await server.ssrLoadModule('/src/agents/models/personModel.ts');
 let L = null;

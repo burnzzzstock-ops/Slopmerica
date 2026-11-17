@@ -21,6 +21,7 @@ import { PhotoMode } from './render/photo';
 import { applyLowGrade, lowExposure } from './render/lowGrade';
 import { Particles } from './render/particles';
 import { AudioEngine } from './audio/audio';
+import { bindWorldAudio } from './audio/events';
 import type { SoundscapeMix } from './audio/ambience';
 import { COUNTY_ROAD, RoadNetwork, RSeg, Plan } from './roads/network';
 import { RoadRenderer } from './roads/roadMesh';
@@ -517,12 +518,12 @@ export class Game {
   }
 
   private wireEvents() {
+    bindWorldAudio(this);
     this.sim.events.on('disaster', event => this.audio.disaster(event));
     this.buildings.onComplete = ((orig) => (b: Bld) => {
       orig?.(b);
       if (b.zone !== 'resLow' && b.zone !== 'resHigh' && fx.float() < 0.35) this.feed.push('buildingOpened', { building: b.label, brand: brandName(b.brand) });
       this.traffic.grandOpening(b); // a new drive-thru: the town lines up (traffic pass)
-      if (this.near(b.x, b.z, 500)) this.audio.play('build', 0.3);
     })(this.buildings.onComplete);
     this.buildings.onLevel = ((orig) => (b: Bld) => {
       orig?.(b); // (a system's own, e.g. the College's first graduates)
@@ -557,7 +558,6 @@ export class Game {
       this.feed.push(drunk ? 'drunkCrash' : 'crash', { road: seg?.name });
       const c = cars[0];
       if (c && this.near(c.x, c.z, 450)) {
-        this.audio.play('crash', 0.8);
         this.floatText(drunk ? '💥🍺 DUI' : '💥 WRECK', new THREE.Vector3(c.x, c.y + 2, c.z), '#ff8a3a');
       }
     };
@@ -608,7 +608,6 @@ export class Game {
     if (quiet) return razed;
     if (razed) this.toast(`${razed} building${razed === 1 ? '' : 's'} bulldozed for the road`);
     const t = ROAD_TYPES[segs[0].type];
-    this.audio.play('build', 0.6);
     const kind: FeedEventKind = t.id === 'highway' ? 'highwayBuilt' : t.centerTurn ? 'stroadBuilt' : plan.bridgeLen > 10 ? 'bridgeBuilt' : 'roadBuilt';
     if (fx.float() < (kind === 'roadBuilt' ? 0.25 : 0.7)) this.feed.push(kind, { road: segs[0].name, amount: plan.cost });
     // communes hate roads near them
@@ -686,7 +685,7 @@ export class Game {
     this.sim.refund(refund, `Undo: ${a.label}`);
     crumb(`undo ${a.label}`);
     this.tools.cancel();
-    this.audio.play('bulldoze', 0.6);
+    if (a.kind !== 'place') this.audio.play('bulldoze', 0.6);
     this.toast(`Undone: ${a.label}, ${usd(refund)} back${refund < a.refund ? ' (part of it was already bulldozed)' : ''}${'trees' in a && a.trees?.length ? ', trees replanted' : ''}.`);
     return true;
   }
@@ -728,13 +727,13 @@ export class Game {
   /** Bulldoze one road segment (20% salvage, like the map tool). */
   bulldozeRoad(seg: RSeg) {
     if (!this.net.segs.has(seg.id)) return;
+    const soundAt = seg.samp.pts[Math.floor(seg.samp.pts.length / 2)];
     this.net.removeSeg(seg.id);
     this.sim.refund(Math.round(seg.length * ROAD_TYPES[seg.type].costPerM * 0.2), `Bulldozed ${seg.name} (20% back)`);
-    this.audio.play('bulldoze');
+    this.audio.playAt('bulldoze', soundAt.x, soundAt.z);
   }
 
   onLaneAdded(segs: RSeg[], to: RoadTypeId) {
-    this.audio.play('build');
     this.feed.push('laneAdded', { road: segs[0]?.name, count: ROAD_TYPES[to].lanesPerDir * (ROAD_TYPES[to].oneWay ? 1 : 2) });
   }
 
@@ -755,7 +754,6 @@ export class Game {
     const b = this.buildings.at(p.x, p.z);
     if (!b) return false;
     this.buildings.demolish(b, 'bulldozed');
-    this.audio.play('bulldoze');
     this.particles.emit('dust', b.x, b.y + 2, b.z, { count: 50, spread: b.hw });
     return true;
   }
@@ -818,7 +816,7 @@ export class Game {
     const b = this.buildings.placeLandmark(id, spot.x, spot.z, spot.yaw);
     this.pushUndo({ kind: 'place', bldId: b.id, refund: cost, label: name, trees: this.trees.takeCuts() });
     this.feed.push('buildingOpened', { building: b.label, brand: name });
-    this.audio.play(id === 'slopCannon' ? 'cannon' : 'build');
+    this.audio.playAt(id === 'slopCannon' ? 'cannon' : 'build', spot.x, spot.z);
     // it can go down before its road, but it does nothing until one links it to the network
     const off = this.linkProblem?.(b);
     if (off) this.toast(`🚧 ${name} is built, but ${off === 'noRoad' ? 'no road reaches it' : "its road doesn't join the rest of your roads"}. It does nothing until it's connected to the road network: draw a road to it (🛣️ Roads).`, true);

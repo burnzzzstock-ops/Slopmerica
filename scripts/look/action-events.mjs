@@ -1,9 +1,9 @@
 // BASE_URL serves the current game. Count audio requests from real building,
 // road and weekly-close operations, then check pending typed event consumers.
-import { launch, openScene, saveReport } from './measure.mjs';
+import { launch, openScene, saveReport, fixtureHash } from './measure.mjs';
 const browser = await launch();
 try {
-  const { page, errs } = await openScene(browser, { quality: 'low', scene: 'reference', width: 390, height: 844, phone: true });
+  const { page, errs, town } = await openScene(browser, { quality: 'low', scene: 'reference', width: 390, height: 844, phone: true });
   const report = await page.evaluate(async () => {
     const { bindWorldAudio } = await import('/src/audio/events.ts');
     const { ROAD_TYPES } = await import('/src/roads/roadTypes.ts');
@@ -40,6 +40,30 @@ try {
     calls.length = 0;
     g.sim.events.emit('milestone', { kind: 'tier', value: 1, label: 'Audio test' });
     const milestone = calls.filter(c => c.kind === 'levelUp').length;
+    const money = g.sim.money;
+    g.sim.money = 100000; calls.length = 0;
+    g.sim.earn(120, 'resTax', 'Audio test', { x: 11, z: 12 });
+    g.sim.spend(120, 'Audio test', 'construction');
+    const income = calls.filter(c => c.kind === 'cash').length;
+    g.sim.money = money;
+    let road = 0, zone = 0, zoned = 0;
+    const center = g.rts.target;
+    for (const [dx, dz] of [[420, -260], [-420, 300], [500, 380], [-380, -420]]) {
+      calls.length = 0;
+      const x = center.x + dx, z = center.z + dz;
+      if (window.__dbg.road(x, z, x + 160, z + 40, 'twoLane') > 0) {
+        road = calls.filter(c => c.kind === 'build').length;
+        calls.length = 0;
+        zoned = window.__dbg.zone(x + 80, z + 20, 40, 'resLow');
+        zone = calls.filter(c => c.kind === 'zone').length;
+        break;
+      }
+    }
+    for (let i = 0; i < 1200 && !g.traffic.cars.some(c => c.crashed === 0 && c.v > 1); i++) g.traffic.update(0.05, 1, 12, g.sim.population, g.sim.jobsFilled, center);
+    const car = g.traffic.cars.find(c => c.crashed === 0 && c.v > 1);
+    calls.length = 0;
+    if (car) g.traffic.crash([car], g.net.pickSeg(car.x, car.z, 8)?.seg, false);
+    const crash = calls.filter(c => c.kind === 'crash').length;
     calls.length = 0;
     g.sim.events.emit('moneyTick', { delta: 120, kind: 'tax', x: 11, z: 12 });
     g.sim.events.emit('moneyTick', { delta: -120, kind: 'upkeep' });
@@ -49,11 +73,13 @@ try {
     g.sim.events.emit('paradisePaved', { x: 0, z: 0 });
     g.sim.events.emit('collapseStage', { stage: 3 });
     const pending = calls.slice();
-    return { level, completed, completionRepeat, demolished, demolition, demolitionRepeat, upgrade, lane, roadBulldoze, week, milestone, pending };
+    return { level, completed, completionRepeat, demolished, demolition, demolitionRepeat, upgrade, lane, roadBulldoze, week, milestone, income, road, zone, zoned, crash, pending };
   });
   report.errors = errs;
+  report.town = town; report.fixtureHash = fixtureHash();
   report.passed = report.level === 1 && report.completed === 1 && report.completionRepeat === 0 && report.demolished && report.demolition === 1 &&
     report.demolitionRepeat === 0 && report.upgrade.ok && report.lane === 1 && report.roadBulldoze === 1 && report.week === 1 && report.milestone === 1 &&
+    report.income === 1 && report.road === 1 && report.zone === 1 && report.zoned > 0 && report.crash === 1 &&
     report.pending.map(c => c.kind).join(',') === 'cash,zone,bulldoze,crash,notify,error' && !errs.length;
   console.log(JSON.stringify(report));
   saveReport('shots/audio/actions/events.json', report);

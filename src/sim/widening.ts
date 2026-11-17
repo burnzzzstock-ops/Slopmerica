@@ -78,10 +78,10 @@ function chart(w: Widening, now: number, day: number): string {
     : `At its busiest: ${pct(w.before)} full before the lane, ${pct(now)} now (${weeks} week${weeks === 1 ? '' : 's'} on).`;
   return `<div class="in-widen" data-widen="${w.seg}">
     <div class="in-widen-head"><b>ONE MORE LANE</b> <span>${esc(head)}</span></div>
-    <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="How full this road got at its busiest, each week since it was widened: ${pct(w.before)} before, ${pct(now)} now">
+    <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" role="img" aria-label="How full this road got at its busiest, each week since it was widened: ${pct(w.before)} before, ${pct(now)} now">
       <line x1="0" x2="${W}" y1="${y(w.before)}" y2="${y(w.before)}" class="was"/>
       ${n > 1 ? `<polyline points="${pts}" class="now"/>` : ''}
-      ${w.back !== null ? `<circle cx="${(((w.back - w.day) / 7 / Math.max(1, T.weeks)) * W).toFixed(1)}" cy="${y(w.before)}" r="3.2" class="back"/>` : ''}
+      ${w.back !== null ? `<line x1="${(((w.back - w.day) / 7 / Math.max(1, T.weeks)) * W).toFixed(1)}" x2="${(((w.back - w.day) / 7 / Math.max(1, T.weeks)) * W).toFixed(1)}" y1="2" y2="${H - 2}" class="back"/>` : ''}
     </svg>
     <div class="in-widen-key"><span class="k was">before the lane</span><span class="k now">each week since</span>${w.grant > 0 ? `<span>grant paid ${Math.round(w.grant * 100)}%</span>` : ''}</div>
   </div>`;

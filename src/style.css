@@ -3517,9 +3517,10 @@ a {
 .in-widen-head { font-size: 12px; line-height: 1.35; margin-bottom: 4px; }
 .in-widen-head b { color: #f7c531; margin-right: 4px; }
 .in-widen svg { display: block; }
-.in-widen svg .was { stroke: #f7c531; stroke-width: 1.5; stroke-dasharray: 4 3; }
-.in-widen svg .now { fill: none; stroke: var(--lime); stroke-width: 2; stroke-linejoin: round; }
-.in-widen svg .back { fill: #b3202a; stroke: #efe6cf; stroke-width: 1; }
+/* (the chart is stretched to the card's width: strokes keep their own width) */
+.in-widen svg .was { stroke: #f7c531; stroke-width: 1.5; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.in-widen svg .now { fill: none; stroke: var(--lime); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.in-widen svg .back { stroke: #b3202a; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
 .in-widen-key { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--ink-2); margin-top: 3px; }
 .in-widen-key .k::before { content: ''; display: inline-block; width: 14px; height: 0; margin-right: 5px; vertical-align: middle; border-top: 2px solid var(--lime); }
 .in-widen-key .k.was::before { border-top: 2px dashed #f7c531; }

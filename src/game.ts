@@ -1255,9 +1255,9 @@ export class Game {
   }
 
   frame(dt: number, render = true) {
+    if (this.photo.active) { if (render) this.photo.frame(dt); return; }
     const P = this.prof;
     P.begin();
-    if (this.photo.active) { if (render) this.photo.frame(dt); return; }
     this.time += dt;
     const spd = SPEEDS[this.sim.speed];
     this.rts.update(dt);
@@ -1300,9 +1300,9 @@ export class Game {
     this.parkView.setFromProjectionMatrix(this.parkMat.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
     this.parking.update(dt, this.hour, this.rts.target.x, this.rts.target.z, this.rts.distance, () => this.traffic.renderer.stats().active);
     P.lap('traffic');
+    this.peds.renderer.updateLod(this.camera, this.q.peopleNear);
     this.peds.draw(alpha, dt);
     this.civic.update(dt);
-    this.peds.renderer.updateLod(this.camera, this.q.peopleNear);
     this.vaultScenery.update(dt);
     P.lap('people');
     this.communes.update(dt, this.env.night, this.time, this.camera.position);

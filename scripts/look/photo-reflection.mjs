@@ -20,6 +20,35 @@ try {
     for (let i = 0; i < 60; i++) g.frame(0, false);
     g.frame(0, true);
     if (!mirror.shouldRender(g.camera)) throw Error('Camera must see nearby water');
+    const profiler = g.prof;
+    const begin = profiler.begin;
+    const end = profiler.end;
+    const profilerCalls = { begin: 0, end: 0 };
+    const photoFrames = [];
+    const fingerprint = JSON.stringify(window.__dbg.fingerprint());
+    profiler.begin = function (...args) {
+      profilerCalls.begin++;
+      return begin.apply(this, args);
+    };
+    profiler.end = function (...args) {
+      profilerCalls.end++;
+      return end.apply(this, args);
+    };
+    try {
+      p.enter();
+      for (const render of [true, false]) {
+        g.frame(1 / 60, render);
+        const simulationUnchanged = JSON.stringify(window.__dbg.fingerprint()) === fingerprint;
+        photoFrames.push({ render, ...profilerCalls, simulationUnchanged });
+        if (profilerCalls.begin || profilerCalls.end || !simulationUnchanged) {
+          throw Error(`Photo Game.frame(${render}) changed profiler or simulation ${JSON.stringify(photoFrames)}`);
+        }
+      }
+    } finally {
+      profiler.begin = begin;
+      profiler.end = end;
+      p.exit();
+    }
     const rows = [], draw = g.post.render, reflect = mirror.render;
     let draws = [], refreshes = 0;
     mirror.render = function (...args) { const done = reflect.apply(this, args); if (done) refreshes++; return done; };
@@ -44,7 +73,7 @@ try {
       }
     }
     g.post.render = draw; mirror.render = reflect;
-    return { rows, initialState, finalState: state() };
+    return { rows, photoFrames, initialState, finalState: state() };
   });
   const pass = errors.length === 0 && result.rows.every(r => r.matrixChanged && r.simulationUnchanged && r.draws.every(d => d.fresh && d.enabled === 1 && d.reflected > 0)
     && r.draws.length === (r.size ? 2 : 1) && r.refreshes === r.draws.length && r.restored.join() === '1280,720,1280,720,640,360'

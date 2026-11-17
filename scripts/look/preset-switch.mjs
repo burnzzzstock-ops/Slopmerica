@@ -1,10 +1,9 @@
 // Deterministic frame intervals drive the game's first-run sampler on a touch
 // viewport. Settings changes exercise the same running scene and WebGL context.
-import { chromium } from 'playwright-core';
-import { ARGS, EXE } from '../refblock.mjs';
+import { launch } from '../lib/browser.mjs';
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:5195';
-const browser = await chromium.launch({ executablePath: process.env.CHROME || EXE, args: ARGS });
+const browser = await launch();
 const check = (label, observed, expected) => {
   const pass = observed === expected;
   console.log(`${pass ? 'OK' : 'FAIL'} ${label}: ${observed} (expected ${expected})`);

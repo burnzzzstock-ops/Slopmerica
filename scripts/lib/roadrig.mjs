@@ -1,8 +1,9 @@
 // A road renderer without a browser: the code under test loaded through Vite's SSR loader, a canvas that draws nothing (the renderer
 // paints its textures into canvases; only their existence matters here), a flat stub terrain, and the reference block's roads
-// (shots/lookbook/town.json) restored into a network. Used by scripts/junctionmesh.mjs and scripts/junctionplan.mjs.
+// (scripts/fixtures/refblock-town.json) restored into a network. Used by scripts/junctionmesh.mjs and scripts/junctionplan.mjs.
 import { createServer } from 'vite';
 import { readFileSync } from 'node:fs';
+import { REFBLOCK } from './fixtures.mjs';
 
 export async function makeRig({ roads } = {}) {
   const noop = () => undefined;
@@ -27,7 +28,7 @@ export async function makeRig({ roads } = {}) {
   const terrain = { h: () => 10, coverAt: () => 0, inBounds: () => true, gradeRoad() {}, forgetRoad() {}, raycast: () => null };
   const net = new NET.RoadNetwork(terrain, { cut() {} });
   net.map = { id: 'flat' };
-  net.restore(roads ?? JSON.parse(readFileSync('shots/lookbook/town.json', 'utf8')).roads);
+  net.restore(roads ?? JSON.parse(readFileSync(REFBLOCK, 'utf8')).roads);
   const rr = new MESH.RoadRenderer(net, { capabilities: { getMaxAnisotropy: () => 4 } });
   const t0 = performance.now();
   rr.update();

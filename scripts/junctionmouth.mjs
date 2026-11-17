@@ -3,7 +3,7 @@
 //
 //   dump     the network the traffic model runs on: every node and segment (curve, length, trimA/trimB, heights) and, for
 //            every junction, the control points of the curves cars follow (traffic.ts enterJunction: from the lane at the
-//            leg's stop line to the lane at the next leg's entry), for the reference block (shots/lookbook/town.json) and
+//            leg's stop line to the lane at the next leg's entry), for the reference block (scripts/fixtures/refblock-town.json) and
 //            a set of synthetic junctions. Printed as a SHA-256 per group: identical hashes on the old and the new code
 //            mean nothing the cars use has moved.
 //   mouth    for each synthetic junction (class pair x angle, crossing and T): the fillet radius, the asphalt of the drawn
@@ -19,6 +19,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { join } from 'node:path';
+import { REFBLOCK } from './lib/fixtures.mjs';
 
 const args = process.argv.slice(2);
 const opt = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : undefined; };
@@ -210,7 +211,7 @@ const report = { block: null, synth: [], marks: [], sweep: [] };
 
 // ---- the reference block
 if (!args.includes('--no-block')) {
-  const save = JSON.parse(readFileSync('shots/lookbook/town.json', 'utf8'));
+  const save = JSON.parse(readFileSync(REFBLOCK, 'utf8'));
   const net = newNet();
   net.restore(save.roads);
   const d = dumpNet(net);

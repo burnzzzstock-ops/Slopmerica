@@ -1,11 +1,15 @@
 // The reference block (docs/ART_DIRECTION.md): a stroad with a side-street
 // grid, strip retail, shopfronts, offices, apartments, houses, a factory yard
-// and the civic buildings, on the Redwood Coast. Grown once and saved to
-// shots/lookbook/town.json so every capture after that shows the same town;
-// delete the file to grow a fresh one. Shared by lookbook.mjs and nighttest.mjs.
+// and the civic buildings, on the Redwood Coast. The town is a committed fixture
+// (scripts/fixtures/refblock-town.json), so every capture on every machine shows the
+// same one and the node-only junction checks need no browser to have run first.
+// Delete the file to grow a fresh one (then every number measured on it moves: say so
+// in the commit). Shared by lookbook.mjs, nighttest.mjs and the traffic tests.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { REFBLOCK, REFBLOCK_CENTER } from './lib/fixtures.mjs';
 
-export const SAVE = 'shots/lookbook/town.json';
+export const SAVE = REFBLOCK;
 export { EXE, ARGS } from './lib/browser.mjs';
 
 async function grow(browser, base) {
@@ -35,9 +39,10 @@ async function grow(browser, base) {
   });
   const save = await page.evaluate(() => { window.__dbg.save(); return localStorage.getItem('slopmerica.save.v1'); });
   await page.close();
-  mkdirSync('shots/lookbook', { recursive: true });
+  console.error(`refblock: no fixture at ${SAVE}; grew a new reference town (commit it, or every run grows another)`);
+  mkdirSync(dirname(SAVE), { recursive: true });
   writeFileSync(SAVE, save);
-  writeFileSync(SAVE.replace('.json', '.center.json'), JSON.stringify(center));
+  writeFileSync(REFBLOCK_CENTER, JSON.stringify(center));
 }
 
 /** The tests' Math.random: mulberry32, the same numbers for the same seed. */
@@ -73,9 +78,9 @@ export function seededInit({ seed, rng }) {
     },
   });
 }
-/** SEED from the environment, or a fresh one; print it so a run can be replayed */
+/** The run's seed: SEED from the environment, else 1 (so two runs of a test agree), else a fresh one with FUZZ=1; printed so a run can be replayed */
 export function testSeed() {
-  const seed = process.env.SEED !== undefined ? Number(process.env.SEED) >>> 0 : (Math.random() * 2 ** 31) >>> 0;
+  const seed = process.env.SEED !== undefined ? Number(process.env.SEED) >>> 0 : process.env.FUZZ === '1' ? (Math.random() * 2 ** 31) >>> 0 : 1;
   console.log(`seed ${seed} (replay with SEED=${seed})`);
   return seed;
 }
@@ -96,7 +101,7 @@ export function testSeed() {
 export async function openBlock(browser, { base, quality = 'high', width = 1280, height = 720, phone = false, dpr = 1, seed }) {
   if (!existsSync(SAVE)) await grow(browser, base);
   const save = readFileSync(SAVE, 'utf8');
-  const center = JSON.parse(readFileSync(SAVE.replace('.json', '.center.json'), 'utf8'));
+  const center = JSON.parse(readFileSync(REFBLOCK_CENTER, 'utf8'));
   // phone: a real touch context (3x screen, touch, mobile UA), which is what makes the game pick the phone's pixel ratio and MSAA
   const page = await browser.newPage(phone ? { viewport: { width, height }, deviceScaleFactor: 3, isMobile: true, hasTouch: true } : { viewport: { width, height }, deviceScaleFactor: dpr });
   const errs = [], vault = [];

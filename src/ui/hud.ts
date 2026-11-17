@@ -102,6 +102,8 @@ export class Hud implements UiSink {
   private inspectorOpenedAt = 0;
   /** when a finger last lifted off the screen (performance.now()) */
   private lastTouchUpAt = 0;
+  /** a finger or the mouse is down on the inspector: it is not redrawn until the press ends */
+  private inspectorHeld = false;
   private toasts!: HTMLElement;
   private remeasureToasts = true;
   private tip!: HTMLElement;
@@ -183,6 +185,14 @@ export class Hud implements UiSink {
     // soon after a finger lifted and the sheet opened is a deliberate press, so none reaches it (a click with no finger just before it, a script's, does).
     window.addEventListener('pointerup', (e) => { if (e.pointerType === 'touch') this.lastTouchUpAt = performance.now(); }, true);
     this.inspector.addEventListener('click', (e) => { const now = performance.now(); if (now - this.inspectorOpenedAt < 350 && now - this.lastTouchUpAt < 350) { e.stopPropagation(); e.preventDefault(); } }, true);
+    // The card of a building, car or lot is redrawn four times a second for its live numbers. A press that was still down at a redraw
+    // lost its button from under it and its click with it: Bulldoze held for 400 ms did nothing. So the card waits while it is pressed.
+    this.inspector.addEventListener('pointerdown', () => { this.inspectorHeld = true; });
+    // (after the click that the release itself delivers)
+    const letGo = () => { setTimeout(() => { this.inspectorHeld = false; }, 0); };
+    window.addEventListener('pointerup', letGo);
+    window.addEventListener('pointercancel', letGo);
+    window.addEventListener('blur', letGo);
     this.inspector.hidden = true;
     this.sideCards = this.mk('div', 'side-cards');
     this.toasts = this.mk('div', 'toasts');
@@ -1902,7 +1912,7 @@ export class Hud implements UiSink {
         const ri = this.game.renderInfo();
         this.perfEl.textContent = `${p.fps.toFixed(1)} fps · ${p.frameMs.toFixed(1)} ms frame · ${p.renderMs.toFixed(1)} ms work\n${p.calls.toLocaleString()} calls · ${p.triangles.toLocaleString()} tris · ${p.quality.toUpperCase()}${this.game.post.active ? '' : ' · no FX'}\nrender ${ri.buffer} of the screen's ${ri.screen} (${ri.share}%) · ${ri.mode === 'full' ? 'full res locked' : `auto ${Math.round(ri.dynamic * 100)}%`}\n${pf.top(5).map(([k, v]) => `${k} ${v.toFixed(1)}`).join(' · ')}${w ? `\nworst ${w.ms.toFixed(0)} ms: ${w.parts.slice(0, 3).map(([k, v]) => `${k} ${v}`).join(', ')}` : ''}`;
       }
-      if (this.game.selection && (this.game.selection.kind === 'car' || this.game.selection.kind === 'building' || this.game.selection.kind === 'lot')) this.renderInspector();
+      if (!this.inspectorHeld && this.game.selection && (this.game.selection.kind === 'car' || this.game.selection.kind === 'building' || this.game.selection.kind === 'lot')) this.renderInspector();
     }
     let tip = this.game.tools.tip;
     const t = this.game.tools;

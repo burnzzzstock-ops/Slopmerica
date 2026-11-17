@@ -1,5 +1,30 @@
 # Graphics performance
 
+## Final committed counter baseline
+
+Revision `027b18f` passes all twelve paused reference views with zero counter violations. The run uses the committed 969-resident town, seed 271828, Chrome 157.0.8103.51 and NVIDIA RTX 5090 through ANGLE D3D11. Each row records the maximum over twelve frames.
+
+| Preset / camera | Calls | Call limit | Triangles | Triangle limit |
+|---|---:|---:|---:|---:|
+| low/street | 245 | 250 | 1,165,277 | 1,223,541 |
+| low/middle | 211 | 222 | 1,109,479 | 1,164,953 |
+| low/overview | 191 | 201 | 1,092,282 | 1,146,897 |
+| medium/street | 533 | 560 | 2,073,845 | 2,177,538 |
+| medium/middle | 376 | 395 | 1,810,231 | 1,900,743 |
+| medium/overview | 320 | 336 | 1,779,052 | 1,868,005 |
+| high/street | 562 | 591 | 2,370,263 | 2,488,777 |
+| high/middle | 403 | 424 | 2,165,494 | 2,273,769 |
+| high/overview | 339 | 356 | 2,235,596 | 2,347,376 |
+| ultra/street | 557 | 585 | 2,675,813 | 2,809,604 |
+| ultra/middle | 433 | 455 | 2,403,533 | 2,523,710 |
+| ultra/overview | 408 | 429 | 3,475,012 | 3,648,763 |
+
+The per-view allowance remains 5%, rounded up, with absolute call ceilings of 250 on Low and 600 on High. Low street uses 245 calls and has five calls of absolute headroom. The fixture SHA-256 is `a3aa48b02a0ed6f692235b948f4149a3f9c2d75a003abc05acb74e437008f8d9` and the loaded-town fingerprint is `f74d7be`. The saved report is `shots/perf/final-027b18f/counters.json`.
+
+The integration suite was active during this run. These results establish draw-call and triangle counts. The isolated 300-frame High1080, Ultra4K and Low4× timing measurements remain pending. Physical-phone measurement remains pending.
+
+## Earlier baseline measurements
+
 Measured 2026-11-17 on the frozen `232272c` baseline. Chrome 157.0.8103.51 reported `ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)`. Seed 271828. This machine also ran other graphics checks during capture. Re-run a case in isolation to investigate a tail-latency change.
 
 Every row uses five seconds of warm-up followed by 300 unpaced animation-frame intervals. The simulation advances by 1/60 s per measured frame at 1× speed. Desktop uses DPR 1. The reference town uses the middle camera. Map overviews use a fixed 1,050 m camera relative to the start, in clear weather at 12:30. Times are milliseconds. Frame p95 includes scheduling and GPU backpressure. CPU work covers the synchronous call to the game frame.

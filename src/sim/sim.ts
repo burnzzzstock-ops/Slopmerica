@@ -1,6 +1,6 @@
 // The simulation: calendar, RCI(O) demand ratios, growth, move-ins, jobs,
 // land value, level-ups, the Growth Ponzi budget, and the endless-sprawl ending.
-import { MAX_LEVEL, ZONE_TYPES, type GameTime, type ZoneType } from '../contracts';
+import { MAX_LEVEL, ZONE_TYPES, type GameTime, type WorldEvents, type ZoneType } from '../contracts';
 import { Emitter } from '../core/events';
 import { clamp } from '../core/math';
 import { Rng } from '../core/rng';
@@ -147,7 +147,8 @@ export interface SimHooks {
   weekly: ((add: (label: string, amount: number, kind: LedgerKind) => void, forecast: boolean) => void)[];
 }
 
-type Events = {
+/** Everything the sim's bus carries: its own beats, and the world events of src/contracts.ts for whatever shows and sounds them. */
+export type SimEvents = WorldEvents & {
   milestone: { kind: 'population' | 'nature' | 'sprawl' | 'unlock' | 'maxLevel' | 'tier'; value: number; label: string };
   lowMoney: number;
   bankrupt: number;
@@ -157,7 +158,7 @@ type Events = {
 };
 
 export class Sim {
-  events = new Emitter<Events>();
+  events = new Emitter<SimEvents>();
   day = 0; // float days
   speed = 1;
   money: number;

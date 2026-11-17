@@ -2,7 +2,8 @@
 import { milestoneAt, nameUnlock, unlockPop } from './sim/milestones';
 import * as THREE from 'three';
 import { defaultQuality, FOV_MAX, FOV_MIN, GLOW, HALF, IS_TOUCH, MIN_RENDER_SCALE, nightLift, presetPixelRatio, QUALITY, Quality, saveQuality, storedQuality, WATER } from './config';
-import type { FeedContext, FeedEventKind, LandmarkId } from './contracts';
+import type { FeedContext, FeedEventKind, LandmarkId, WorldFields } from './contracts';
+import { makeFields } from './sim/fields';
 import { generateMap, MapData, MapId } from './world/maps';
 import { Terrain } from './world/terrain';
 import { Trees } from './world/trees';
@@ -169,6 +170,8 @@ export class Game {
   readonly communes: Communes;
   readonly tools: Tools;
   readonly overlays: Overlays;
+  /** the simulation's state, read-only, for rendering and audio (src/contracts.ts WorldFields); world events arrive on sim.events */
+  readonly fields: WorldFields;
   readonly timer = new THREE.Timer();
   readonly cityName: string;
   time = 0;
@@ -327,6 +330,7 @@ export class Game {
     if (this.q.name !== 'low') this.civic.load();
     this.vaultScenery = new VaultScenery(this);
     this.overlays = new Overlays(this);
+    this.fields = makeFields(this);
     this.tools = new Tools(this);
 
     this.rts = new RTSCamera(this.camera, this.renderer.domElement, this.terrain, this.tools as PointerHandlers);

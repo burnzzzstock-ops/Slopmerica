@@ -78,9 +78,9 @@ export function seededInit({ seed, rng }) {
     },
   });
 }
-/** SEED from the environment, or a fresh one; print it so a run can be replayed */
+/** The run's seed: SEED from the environment, else 1 (so two runs of a test agree), else a fresh one with FUZZ=1; printed so a run can be replayed */
 export function testSeed() {
-  const seed = process.env.SEED !== undefined ? Number(process.env.SEED) >>> 0 : (Math.random() * 2 ** 31) >>> 0;
+  const seed = process.env.SEED !== undefined ? Number(process.env.SEED) >>> 0 : process.env.FUZZ === '1' ? (Math.random() * 2 ** 31) >>> 0 : 1;
   console.log(`seed ${seed} (replay with SEED=${seed})`);
   return seed;
 }

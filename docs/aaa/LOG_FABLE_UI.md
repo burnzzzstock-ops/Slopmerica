@@ -19,7 +19,7 @@ The play lane has two sessions since 17 Nov 2026 (the owner's decision; the spli
 
 Merged into `claude/aaa-play` (699ec0e, pushed): the tool badge, top bar and inspector drawn with the icon set; photo mode's Focus slider and the P key; the step card changing shape the moment a drawer opens; step 5 of 5 ending on day 15; and, cherry-picked earlier, the inspector not redrawing under a held mouse press.
 
-Merged into the local `claude/aaa-play` (c6b0165; nothing has been pushed from this PC since the GitHub sign-in lapsed on the evening of 17 Nov), all but the last row, which waits on `claude/aaa-play-polish`:
+Merged into the local `claude/aaa-play` (436a5a3; nothing has been pushed from this PC since the GitHub sign-in lapsed on the evening of 17 Nov), all but the last two rows, which wait on `claude/aaa-play-polish`:
 
 | Commit | What | Check |
 |---|---|---|
@@ -32,6 +32,10 @@ Merged into the local `claude/aaa-play` (c6b0165; nothing has been pushed from t
 | 1be543b | UI: the look of the service buildings is chosen in Settings, not in the Services drawer (one export, `serviceLooks`, in `src/sim/services.ts`). Phone: the drawer 304 px to 284 px, the map's share 48.6% to 50.8% | `servicelooks` (new) |
 | 081f5e0 | The look lane's `vaulttest` presses the look switch in Settings (one line, a commit of its own) | 19 of 20 before, 20 of 20 |
 | 766b79a | Phone: the inspector's buttons are 44 px (they were 38), and `presstest` looks at every home's card | `presstest` 11 of 11 |
+| 9355ad3 | `presstest` reads the button's place in one call inside the page (a locator could find the button and lose it to a redraw before asking for its box: two crashes in about fifteen runs) | ten runs, 11 of 11 each |
+| eeef0e5 | A bus's card is headed by its line, with Driver and Next stop rows | `followtest` 22 of 26 before, 26 of 26 |
+| dd67996 | Statistics: four charts (population, treasury, nature and sprawl, moved in and left) in a drawer under More, in `src/ui/statsPanel.ts`, loaded when first opened (a 5.1 kB script of its own, the first thing in the game loaded on demand) | `statstest` (new) 22 of 22 |
+| eea0ce8 | Follow on a bus rides the bus across its stops (the simulation's `fields.busOf` and a target of kind 'bus'); the pill says where on the line it is; the pill is as wide as its words on a phone | `busridetest` (new) 21 of 21 |
 
 Two of these put right something an earlier commit of this session broke, and the same care applies to what comes next:
 
@@ -42,9 +46,13 @@ Two of these put right something an earlier commit of this session broke, and th
 
 127 of 134. None of the seven is from the interface: `photo-reflection`, `presetlight` and `carsolid` fail on the base; `treelod` failed under the suite's load and passes alone; `presstest` failed only on its new 44 px check, which 766b79a satisfies; `landmarktest` ("in their seats by kickoff", 16 of 29) and `lightstest` (the leading green at node 67, and a walker 15.8 s at a kerb) fail the same way on the simulation session's own tip c6b0165 with its own scripts, and were reported to it.
 
+### The full suite again, on afc0dc2 (436a5a3 merged in, with Statistics)
+
+129 of 135. `photo-reflection`, `presetlight`, `carsolid`, `landmarktest` and `lightstest` as before (the simulation session bisected the last two: not the walkers; `landmarktest` failed on 5 of 6 seeds before them, and `lightstest` counts too few cars to tell 17% from 20%). `nightglow` is new and fails the same way on the simulation session's own tip 0e682a4 ("the street at 110.1 vs 149.5 at noon"). After merging 0e682a4 the look lane's `follow-camera` fails too ("Target disappeared early"), also on that tip alone: `poseOf` now answers null for a car in the step before it has a place on the road, and the test asks straight after launching one. Both reported.
+
 ### Numbers worth knowing
 
-- The build is at +4.7% of its gzip budget with 5% allowed (`scripts/budgets.json`; the owner has the re-baseline question in `DECISIONS_FABLE.md`). Anything sizeable is loaded on demand or waits.
+- **The build is at +5.0% of its gzip budget, which is the limit** (`scripts/budgets.json`; the gate printed +5.0% on eea0ce8 and passed). The next byte in the main script from either session fails the gate until the owner answers the re-baseline question in `DECISIONS_FABLE.md`. New interface work goes in a script loaded on demand, as `statsPanel.ts` is, or waits.
 - `phonefree` holds Roads at 60.6% and Zoning at 61% of the screen against a 60% floor. A card one line taller trips it.
 - A phone's inspector sheet is 403 px of an 844 px screen; a plain home's card is about 400 px and the tallest on presstest's street 482 px (79 px over). The action row is pinned to the sheet's foot, so a taller card scrolls under it.
 - `scripts/textfloor.mjs` (a measure, not pass/fail): what is still under 12 px is the one-row top bar and toolbar (8 to 11 px), and on a phone the second line of a road, zone or service card, the road modes and the tool readout (11 px).
@@ -54,7 +62,8 @@ Two of these put right something an earlier commit of this session broke, and th
 | What | Why | State |
 |---|---|---|
 | An export from `src/sim/services.ts` for the look of the service buildings | The "Looks: Asset Vault / Classic" row moves from the Services drawer to Settings | Done by this session with the simulation session's leave (1be543b: the one export and the panel block) |
-| A way to pick a bus on the map and a `ViewTarget` for it (`{ kind: 'bus', id }` with `fields.poseOf`). A bus in service is a run in `src/transit/system.ts` drawn by the transit renderer; it is not one of `traffic.cars`, so a tap on it selects nothing and there is no card to put Follow on | Follow on a bus | Asked 17 Nov |
+| A follow target for a bus that lasts across its stops | Follow on a bus | Done by the simulation session (0e682a4: `fields.busOf`, `bus`, `buses`, a `ViewTarget` of kind 'bus'); wired here in eea0ce8. (A moving bus was one of `traffic.cars` all along; what was missing was a target that outlives one leg.) |
+| A series of the budget by week: one row per weekly close for about two years, `{ day, income, expense, net, money }` (and the one-time total if cheap) | The budget chart and, later, the liability forecast drawn on it | Asked 17 Nov |
 
 ## Asked of the look lane (through the simulation session's `REQUESTS_FABLE.md`)
 
@@ -62,8 +71,9 @@ Drawings the icon set does not have, so the control keeps an emoji or words: the
 
 ## Next
 
-1. Follow on a bus, when a bus can be picked.
-2. The label of the look lane's `vaulttest` check still reads "Services > Looks"; theirs to reword.
+1. After the simulation session says integration (the look lane's 78 commits merged, 2368bf3) is good, and not before, the look lane's requests that land in this session's files (`docs/aaa/REQUESTS_ASTRA.md` on that tree): Photo, Follow and Street are drawn, so Photo moves into the toolbar's core list (run `hud-icon-art` after); `game.audio.duck()` once when a banner shows; `AudioEngine.onRadioAd(text)` to the feed or a caption; `audio.zonePaint(x, z, changedCells)` on each successful step of a held zoning drag; need bubbles through `S.icons.set(raw)` with `clusterText` for `hit.id < 0`.
+2. The budget chart, when the weekly series exists.
+3. The label of the look lane's `vaulttest` check still reads "Services > Looks"; theirs to reword.
 3. The statistics and budget charts (the brief's U2), from what the simulation gives: loaded on demand, like nothing else in the main bundle should be until the budget is re-baselined.
 4. Honest Mode's toggle waits on the owner (today's labels are the plain words; the booster's words would have to become the default first, which is a content decision).
 5. From the brief, in this session's files and not started: the layout of the top bar and the toolbar as one system with a 12 px floor (U4), long refusals as cards (U3), a pause menu (U5), text scale and keyboard focus order (U6).

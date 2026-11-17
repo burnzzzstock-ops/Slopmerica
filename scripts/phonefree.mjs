@@ -34,7 +34,7 @@ const measure = async () => {
     let free = 0, n = 0;
     for (let y = 5; y < vh; y += 10) for (let x = 5; x < vw; x += 10) { n++; if (document.elementFromPoint(x, y) === canvas) free++; }
     const box = (sel) => { const el = document.querySelector(sel); if (!el || el.hidden) return null; const cs = getComputedStyle(el); if (cs.display === 'none') return null; const r = el.getBoundingClientRect(); return { h: Math.round(r.height), top: Math.round(r.top) }; };
-    return { free: Math.round((free / n) * 1000) / 10, step: box('.next-bar'), drawer: box('.subpanel'), tip: box('#ta-tip'), stepText: document.querySelector('.next-bar .nb-step')?.textContent ?? '' };
+    return { free: Math.round((free / n) * 1000) / 10, step: box('.next-bar'), drawer: box('.subpanel'), tip: box('#ta-tip'), badge: box('.tool-actions'), stepText: document.querySelector('.next-bar .nb-step')?.textContent ?? '' };
   });
 };
 const cdp = await ctx.newCDPSession(page);
@@ -64,6 +64,9 @@ check(`and the cost readout is two lines (${drawing.tip?.h} px tall, 36 or less)
 await touch('touchEnd', 264, 378);
 const lifted = await measure();
 check(`the finger lifted: the readout is whole again (${lifted.tip?.h} px) and the step is back`, !!lifted.tip && !!drawing.tip && lifted.tip.h >= drawing.tip.h && lifted.step !== null, lifted);
+// whole, it has the badge's width to itself and the buttons under it: beside them it was a column 214 px tall
+const readout = await page.evaluate(() => { const t = document.querySelector('#ta-tip'); return { clipped: t.scrollHeight > t.clientHeight + 1, chars: t.textContent.length, w: Math.round(t.getBoundingClientRect().width) }; });
+check(`and the badge with it is ${lifted.badge?.h} px tall (120 or less), the ${readout.chars} characters of the readout ${readout.w} px wide and none cut off; ${lifted.free}% is map (65% or more)`, !!lifted.badge && lifted.badge.h <= 120 && !readout.clipped && readout.w >= 300 && lifted.free >= 65, { ...lifted, readout });
 
 await page.tap('button.tbtn[data-t="zones"]');
 const zones = await measure();

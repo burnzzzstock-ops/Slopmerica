@@ -72,6 +72,8 @@ const PHONE_PRIMARY = ['inspect', 'roads', 'zones', 'ext:services', 'views', 'bu
 const DESK_PRIMARY = ['inspect', 'roads', 'zones', 'ext:services', 'landmarks', 'upgrade', 'bulldoze', 'views', 'budget', 'help', 'bug'];
 const BUILD_TOOLS = ['roads', 'zones', 'ext:services', 'landmarks'];
 const COMPACT = IS_TOUCH || (typeof window !== 'undefined' && window.innerWidth < 700);
+/** a touch readout longer than this many characters is given the badge's full width (shorter ones fit beside the buttons in two lines) */
+const WIDE_TIP = 60;
 /** A tool's readout with its warnings moved up behind the first two facts (length, price), for a space that shows two lines. */
 function briefTip(text: string) {
   const parts = text.split(' · ');
@@ -1963,6 +1965,9 @@ export class Hud implements UiSink {
       const tipText = IS_TOUCH ? (this.touchDraw && tip ? briefTip(tip.text) : tip?.text ?? '') : badge;
       if (tipEl.textContent !== tipText) tipEl.textContent = tipText;
       tipEl.classList.toggle('clamp', this.touchDraw);
+      // With no finger down a long readout gets a row of its own across the badge, the buttons under it. Beside three buttons it
+      // was a column about 100 px wide: 214 px tall on a phone once the buttons had their drawn icons, 116 px before that.
+      tipEl.classList.toggle('wide', IS_TOUCH && !this.touchDraw && tipText.length > WIDE_TIP);
       tipEl.classList.toggle('bad', IS_TOUCH && !!tip?.bad);
       tipEl.classList.toggle('good', IS_TOUCH && !tip?.bad && !!tip?.good);
       tipEl.hidden = IS_TOUCH ? !tip : !badge;

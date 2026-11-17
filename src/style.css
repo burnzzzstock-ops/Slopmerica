@@ -3595,6 +3595,9 @@ a {
   /* under a drawing finger: no step card, and a readout of two lines */
   .hud.touch-draw .next-bar { display: none; }
   .ta-tip.clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+  /* a long readout with no finger down: a row of its own across the badge, and the buttons under it at the right */
+  .tool-actions:has(.ta-tip.wide) { flex-wrap: wrap; justify-content: flex-end; }
+  .ta-tip.wide { flex: 1 1 100%; max-width: none; padding: 2px 6px; }
   /* a tool drawer's name is on the lit toolbar button under it: the title row shows only when the drawer is folded to its pill */
   .subpanel:not(.min):has(> .sp-title + .sp-row) > .sp-title { display: none; }
   /* a row of choices is one row that scrolls sideways, not three that wrap */

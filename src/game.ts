@@ -484,6 +484,7 @@ export class Game {
   }
 
   private wireEvents() {
+    this.sim.events.on('disaster', event => this.audio.disaster(event));
     this.buildings.onComplete = ((orig) => (b: Bld) => {
       orig?.(b);
       if (b.zone !== 'resLow' && b.zone !== 'resHigh' && Math.random() < 0.35) this.feed.push('buildingOpened', { building: b.label, brand: brandName(b.brand) });
@@ -1258,6 +1259,10 @@ export class Game {
       mix.traffic = Math.min(1, cars / 24);
       mix.people = Math.min(1, people / 35);
       mix.construction = Math.min(1, construction / 8);
+      mix.population = this.sim.population;
+      mix.moneyTrouble = Number.isFinite(this.sim.money) ? THREE.MathUtils.clamp((5000 - this.sim.money) / 15000, 0, 1) : 0;
+      mix.flowEma = this.traffic.flowEma;
+      mix.disaster = this.weather.kind === 'hurricane' ? this.weather.intensity : 0;
       mix.sources = this.ambientLife.soundSources(this.camera);
     }
     this.soundMix.zoom = Math.min(1, this.rts.distance / 1500);

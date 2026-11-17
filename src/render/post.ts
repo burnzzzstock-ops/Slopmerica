@@ -207,6 +207,7 @@ const gradeMat = () =>
   new THREE.ShaderMaterial({
     uniforms: {
       tColor: { value: null },
+      tSceneDepth: { value: null },
       uExposure: { value: 1 },
       uToneExposure: { value: 0.95 },
       uTint: { value: new THREE.Color(1, 1, 1) },
@@ -220,16 +221,21 @@ const gradeMat = () =>
       uShimmer: { value: 0 },
       uFlash: { value: 0 },
       uTilt: { value: 0 },
-      uFocus: { value: 0.45 },
+      uFocus: { value: 700 },
+      uClip: { value: new THREE.Vector2(1, 50000) },
       uRes: { value: new THREE.Vector2(1, 1) },
     },
     vertexShader: FSQ_VERT,
     fragmentShader: /* glsl */ `
       // three prepends the tone mapping + color space helpers to ShaderMaterials
-      uniform sampler2D tColor;
+      uniform sampler2D tColor, tSceneDepth;
       uniform vec3 uTint, uLift, uTintLit;
       uniform float uSat, uSatLit, uContrast, uVignette, uTime, uExposure, uShimmer, uFlash, uTilt, uFocus;
-      uniform vec2 uRes;
+      uniform vec2 uRes, uClip;
+      float eyeDepth(vec2 uv) {
+        float d = texture2D(tSceneDepth, uv).r;
+        return uClip.x * uClip.y / (uClip.y - d * (uClip.y - uClip.x));
+      }
       float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
       // The grade owns its tone curve and display encoding (three's ACES
       // Filmic, the same numbers), so it gives the same picture whether it
@@ -253,16 +259,21 @@ const gradeMat = () =>
           uv += vec2(sin(uv.y * 160.0 + uTime * 0.11) + sin(uv.y * 57.0 - uTime * 0.07), cos(uv.x * 110.0 + uTime * 0.09)) * 0.0007 * s;
         }
         vec3 src = texture2D(tColor, uv).rgb;
-        // optional tilt-shift: a golden-angle blur outside the in-focus band
+        // Keep the orbit target in focus. The nearer/farther parts of the
+        // diorama soften even when two rooftops share the same screen row.
         if (uTilt > 0.001) {
-          float r = smoothstep(0.07, 0.4, abs(uv.y - uFocus)) * uTilt * 10.0;
+          float depth = eyeDepth(uv);
+          float r = smoothstep(0.10, 0.8, abs(depth - uFocus) / max(depth, uFocus * 0.35)) * uTilt * 7.0;
           if (r > 0.35) {
             vec3 acc = src; float wsum = 1.0;
-            for (int i = 1; i < 14; i++) {
+            for (int i = 1; i <= 9; i++) {
               float fi = float(i);
               float a = fi * 2.39996;
-              acc += texture2D(tColor, uv + vec2(cos(a), sin(a)) * sqrt(fi / 13.0) * r / uRes).rgb;
-              wsum += 1.0;
+              vec2 tap = uv + vec2(cos(a), sin(a)) * sqrt(fi / 9.0) * r / uRes;
+              // A foreground roof or tree must not bleed into the distant ridge.
+              float w = smoothstep(depth * 0.72, depth * 0.94, eyeDepth(tap));
+              acc += texture2D(tColor, tap).rgb * w;
+              wsum += w;
             }
             src = acc / wsum;
           }
@@ -308,7 +319,7 @@ export interface PostLook {
 }
 
 export class PostFX {
-  readonly enabled: boolean;
+  enabled = false;
   /** why the effects were switched off at runtime (see Game.checkBlackFrame), or null */
   offReason: string | null = null;
   /** effects are on and haven't been switched off */
@@ -318,10 +329,12 @@ export class PostFX {
   /** Optional looks (dev lab / photo mode). */
   vignette = true;
   tiltShift = false;
-  /** Screen height (0 bottom .. 1 top) of the in-focus band for tilt-shift. */
+  /** Manual focus offset. The neutral setting focuses on the orbit target. */
   tiltFocus = 0.45;
-  private ao: boolean;
-  private aoScale: number;
+  tiltStrength = 1;
+  private cameraDistance = 700;
+  private ao = false;
+  private aoScale = 0.5;
   private sceneRT?: THREE.WebGLRenderTarget;
   private aoRT?: THREE.WebGLRenderTarget;
   private aoRT2?: THREE.WebGLRenderTarget;
@@ -349,23 +362,48 @@ export class PostFX {
   aoRadius = 4;
 
   constructor(private renderer: THREE.WebGLRenderer, private scene: THREE.Scene, private camera: THREE.PerspectiveCamera, q: Quality) {
-    this.enabled = q.post && renderer.capabilities.isWebGL2;
+    this.setQuality(q);
+  }
+
+  /** Reconfigure the live renderer. Low keeps no offscreen post targets. */
+  setQuality(q: Quality) {
+    this.enabled = q.post && this.renderer.capabilities.isWebGL2;
     this.ao = q.ao;
     this.aoScale = q.aoFull ? 1 : 0.5;
-    if (!this.enabled) return;
-    const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+    if (!this.enabled) {
+      if (!this.sceneRT) return;
+      this.sceneRT?.dispose();
+      this.hdrRT?.dispose();
+      this.aoRT?.dispose();
+      this.aoRT2?.dispose();
+      this.ldrRT?.dispose();
+      for (const target of this.hist) target.dispose();
+      this.bloom?.dispose();
+      this.sceneRT = this.hdrRT = this.aoRT = this.aoRT2 = this.ldrRT = undefined;
+      this.bloom = undefined;
+      this.hist = [];
+      this.hasHist = false;
+      return;
+    }
+    const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
     const w = Math.max(1, size.x), h = Math.max(1, size.y);
-    this.sceneRT = new THREE.WebGLRenderTarget(w, h, {
-      type: THREE.HalfFloatType,
-      samples: 4,
-      depthTexture: new THREE.DepthTexture(w, h, THREE.UnsignedIntType),
-    });
-    this.sceneRT.depthTexture!.minFilter = this.sceneRT.depthTexture!.magFilter = THREE.NearestFilter;
-    this.hdrRT = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, depthBuffer: false });
+    if (!this.sceneRT) {
+      this.sceneRT = new THREE.WebGLRenderTarget(w, h, {
+        type: THREE.HalfFloatType,
+        samples: 4,
+        depthTexture: new THREE.DepthTexture(w, h, THREE.UnsignedIntType),
+      });
+      this.sceneRT.depthTexture!.minFilter = this.sceneRT.depthTexture!.magFilter = THREE.NearestFilter;
+      this.hdrRT = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, depthBuffer: false });
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.25, 0.3, 0.92);
+      this.setAA(this.aaMode);
+    }
     const aw = Math.max(1, Math.floor(w * this.aoScale)), ah = Math.max(1, Math.floor(h * this.aoScale));
-    this.aoRT = new THREE.WebGLRenderTarget(aw, ah, { type: THREE.UnsignedByteType, depthBuffer: false });
-    this.aoRT2 = this.aoRT.clone();
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.25, 0.3, 0.92);
+    this.aoRT ??= new THREE.WebGLRenderTarget(aw, ah, { type: THREE.UnsignedByteType, depthBuffer: false });
+    this.aoRT2 ??= this.aoRT.clone();
+    this.aoRT.setSize(aw, ah);
+    this.aoRT2.setSize(aw, ah);
+    this.hasHist = false;
   }
 
   /** switch anti-aliasing (MSAA samples on the scene target, or temporal) */
@@ -389,8 +427,8 @@ export class PostFX {
     const w = Math.max(1, Math.floor(cssW * pr)), h = Math.max(1, Math.floor(cssH * pr));
     this.sceneRT!.setSize(w, h);
     this.hdrRT!.setSize(w, h);
-    this.aoRT!.setSize(Math.max(1, Math.floor(w * this.aoScale)), Math.max(1, Math.floor(h * this.aoScale)));
-    this.aoRT2!.setSize(Math.max(1, Math.floor(w * this.aoScale)), Math.max(1, Math.floor(h * this.aoScale)));
+    this.aoRT?.setSize(Math.max(1, Math.floor(w * this.aoScale)), Math.max(1, Math.floor(h * this.aoScale)));
+    this.aoRT2?.setSize(Math.max(1, Math.floor(w * this.aoScale)), Math.max(1, Math.floor(h * this.aoScale)));
     this.bloom!.setSize(w, h);
     this.ldrRT?.setSize(w, h);
     for (const t of this.hist) t.setSize(w, h);
@@ -398,14 +436,14 @@ export class PostFX {
   }
 
   /** night: 0 day .. 1 night (bloom strength etc.) */
-  render(night: number) {
+  render(night: number, cameraDistance = this.cameraDistance, cam = this.camera) {
+    this.cameraDistance = cameraDistance;
     const r = this.renderer;
     if (!this.active) {
       r.setRenderTarget(null);
-      r.render(this.scene, this.camera);
+      r.render(this.scene, cam);
       return;
     }
-    const cam = this.camera;
     const taa = this.aaMode === 'taa' && !!this.ldrRT;
     if (taa) {
       // a different sub-pixel offset each frame; the resolve averages them
@@ -478,8 +516,10 @@ export class PostFX {
     g.uTime.value = (g.uTime.value + 1.37) % 1000;
     g.uShimmer.value = this.look.shimmer;
     g.uFlash.value = this.look.flash;
-    g.uTilt.value = this.tiltShift ? 1 : 0;
-    g.uFocus.value = this.tiltFocus;
+    g.uTilt.value = this.tiltShift ? THREE.MathUtils.clamp(this.tiltStrength, 0, 1) * THREE.MathUtils.smoothstep(cameraDistance, 80, 240) : 0;
+    g.uFocus.value = cameraDistance * Math.pow(2, (this.tiltFocus - 0.45) * 2);
+    g.tSceneDepth.value = this.sceneRT!.depthTexture;
+    g.uClip.value.set(cam.near, cam.far);
     g.uRes.value.set(this.hdrRT!.width, this.hdrRT!.height);
     this.quad.material = this.gradeM;
     r.setRenderTarget(taa ? this.ldrRT! : null);

@@ -14,6 +14,7 @@ import { Environment } from './world/sky';
 import { WeatherSystem } from './world/weather';
 import { PointerHandlers, RTSCamera } from './render/camera';
 import { PostFX } from './render/post';
+import { PhotoMode } from './render/photo';
 import { applyLowGrade, lowExposure } from './render/lowGrade';
 import { Particles } from './render/particles';
 import { AudioEngine } from './audio/audio';
@@ -132,6 +133,7 @@ export class Game {
   readonly camera: THREE.PerspectiveCamera;
   readonly rts: RTSCamera;
   readonly terrain: Terrain;
+  readonly photo = new PhotoMode(this);
   readonly trees: Trees;
   readonly groundDetail: GroundDetail;
   readonly env: Environment;
@@ -197,7 +199,8 @@ export class Game {
   private perfWindowFrames = 0;
   private qualityBenchmarkMs = 0;
   private qualityBenchmarkN = 0;
-  private qualityElapsed = 0;
+  private qualityWarmupMs = 0;
+  private qualityWarmupFrames = 0;
   private qualityBenchmarkDone = false;
   private resolutionCooldown = 0;
   /** Settings → Resolution: 'auto' lowers it to hold the frame rate, 'full' never does */
@@ -326,13 +329,13 @@ export class Game {
     this.peds.canCross = (node, segs, secs, impatient) => this.traffic.canCross(node, segs, secs, impatient);
     // Civic Foundry street furniture, street trees and bus shelters (streamed in; low quality skips it)
     this.civic = new CivicLayer(this);
-    if (this.q.name !== 'low') this.civic.load();
+    this.civic.load();
     this.vaultScenery = new VaultScenery(this);
     this.overlays = new Overlays(this);
     this.fields = makeFields(this);
     this.tools = new Tools(this);
 
-    this.rts = new RTSCamera(this.camera, this.renderer.domElement, this.terrain, this.tools as PointerHandlers);
+    this.rts = new RTSCamera(this.camera, this.renderer.domElement, this.terrain, this.tools as PointerHandlers, this.fields.poseOf);
     try { this.rts.edgeScroll = localStorage.getItem('slopmerica.edgeScroll') !== '0'; } catch { /* private mode: default on */ }
     try { if (localStorage.getItem('slopmerica.resolution') === 'full') this.resolutionMode = 'full'; } catch { /* default auto */ }
     try {
@@ -887,8 +890,11 @@ export class Game {
   /** Save a new preset and apply safe render changes immediately; reload completes asset budgets. */
   requestQuality(name: Quality['name']) {
     const next = QUALITY[name];
+    this.qualityBenchmarkDone = true; // a manual choice also ends the first-run benchmark
     saveQuality(name);
     this.pendingQuality = name === this.q.name ? null : name;
+    this.post.setQuality(next);
+    this.perf.quality = name;
     this.renderer.shadowMap.enabled = next.shadows;
     this.env.sun.castShadow = next.shadows;
     if (this.env.sun.shadow.mapSize.x !== next.shadowMap) {
@@ -948,19 +954,25 @@ export class Game {
       this.perfWindowMs = this.perfWindowFrames = 0;
       if (this.perfSamples > 80) this.cadenceMs = Math.min(this.cadenceMs, this.perf.frameMs);
     }
-    if (!this.qualityBenchmarkDone) {
-      this.qualityElapsed += intervalMs;
-      if (this.qualityElapsed > 500 && intervalMs < 2000) {
+    if (!this.qualityBenchmarkDone && intervalMs < 2000) {
+      // Give the scene a second of actual draws to compile shaders. A single
+      // slow frame or a return from a background tab must not finish warm-up.
+      if (this.qualityWarmupMs < 1000 || this.qualityWarmupFrames < 8) {
+        this.qualityWarmupMs += intervalMs;
+        this.qualityWarmupFrames++;
+      } else {
         this.qualityBenchmarkMs += intervalMs;
         this.qualityBenchmarkN++;
       }
-      if (this.qualityElapsed >= 3000) {
+      if (this.qualityBenchmarkMs >= 2000 && this.qualityBenchmarkN >= 12) {
         this.qualityBenchmarkDone = true;
-        const avg = this.qualityBenchmarkMs / Math.max(1, this.qualityBenchmarkN);
+        const avg = this.qualityBenchmarkMs / this.qualityBenchmarkN;
         const caps = this.renderer.capabilities;
-        const deviceCeiling: Quality['name'] = IS_TOUCH || !caps.isWebGL2 || caps.maxTextureSize < 8192 ? 'medium' : 'ultra';
         let chosen: Quality['name'] = avg > 34 ? 'low' : avg > 24 ? 'medium' : avg > 16 ? 'high' : 'ultra';
-        if (deviceCeiling === 'medium' && (chosen === 'high' || chosen === 'ultra')) chosen = IS_TOUCH ? 'low' : 'medium';
+        // Phones start on Low. Only turn on the Medium HDR/bloom path when
+        // the lighter pipeline has headroom. Higher desktop tiers stay capped.
+        if (IS_TOUCH) chosen = avg > 24 ? 'low' : 'medium';
+        else if ((!caps.isWebGL2 || caps.maxTextureSize < 8192) && chosen !== 'low') chosen = 'medium';
         // Apply live (no reload mid-city); asset budgets pick it up next launch.
         if (chosen !== this.q.name) this.requestQuality(chosen);
         saveQuality(chosen, true);
@@ -1042,7 +1054,7 @@ export class Game {
       last = began;
       const dt = Math.min(0.1, interval / 1000);
       this.frame(dt);
-      this.sampleFrame(interval, performance.now() - began);
+      if (!this.photo.active) this.sampleFrame(interval, performance.now() - began);
     };
     loop();
   }
@@ -1056,6 +1068,7 @@ export class Game {
   frame(dt: number, render = true) {
     const P = this.prof;
     P.begin();
+    if (this.photo.active) { if (render) this.photo.frame(dt); return; }
     this.time += dt;
     const spd = SPEEDS[this.sim.speed];
     this.rts.update(dt);
@@ -1105,6 +1118,7 @@ export class Game {
     this.peds.population = this.sim.population;
     this.peds.update(dt, spd, this.rts.target, this.rts.distance, this.time);
     this.civic.update(dt);
+    this.peds.renderer.updateLod(this.camera, this.q.peopleNear);
     this.vaultScenery.update(dt);
     P.lap('people');
     this.communes.update(dt, this.env.night, this.time, this.camera.position);
@@ -1224,7 +1238,7 @@ export class Game {
       this.renderer.toneMappingExposure = 0.95 * (this.post.active ? 1 : lowExposure(this.env, this.post.look));
       // ... and its tint rides on the two lights that carry the ambient and the key (render/lowGrade.ts)
       if (!this.post.active) applyLowGrade(this.env, this.post.look);
-      this.post.render(n);
+      this.post.render(n, this.rts.distance);
       P.lap('render');
       if (this.blackChecks.length && performance.now() >= this.blackChecks[0] && !document.hidden) {
         this.blackChecks.shift();

@@ -61,7 +61,8 @@ try {
       window.__skyline = { render: () => renderer.render(scene, camera), clay: () => { batch.material = new THREE.MeshStandardMaterial({ color: 0xc2b9a8, roughness: 1 }); renderer.render(scene, camera); },
         dispose: () => { batch.dispose(); models.forEach(m => m.geometry.dispose()); ground.geometry.dispose(); ground.material.dispose(); } };
       renderer.info.reset(); renderer.render(scene, camera);
-      return { zone, level, models: models.map(m => ({ seed: m.seed, height: m.height })), vertices, batchMB: vertices * 44 / 2 ** 20,
+      const batchBytes = Object.values(batch.geometry.attributes).reduce((sum, attribute) => sum + attribute.array.byteLength, 0) + (batch.geometry.index?.array.byteLength ?? 0);
+      return { zone, level, models: models.map(m => ({ seed: m.seed, height: m.height })), vertices, batchBytes, batchMB: batchBytes / 2 ** 20,
         calls: renderer.info.render.calls, triangles: renderer.info.render.triangles };
     }, { zone, level, brand });
     await page.screenshot({ path: `${out}/${zone}-${level}.jpg`, type: 'jpeg', quality: 92 });

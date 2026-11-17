@@ -51,12 +51,27 @@ try {
       if ((b[1] - b[0]) > W * 0.22 && (b[3] - b[2]) > D * 0.22) break;
     }
     const profile = Array.from({ length: 15 }, (_, j) => section(p, bodyH * (0.15 + j * 0.055)));
+    // Measure emitted triangles, including the first shaft above the cornice.
+    // A real podium roof spans the street wall at two or three 4 m storeys.
+    const podiumWidth = W - (zone === 'comHigh' ? 1.2 : 1.6);
+    const podiumDepth = D - (zone === 'comHigh' ? 1.8 : zone === 'resHigh' ? 2.3 : D >= 16 ? 3.8 : 1.8);
+    const roofArea = y => {
+      let area = 0;
+      for (let k = 0; k < p.length; k += 9) {
+        if ([1, 4, 7].some(offset => Math.abs(p[k + offset] - y) > 1e-4)) continue;
+        area += Math.abs((p[k + 3] - p[k]) * (p[k + 8] - p[k + 2]) - (p[k + 6] - p[k]) * (p[k + 5] - p[k + 2])) / 2;
+      }
+      return area;
+    };
+    const podiumHeight = [8, 12].find(y => roofArea(y) >= podiumWidth * podiumDepth * .96) ?? null;
+    const shaft = podiumHeight === null ? null : section(p, podiumHeight + 1);
+    const shaftRatio = shaft ? [(shaft[1] - shaft[0]) / podiumWidth, (shaft[3] - shaft[2]) / podiumDepth] : null;
     const signature = profile.flatMap((b) => b.map((v, k) => Math.round(v / (k < 2 ? W : D) * 20))).join(',');
     const again = make();
     const same = p.length === again.p.length && p.every((v, k) => v === again.p[k]);
     const bounds = [Infinity, -Infinity, Infinity, -Infinity];
     for (let k = 0; k < p.length; k += 3) { bounds[0] = Math.min(bounds[0], p[k]); bounds[1] = Math.max(bounds[1], p[k]); bounds[2] = Math.min(bounds[2], p[k + 2]); bounds[3] = Math.max(bounds[3], p[k + 2]); }
-    rows.push({ id: `${zone}/${level}/${w}x${d}/${seed}`, zone, level, w, d, seed, label: g.label, state: g.rng.state, tris: p.length / 9, ms, height, bodyH, profile, signature, bounds, finite: p.every(Number.isFinite), same });
+    rows.push({ id: `${zone}/${level}/${w}x${d}/${seed}`, zone, level, w, d, seed, label: g.label, state: g.rng.state, tris: p.length / 9, ms, height, bodyH, profile, signature, podiumHeight, shaftRatio, bounds, finite: p.every(Number.isFinite), same });
     geo.dispose(); again.geo.dispose();
   }
   const groups = families.map(([zone, level]) => {
@@ -69,6 +84,8 @@ try {
   check('all 640 tower models finite and reproducible', rows.length === 640 && rows.every((r) => r.finite && r.same));
   check('each tower family has at least six bounding profiles on equal lots', groups.every((g) => g.silhouettes >= 6), groups);
   check('neighboring sample towers have different profiles', groups.every((g) => g.identicalNeighbors === 0));
+  check('all tower podiums have two or three storeys', rows.every(r => r.podiumHeight !== null), rows.filter(r => r.podiumHeight === null).map(r => r.id));
+  check('first shafts occupy75–85% of podium wall width and depth', rows.every(r => r.shaftRatio?.every(v => v >= .749 && v <= .851)), rows.filter(r => !r.shaftRatio?.every(v => v >= .749 && v <= .851)).map(r => ({ id: r.id, ratio: r.shaftRatio })));
   // Frozen pre-change ceilings, retained even when no comparison file is supplied.
   const caps = { 'office/4': 1020, 'office/5': 1466, 'comHigh/4': 974, 'comHigh/5': 1310, 'resHigh/4': 2064 };
   check('original triangle ceilings hold', sum <= 469238 && rows.every(r => r.tris <= caps[r.zone + '/' + r.level]), { triangles: sum, cap: 469238 });

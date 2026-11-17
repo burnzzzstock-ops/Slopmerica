@@ -7,7 +7,7 @@ import { GenCtx, lotPad, parkingLot, car, tree, wallSign, sideSign, poleSign, du
 import { FAC, FLOOR, WALL, ROOF, block, roofJunk, neonBlade, capFloors } from './blocks';
 import { hexNum, signTile as sign, store } from './comLow';
 import { pickArch } from './archetypes';
-import { towerForm, setback, fitPlate } from './towerForm';
+import { towerForm, towerShaft, towerPodium, setback, fitPlate } from './towerForm';
 
 function chooseArch(g: GenCtx): Archetype {
   const { spec } = g;
@@ -268,7 +268,7 @@ function neonTower(g: GenCtx, b: Brand) {
   const x0 = -W / 2 + 0.6, x1 = W / 2 - 0.6, z0 = -D / 2 + 0.6, z1 = D / 2 - 1.2;
   const podH = 3 * FLOOR.shop;
   // podium wrapped in screens
-  mb.box(x0, x1, 0, podH, z0, z1, { f: FAC.storefront(rng), side: WALL.concrete(0x646470), top: ROOF.flat(0x5a5a5a) }); // (was 0x3a3a40: a black three-storey base)
+  towerPodium(mb, { x0, x1, z0, z1 }, podH, FAC.storefront(rng), FAC.aptBrick(undefined, 0xa89489));
   const nScr = Math.max(1, Math.floor((x1 - x0) / 7));
   const scrW = (x1 - x0) / nScr - 0.4;
   for (let i = 0; i < nScr; i++) {
@@ -277,12 +277,14 @@ function neonTower(g: GenCtx, b: Brand) {
     mb.box(sx - scrW / 2, sx + scrW / 2, 4.3, 4.3 + scrW * 0.62, z1, z1 + 0.3, { f: S('scr:' + ad), side: M('plain', 2, 2, 0x111111), top: M('plain', 2, 2, 0x111111), b: null });
   }
   // shaft with a setback crown
-  const tx0 = x0 + (W >= 16 ? 1.5 : 0.3), tx1 = x1 - (W >= 16 ? 1.5 : 0.3), tz0 = z0 + 0.5, tz1 = z1 - (D >= 16 ? 2 : 0.3);
+  const legacy = { x0: x0 + (W >= 16 ? 1.5 : 0.3), x1: x1 - (W >= 16 ? 1.5 : 0.3), z0: z0 + 0.5, z1: z1 - (D >= 16 ? 2 : 0.3) };
+  const shaft = towerShaft({ x0, x1, z0, z1 }, form);
+  const { x0: tx0, x1: tx1, z0: tz0, z1: tz1 } = shaft;
   const H1 = podH + floors * fh * 0.7, H2 = podH + floors * fh;
   const fac = FAC.neon(rng);
   block(g, tx0, tx1, tz0, tz1, podH, H1, fac, { roof: ROOF.flat() });
-  const inset = Math.min(3, (tx1 - tx0) * 0.15);
-  const original = { x0: tx0 + inset, x1: tx1 - inset, z0: tz0 + inset, z1: tz1 - inset };
+  const inset = Math.min(3, (legacy.x1 - legacy.x0) * 0.15);
+  const original = { x0: legacy.x0 + inset, x1: legacy.x1 - inset, z0: legacy.z0 + inset, z1: legacy.z1 - inset };
   const crown = setback({ x0: tx0, x1: tx1, z0: tz0, z1: tz1 }, form, 1.25);
   block(g, crown.x0, crown.x1, crown.z0, crown.z1, H1, H2, L5 ? FAC.glassB(rng) : fac, { parapet: 1, cap: M('grille', 4, 4, 0x616772) });
   // corner screens climbing the shaft
@@ -298,9 +300,9 @@ function neonTower(g: GenCtx, b: Brand) {
   for (let k = 0; k < (L5 ? 4 : 2); k++) neonBlade(g, tx0 + 0.6 + rng.float() * (tx1 - tx0 - 1.2), podH + 2 + rng.float() * (H1 - podH - 12), tz1, 8 + rng.float() * 6, rng.pick(['neonPink', 'neonCyan', 'neonLime', 'neonRed']));
   // crown sign
   fitPlate(mb, original, crown);
-  const cw = Math.min(tx1 - tx0 - inset * 2, 16);
-  mb.box(-cw / 2, cw / 2, H2 + 1, H2 + 1 + cw / 4, tz1 - inset - 0.4, tz1 - inset, { f: S(sign(b)), b: S(sign(b)), side: M('plain', 2, 2, 0x111111), top: M('plain', 2, 2, 0x111111) });
-  roofJunk(g, tx0 + inset, tx1 - inset, tz0 + inset, tz1 - inset - 1, H2, 0.3, { masts: 2, billboards: L5 && W >= 16 ? 1 : 0 });
+  const cw = Math.min(original.x1 - original.x0, 16);
+  mb.box(-cw / 2, cw / 2, H2 + 1, H2 + 1 + cw / 4, original.z1 - 0.4, original.z1, { f: S(sign(b)), b: S(sign(b)), side: M('plain', 2, 2, 0x111111), top: M('plain', 2, 2, 0x111111) });
+  roofJunk(g, original.x0, original.x1, original.z0, original.z1 - 1, H2, 0.3, { masts: 2, billboards: L5 && W >= 16 ? 1 : 0 });
   mb.pop();
   wallSign(g, (x0 + x1) / 2, podH - 1.4, z1 + 0.3, Math.min(x1 - x0 - 2, 8), sign(rng.pick(['slop', 'waffleHut', 'bitcorn', 'cloudChasers', 'chickFilEh', 'slopEnergy'])), 1.3);
   for (let k = 0; k < 3; k++) g.em.push({ kind: 'cigarette', pos: [(rng.float() - 0.5) * W * 0.8, 1.6, D / 2 - 0.5] });

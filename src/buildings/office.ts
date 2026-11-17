@@ -6,7 +6,7 @@ import { GenCtx, lotPad, parkingLot, car, tree, shrub, wallSign, poleSign, dish,
 import { FAC, FLOOR, WALL, ROOF, block, roofJunk, capFloors } from './blocks';
 import { signTile as sign } from './comLow';
 import { pickArch } from './archetypes';
-import { towerForm, setback, fitPlate, shoulderHeight } from './towerForm';
+import { towerForm, towerShaft, towerPodium, setback, fitPlate, shoulderHeight } from './towerForm';
 import { civicCornice } from './civicCornice';
 
 function pickBrand(g: GenCtx, arch: Archetype): Brand {
@@ -118,15 +118,15 @@ function tower(g: GenCtx, b: Brand, mega: boolean) {
   const floors = capFloors(mega ? rng.int(38, 48) + (big ? 8 : 0) : rng.int(16, 26), fh, W, D, 6, mega ? 8 : 6.5);
   const x0 = -W / 2 + 0.8, x1 = W / 2 - 0.8, z0 = -D / 2 + 0.8, z1 = D / 2 - (D >= 16 ? 3 : 1);
   const fac = hq ? FAC.glassB(rng) : rng.pick([FAC.glassA(rng), FAC.glassB(rng), FAC.glassC(rng), FAC.officeBand(rng)]);
-  // lobby
-  const lobby = 6;
-  mb.box(x0, x1, 0, lobby, z0, z1, { f: M('glassPlain', 3, 3), side: M('stone', 3, 3, 0xd8d4cc), top: ROOF.flat() });
+  const lobby = (form.kind % 2 ? 3 : 2) * FLOOR.shop;
+  towerPodium(mb, { x0, x1, z0, z1 }, lobby, FAC.storefront(), FAC.aptBrick(undefined, 0xc6b29a));
   if (!hq && form.kind === 4 && W >= 16) civicCornice(mb, x0, x1, lobby + 0.02, z1 - 0.08);
   // Broad lobby, shoulders at different heights, then a recessed crown.
   const stages = mega ? 3 : 2;
   const perStage = Math.ceil(floors / stages);
-  const shaftH = perStage * fh * (stages - 0.2);
-  let y = lobby, plate = setback({ x0, x1, z0, z1 }, form, 0.18);
+  const shaftH = perStage * fh * (stages - 0.2) + 6 - lobby;
+  let y = lobby, plate = towerShaft({ x0, x1, z0, z1 }, form);
+  if (hq) plate = { x0: plate.x0 + 0.12, x1: plate.x1 - 0.12, z0: plate.z0 + 0.12, z1: plate.z1 - 0.12 };
   let original = { x0, x1, z0, z1 };
   for (let s = 0; s < stages; s++) {
     const fraction = stages === 2 ? shoulderHeight(form) : s === 0 ? shoulderHeight(form) * 0.72 : 0.72 + form.kind * 0.025;

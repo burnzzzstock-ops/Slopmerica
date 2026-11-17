@@ -112,140 +112,17 @@ It needs a TypeSafe API key: put `TYPESAFE_API_KEY=...` in `.env.local` (or set 
 
 ## Tests
 
-Headless checks live in `scripts/` and drive the dev server with Playwright + SwiftShader, e.g.:
+Headless checks live in `scripts/` and drive the game with Playwright. By default the browser draws with SwiftShader (software WebGL), so the pixels are the same on every machine; `GPU=1` uses the real graphics card. They run on Windows, Linux and macOS: `scripts/lib/browser.mjs` finds the browser (`CHROME=` overrides it) and at most four run at once per checkout (`scripts/lib/slots.mjs`).
+
+The list of tests is not in this file. It is in `scripts/tests/fable.json` (simulation, traffic, tools, UI, saves, writing), `scripts/tests/astra.json` (how the world looks and sounds) and `scripts/tests/shared.json` (both). Each entry gives the command, a tier, a timeout, whether it needs a browser or a key, and what it checks. Every script in `scripts/` must be listed there, as a test or as a `measure` entry that says why it is not one; `node scripts/suite.mjs --lint` fails otherwise.
 
 ```sh
-node scripts/playtestcheck.mjs   # bug reporter, crash toast, context loss, rescue screen (phone)
-node scripts/glcheck.mjs          # no draw call raises a GL error (BASE_URL=; GL_JS= runs a snippet in the page first); exits 1 on any, or on a page error
-node scripts/savefallback.mjs     # saving where downloads are blocked: the built game in a sandboxed iframe (no allow-downloads) copies the city file to the clipboard and says so; outside a frame the file still downloads; "Paste a copied city" loads it back (DIST= another build, BUILD=0 skips the build)
-node scripts/soundtest.mjs        # Settings > Sound on/off and volume (effects, ambience, street sound; the music keeps its own): the audio graph's gains, the street voices asleep when off, remembered after a reload, the phone panel still fits
-node scripts/fovtest.mjs phone     # the field of view slider at 35, 50, 75 and 110: the label says what the number is, Settings fits at 390 px, tapping a building selects it, edge scrolling (desk), draw calls per angle; pictures in shots/r8/fov
-node scripts/fovtest.mjs desk      # the same on the desktop (1280x720): the mouse at the screen edge still scrolls the map at every angle
-node scripts/audit8.mjs phone appalachia   # a scripted play session for a UI audit (also: desk, norcal, florida): new game from the title, a road by finger, zoning, a service, every panel, an inspector, Settings, field of view, night, rain, save and resume; every step screenshotted to shots/r8/audit and logged with page errors, spills and touch targets under 44 px; not a pass/fail test
-node scripts/ghosttap.mjs       # phone: a tap on a building that sits where the inspector sheet's x will appear selects it and the sheet stays (the emulated click used to close it 21 ms later); the x still closes it when pressed on purpose
-node scripts/copytest.mjs       # (no browser) sentences built from numbers read right at 1 and many ("1 building", "Court in 1 day"), and the HUD uses them
-node scripts/suite.mjs --dir shots/suite/x   # runs every test in this list against BASE_URL, two at a time, a timeout each; results go to a summary file as they finish, so a rerun resumes (--retry-failed, --only a,b, --list, --lint); prints a table
-node scripts/touchtest.mjs       # phone road drawing: plan, Build, Done, double-tap
-node scripts/phonetargets.mjs    # phone: every control in every panel, and on the title screen, reaches 44 px for a finger (measured with elementFromPoint); the one-row top bar is listed at its minimum
-node scripts/gesturetest.mjs     # phone: pinching or panning with two fingers keeps a planned road or service (real touch events); a stroke that turns into a pinch plans nothing
-node scripts/inputtest.mjs       # desktop road + zoning input
-node scripts/svctouch.mjs        # phone placement previews (services, landmarks)
-node scripts/widentest.mjs       # One More Lane keeps the street's buildings
-node scripts/soak.mjs norcal 360 # a simulated year: errors, NaN, save/continue, leaks
-node scripts/uisweep.mjs phone   # every panel opens cleanly (also: desk)
-node scripts/demandtest.mjs      # demand cards: reasons add up, actions, Esc/tap to close
-node scripts/commandtest.mjs     # road upgrade/bulldoze: same rules from toolbar and inspector
-node scripts/savecontinuity.mjs  # a reload resumes the same future (rng, ledger, trees, imports)
-node scripts/qualitytest.mjs     # graphics presets never change the simulation
-node scripts/nantest.mjs         # one NaN/Inf pixel can't black out the screen; black-frame fallback
-node scripts/ledgertest.mjs      # the weekly rate is recurring only; weeks reconcile; budget, previews, in-the-red card
-node scripts/moneyedge.mjs       # the edge of the money: the countdown matches the weekly closes, bankruptcy is announced once (one card, game stays paused, speed keys wait), one click on the bailout gets out, recovering resets the count
-node scripts/tooltest.mjs        # one active tool: tab switches, Esc, right-click, Cancel, double-clicks, undo
-node scripts/roadrules.mjs       # a blocked road says the rule and the way out (communes)
-node scripts/zonetest.mjs        # zoning strokes report what they did; lots say why they wait
-node scripts/svcstatus.mjs       # services: covered / paid fallback / short, costs, why cut off
-node scripts/progresstest.mjs    # milestones: a new county can't build every service; batches unlock at real populations with grants; the card says what and where; NEW badges; locked cards; nature & sprawl meters
-node scripts/edgetest.mjs        # mouse at a screen edge scrolls the map
-node scripts/scaletest.mjs       # people, cars and boats in proportion to the town; one person out of a door at a time
-node scripts/hudfootprint.mjs    # how much of the height the HUD leaves for the map (W= H= for the window size)
-node scripts/shadercheck.mjs     # no sin-based hashes in shaders (they break on some Windows GPUs)
-node scripts/aotest.mjs          # ambient occlusion leaves open ground alone (no blotches, no stripes)
-node scripts/junctiontest.mjs    # roads over a dead end join it; no near-parallel junctions; crosswalks
-node scripts/interchangetest.mjs # roundabout and diamond interchange (overpass, ramps, save, undo)
-node scripts/townshots.mjs tag   # builds a ~250-person river town and screenshots day, night, a junction, a factory
-node scripts/treelod.mjs         # distant trees match near ones in brightness, colour and cover (MAP=, VIEWS=)
-node scripts/impostortest.mjs    # the distant-tree billboards bake the same on a 3x phone as on a 1x desktop (both views, every species)
-node scripts/roadthrough.mjs     # a road through homes bulldozes them (and says so first); services refuse it
-node scripts/tiptest.mjs         # placement tooltips stay inside the window at every edge
-node scripts/needtest.mjs        # hovering a building's need icon says what it needs
-node scripts/nightglow.mjs       # at night lights stay lights: no multiplied emissives or glowing dust
-node scripts/aacompare.mjs       # MSAA vs TAA, still and panning (error, edge energy, shimmer)
-node scripts/restest.mjs         # automatic resolution drops only when it helps, and recovers
-node scripts/rescheck.mjs        # render resolution vs the screen, per preset
-node scripts/musictest.mjs       # ambient piano renders offline: plays, never clips, stays in key
-node scripts/placetest.mjs       # services, depots and landmarks front the street on level pads; ghost = final
-node scripts/playtest3.mjs       # county road is the state's; road previews; undo replants; demand next step; goals
-node scripts/playtest4.mjs       # landfill 75/90/full warnings; emergency card + slowdown, Fix / Worst area, Recovering; why trash piles up; departures by cause; earned unlocks stay; "Built", not "already here"; blocker outline; road budget preview; merged icons
-node scripts/firststeps.mjs      # first-steps Next bar and its button; demand wording; weekly balance on road previews; H goes home; toolbar; notices; feed peek
-node scripts/playtest5.mjs       # transit lines survive a street joining their road; bulldoze names the line; transit list refreshes; per-ride costs; green "Built" after placing; valid-site rings; save on page hide
-node scripts/housetown.mjs       # a dense town of every house style: variety, model cost, building batch budget (SHOTS=prefix)
-node scripts/motiontest.mjs      # cars: no heading snaps, brake for turns, change lanes, blink, never wrong-way on a one-way; walkers' stride, no teleports
-node scripts/carsolid.mjs        # (fails in most runs on one residual: two cars from the two lanes of the block's road 44 overlapping as they enter the box side by side; lanes are clean) cars never drawn inside each other in a lane or a junction at morning rush, no car stuck off a red, no heading snaps; steps the traffic model without rendering
-node scripts/vehicletest.mjs     # (no browser) vehicles: all 59 models build inside their kind's size and triangle budget, a 100-car town costs no more draw calls than the old renderer, the paint mix is the real-US mix, wheels turn the right way (forwards, backwards, steering), suspension settles, reverse lamps come on by themselves, the public API and every emergency livery are kept
-node scripts/vehiclestats.mjs    # (no browser) per model: triangles at close / near / far, build time, bounding box against the kind's spec; flags over-budget or oversize models
-node scripts/lineup.mjs tag      # every vehicle model at 8 m / 40 m / 150 m, day and night, on the real renderer with no game boot (dev/vehicles.html; BASE_URL= picks old or new code; AZS EL SEEDS BRAKE TURN REV PARKED WET FOV env); contact sheets and index.html in shots/lineup/tag
-node scripts/carcam.mjs tag      # real cars on the reference block after the morning rush: one moving, one queued, one at a junction, day and night, any preset (PHONE=1 for the 390x844 3x phone); draw calls and triangles per picture, same camera on old and new code
-node scripts/sheet.mjs out.jpg 3 520 a.jpg b.jpg   # tile captures into one labelled contact sheet (before/after pairs for reports)
-node scripts/streetaudio.mjs     # (no WebGL) street sound rendered offline and measured: Doppler pass-bys, engines by vehicle kind, honks only from jams of 3+ cars (never a drive-thru line), sirens that follow the moving vehicle, wet-road hiss, peak level, no audio nodes created while playing; `dev/streetaudio.html` is the audition page, docs/cars-look/audio.md the report
-node scripts/streetaudio-game.mjs  # the same street sound wired into the running game (QUALITY=low for the phone pool): voices sit on real cars, sleep when zoomed out, paused or muted; a queue honks and free flow does not
-node scripts/streetaudio-figure.mjs   # draws the report's before/after spectrograms
-node scripts/yellowflash.mjs     # night flashing on Ultra (each case on a freshly opened page): bright yellow pixels that pop on frame to frame (still and panning, moonless/full moon, clear/rain), GL errors, failed shader builds; the old prop-flame flash fails it
-node scripts/nightcost.mjs high   # where a night frame goes (BASE_URL=; quality default high): every GPU pass timed, the frame with one feature switched off at a time, the same pass table at several window sizes, each scene layer hidden in turn, and an A/B mode that alternates a toggle frame by frame; a measurement, docs/round8/night.md
-node scripts/nightlook.mjs high   # median night luma of just the street tree crowns and just dark cars in a fixed close-up, found with a mask pass (BASE_URL= or URLS=before=..,after=.. to compare builds; CASES, SWEEP_TREE, SWEEP_CAR; MIN_TREE / MIN_CAR make it a check)
-node scripts/nightwarmth.mjs     # how warm the night lights are: colour temperature of the practical light on the lookbook cameras (OUT=dir saves JPEGs; MAX_CCT=K makes it a check)
-node scripts/junctionmouth.mjs   # (no browser) junction shapes: mouth areas per class pair and angle, the cars' clearance to the kerb, paint against stopped cars; --compare old.json proves the network (nodes, segments, trims, junction curves) did not move
-node scripts/junctionmesh.mjs    # (no browser) the real road meshes: empty spots, down-facing triangles, what the road renderer submits
-node scripts/junctionplan.mjs    # top-down PNG of a drawn junction from the real meshes
-node scripts/junctionshots.mjs   # before/after junction close-ups, day and night (reference block plus tee, skew and one-way junctions)
-node scripts/junctionedit.mjs    # rebuilds a junction every way the game does (build across, upgrade, flip, bulldoze arm by arm, the Freedom Circle) and checks meshes stay finite and trims stay the network's
-node scripts/towers.mjs low      # tower-facade luma on the reference block (mean, std-dev, share under luma 20/40, percentiles) at noon and night; PHONE=1, OUT=dir saves JPEGs; BASE_URL for old vs new
-node scripts/towerlab.mjs low    # the showcase lineup (every zone x level) beside the block, swept over glass / wall-fill settings (SETS=), class-masked luma per shot
-node scripts/lowperf.mjs low     # frame time of two builds side by side (A_URL old, B_URL new) on the reference block, plus draw calls and triangles
-node scripts/peoplelineup.mjs    # every citizen archetype on the no-game lineup page (/dev/people.html) at 8/30/100 m day and night, walk/run/idle/action sheets, `lod` (near/far switch sheet), `feet` (GPU foot probe: planted feet, OK/FAIL) and `bench` (crowd cost); env BASE_URL, OUT, JPEG=1, W/H, BREAKDOWN=1 Also `lists` (the draw-list check, OK/FAIL) and `crowd60`/`crowd24` (40 people as the game camera sees them); env PRESET, PRESETS, N, SCENE, and BASES=old=url,base=url#q=low&near=..,new=url to compare builds in alternation in one browser
-node scripts/peoplestats.mjs     # (no browser) people model vertices and triangles per level of detail and per archetype (--all); run it in the old tree to compare
-node scripts/peoplecost.mjs low  # draw calls, triangles and ms of the people group in the reference block, close and at play height (VIEWS=close,street, ROUNDS, FRAMES, SHOT=prefix); BASES=old=url,base=url,new=url compares builds in one browser on the same crowd and camera, SEED, JSON=file, `low [phone|desktop]`
-node scripts/snapshot.mjs name 5176   # (tooling) serves a frozen copy of the tree with its own Vite cache, so editing src/ never reloads a running capture; scripts/withslot.sh <command> runs it in one of two shared browser slots (at most two headless Chromium jobs at once); scripts/worktree.sh <name> makes a scratch worktree for a parallel helper
-node scripts/crosswalktest.mjs   # people and cars at crosswalks: nobody on foot inside a car, people cross junction arms and wait at the kerb for a gap or the walk phase, cars stop for them, and stopping costs under a tenth of the traffic
-node scripts/parkingtest.mjs     # live parking and drive-thru lines: lots fill by the hour (offices mid-morning, shops at noon, empty at 3 am), cars pull into stalls and back out, a grand opening spills the drive-thru line onto the road and it clears; parked cars, frame time and calls per preset with and without
-node scripts/landmarktest.mjs    # landmarks draw visitors: sightseers by day, a game-night crowd at Slop 69 Field (every evening, 5 to 10 pm) that leaves home by its drive, two in three in their seats by kickoff, fills its lot and drives home after; the inspector counts today's visitors; a landmark no road reaches draws nobody (SEED)
-node scripts/gridlocktest.mjs    # a Florida county the bot grew to 2,800 people (shots/florida2800.json, grown once if missing), the same seed with this round's truck courtesy and gridlock breaker and without, 120 days at ▶▶▶: more goods delivered by truck, traffic still moves; then a 30-minute ▶▶▶ soak (cars only): far fewer moments with a ring of lanes each waiting on the next, and no lane standing still for good (SEED, TOWN, DAYS, SOAK)
-node scripts/lightstest.mjs      # actuated lights: at the evening rush, the same seed with fixed 11 s greens, actuated without leading greens, and both (a green nobody waits for goes to its yellow when someone waits on another; a left first at its line gets its road's green ahead of the oncoming one): a fifth more cars through node 45, no fewer through all the lights, the leading greens cut the lefts' wait by a third at least and cost all the lights a tenth of their cars at most, people on foot wait no longer, no two phases inside each other in the box (SEED, NODE, SECONDS, HOUR)
-node scripts/walklinetest.mjs    # one walk line (roadJunction.ts armCrossing): every arm people cross has a zebra under their logged path, no zebra where nobody may cross, nobody walks over an arm's lanes off its crossing, a car waiting at its line keeps 2 m short of where people walk over its lane (SEED, SECONDS)
-node scripts/walklineshots.mjs   # pictures of the reference block's sharp-cornered junctions from above, zebras and (red) where people walked, for before/after pairs (TAG, OUT, SEED; nodes)
-node scripts/botclinics.mjs      # the late-game bot (scripts/lib/latePlayer.mjs) grows a county from nothing, seeded, and relieves an overloaded clinic with a hospital once it can afford one, before that a clinic on the lot that takes most of its load (services.ts takeFrom): no more clinics than one per 1,200 people and two, every one serving a fifth of its room at least; prints how long clinics were overloaded (MAP, POP, DAYS, SEED)
-node scripts/trashcliff.mjs      # the trash cliff: the reference block with its landfills bulldozed, day by day: abandoned buildings stand 90 days, an alert says how many come down and when 30 and 7 days ahead, the inspector says when (SEED, DAYS)
-node scripts/bubblefov.mjs       # need bubbles at a wide field of view: one bubble drawn alone and read back on the phone, at 35, 50, 75 and 110°: it keeps its 50° size on the screen, and a tap picks it as far from its middle (SEED)
-node scripts/demandwords.mjs     # (no browser) the demand card's reasons read right at 1: no count goes straight before a plural in sim.ts's demand parts or services.ts's utilities hit
-node scripts/collegetest.mjs     # the College's first graduates: the first home in its reach to reach level 5 says so once (with how many homes can follow), none without a college, never twice
-node scripts/trafficscale.mjs    # (over its 4 ms target today: 4.3-4.8 ms a step at 1,000 cars on this machine) traffic at 250, 500 and 1,000 cars in a big seeded town (grown once to shots/scale/town.json): the median, mean and 95th percentile of one traffic.update, the town's fingerprint and every car's state at the end (a faster version that moves the cars the same prints the same), and peds.update with 3,000 people out (SEED)
-node scripts/civictest.mjs       # Civic Foundry pack streams in: street trees, furniture, bus shelters; instanced LODs; Low skips it
-node scripts/starttest.mjs       # new county: sensible site (random among good ones, saved), county road follows the land; trees: no detail disc, no gaps; far trees keep their shape (no rectangles)
-node scripts/gridtest.mjs        # Roads > Grid: three clicks lay a street grid (junctions, lots, price, red streets left out, one-ways alternate, one undo, touch)
-node scripts/undotest.mjs        # Undo pays for what still stands (a bulldozed road isn't refunded twice), follows a piece split by a joining street, and leaves no road behind; the Undo button names what it will pay
-node scripts/progression.mjs     # (not a pass/fail test) a scripted player grows a Ponzi town: when each population mark is reached, money, what got built
-node scripts/weathertest.mjs     # weather keeps to the calendar: no rain or snow spell over a month, no summer snow, changes often, doesn't strobe at top speed
-node scripts/costtest.mjs        # honest service costs (running cost, committed projects, units), Next priorities, locked-fix notes, full landfill note, red bulldoze outlines
-node scripts/contentaudit.mjs    # (content gate, Jev, ~$0.15 a full pass, reruns only ask new lines; --inventory/--dry-run need no key) every player-facing line vs the content rules, parody-brand IP; docs/CONTENT_AUDIT.md
-node scripts/ipcheck.mjs         # (content gate, no key) real slogans used word for word and real brands' exact colors on the parody chains; riffs listed for review
-node scripts/copyscan.mjs        # (no key) self-check of the copy scanner shared by contentaudit, learnability and brandcheck: literals, template holes, call arguments, every src/ file scans
-node scripts/feedtags.mjs        # (Jev, $0.04 a full pass; --dry-run needs no key) tag every feed line: region, town size, weather, fits its event, likely authors
-node scripts/feedtest.mjs        # the feed picks lines that fit the map, town size and weather, never empties a pool, and posts exactly as before without the tags; shop openings post the brand's name
-node scripts/nametags.mjs        # (Jev, $0.01 a full pass; --dry-run needs no key) street, suffix and commune names tagged by the region they belong to
-node scripts/parkingtags.mjs     # (Jev, $0.003 a full pass; --dry-run needs no key) when each brand's lot is full: busiest hours, open late, how full when quiet; writes src/agents/parkingTags.ts (the live parking's curves off screen; drawn only, never the simulation) and docs/PARKING_TAGS.md
-node scripts/nametest.mjs        # no street names from another region on any map (4,000 generated per map, and roads built in game), every list still has names
-node scripts/learnability.mjs    # (Jev, <$0.01; --dry-run needs no key; --list shows what it reads) every toast, alert, refusal and tooltip: says what happened, says what to do next, jargon; report and hand-written fixes in docs/LEARNABILITY.md
-node scripts/brandcheck.mjs      # (Jev, $0.01; --dry-run needs no key) chain names in copy that aren't in the brand registry ("Burger Duke", "Waffle Bunker"), with a proposed canonical name; docs/BRAND_NAMES.md
-node scripts/transittest.mjs     # buses: depot, lines, riders at opening, two overlapping lines split riders, diversions
-node scripts/transithonest.mjs  # the transit panel ends with the whole network (fares, costs incl. depots, net) and that net is the budget's; a line with no depot says it is not running
-node scripts/transitcut.mjs      # a road cut between a bus line's stops: the line stops running and stops costing, says why once, and returns when the road is rebuilt
-node scripts/savetest.mjs        # save, reload and Resume bring back the same town: roads, buildings, zoning, population, money
-node scripts/loadfiletest.mjs    # Load a city file from the title: a whole city loads; a partial or damaged one (roads: {}, a null building, no clock) is turned away on the title in words; a damaged own save falls back to the checkpoint
-node scripts/disasterloop.mjs    # hurricane, wildfire, landslide and Florida Man: warn, hit, bill what they say (and say what they billed), end; a save in the warning or the response comes back as the same emergency, charged once
-node scripts/playtest6-late.mjs   # late-game pacing: a scripted commissioner (scripts/lib/latePlayer.mjs) grows a Ponzi county toward 10,000 and prints the day, treasury and buildings at each milestone, what got in the way, and page errors; SAVETEST=1 also saves, reloads and compares. A measuring tool (CHECK=1 makes it a gate), not part of the default pass
-node scripts/triage.mjs <folder>  # (Jev, <$0.01 per dozen) tester reports (🐞 text, one .txt each): area, severity, which check would catch it, duplicates; table in <folder>/TRIAGE.md. Try scripts/triage-samples (hand-labelled)
-node scripts/overlaptest.mjs     # HUD panels never cover each other: emergency card, inspector, drawers, Next, toolbar, tool badge at 1707×1019 down to a phone; also the inspector against the first-steps card (it lay across the sheet's Bulldoze button on a phone)
-node scripts/gradetest.mjs       # contours and slope shading around the cursor when drawing roads or placing; live road grade in the tip (amber near 15%); steep refusal names the rule and the way out
-node scripts/reflecttest.mjs     # water mirror pass: first look at water compiles no shader variants (was 12.9 s on the software GPU), image matches the old clipping, nothing under the surface shows
-node scripts/nighttest.mjs       # night exposure targets on the reference block: road median >= 50, pools p90 >= 100, lit facades clear of the ground, < 1% blown out, pools off by day
-node scripts/presetlight.mjs     # the presets light the same street alike (noon, dusk, moonless night on the reference block): mean luma within 0.03 of High on every camera and hour
-node scripts/lookbook.mjs high   # fixed-camera captures of the reference block (noon, dusk, moonless, full moon, rain) per quality, with a contact sheet (docs/ART_DIRECTION.md)
-node scripts/linktest.mjs        # landmarks/services off the road network: tip, toast, red no-road bubble, inspector, alerts, no land value; feed pacing
-node scripts/vaulttest.mjs       # Asset Vault: pack streams in; zoned lots grow vault buildings that fit; merch lots kept; attractions; services' vault looks + toggle; road furniture; no pack = no change
-node scripts/crisisfixtest.mjs   # info views show every building with that view's problem; utility outages merge only for the same buildings; a closed warning returns when worse
-node scripts/roadgrade.mjs       # a road across a dip stands on an embankment, not a floating slab
-node scripts/audiotest.mjs       # ambience loops have no seam thump and no steady beat (no "train chugging")
-node scripts/econtest.mjs [map] [days]  # a town grown like a player grows one: weekly bill vs population (CHECK=1 gates it, OUT=file dumps rows)
-node scripts/bldshots.mjs tag    # neighbourhood-zoom shots of homes, shops, apartments, offices, factories, day and night (CLOSE=1 adds close-ups)
+npm run gate                              # before every commit: typecheck, build and its size budget, the checks that need no browser, the registry lint
+npm run smoke                             # before every push: the quick browser checks against a frozen copy of the tree
+node scripts/suite.mjs --serve            # everything that is pass/fail, against a frozen copy (results in shots/suite/full; a rerun resumes)
+node scripts/suite.mjs --list             # what would run, what would not, and why
+node scripts/suite.mjs --only savetest    # one test (BASE_URL=http://127.0.0.1:5173 unless --serve)
+node scripts/snapshot.mjs name 5181       # serve a frozen copy yourself, so editing src/ never reloads a running test
 ```
 
-`BASE_URL=http://127.0.0.1:5174` points any of them at another server (handy for running the suite against a frozen copy while you keep editing). Scripts that assert exit nonzero on failure.
+`BASE_URL=http://127.0.0.1:5181` points any script at another server. Scripts that assert exit nonzero on failure. Tests with traffic in them take `SEED=` (default 1; `FUZZ=1` picks a random one and prints it).

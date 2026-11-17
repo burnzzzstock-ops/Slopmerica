@@ -389,9 +389,9 @@ export class Environment {
     // came out darker there, most of all at dusk (mean luma of the reference block, scripts/presetlight.mjs: Medium at
     // dusk 0.23 against 0.31 on High, at noon 0.41 against 0.47, on a moonless night 0.22 against 0.25). Low already
     // matched at noon and at night (its own exposure lift), so it is raised only with the sun low. Lighting constants only.
-    this.hemiScale = renderer ? 0.5 : q.post ? 1.7 : 1;
-    this.hemiDusk = renderer ? 0.5 : q.post ? 1.7 : 1.5;
-    this.nightBoost = renderer ? 2 : q.post ? 2 : 1;
+    this.hemiScale = renderer ? 0.5 : q.post ? 1.7 : 1.3;
+    this.hemiDusk = renderer ? 0.5 : q.post ? 1.7 : 1.9;
+    this.nightBoost = 2;
 
     this.skyU = THREE.UniformsUtils.merge([
       THREE.UniformsLib.fog,

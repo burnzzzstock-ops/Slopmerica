@@ -129,7 +129,8 @@ export class PhotoMode {
     const mirror = g.water.reflection;
     wu.uReflOn.value = mirror?.shouldRender(cam) ? 1 : 0;
     g.renderer.toneMappingExposure = 0.95 * (g.post.active ? 1 : lowExposure(g.env, g.post.look));
-    if (!g.post.active) applyLowGrade(g.env, g.post.look);
+    if (!g.post.active) applyLowGrade(g.env, g.post.look, g.renderer);
+    else g.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     const oldTilt = g.post.tiltShift, oldStrength = g.post.tiltStrength;
     try {
       g.post.tiltShift = this.tilt > 0; g.post.tiltStrength = this.tilt;
@@ -150,6 +151,8 @@ export class PhotoMode {
       // Warm it before the final scene draw, without stepping the game.
       const mirror = g.water.reflection, wu = g.water.mat.uniforms;
       wu.uReflOn.value = mirror?.shouldRender(camera) ? 1 : 0;
+      if (!g.post.active) applyLowGrade(g.env, g.post.look, renderer);
+      else renderer.toneMapping = THREE.ACESFilmicToneMapping;
       if (wu.uReflOn.value) mirror?.render(renderer, g.scene, camera, [g.water.mesh]);
       g.post.render(g.env.night, g.rts.distance, camera);
     };

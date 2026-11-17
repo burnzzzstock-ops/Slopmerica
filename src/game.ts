@@ -14,6 +14,7 @@ import { Environment } from './world/sky';
 import { WeatherSystem } from './world/weather';
 import { PointerHandlers, RTSCamera } from './render/camera';
 import { PostFX } from './render/post';
+import { PhotoMode } from './render/photo';
 import { applyLowGrade, lowExposure } from './render/lowGrade';
 import { Particles } from './render/particles';
 import { AudioEngine } from './audio/audio';
@@ -132,6 +133,7 @@ export class Game {
   readonly camera: THREE.PerspectiveCamera;
   readonly rts: RTSCamera;
   readonly terrain: Terrain;
+  readonly photo = new PhotoMode(this);
   readonly trees: Trees;
   readonly groundDetail: GroundDetail;
   readonly env: Environment;
@@ -1052,7 +1054,7 @@ export class Game {
       last = began;
       const dt = Math.min(0.1, interval / 1000);
       this.frame(dt);
-      this.sampleFrame(interval, performance.now() - began);
+      if (!this.photo.active) this.sampleFrame(interval, performance.now() - began);
     };
     loop();
   }
@@ -1066,6 +1068,7 @@ export class Game {
   frame(dt: number, render = true) {
     const P = this.prof;
     P.begin();
+    if (this.photo.active) { if (render) this.photo.frame(dt); return; }
     this.time += dt;
     const spd = SPEEDS[this.sim.speed];
     this.rts.update(dt);

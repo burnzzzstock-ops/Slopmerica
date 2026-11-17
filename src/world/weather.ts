@@ -748,15 +748,7 @@ export class WeatherSystem {
     }
 
     // sky / fog / lighting inputs
-    env.overcast = c.overcast;
-    env.fogMul = c.fog;
-    env.smoke = c.smoke;
-    env.haze = c.haze;
-    env.whiteout = c.whiteout;
-    env.mist = c.mist;
-    env.mistHeight = c.mistH;
-    env.precip = Math.min(1, Math.max(c.rain, c.snow) * 0.8);
-    env.storm = c.storm;
+    this.skyLook(c);
     env.snowCover = this.snowCover;
     env.dayOfYear = this.visDay;
     env.day = time.day;
@@ -765,10 +757,7 @@ export class WeatherSystem {
     this.updateLightning(dt, camera, c.lightning);
     env.flash = this.flash;
     // clouds at night: moonlit by a bright moon, dark on a moonless night, sodium-orange over a big city
-    const moonK = Math.min(1, env.moonLight / 0.9);
-    this.cloudKey.copy(env.sunColor).multiplyScalar(1 - env.night * (1 - moonK) * 0.85);
-    this.cloudKey.lerp(C_SODIUM, env.night * env.lightPollution * 0.6);
-    this.clouds.update(this.cloudKey, env.fog.color, env.night, Math.min(1, c.dark + env.night * (1 - moonK) * (1 - env.lightPollution) * 0.8), this.flash);
+    this.cloudLook(c, this.flash);
 
     // surface breeze for smoke and particles (m/s)
     this.wind.copy(this.windDir).multiplyScalar(0.9 * c.wind);
@@ -789,6 +778,43 @@ export class WeatherSystem {
     ctx.water.mesh.position.y = WATER + this.surge;
 
     // post: weather look + a subtle seasonal grade, heat shimmer and the lightning flash
+    this.gradeLook(c, this.flash);
+  }
+
+  private skyLook(c: Look) {
+    const env = this.ctx.env;
+    env.overcast = c.overcast; env.fogMul = c.fog; env.smoke = c.smoke; env.haze = c.haze;
+    env.whiteout = c.whiteout; env.mist = c.mist; env.mistHeight = c.mistH;
+    env.precip = Math.min(1, Math.max(c.rain, c.snow) * 0.8); env.storm = c.storm;
+  }
+
+  private cloudLook(c: Look, flash: number) {
+    const env = this.ctx.env, moonK = Math.min(1, env.moonLight / 0.9);
+    this.cloudKey.copy(env.sunColor).multiplyScalar(1 - env.night * (1 - moonK) * 0.85);
+    this.cloudKey.lerp(C_SODIUM, env.night * env.lightPollution * 0.6);
+    this.clouds.update(this.cloudKey, env.fog.color, env.night, Math.min(1, c.dark + env.night * (1 - moonK) * (1 - env.lightPollution) * 0.8), flash);
+  }
+
+  /** Draw a paused photo using the existing clouds, rain, fog and grade. The
+   * forecast, accumulated snow, lightning schedule and gameplay clock stay live state. */
+  photoLook(kind: 'clear' | 'cloudy' | 'rain' | 'fog' | null, hour: number, camera: THREE.PerspectiveCamera, focus: THREE.Vector3, range: number) {
+    const c = kind ? LOOKS[kind] : this.cur, env = this.ctx.env;
+    this.skyLook(c);
+    env.hour = hour;
+    env.flash = kind ? 0 : this.flash;
+    env.update(0, focus, range, camera.position);
+    this.cloudLook(c, 0);
+    this.updatePrecip(0, camera, range, c);
+    this.gradeLook(c, 0);
+    const wet = kind ? (c.rain > 0.05 ? 1 : 0) : this.wet;
+    atmo.uRain.value = c.rain; ATMOS.uWet.value = wet; ATMOS.uCloudCover.value = c.cover;
+    ATMOS.uCloudShadow.value = (0.35 + c.overcast * 0.2) * (1 - env.night) * (1 - c.overcast * 0.6);
+    this.ctx.water.mat.uniforms.uRain.value = c.rain;
+    return wet;
+  }
+
+  private gradeLook(c: Look, flash: number) {
+    const env = this.ctx.env;
     const lk = this.look;
     if (lk) {
       const S = this.seasonal;
@@ -813,7 +839,7 @@ export class WeatherSystem {
       lk.lift.r += 0.02 * c.haze + 0.02 * c.smoke;
       lk.lift.g += 0.008 * c.haze + 0.008 * c.smoke + 0.006 * c.storm;
       lk.shimmer = c.haze * (1 - night);
-      lk.flash = this.flash;
+      lk.flash = flash;
     }
   }
 
@@ -987,8 +1013,7 @@ export class WeatherSystem {
   }
 
   // ---------------------------------------------------------------- particles in the air
-  private updatePrecip(dt: number, camera: THREE.Camera, camDist: number) {
-    const c = this.cur;
+  private updatePrecip(dt: number, camera: THREE.Camera, camDist: number, c = this.cur) {
     const env = this.ctx.env;
     const T = this.ctx.terrain;
     const cam = camera.position;

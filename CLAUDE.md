@@ -25,6 +25,8 @@ SLOPMERICA is a satirical 3D city builder in the browser: TypeScript, three.js, 
 
 If a fix belongs in the other lane's files, do not make it: write it in your `REQUESTS_*.md` (file, cause, proposed fix, what it blocks) and move on.
 
+A third lane directs and reviews: it listens to rendered audio, looks at screenshots and recordings, plays the game in a live browser and makes 2D art. It works on `agy/aaa-director` with ports 5170 to 5179, and writes what it finds in `docs/aaa/REQUESTS_ORION.md`. It owns the art it adds, in folders agreed with the look lane; a change it wants in a file one of the two lanes owns is a request, or a commit on its own branch that touches only that file.
+
 Heightfield generation is frozen for everyone: saves keep only edits, and the world regenerates from its seed.
 
 ## Branches
@@ -58,6 +60,7 @@ npm run suite:gpu   # at every integration merge: every pass/fail test (about 20
 - `GPU=1` (or `--gpu` on the suite) draws with the real graphics card. `SEED=n` sets the county's dice for a seeded test (default 1; `FUZZ=1` picks one and prints it). One run proves nothing for anything with traffic in it: compare several seeds.
 - A Node rig that loads `src/` through Vite in middleware mode must pass `ws: false`, or two rigs at once clash on a port.
 - The reference town every look and traffic test opens is a committed fixture (`scripts/fixtures/refblock-town.json.gz`). Change it only in a commit of its own that says so: every number measured on it moves.
+- `REFTOWN=v1` opens the town it replaced (`scripts/fixtures/refblock-town.json`: no main street, no working utilities). The suite sets it for every test in `astra.json`, because the look lane's numbers were recorded on that town; a test moves to today's town with `"env": {"REFTOWN": "new"}`. Run a look script by hand with `REFTOWN=v1` to get the town its numbers expect.
 
 ## The simulation is deterministic. Keep it so.
 

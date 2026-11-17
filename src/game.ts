@@ -17,6 +17,9 @@ import { Environment } from './world/sky';
 import { WeatherSystem } from './world/weather';
 import { PointerHandlers, RTSCamera } from './render/camera';
 import { PostFX } from './render/post';
+import { WaterRefraction } from './render/refraction';
+import { applySmogLook } from './render/aerialPerspective';
+import { GodRays } from './render/godRays';
 import { PhotoMode } from './render/photo';
 import { BuildingFinishes } from './buildings/finishState';
 import { applyLowGrade, lowExposure } from './render/lowGrade';
@@ -163,6 +166,8 @@ export class Game {
   readonly env: Environment;
   readonly shadows: CascadeShadows;
   readonly water: ReturnType<typeof createWater>;
+  readonly waterRefraction: WaterRefraction;
+  readonly godRays: GodRays;
   readonly weather: WeatherSystem;
   /** the weather the simulation runs on (seeded, saved, in game time); `weather` above is the sky, which follows it */
   readonly climate: Climate;
@@ -295,7 +300,7 @@ export class Game {
     this.terrain = new Terrain(this.map, this.renderer, this.q);
     this.scene.add(this.terrain.group);
     lap('terrain');
-    this.water = createWater(this.terrain, this.map.def.water, this.q.name === 'high' || this.q.name === 'ultra', opts.map);
+    this.water = createWater(this.terrain, this.map.def.water, this.q.name === 'low' ? false : this.q.name === 'medium' ? .25 : this.q.name === 'high' ? .5 : 1, opts.map);
     this.scene.add(this.water.mesh);
     this.trees = new Trees(this.terrain, this.map, this.q, this.renderer);
     this.terrain.onReshape = (a, b, c, d) => this.trees.resettle(a, b, c, d);
@@ -304,11 +309,16 @@ export class Game {
     this.env = new Environment(this.scene, this.map.def, this.q, this.q.name === 'high' || this.q.name === 'ultra' ? this.renderer : undefined);
     this.shadows = new CascadeShadows(this.scene, this.camera, this.env.sun, this.q);
     this.env.hour = this.hour;
+    this.env.pollutionTexture = this.water.pollution.texture;
     this.seed = (opts.restore?.seed ?? opts.seed ?? seedPick() ?? Math.floor(Math.random() * 2 ** 31)) >>> 0;
     this.climate = new Climate(opts.map, streamSeed(this.seed, 'climate'));
     this.dice.state = streamSeed(this.seed, 'county');
     this.weather = new WeatherSystem({ scene: this.scene, renderer: this.renderer, env: this.env, terrain: this.terrain, trees: this.trees, water: this.water, quality: this.q, mapId: opts.map });
     this.post = new PostFX(this.renderer, this.scene, this.camera, this.q);
+    this.waterRefraction = new WaterRefraction(this.renderer, this.scene, this.water.mesh, this.q.name);
+    this.post.scenePass = this.waterRefraction.render;
+    this.godRays = new GodRays(this.renderer, this.env, this.q.name);
+    this.post.afterComposite = this.godRays.render;
     this.particles = new Particles(this.scene, this.q);
     this.particles.pxH = this.renderer.getDrawingBufferSize(new THREE.Vector2()).y;
     this.audio.mapId = opts.map;
@@ -965,6 +975,9 @@ export class Game {
     saveQuality(name);
     this.pendingQuality = name === this.q.name ? null : name;
     this.post.setQuality(next);
+    this.water.setQuality(next.name);
+    this.waterRefraction.setQuality(next.name);
+    this.godRays.setQuality(next.name);
     this.shadows.setQuality(next);
     this.perf.quality = name;
     this.renderer.shadowMap.enabled = next.shadows;
@@ -1257,6 +1270,7 @@ export class Game {
       this.camera.near = nearWant;
       this.camera.updateProjectionMatrix();
     }
+    this.env.smog = this.fields.smog();
     this.env.update(0, this.rts.target, this.rts.distance, this.camera.position);
     P.lap('camera+sky');
     const t = this.sim.time(this.hour);
@@ -1267,6 +1281,7 @@ export class Game {
       this.skyForce(this.climate.kind, (Math.max(1, this.climate.daysLeft(this.sim.day)) * 1.5 + 10) / (360 / DAY_SECONDS));
     }
     this.weather.update(dt, t, this.camera, spd, this.rts.distance);
+    applySmogLook(this.post.look, this.env.smog, this.env.night);
     this.groundDetail.update(this.time, this.rts.target, this.rts.distance, {
       season: this.weather.season, snowCover: this.weather.snowCover, wind: this.weather.wind,
     });
@@ -1378,7 +1393,7 @@ export class Game {
     wu.uSkyTop.value.copy(this.env.hemi.color).multiplyScalar(0.55 * (1 - n * 0.9)).lerp(this.env.fog.color, this.env.overcast * 0.8);
     this.roads.setWet(this.weather.wet, (this.pendingQuality ?? this.q.name) === 'ultra');
     this.post.aoRadius = THREE.MathUtils.clamp(this.rts.distance * 0.011, 2.2, 16);
-    wu.uPollution.value = Math.min(0.7, (1 - this.sim.naturePct) * 0.6 + this.buildings.counts().active / 4000);
+    this.water.updateFields(this.fields);
 
     // Camera-local soundscape inputs, sampled twice a second into one reused mix.
     this.waterT -= dt;

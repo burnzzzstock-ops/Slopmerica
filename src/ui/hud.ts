@@ -1730,7 +1730,7 @@ export class Hud implements UiSink {
         <div class="in-stats">
           ${line ? `<div><span>Driver</span><b>${esc(a?.name ?? 'Driver')}</b></div>` : `<div><span>Doing</span><b>${esc(c.purpose)}</b></div>`}
           <div><span>${line ? 'Next stop' : 'Headed to'}</span><b>${esc(c.dest)}</b></div>
-          <div><span>Speed</span><b>${Math.round(c.v * 3.6)} km/h</b></div>
+          <div><span>Speed</span><b>${Math.round(c.v * 2.23694)} mph</b></div>
           <div><span>Vibe</span><b>${c.crashed > 0 ? '💥 WRECKED' : c.drunk ? `🍺 BAC ${c.bac.toFixed(2)}` : c.reckless ? '😤 reckless' : '😐 fine'}${c.smoker ? ' 🚬' : ''}</b></div>
         </div>
         <div class="in-actions">${this.followButton(this.rideOf(c))}</div>`;

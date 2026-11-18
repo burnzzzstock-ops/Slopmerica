@@ -457,6 +457,7 @@ export class Sim {
     if (this.ended) return;
     const days = h / DAY_SECONDS;
     if (days <= 0) return;
+    const dayWas = this.day;
     this.day += days;
     this.net.day = this.day;
     this.b.day = this.day;
@@ -464,6 +465,9 @@ export class Sim {
     // the sprawl meter looks at a fifth of the county's sample points a day, a few of them every step (it used to look at
     // the day's fifth all at once, in the step that ends the day, which is the step with every other daily job in it)
     this.sweepSprawl(SPRAWL_SHARE_A_DAY * days);
+    // land value and level-ups, every third day, at noon of the day they used to end: the pass looks round every building
+    // in the county, and at the day's end it landed on top of every other daily job
+    if (Math.floor((this.day + 0.5) / 3) > Math.floor((dayWas + 0.5) / 3)) this.landValueAndLevels(3);
     const whole = Math.floor(this.day);
     while (this.lastWhole < whole) {
       this.lastWhole++;
@@ -615,8 +619,7 @@ export class Sim {
       void dem;
     }
 
-    // ---- land value + level ups every 3 days
-    if (d % 3 === 0) this.landValueAndLevels(3);
+    // (land value and level-ups run at noon every third day: step())
 
     // ---- stats
     // (the meter's sample points are looked at a few every step: sweepSprawl)

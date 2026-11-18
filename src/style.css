@@ -2180,7 +2180,8 @@ a {
 .land-map {
   display: grid;
   grid-template-columns: repeat(8, 1fr);
-  width: min(240px, 70vw);
+  /* 8 tiles of 30 px inside the 1 px border: at 240 px the tiles were 29.75 px, and two of them came out 29 px to a finger */
+  width: min(242px, 70vw);
   aspect-ratio: 1;
   background-size: cover;
   border-radius: 8px;

@@ -274,7 +274,7 @@ export function openBugReport(parent: HTMLElement, g: Game | null, opts: { prefi
         ${g ? '<button id="bug-city">🏙️ Save city file</button>' : ''}
       </div>
       <div class="bug-status" aria-live="polite"></div>
-      <details class="bug-peek"><summary>See exactly what's in the report</summary><textarea id="bug-preview" rows="9" readonly></textarea></details>
+      <details class="bug-peek"><summary id="bug-peek-sum">See exactly what's in the report</summary><textarea id="bug-preview" rows="9" readonly aria-labelledby="bug-peek-sum"></textarea></details>
       <small class="bug-fine">Nothing is sent automatically. Paste or attach the report in a message to whoever sent you the game. A city file lets them load your exact town.</small>
     </div>`;
   parent.appendChild(el);

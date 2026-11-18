@@ -57,7 +57,16 @@ try {
         }
         luma.push(sum / count);
       }
-      result.push({ model, label, zone, pixels: count, off: luma[0], on: luma[1], delta: luma[1] - luma[0] });
+      // A wheel, body and lamp update to this single visible vehicle should
+      // reach the GPU in one transfer. Count native calls after shader warmup.
+      const originalUpload = gl.bufferSubData;
+      let motionUploads = 0;
+      gl.bufferSubData = function (...args) { motionUploads++; return originalUpload.apply(this, args); };
+      try {
+        for (const name of ['iWheel', 'iBody', 'iMisc']) mesh.geometry.getAttribute(name).needsUpdate = true;
+        draw();
+      } finally { gl.bufferSubData = originalUpload; }
+      result.push({ model, label, zone, pixels: count, off: luma[0], on: luma[1], delta: luma[1] - luma[0], motionUploads });
       maskMaterial.dispose(); mesh.dispose();
     }
     map.dispose();
@@ -65,5 +74,5 @@ try {
   });
   console.log(JSON.stringify(rows));
   saveReport(`shots/look/vehicle-pools-${process.env.TAG ?? 'current'}.json`, rows);
-  if (rows.some(row => row.pixels < 100 || !Number.isFinite(row.delta) || row.delta < 10)) process.exitCode = 1;
+  if (rows.some(row => row.pixels < 100 || !Number.isFinite(row.delta) || row.delta < 10 || row.motionUploads !== 1)) process.exitCode = 1;
 } finally { await browser.close(); }

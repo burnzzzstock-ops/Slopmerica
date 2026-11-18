@@ -8,6 +8,7 @@ import type { LampSet, V3 } from './models/vehicleKit';
 import { pickLook, type Look } from './models/vehiclePaint';
 import { WHEEL_GLSL } from './models/vehicleWheel';
 import { VehicleFx, type FxEnvironment } from './vehicleFx';
+import { withVisualRandom } from '../render/visualRandom';
 import { VehiclePresentation, type VehicleCandidate } from './vehiclePresentation';
 import type { Car } from './traffic';
 
@@ -299,8 +300,9 @@ const PICK_MATERIAL = new THREE.MeshBasicMaterial();
 // instancing
 
 interface Attrs {
-  paint: THREE.InstancedBufferAttribute; look: THREE.InstancedBufferAttribute; misc: THREE.InstancedBufferAttribute;
-  wheel: THREE.InstancedBufferAttribute; body: THREE.InstancedBufferAttribute;
+  paint: THREE.InstancedBufferAttribute; look: THREE.InstancedBufferAttribute;
+  misc: THREE.InterleavedBufferAttribute; wheel: THREE.InterleavedBufferAttribute; body: THREE.InterleavedBufferAttribute;
+  motion: THREE.InstancedInterleavedBuffer;
 }
 interface LodBatch {
   mesh: THREE.InstancedMesh; attrs: Attrs; count: number;
@@ -342,7 +344,16 @@ function vehicleState(n: number) {
 const inst = (capacity: number, size: number) => new THREE.InstancedBufferAttribute(new Float32Array(capacity * size), size).setUsage(THREE.DynamicDrawUsage);
 
 function makeLod(name: string, geometry: THREE.BufferGeometry, capacity: number, shadows: boolean): LodBatch {
-  const attrs: Attrs = { paint: inst(capacity, 3), look: inst(capacity, 4), misc: inst(capacity, 4), wheel: inst(capacity, 2), body: inst(capacity, 3) };
+  // These three shader inputs change together. One GPU buffer carries them
+  // while paint and wear retain their less frequent update ranges.
+  const motion = withVisualRandom(() => new THREE.InstancedInterleavedBuffer(new Float32Array(capacity * 9), 9));
+  motion.setUsage(THREE.DynamicDrawUsage);
+  const attrs: Attrs = {
+    paint: inst(capacity, 3), look: inst(capacity, 4), motion,
+    misc: new THREE.InterleavedBufferAttribute(motion, 4, 0),
+    wheel: new THREE.InterleavedBufferAttribute(motion, 2, 4),
+    body: new THREE.InterleavedBufferAttribute(motion, 3, 6),
+  };
   geometry.setAttribute('iPaint', attrs.paint); geometry.setAttribute('iLook', attrs.look); geometry.setAttribute('iMisc', attrs.misc);
   geometry.setAttribute('iWheel', attrs.wheel); geometry.setAttribute('iBody', attrs.body);
   const mesh = new THREE.InstancedMesh(geometry, MATERIAL, capacity);
@@ -353,9 +364,10 @@ function makeLod(name: string, geometry: THREE.BufferGeometry, capacity: number,
 }
 
 type UploadRange = { start: number; count: number };
-const UPLOAD_RANGES = new WeakMap<THREE.BufferAttribute, UploadRange>();
+type UploadBuffer = THREE.BufferAttribute | THREE.InstancedInterleavedBuffer;
+const UPLOAD_RANGES = new WeakMap<UploadBuffer, UploadRange>();
 /** Reuses Three's update-range object instead of allocating in the frame loop. */
-function markAttributeRange(attribute: THREE.BufferAttribute | THREE.InstancedBufferAttribute | undefined, start: number, end: number, itemSize = 1): void {
+function markAttributeRange(attribute: UploadBuffer | undefined, start: number, end: number, itemSize = 1): void {
   if (!attribute || end <= start) return;
   let range = UPLOAD_RANGES.get(attribute);
   if (!range) { range = { start: 0, count: 0 }; UPLOAD_RANGES.set(attribute, range); }
@@ -375,8 +387,7 @@ function markLod(lod: LodBatch, count: number): void {
   // Three prepares materials, attributes and shadows even for a draw with no instances.
   lod.mesh.visible = count > 0;
   markAttributeRange(lod.mesh.instanceMatrix, 0, count, 16);
-  markAttributeRange(lod.attrs.wheel, 0, count, 2); markAttributeRange(lod.attrs.body, 0, count, 3);
-  markAttributeRange(lod.attrs.misc, 0, count, 4); // the lamp state changes often; it rides with the static fields
+  markAttributeRange(lod.attrs.motion, 0, count, lod.attrs.motion.stride);
   markAttributeRange(lod.attrs.paint, lod.staticStart, lod.staticEnd, 3); markAttributeRange(lod.attrs.look, lod.staticStart, lod.staticEnd, 4);
   lod.staticStart = lod.sourceByRender.length; lod.staticEnd = 0;
 }
@@ -820,11 +831,9 @@ export class VehicleRenderer {
       la[target * 4] = b.look[source * 4]; la[target * 4 + 1] = b.look[source * 4 + 1]; la[target * 4 + 2] = b.look[source * 4 + 2]; la[target * 4 + 3] = b.look[source * 4 + 3];
       lod.staticStart = Math.min(lod.staticStart, target); lod.staticEnd = Math.max(lod.staticEnd, target + 1);
     }
-    const ma = a.misc.array as Float32Array;
-    ma[target * 4] = b.seed[source]; ma[target * 4 + 1] = b.damaged[source]; ma[target * 4 + 2] = this.lampCode(b, source); ma[target * 4 + 3] = length;
-    const wa = a.wheel.array as Float32Array, ba = a.body.array as Float32Array;
-    wa[target * 2] = b.spin[source]; wa[target * 2 + 1] = b.steer[source];
-    ba[target * 3] = b.heave[source]; ba[target * 3 + 1] = b.pitch[source]; ba[target * 3 + 2] = b.roll[source];
+    a.misc.setXYZW(target, b.seed[source], b.damaged[source], this.lampCode(b, source), length);
+    a.wheel.setXY(target, b.spin[source], b.steer[source]);
+    a.body.setXYZ(target, b.heave[source], b.pitch[source], b.roll[source]);
   }
 
   private readonly v3 = new THREE.Vector3();

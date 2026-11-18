@@ -10,6 +10,8 @@
 // 3. An emergency card's Show flies to the worst neighbourhood at the height the camera has, 460 m at most. While the camera
 //    rides with a car that height is the few metres to the car, so Show put the camera in the street. Here Show is asked
 //    for while following: the camera must end well above the neighbourhood, and at the height it had when not following.
+// 4. The Services drawer's garbage board does the same with a site picked from its list: from a ride it ended in the street
+//    beside the landfill. Here a landfill is placed, the board opened while riding with a car, and its row pressed.
 // Exits nonzero on failure.
 //
 //   BASE_URL=http://127.0.0.1:5173 node scripts/camseams.mjs
@@ -121,6 +123,37 @@ if (car) {
   check(`Show with the camera at 300 m keeps that height (${r.free?.toFixed(0)} m)`, Math.abs(r.free - 300) < 15, r);
   if (r.err) console.log(`(${r.err}: the rest of this check is skipped)`);
   else check(`Show while riding with a car (the camera ${r.riding.distance.toFixed(0)} m from it) ends above the neighbourhood, not in its street (${r.after.toFixed(0)} m up, ${r.at.toFixed(0)} m from the spot)`, r.riding.following && r.riding.distance < 60 && !r.stillFollowing && r.after > 300 && r.at < 40, r);
+}
+
+// ---- 4. a site picked from the garbage board, while riding with a car ----
+{
+  const made = await page.evaluate(() => {
+    const g = window.__game, SV = window.__services, S = g.startView();
+    let b = null;
+    for (const r of [300, 420, 560, 700]) { for (let a = 0; a < 8 && !b; a++) { const sp = SV.findSpot(g, 'landfill', S.x + Math.cos(a * 0.785) * r, S.z + Math.sin(a * 0.785) * r); if (sp?.ok !== false) b = SV.place(g, 'landfill', sp.x, sp.z, sp.yaw); } if (b) break; }
+    if (!b) return { err: 'no landfill could be placed' };
+    // a car of its own for the ride (the first part's has arrived by now)
+    const seg = [...g.net.segs.values()].sort((p, q) => q.length - p.length)[0];
+    const c = g.traffic.launch({ seg, s: seg.length * 0.05 }, { seg, s: seg.length * 0.95 }, null, null, 'sedan', 'seam test', 'the far end', true, 12, true);
+    if (!c) return { err: 'no car to ride with' };
+    g.sim.speed = 1;
+    for (let i = 0; i < 20; i++) { g.frame(1 / 60); g.ui.update(1 / 60); }
+    g.rts.setView(c.x, c.z, 120, 0.6, 0.85, true);
+    g.rts.follow({ kind: 'car', id: c.id });
+    for (let i = 0; i < 60; i++) { g.frame(1 / 60); g.ui.update(1 / 60); }
+    const riding = { following: !!g.rts.following, distance: g.rts.distance };
+    window.__ext.panels.find((p) => p.id === 'services')?.focus?.(g, 'garbage');
+    g.ui.openPanel('ext:services');
+    g.ui.update(0.3);
+    return { id: b.id, x: b.x, z: b.z, riding, stillRiding: !!g.rts.following, row: !!document.querySelector(`.svc-board [data-goto="${b.id}"]`) };
+  });
+  if (made.err) check(`a landfill on the garbage board and a car to ride with (${made.err})`, false, made);
+  else {
+    check(`the garbage board lists the landfill while the camera rides with a car (${made.riding.distance.toFixed(0)} m from it)`, made.row && made.stillRiding && made.riding.distance < 60, made);
+    await page.click(`.svc-board [data-goto="${made.id}"]`);
+    const r = await page.evaluate(({ x, z }) => { const g = window.__game; for (let i = 0; i < 200; i++) { g.frame(1 / 60); g.ui.update(1 / 60); } return { d: g.rts.distance, off: Math.hypot(g.rts.target.x - x, g.rts.target.z - z), following: !!g.rts.following, card: !document.querySelector('.inspector').hidden }; }, made);
+    check(`its row takes the camera above the site, not into the street beside it (${r.d.toFixed(0)} m up, ${r.off.toFixed(0)} m from it), and opens its card`, !r.following && r.d > 300 && r.off < 40 && r.card, r);
+  }
 }
 
 check('no page errors', errs.length === 0, errs.slice(0, 3));

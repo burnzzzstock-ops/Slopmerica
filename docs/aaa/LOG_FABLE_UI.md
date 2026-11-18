@@ -103,6 +103,8 @@ The probes that measured the review's findings are in the session's scratch fold
 |---|---|---|
 | 15214a0 | The bulldozer's Undo is on its buttons (the simulation's `game.bulldozeBuilding`, ef4c30c): a card's Bulldoze leaves an Undo and offers it in a toast with a button; one press of the bulldozer, however far it is dragged, is one Undo; the badge has its Undo button with the bulldozer in hand | `razeui` (new) 1 pass and a stop before, 19 of 19 |
 | cf288d5 | `feedclock` empties the feed's queue first (the game's start-of-game post came out between its two posts, once, under load) | 12 of 12 |
+| (merge) | `origin/claude/aaa-play` at 174e5af is merged in (cf2a151). In it: a trip takes a parked car's body only when it is the same model (the review's A1, closed from the simulation's side); `carsolid` and `lightstest` pass; land value and level-ups are spread over three days of steps, so a county takes a different course from the same seed. Any interface test that grows a town and reads it on a fixed day may have moved: the simulation session's full suite on integration (75892a6) will say | gate |
+| 9bad96c | UI: a site picked from the Services drawer's garbage board while riding with a car is shown from 420 m, not from the 10 m the chase camera was from the car (the review's D2, second caller; the panel's own block in `src/sim/services.ts`) | `camseams` 13 of 14 before, 14 of 14 |
 | 0e310f5 | A feed post with a place takes the camera there (the simulation's `FeedPost.at`, e874e36): a click or tap on the post, or its Show button; 120 to 420 m up; on a phone the open feed returns to its newest post | `feedgo` (new) 0 pass before, 18 of 18 |
 
 ### The sixth full suite, on 0c52b07 (5fc3310 merged in, with everything in the two tables above)

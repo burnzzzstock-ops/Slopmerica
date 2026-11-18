@@ -28,11 +28,14 @@ const town = () => page.evaluate(() => {
   d.run(30);
   return { segs: g.net.segs.size, blds: g.buildings.list.size };
 });
-// the emergency's state, the treasury, roads still closed
+// the emergency's state, the treasury, roads still closed. A road is also blocked for a while by a crash on it (the same
+// seg.blocked), and a crash is no part of the emergency: `closed` counts every blocked road, `blocked` lists them, `segs` is
+// the emergency's own list, and `crashes` the roads a wrecked car stands on. The checks below ask about the emergency's roads.
 const state = () => page.evaluate(async (mod) => {
   const { disasterState } = await (0, eval)(mod);
   const g = window.__game, e = disasterState().event;
-  return { kind: e?.kind ?? null, phase: e?.phase ?? null, cost: e?.cost ?? 0, money: Math.round(g.sim.money), closed: [...g.net.segs.values()].filter((s) => s.blocked > 0).length, toasts: window.__toasts.slice(), blds: g.buildings.list.size };
+  return { kind: e?.kind ?? null, phase: e?.phase ?? null, cost: e?.cost ?? 0, money: Math.round(g.sim.money), closed: [...g.net.segs.values()].filter((s) => s.blocked > 0).length, blocked: [...g.net.segs.values()].filter((s) => s.blocked > 0).map((s) => s.id), segs: e?.segs?.slice() ?? [],
+    crashes: [...new Set(g.traffic.cars.filter((c) => c.crashed !== 0).map((c) => c.seg?.id ?? c.seg))], toasts: window.__toasts.slice(), blds: g.buildings.list.size };
 }, MOD);
 const step = (kind, days) => page.evaluate(async ({ kind, days, mod }) => {
   const { triggerDisaster } = await (0, eval)(mod);
@@ -63,11 +66,15 @@ for (const [map, kind] of CASES) {
   await advance(day + 1);
   s = await state();
   check(s.phase === 'response', `the next day it hits (${s.phase})`);
-  const cost = s.cost, before = s.money;
+  const cost = s.cost, before = s.money, mine = s.segs;
+  /** of the roads an emergency closed, the ones still blocked; and the other blocked roads, with whether a wreck stands on each */
+  const left = (st, own) => ({ own: st.blocked.filter((id) => own.includes(id)), other: st.blocked.filter((id) => !own.includes(id)).map((id) => `road ${id}${st.crashes.includes(id) ? ' (a wreck on it)' : ''}`) });
+  const also = (l) => (l.other.length ? `; blocked by something else: ${l.other.join(', ')}` : '');
   await advance(day + 6);
   const e = await state();
   check(e.kind === null, 'it ends on its own');
-  check(e.closed === 0, `every road it closed is open again (${e.closed} still closed)`);
+  const le = left(e, mine);
+  check(le.own.length === 0, `every road it closed is open again (${mine.length} closed, ${le.own.length} still${also(le)})`);
   check(before - e.money === cost, `the bill is what the event recorded: charged ${usd(before - e.money)}, recorded ${usd(cost)}`);
   const said = e.toasts.filter((m) => m.includes(usd(cost))).length;
   check(cost === 0 || said > 0, `the player is told the amount (${usd(cost)}) in a message ("${(e.toasts.at(-1) || '').slice(0, 80)}")`);
@@ -84,10 +91,13 @@ for (const [map, kind] of CASES) {
     check(a.kind === kind && a.phase === phase, `saved in the ${phase}: comes back as the same ${a.kind} (${a.phase})`);
     if (phase === 'response') check(a.closed === b.closed, `roads still closed after the reload: ${a.closed} (was ${b.closed})`);
     const m0 = a.money;
-    if (phase === 'warning') await advance((await dayNow()) + 1); // the next day it hits
+    let own2 = [];
+    if (phase === 'warning') { await advance((await dayNow()) + 1); own2 = (await state()).segs; } // the next day it hits
     await advance((await dayNow()) + 6);
     const z = await state();
-    check(z.kind === null && z.closed === 0, `it still ends after the reload (${z.kind ?? 'over'}, ${z.closed} closed)`);
+    // (its roads: the list it carried while it was on, read before it ended)
+    const lz = left(z, [...b.segs, ...a.segs, ...own2]);
+    check(z.kind === null && lz.own.length === 0, `it still ends after the reload (${z.kind ?? 'over'}, ${lz.own.length} of its roads still closed${also(lz)})`);
     const paid = m0 - z.money;
     check(paid >= 0 && paid <= 40000, `charged once, a plausible amount (${usd(paid)})`);
   }

@@ -29,11 +29,13 @@ const check = (label, ok, extra) => { console.log(ok ? 'OK  ' : 'FAIL', label, o
 // ---- 4 first: it needs no browser
 const PATTERNS = ['TYPESAFE', 'sk-', 'Bearer ', 'api_key', 'apiKey=', '.env'];
 // Two patterns are also ordinary code. Each match is kept unless it is one of these, and every one left out is counted and shown:
-//   sk-   inside a longer word: CSS "mask-image", "desk-..." (a key starts the string: "sk-" after a quote, space or symbol)
+//   sk-   inside a longer word: CSS "mask-image", "desk-..." (a key starts the string: "sk-" after a quote, space or symbol);
+//         or with no key after it: the minifier names variables in two letters, and one named sk had another subtracted from
+//         it ("Math.ceil(sk-u)"). A key goes on for dozens of letters and digits: eight in a row are asked for here
 //   .env  a property read, not a file name: "this.env.night", "ctx.env", three.js "this.environment" (a file name comes after a quote,
 //         a slash or a space, never straight after a name or a bracket)
 const HARMLESS = {
-  'sk-': (s, i) => /[A-Za-z0-9_]/.test(s[i - 1] ?? ''),
+  'sk-': (s, i) => /[A-Za-z0-9_]/.test(s[i - 1] ?? '') || !/^[A-Za-z0-9_-]{8}/.test(s.slice(i + 3, i + 11)),
   '.env': (s, i) => /[A-Za-z0-9_$)\]]/.test(s[i - 1] ?? '') || /[A-Za-z0-9_$]/.test(s[i + 4] ?? ''),
 };
 const TEXT = new Set(['.js', '.mjs', '.html', '.css', '.json', '.txt', '.svg', '.map', '.webmanifest', '.xml']);

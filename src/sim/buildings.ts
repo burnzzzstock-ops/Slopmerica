@@ -876,6 +876,11 @@ export class Buildings {
     return null;
   }
 
+  /** Could any building be within r of the point? False means at() there is null and near() within r is empty, found without building either's list. */
+  anyNear(x: number, z: number, r: number): boolean {
+    return this.hash.any(x - r, z - r, x + r, z + r);
+  }
+
   near(x: number, z: number, r: number): Bld[] {
     const out: Bld[] = [];
     for (const b of this.hash.query(x - r, z - r, x + r, z + r)) if (Math.hypot(b.x - x, b.z - z) <= r) out.push(b);

@@ -153,6 +153,24 @@ export class RoadNetwork {
     return best;
   }
 
+  /** half the width of the widest kind of road there is */
+  private widestHalf = 0;
+
+  /**
+   * Is the point on a road, or within `extra` metres of its edge? The same answer as `pickSeg(x, z, extra) !== null` for an
+   * `extra` up to 40, at a fraction of the work: it asks only the roads whose middle could be that near (pickSeg asks every
+   * road within 40 m and measures each to find the nearest), and stops at the first that is.
+   */
+  onRoad(x: number, z: number, extra = 2): boolean {
+    if (!this.widestHalf) for (const t of Object.values(ROAD_TYPES)) this.widestHalf = Math.max(this.widestHalf, t.width / 2);
+    // (a road this near has a point of its middle within r of here, so its bounds cross this box)
+    const r = this.widestHalf + extra;
+    if (!this.hash.any(x - r, z - r, x + r, z + r)) return false;
+    const p = { x, z };
+    for (const seg of this.segsNear(x - r, z - r, x + r, z + r)) if (closestOnSampled(p, seg.samp).d < this.type(seg.type).width / 2 + extra) return true;
+    return false;
+  }
+
   snap(x: number, z: number, radius = 10): Snap {
     let bestNode: RNode | null = null;
     let bd = Infinity;

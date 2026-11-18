@@ -8,6 +8,42 @@ const SIDE = 512;
 const CELL = WORLD / SIDE;
 const COVERAGE = 1024;
 
+// At landscape distances unresolved leaves and the gaps between them share
+// reflected canopy light. Preserve the hue of resolved material and account
+// for changing illumination so the wood remains dark after sunset.
+export const DISTANT_FOREST_LIGHT = `
+uniform vec3 uGroveAlbedo;
+vec3 distantForestLight(vec3 lit, float amount) {
+  if (amount <= 0.) return lit;
+  const vec3 luma = vec3(.2126, .7152, .0722);
+  vec3 light = ambientLightColor;
+#if NUM_HEMI_LIGHTS > 0
+  light += mix(hemisphereLights[0].groundColor, hemisphereLights[0].skyColor, .72);
+#endif
+#if NUM_DIR_LIGHTS > 0
+  light += directionalLights[0].color * max(0., (vec4(directionalLights[0].direction, 0.) * viewMatrix).y) * .5;
+#endif
+  vec3 canopy = light * uGroveAlbedo;
+  float target = dot(canopy, luma);
+  float luminance = dot(lit, luma);
+  vec3 chroma = lit / max(.001, luminance);
+  // Keep the gradients inside a crown visible against the pooled light.
+  float relief = pow(clamp(luminance / max(.001, target), .08, 4.), .14);
+  vec3 bounce = mix(canopy, target * chroma, .67) * relief;
+  return mix(lit, bounce, amount);
+}
+`;
+
+// Dry grass sets the colour of reflected light beneath open stands. Its
+// reflectance varies substantially between coastal scrub and humid woods.
+export function groveAlbedo(dryGrass: number) {
+  const grass = new THREE.Color(dryGrass);
+  const reflectance = grass.r * .2126 + grass.g * .7152 + grass.b * .0722;
+  const ratio = reflectance / .232;
+  const brightness = .070 * ratio * ratio;
+  return grass.multiplyScalar(brightness / Math.max(.001, reflectance));
+}
+
 export class ForestFloor {
   private readonly standing = new Uint32Array(SIDE * SIDE);
   private readonly original = new Uint32Array(SIDE * SIDE);
@@ -19,7 +55,9 @@ export class ForestFloor {
   version = 0;
 
   constructor() {
-    this.texture.minFilter = this.texture.magFilter = THREE.LinearFilter;
+    this.texture.magFilter = THREE.LinearFilter;
+    this.texture.generateMipmaps = true;
+    this.texture.minFilter = THREE.LinearMipmapLinearFilter;
     this.clearedTexture.minFilter = this.clearedTexture.magFilter = THREE.LinearFilter;
     this.texture.needsUpdate = true;
     this.clearedTexture.needsUpdate = true;

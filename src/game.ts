@@ -25,6 +25,7 @@ import { BuildingFinishes } from './buildings/finishState';
 import { applyLowGrade, lowExposure } from './render/lowGrade';
 import { installGradeLite } from './render/gradeLite';
 import { CascadeShadows } from './render/cascadeShadows';
+import { prepareCommuneShadows } from './render/communeShadowLod';
 import { Particles } from './render/particles';
 import { ConstructionEffects } from './render/constructionEffects';
 import { AudioEngine } from './audio/audio';
@@ -359,6 +360,7 @@ export class Game {
         for (let t = 0; t < 1; t += 0.2) avoid.push({ x: way[k - 1].x + (way[k].x - way[k - 1].x) * t, z: way[k - 1].z + (way[k].z - way[k - 1].z) * t, r: 140 });
     } else for (let t = 0; t <= 1; t += 0.05) avoid.push({ x: start.edge.x + (start.x - start.edge.x) * t, z: start.edge.z + (start.z - start.edge.z) * t, r: 140 });
     this.communes = new Communes(this.terrain, this.trees, opts.map, communeCount, this.map.def.seed + 5, opts.mode === 'hippie' ? 0.3 : 0.12, avoid);
+    prepareCommuneShadows(this.communes.group);
     this.scene.add(this.communes.group);
     this.net.blockerReason = (id) => this.communeRoadRule(id);
     this.net.buildingsUnder = (pts, hw) => {
@@ -1286,7 +1288,7 @@ export class Game {
     P.lap('weather');
     this.terrain.updateLOD(this.camera.position);
     this.trees.setDayOfYear(t.dayOfYear);
-    this.trees.update(this.time, this.rts.target, this.rts.distance);
+    this.trees.update(this.time, this.rts.target, this.rts.distance, this.camera.position);
     P.lap('terrain+trees');
     this.zones.update();
     this.roads.update();
@@ -1460,6 +1462,7 @@ export class Game {
       // Low applies the same look in each material's canvas tone-map chunk.
       if (!this.post.active) applyLowGrade(this.env, this.post.look, this.renderer);
       else this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      if (dt > 0) this.shadows.prepareFrame(this.time);
       this.post.render(n, this.rts.distance);
       P.lap('render');
       if (this.blackChecks.length && performance.now() >= this.blackChecks[0] && !document.hidden) {

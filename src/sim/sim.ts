@@ -92,6 +92,15 @@ export const usd = (n: number) => (n === Infinity ? '∞' : `${n < 0 ? '−' : '
 
 /** one entry in the transaction log */
 export interface Tx { day: number; label: string; amount: number; kind: LedgerKind }
+/**
+ * One closed week of the county's money, for the charts. `income` and `expense` are the weekly bill as it was billed: the
+ * lines forecastWeek() forecasts (taxes in; upkeep, imports and loan payments out), both zero or more, and `net` is income less
+ * expense. `oneTime` is everything else that week, signed (construction, impact fees, grants, recoveries, refunds, a loan
+ * taken). `money` is the treasury after the close, so from one row to the next it moves by net + oneTime.
+ */
+export interface WeekRow { day: number; income: number; expense: number; net: number; oneTime: number; money: number }
+/** how many closed weeks the county remembers: two years */
+export const WEEKS_KEPT = 104;
 /** one line of a weekly bill or forecast (amount signed like the ledger) */
 export interface WeekLine { label: string; amount: number; kind: LedgerKind }
 
@@ -205,6 +214,8 @@ export class Sim {
   private fcCache: { key: string; v: ReturnType<Sim['computeForecast']> } | null = null;
   private growthCache: { key: number; v: number } | null = null;
   history: { day: number; pop: number; money: number; nature: number; sprawl: number }[] = [];
+  /** every closed week, oldest first, the last WEEKS_KEPT of them (a sandbox has no money to count and keeps none) */
+  weeks: WeekRow[] = [];
   coverage = 0;
   maxedPct = 0;
   sprawlPct = 0;
@@ -815,9 +826,10 @@ export class Sim {
   private weekly() {
     // bill exactly the lines a forecast would show (the hooks close their
     // weekly accumulators when forecast=false)
+    let income = 0, expense = 0;
     for (const l of this.weekLines(false)) {
-      if (l.amount > 0) this.earn(l.amount, l.kind, l.label);
-      else this.spend(-l.amount, l.label, l.kind);
+      if (l.amount > 0) { this.earn(l.amount, l.kind, l.label); income += l.amount; }
+      else { this.spend(-l.amount, l.label, l.kind); expense -= l.amount; }
     }
     for (const L of this.loans) if (L.weeksLeft > 0) L.weeksLeft--;
     this.loans = this.loans.filter((l) => l.weeksLeft > 0);
@@ -828,6 +840,9 @@ export class Sim {
       if (Math.abs(this.ledgerDrift) > 1) console.error(`Ledger out of balance by $${this.ledgerDrift} (week ending day ${Math.floor(this.day)})`);
       this.lastWeekCash = { from: Math.round(this.weekStartCash), to: Math.round(this.money) };
       this.weekStartCash = this.money;
+      // the week, for the charts (nothing recurring is booked outside the weekly bill, so this is the ledger's own split)
+      this.weeks.push({ day: this.lastWhole, income, expense, net: income - expense, oneTime: Math.round(Sim.split(this.ledger).oneTime), money: Math.round(this.money) });
+      if (this.weeks.length > WEEKS_KEPT) this.weeks.splice(0, this.weeks.length - WEEKS_KEPT);
     }
     this.lastWeek = this.ledger;
     this.ledger = emptyLedger();
@@ -877,7 +892,7 @@ export class Sim {
   }
   private static readonly EXACT = [
     'workers', 'jobsCap', 'jobsFilled', 'unemployment', 'demand', 'demandRaw', 'demandWhy', 'demandParts', 'demandHistory',
-    'ledger', 'lastWeek', 'transactions', 'weekStartCash', 'lastWeekCash', 'ledgerDrift', 'history', 'coverage', 'maxedPct', 'sprawlPct',
+    'ledger', 'lastWeek', 'transactions', 'weekStartCash', 'lastWeekCash', 'ledgerDrift', 'history', 'weeks', 'coverage', 'maxedPct', 'sprawlPct',
     'naturePct', 'ended', 'bankruptWeeks', 'dayAcc', 'lastWhole', 'popMarks', 'natureMarks', 'sprawlMarks', 'unlocked', 'growthMul', 'growthAcc',
     'peakSeen', 'popLog', 'alerts', 'sprawlSeen', 'sprawlCovered', 'sprawlCursor', 'taxRate', 'loans', 'population', 'money', 'day',
   ] as const;
@@ -886,7 +901,7 @@ export class Sim {
   serializeExtra() {
     return {
       bankruptWeeks: this.bankruptWeeks, growthAcc: this.growthAcc, rng: this.rng.state,
-      ledger: { ...this.ledger }, lastWeek: { ...this.lastWeek }, history: this.history.slice(-400),
+      ledger: { ...this.ledger }, lastWeek: { ...this.lastWeek }, history: this.history.slice(-400), weeks: this.weeks.slice(-WEEKS_KEPT),
       unlocked: [...this.unlocked],
       weekStartCash: this.money === Infinity ? 0 : Math.round(this.weekStartCash), lastWeekCash: { ...this.lastWeekCash },
       transactions: this.transactions.slice(-60),
@@ -906,6 +921,8 @@ export class Sim {
     if (x.lastWeekCash) this.lastWeekCash = x.lastWeekCash;
     if (Array.isArray(x.transactions)) this.transactions = x.transactions;
     if (Array.isArray(x.history)) this.history = x.history;
+    // (a save from before the weeks were kept has none: its chart starts at the next close)
+    if (Array.isArray(x.weeks)) this.weeks = x.weeks.filter((w) => w && Number.isFinite(w.day) && Number.isFinite(w.money));
     if (Array.isArray(x.unlocked)) for (const u of x.unlocked) this.unlocked.add(u);
     if (Array.isArray(x.popLog)) this.popLog = x.popLog.filter((d) => d && Number.isFinite(d.day) && d.out);
     if (Array.isArray(x.alerts)) this.alerts = x.alerts.filter((a) => a && typeof a.text === 'string');

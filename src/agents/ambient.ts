@@ -553,6 +553,7 @@ export class AmbientLife {
 
   private finishBatch(mesh: THREE.InstancedMesh, count: number, colors: boolean) {
     mesh.count = count;
+    mesh.visible = count > 0;
     if (count <= 0) return;
     const matrixRange = mesh.userData.matrixUpdateRange as { start: number; count: number };
     matrixRange.count = count * 16;
@@ -616,7 +617,6 @@ export class AmbientLife {
     for (let k = 0; k < this.farBatches.length; k++) this.finishBatch(this.farBatches[k].mesh, this.farBatches[k].count, true);
     this.finishBatch(this.wakes, wakeCount, false);
     this.finishBatch(this.runningLights, lightCount, false);
-    this.runningLights.visible = night > .08;
     this.lightMaterial.color.setRGB(3.8 * night, 3.1 * night, 1.6 * night);
   }
 

@@ -119,6 +119,11 @@ const drawsFor = async (mod, THREE3) => {
   const drawn = r.object.children.filter((o) => (o.isInstancedMesh ? o.count > 0 && !o.name.endsWith('-pick') : o.isMesh && o.geometry?.instanceCount > 0 && o.visible !== false));
   const tris = drawn.reduce((a, o) => a + (o.isInstancedMesh ? ((o.geometry.index?.count ?? o.geometry.getAttribute('position').count) / 3) * o.count : 0), 0);
   const out = { calls: drawn.length, tris: Math.round(tris), close: drawn.filter((o) => o.name.endsWith('-close')).length, fx: drawn.filter((o) => o.name === 'vehicle-fx').length };
+  if (mod === V) {
+    const batches = r.object.children.filter(o => o.isInstancedMesh && !o.name.endsWith('-pick'));
+    check('the scene traverses only occupied vehicle batches in a moving town',
+      batches.some(o => o.count > 0) && batches.some(o => o.count === 0) && batches.every(o => o.visible === (o.count > 0)));
+  }
   for (const h of hs) r.remove(h);
   return out;
 };

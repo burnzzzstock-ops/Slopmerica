@@ -24,6 +24,11 @@ function installMaterialHook() {
 export class CascadeShadows {
   private csm!: CSM;
   private materials = new Set<THREE.Material>();
+  private nextShadowRefresh = [0, 0];
+  private frameTime?: number;
+  private lastCameraPosition = new THREE.Vector3();
+  private lastCameraRotation = new THREE.Quaternion();
+  private lastSunDirection = new THREE.Vector3();
   private projection = new THREE.Matrix4();
   private shadowView = new THREE.Matrix4();
   private focusDistance = -1;
@@ -120,10 +125,16 @@ export class CascadeShadows {
     material.needsUpdate = true;
   }
 
+  /** Direct passes such as photo exports always receive fresh shadows. */
+  prepareFrame(time: number) {
+    this.frameTime = time;
+  }
+
   private update(camera: THREE.PerspectiveCamera) {
     this.shadowView.copy(camera.matrixWorldInverse);
     const focusDistance = Math.round(camera.position.distanceTo(this.sun.target.position) / 25) * 25;
-    if (this.csm.camera !== camera || !this.projection.equals(camera.projectionMatrix) || focusDistance !== this.focusDistance) {
+    const lensChanged = this.csm.camera !== camera || !this.projection.equals(camera.projectionMatrix) || focusDistance !== this.focusDistance;
+    if (lensChanged) {
       this.csm.camera = camera;
       this.focusDistance = focusDistance;
       this.projection.copy(camera.projectionMatrix);
@@ -137,6 +148,31 @@ export class CascadeShadows {
     this.sun.visible = false;
     this.sun.castShadow = false;
     this.csm.lightDirection.subVectors(this.sun.target.position, this.sun.position).normalize();
+    // Near shadows follow moving casters at 30 Hz. The larger far texels
+    // refresh at 15 Hz, offset to spread submissions across frames. Camera
+    // changes, new lenses and abrupt light changes refresh both immediately.
+    if (this.quality.name === 'low') {
+      const now = this.frameTime ?? 0;
+      const refresh = this.frameTime === undefined || lensChanged ||
+        !this.lastCameraPosition.equals(camera.position) || !this.lastCameraRotation.equals(camera.quaternion) ||
+        this.lastSunDirection.distanceToSquared(this.csm.lightDirection) > .000025;
+      for (let index = 0; index < this.csm.lights.length; index++) {
+        const shadow = this.csm.lights[index].shadow;
+        shadow.autoUpdate = false;
+        const reset = refresh || !shadow.map || shadow.needsUpdate;
+        const due = this.nextShadowRefresh[index];
+        shadow.needsUpdate = reset || now >= due;
+        if (shadow.needsUpdate) {
+          const interval = index === 0 ? 1 / 30 : 1 / 15;
+          this.nextShadowRefresh[index] = reset ? now + (index === 0 ? interval : interval * .75)
+            : due + (Math.floor((now - due) / interval) + 1) * interval;
+        }
+      }
+      this.lastCameraPosition.copy(camera.position);
+      this.lastCameraRotation.copy(camera.quaternion);
+      this.lastSunDirection.copy(this.csm.lightDirection);
+    }
+    this.frameTime = undefined;
     this.csm.update();
     this.lightFrame.lookAt(this.origin, this.csm.lightDirection, this.up);
     this.inverseLightFrame.copy(this.lightFrame).invert();
@@ -144,6 +180,13 @@ export class CascadeShadows {
       light.color.copy(this.sun.color);
       light.intensity = this.sun.intensity;
       const shadow = light.shadow;
+      if (!shadow.autoUpdate && !shadow.needsUpdate) {
+        // CSM.update writes local positions for every light. Keep this light
+        // at the transform used by its cached depth map and shadow matrix.
+        light.position.setFromMatrixPosition(light.matrix);
+        light.target.position.setFromMatrixPosition(light.target.matrix);
+        continue;
+      }
       // CSM's built-in snap assumes equal map sizes. Low's far map uses its
       // actual 512-pixel grid, so both cascades stay stable during tiny pans.
       const texelX = (shadow.camera.right - shadow.camera.left) / shadow.mapSize.x;

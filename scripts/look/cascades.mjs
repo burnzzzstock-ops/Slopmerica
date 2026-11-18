@@ -82,11 +82,33 @@ try {
       shadows.warm(r, photo);
       const warmed = shadows.projection.equals(photo.projectionMatrix);
       const restored = r.getRenderTarget() === targetBefore && r.getViewport(new THREE.Vector4()).equals(viewportBefore) && r.info.memory.textures === texturesBefore;
+      const caster = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 3), material);
+      caster.castShadow = true; scene.add(caster);
+      let submitted;
+      caster.onBeforeShadow = (_r, _o, _view, lightCamera) => {
+        submitted[shadows.csm.lights.findIndex(light => light.shadow.camera === lightCamera)]++;
+      };
+      const submit = time => {
+        submitted = [0, 0];
+        if (time !== null) shadows.prepareFrame(time);
+        read();
+        return submitted;
+      };
+      const cadence = [submit(1)];
+      const matrices = shadows.csm.lights.map(light => light.shadow.matrix.clone());
+      caster.position.x += 2; cadence.push(submit(1.01));
+      const stayedAligned = matrices.every((matrix, i) => matrix.equals(shadows.csm.lights[i].shadow.matrix));
+      cadence.push(submit(1.034), submit(1.051));
+      shadows.csm.lights[0].shadow.needsUpdate = true;
+      cadence.push(submit(1.052));
+      camera.position.x += .01; camera.updateMatrixWorld(); cadence.push(submit(1.053));
+      sun.position.x += 10; cadence.push(submit(1.054), submit(null));
+      caster.geometry.dispose();
       r.setRenderTarget(oldTarget); r.toneMapping = oldTone;
       floor.geometry.dispose(); material.dispose(); target.dispose();
       for (const light of shadows.csm.lights) light.shadow.dispose();
       shadows.csm.remove();
-      return { main, energy, stability, photoProjection, gameProjection, reflectionError, reusedMaps, warmed, restored, unchanged: fingerprint === JSON.stringify(window.__dbg.fingerprint()), error: r.getContext().getError() };
+      return { main, energy, stability, cadence, stayedAligned, photoProjection, gameProjection, reflectionError, reusedMaps, warmed, restored, unchanged: fingerprint === JSON.stringify(window.__dbg.fingerprint()), error: r.getContext().getError() };
     }), process.env.GPU === '1' ? 'hardware' : 'swiftshader');
     const probe = frame.measurement;
     writeFileSync(`${out}/${quality}-probe.json`, JSON.stringify(probe, null, 2));
@@ -101,6 +123,8 @@ try {
     assert.ok(probe.photoProjection && probe.gameProjection && probe.unchanged);
     assert.ok(probe.reflectionError < 1e-8 && probe.reusedMaps, 'Reflected points must select the main shadow view cascade');
     assert.ok(probe.warmed && probe.restored, 'Photo warmup must restore targets and release its temporary texture');
+    assert.deepEqual(probe.cadence, [[1, 1], [0, 0], [1, 0], [0, 1], [1, 0], [1, 1], [1, 1], [1, 1]]);
+    assert.ok(probe.stayedAligned, 'Cached cascades must retain their depth-map projection');
     assert.equal(probe.error, 0);
     writeFileSync(`${out}/${quality}.png`, frame.png); delete frame.png;
     rows.push(frame);

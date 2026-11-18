@@ -256,18 +256,22 @@ export function convexHull(points: V2[]): V2[] {
 /** Uniform grid spatial hash for anything with an id. */
 export class SpatialHash<T> {
   private cells = new Map<number, T[]>();
-  constructor(public size: number) {}
+  /** beside each cell's items: the key of the first cell that item was filed under (its box's low corner), for each() */
+  private homes = new Map<number, number[]>();
+  size: number;
+  constructor(size: number) { this.size = size; }
   private key(ix: number, iz: number) {
     return ((ix + 4096) << 13) | (iz + 4096);
   }
   insert(item: T, minX: number, minZ: number, maxX: number, maxZ: number) {
-    const s = this.size;
+    const s = this.size, home = this.key(Math.floor(minX / s), Math.floor(minZ / s));
     for (let ix = Math.floor(minX / s); ix <= Math.floor(maxX / s); ix++)
       for (let iz = Math.floor(minZ / s); iz <= Math.floor(maxZ / s); iz++) {
         const k = this.key(ix, iz);
-        let arr = this.cells.get(k);
-        if (!arr) this.cells.set(k, (arr = []));
+        let arr = this.cells.get(k), hs = this.homes.get(k);
+        if (!arr || !hs) { this.cells.set(k, (arr = [])); this.homes.set(k, (hs = [])); }
         arr.push(item);
+        hs.push(home);
       }
   }
   remove(item: T, minX: number, minZ: number, maxX: number, maxZ: number) {
@@ -277,7 +281,7 @@ export class SpatialHash<T> {
         const arr = this.cells.get(this.key(ix, iz));
         if (!arr) continue;
         const i = arr.indexOf(item);
-        if (i >= 0) arr.splice(i, 1);
+        if (i >= 0) { arr.splice(i, 1); this.homes.get(this.key(ix, iz))!.splice(i, 1); }
       }
   }
   query(minX: number, minZ: number, maxX: number, maxZ: number, out: Set<T> = new Set()): Set<T> {
@@ -288,6 +292,24 @@ export class SpatialHash<T> {
         if (arr) for (const it of arr) out.add(it);
       }
     return out;
+  }
+  /**
+   * Everything query() over the same box holds, each item once and in the same order, handed to fn with no set built. An item
+   * filed under several cells is taken at the first of them the box reaches (its own low corner, or the box's where that is
+   * further in), which is where query() meets it first. For items filed once each: one inserted twice is handed over twice.
+   */
+  each(minX: number, minZ: number, maxX: number, maxZ: number, fn: (item: T) => void): void {
+    const s = this.size, x0 = Math.floor(minX / s), x1 = Math.floor(maxX / s), z0 = Math.floor(minZ / s), z1 = Math.floor(maxZ / s);
+    for (let ix = x0; ix <= x1; ix++)
+      for (let iz = z0; iz <= z1; iz++) {
+        const k = this.key(ix, iz), arr = this.cells.get(k);
+        if (!arr || !arr.length) continue;
+        const hs = this.homes.get(k)!;
+        for (let i = 0; i < arr.length; i++) {
+          const h = hs[i], hx = (h >> 13) - 4096, hz = (h & 8191) - 4096;
+          if ((hx > x0 ? hx : x0) === ix && (hz > z0 ? hz : z0) === iz) fn(arr[i]);
+        }
+      }
   }
   /** Is anything filed under a cell this box touches? When not, query() over the same box (or any box inside it) is empty; no set is built to find out. */
   any(minX: number, minZ: number, maxX: number, maxZ: number): boolean {
@@ -302,5 +324,6 @@ export class SpatialHash<T> {
 
   clear() {
     this.cells.clear();
+    this.homes.clear();
   }
 }

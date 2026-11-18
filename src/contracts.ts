@@ -220,6 +220,8 @@ export interface FeedContext {
   commune?: string;
   amount?: number;
   count?: number;
+  /** where it happened, in world metres, when the news has a place (a building, a crash, a road): the post keeps it */
+  at?: { x: number; z: number };
 }
 
 export interface FeedPost {
@@ -234,6 +236,8 @@ export interface FeedPost {
   likes: number;
   reposts: number;
   views: number;
+  /** where the news happened, when it has a place (the panel can take the camera there) */
+  at?: { x: number; z: number };
 }
 
 // ------------------------------------------------------------------ audio

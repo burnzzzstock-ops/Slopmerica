@@ -63,7 +63,7 @@ function buy(g: Game, t: number): boolean {
   refresh(g);
   g.audio.play('build');
   g.toast(`Bought a new tile of ${g.cityName} for ${money(price)}. Go sprawl on it.`);
-  g.feed.push('zoned', {});
+  g.feed.push('zoned', { at: { x: -HALF + (i + 0.5) * TILE, z: -HALF + (j + 0.5) * TILE } });
   return true;
 }
 

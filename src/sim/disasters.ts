@@ -134,7 +134,7 @@ function respond(g: Game) {
     }
     e.cost = 350;
   }
-  g.feed.push('trafficJam', { road: e.kind === 'floridaMan' ? 'Florida Man Boulevard' : `${e.kind} response` });
+  g.feed.push('trafficJam', { road: e.kind === 'floridaMan' ? 'Florida Man Boulevard' : `${e.kind} response`, at: { x: e.x, z: e.z } });
   // it struck where it is now (a landslide and Florida Man find their road above, a wildfire has moved once), and the
   // response starts in the same step: crews out, roads closed until recovery
   say(g, 'hit');

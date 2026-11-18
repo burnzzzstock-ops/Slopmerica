@@ -32,11 +32,11 @@ import { AudioEngine } from './audio/audio';
 import { WorldSoundSources } from './audio/worldSources';
 import { bindWorldAudio } from './audio/events';
 import type { SoundscapeMix } from './audio/ambience';
-import { COUNTY_ROAD, RoadNetwork, RSeg, Plan } from './roads/network';
+import { COUNTY_ROAD, RoadNetwork, RSeg, Plan, segMiddle } from './roads/network';
 import { RoadRenderer } from './roads/roadMesh';
 import { ROAD_TYPES, RoadTypeId } from './roads/roadTypes';
 import { Zoning, type ZCell } from './zones/zoning';
-import { Buildings, Bld, demolishCause, isZoned } from './sim/buildings';
+import { Buildings, Bld, type BldRow, demolishCause, isZoned } from './sim/buildings';
 import { footprintHitsBuilding, footprintHitsRoad, frontageCandidates, rectCorners, type Frontage } from './sim/frontage';
 import { Sim, Mode, SPEEDS, DAY_SECONDS, usd } from './sim/sim';
 import { Traffic, Car } from './agents/traffic';
@@ -126,10 +126,14 @@ export interface UiSink {
 
 /**
  * One undoable purchase. The rule is the same for all of them: undo removes
- * what was built and refunds exactly what it cost (net of any grant).
+ * what was built and refunds exactly what it cost (net of any grant). A road that bulldozed grown buildings on its way
+ * remembers them (razed), and undoing it puts back the ones whose lots are free again. 'raze' is the bulldozer on a grown
+ * building: nothing was paid, so nothing is refunded; undo puts the building back as it stood. One sweep of the bulldozer
+ * over several buildings is one 'raze' (sweep: the number the tool gave that drag).
  */
 export type UndoAction =
-  | { kind: 'build'; segIds: number[]; refund: number; label: string; trees?: number[]; w?: Record<number, number> }
+  | { kind: 'build'; segIds: number[]; refund: number; label: string; trees?: number[]; w?: Record<number, number>; razed?: BldRow[] }
+  | { kind: 'raze'; rows: BldRow[]; refund: 0; label: string; sweep?: number }
   | { kind: 'upgrade'; prev: { id: number; type: RoadTypeId }[]; refund: number; label: string; w?: Record<number, number> }
   | { kind: 'place'; bldId: number; refund: number; label: string; trees?: number[] };
 
@@ -560,12 +564,12 @@ export class Game {
     this.sim.events.on('disaster', event => this.audio.disaster(event));
     this.buildings.onComplete = ((orig) => (b: Bld) => {
       orig?.(b);
-      if (b.zone !== 'resLow' && b.zone !== 'resHigh' && fx.float() < 0.35) this.feed.push('buildingOpened', { building: b.label, brand: brandName(b.brand) });
+      if (b.zone !== 'resLow' && b.zone !== 'resHigh' && fx.float() < 0.35) this.feed.push('buildingOpened', { building: b.label, brand: brandName(b.brand), at: { x: b.x, z: b.z } });
       this.traffic.grandOpening(b); // a new drive-thru: the town lines up (traffic pass)
     })(this.buildings.onComplete);
     this.buildings.onLevel = ((orig) => (b: Bld) => {
       orig?.(b); // (a system's own, e.g. the College's first graduates)
-      if (fx.float() < 0.25) this.feed.push('buildingLeveled', { building: b.label, brand: brandName(b.brand), count: b.level });
+      if (fx.float() < 0.25) this.feed.push('buildingLeveled', { building: b.label, brand: brandName(b.brand), count: b.level, at: { x: b.x, z: b.z } });
       if (this.near(b.x, b.z, 400)) this.particles.emit('confetti', b.x, b.y + b.model.height, b.z, { count: 20, spread: 4 });
       this.sim.events.emit('levelUp', { bldId: b.id, level: b.level });
     })(this.buildings.onLevel);
@@ -574,7 +578,7 @@ export class Game {
     this.buildings.onDemolish = (b, reason) => {
       this.sim.events.emit('demolished', { bldId: b.id, x: b.x, z: b.z, w: 2 * b.hw, d: 2 * b.hd, height: b.model.height, cause: demolishCause(reason) });
       this.traffic.forget(b);
-      if (reason === 'road' && fx.float() < 0.6) this.feed.push('buildingDemolished', { building: b.label });
+      if (reason === 'road' && fx.float() < 0.6) this.feed.push('buildingDemolished', { building: b.label, at: { x: b.x, z: b.z } });
       if (this.selection?.kind === 'building' && this.selection.b === b) this.select(null);
       // the people who lived there are gone too (abandoned homes were already counted)
       if ((b.zone === 'resLow' || b.zone === 'resHigh') && b.abandoned === undefined && b.occ > 0)
@@ -593,7 +597,7 @@ export class Game {
     this.sim.events.on('ending', () => this.ui.ending('sprawl'));
     this.traffic.onCrash = (cars, seg, drunk, severity, x, z) => {
       this.sim.events.emit('crash', { x, z, severity, segId: seg?.id ?? -1 });
-      this.feed.push(drunk ? 'drunkCrash' : 'crash', { road: seg?.name });
+      this.feed.push(drunk ? 'drunkCrash' : 'crash', { road: seg?.name, at: { x, z } });
       const c = cars[0];
       if (c && this.near(c.x, c.z, 450)) {
         this.floatText(drunk ? '💥🍺 DUI' : '💥 WRECK', new THREE.Vector3(c.x, c.y + 2, c.z), '#ff8a3a');
@@ -603,8 +607,8 @@ export class Game {
     this.net.onBuilt = (segIds) => this.sim.events.emit('roadBuilt', { segIds });
     this.net.onLaneAdded = (seg, lanes) => this.sim.events.emit('laneAdded', { segId: seg.id, lanes });
     this.net.onTreesCut = (x, z, r, count) => this.sim.events.emit('treesCleared', { x, z, r, count, cause: 'road' });
-    this.traffic.onJam = (seg) => this.feed.push('trafficJam', { road: seg.name });
-    this.traffic.onDriveThruSpill = (b, seg) => this.feed.push('driveThruLine', { brand: brandName(b.brand) || b.label, road: seg?.name });
+    this.traffic.onJam = (seg) => this.feed.push('trafficJam', { road: seg.name, at: segMiddle(seg) });
+    this.traffic.onDriveThruSpill = (b, seg) => this.feed.push('driveThruLine', { brand: brandName(b.brand) || b.label, road: seg?.name, at: { x: b.x, z: b.z } });
     this.traffic.onEmit = (kind, x, y, z, n) => this.particles.emit(kind, x, y, z, { count: n, spread: kind === 'cigarette' ? 0.2 : 1.5 });
     this.post.look && (this.weather.look = this.post.look);
     this.weather.onThunder = (delay, dist) => {
@@ -634,26 +638,34 @@ export class Game {
     let razed = 0;
     for (const s of segs) {
       const pts = s.over ? s.samp.pts.filter((_, i) => s.hs[i] - s.ground[i] < 3) : s.samp.pts;
-      for (const b of this.buildings.underPavement(pts, ROAD_TYPES[s.type].width / 2)) if (isZoned(b) && this.buildings.list.has(b.id)) { this.buildings.demolish(b, 'road'); razed++; }
+      for (const b of this.buildings.underPavement(pts, ROAD_TYPES[s.type].width / 2)) if (isZoned(b) && this.buildings.list.has(b.id)) { this.razedByRoad.push({ seg: s.id, row: this.buildings.rowOf(b) }); this.buildings.demolish(b, 'road'); razed++; }
     }
     if (razed) crumb(`road bulldozed ${razed} building${razed === 1 ? '' : 's'}`);
     if (quiet) return razed;
     if (razed) this.toast(`${razed} building${razed === 1 ? '' : 's'} bulldozed for the road`);
     const t = ROAD_TYPES[segs[0].type];
     const kind: FeedEventKind = t.id === 'highway' ? 'highwayBuilt' : t.centerTurn ? 'stroadBuilt' : plan.bridgeLen > 10 ? 'bridgeBuilt' : 'roadBuilt';
-    if (fx.float() < (kind === 'roadBuilt' ? 0.25 : 0.7)) this.feed.push(kind, { road: segs[0].name, amount: plan.cost });
+    if (fx.float() < (kind === 'roadBuilt' ? 0.25 : 0.7)) this.feed.push(kind, { road: segs[0].name, amount: plan.cost, at: segMiddle(segs[0]) });
     // communes hate roads near them
     for (const c of this.communes.list) {
       if (c.state !== 'active') continue;
       const s = segs[0].samp.pts[0];
-      if (Math.hypot(c.x - s.x, c.z - s.z) < 260 && fx.float() < 0.5) this.feed.push('communeProtest', { commune: c.name, road: segs[0].name });
+      if (Math.hypot(c.x - s.x, c.z - s.z) < 260 && fx.float() < 0.5) this.feed.push('communeProtest', { commune: c.name, road: segs[0].name, at: { x: c.x, z: c.z } });
     }
     return razed;
   }
 
+  /** grown buildings a road just went through (onRoadBuilt), until the road's undo is pushed and takes them */
+  private razedByRoad: { seg: number; row: BldRow }[] = [];
+
   pushUndo(a: UndoAction) {
+    if (a.kind === 'build') {
+      const mine = this.razedByRoad.filter((r) => a.segIds.includes(r.seg)).map((r) => r.row);
+      if (mine.length) a.razed = mine;
+      this.razedByRoad = [];
+    }
     // what each piece is worth of the refund (its share of the price), so Undo pays for what is still there
-    if (a.kind !== 'place') {
+    if (a.kind !== 'place' && a.kind !== 'raze') {
       a.w = {};
       for (const id of a.kind === 'build' ? a.segIds : a.prev.map((p) => p.id)) {
         const sg = this.net.segs.get(id);
@@ -668,7 +680,7 @@ export class Game {
   private followSplit(old: number, into: [RSeg, RSeg]) {
     const total = into[0].length + into[1].length || 1;
     for (const a of this.undoStack) {
-      if (a.kind === 'place' || !a.w || !(old in a.w)) continue;
+      if (a.kind === 'place' || a.kind === 'raze' || !a.w || !(old in a.w)) continue;
       const w = a.w[old];
       delete a.w[old];
       into.forEach((sg, i) => { a.w![sg.id] = w * (i === 0 ? into[0].length : into[1].length) / total; });
@@ -679,7 +691,7 @@ export class Game {
 
   /** What Undo pays back now: the price, less the share of any piece that has since been bulldozed. */
   private undoRefund(a: UndoAction): number {
-    if (a.kind === 'place' || !a.w) return a.refund;
+    if (a.kind === 'place' || a.kind === 'raze' || !a.w) return a.refund;
     let all = 0, alive = 0;
     for (const [id, w] of Object.entries(a.w)) { all += w; if (this.net.segs.has(Number(id))) alive += w; }
     return all > 0 ? Math.round(a.refund * alive / all) : a.refund;
@@ -692,7 +704,42 @@ export class Game {
   /** what Undo would reverse, e.g. "Sheriff's Office (+$11,000 back)"; null when nothing */
   get undoLabel(): string | null {
     const a = this.undoStack[this.undoStack.length - 1];
-    return a ? `${a.label} (+${usd(this.undoRefund(a))} back)` : null;
+    if (!a) return null;
+    // (a bulldozed building: nothing was paid, the building itself comes back)
+    return a.kind === 'raze' ? a.label : `${a.label} (+${usd(this.undoRefund(a))} back)`;
+  }
+
+  /**
+   * Put bulldozed buildings back where they stood, the ones whose lots are still free. Their people come back with them.
+   * Returns how many went back and, for the first that could not, why.
+   */
+  private putBack(rows: BldRow[]): { back: number; why: string | null } {
+    this.zones.sync();   // (a road just taken away: its lots count again before they are asked about)
+    let back = 0, why: string | null = null;
+    for (const row of rows) {
+      const lot = this.buildings.lotFor(row);
+      const b = typeof lot === 'string' ? null : this.buildings.putBack(row);
+      if (!b) { why ??= typeof lot === 'string' ? lot : 'its lot is not free'; continue; }
+      back++;
+      if ((b.zone === 'resLow' || b.zone === 'resHigh') && b.abandoned === undefined) this.sim.comeBack(b.occ, 'bulldozed');
+    }
+    return { back, why };
+  }
+
+  /**
+   * The bulldozer on a building: down it comes. A building that grew on a zoned lot can be put back with Undo, as it stood
+   * (a placed service or landmark was bought, and is not put back). One path for the map tool and the inspector.
+   * sweep: a number the tool gives one drag of the bulldozer; the buildings of one drag are one Undo.
+   */
+  bulldozeBuilding(b: Bld, sweep?: number): boolean {
+    if (!this.buildings.list.has(b.id)) return false;
+    const row = isZoned(b) ? this.buildings.rowOf(b) : null, label = b.label;
+    this.buildings.demolish(b, 'bulldozed');
+    if (!row) return true;
+    const top = this.undoStack[this.undoStack.length - 1];
+    if (sweep !== undefined && top?.kind === 'raze' && top.sweep === sweep) { top.rows.push(row); top.label = `bulldozing ${top.rows.length} buildings`; }
+    else this.pushUndo({ kind: 'raze', rows: [row], refund: 0, label: `bulldozing ${label}`, sweep });
+    return true;
   }
 
   undo() {
@@ -700,11 +747,25 @@ export class Game {
     if (!a) return false;
     // what it pays back is worked out before anything is taken down: only what is still standing
     const refund = this.undoRefund(a);
+    if (a.kind === 'raze') {
+      const { back, why } = this.putBack(a.rows);
+      crumb(`undo ${a.label}`);
+      this.tools.cancel();
+      const n = a.rows.length;
+      if (back) this.audio.play('build', 0.6);
+      if (back === n) this.toast(`Undone: ${a.label}. ${n === 1 ? 'It is' : 'They are'} back as ${n === 1 ? 'it' : 'they'} stood.`);
+      else if (back) this.toast(`Undone: ${a.label}. ${back} of ${n} are back as they stood; the rest could not be put back (${why}).`);
+      else this.toast(`Can't undo ${a.label}: ${why}.`, true);
+      return true;
+    }
     if (a.kind !== 'place' && refund === 0 && a.refund > 0) { this.toast(`Can't undo ${a.label}: it's already gone.`, true); this.tools.cancel(); return true; }
+    let back = 0, lost = 0, lostWhy: string | null = null;
     if (a.kind === 'build') {
       // splits are followed (segSplit), bulldozed pieces are just gone: remove what's still there
       for (const id of a.segIds) if (this.net.segs.has(id)) this.net.removeSeg(id);
       if (a.trees) this.trees.replant(a.trees);
+      // the homes and shops the road went through come back, where their lots are free again
+      if (a.razed?.length) { const r = this.putBack(a.razed); back = r.back; lost = a.razed.length - back; lostWhy = r.why; }
     } else if (a.kind === 'upgrade') {
       for (const p of a.prev) if (this.net.segs.has(p.id)) this.net.upgrade(p.id, p.type);
     } else {
@@ -718,7 +779,9 @@ export class Game {
     crumb(`undo ${a.label}`);
     this.tools.cancel();
     if (a.kind !== 'place') this.audio.play('bulldoze', 0.6);
-    this.toast(`Undone: ${a.label}, ${usd(refund)} back${refund < a.refund ? ' (part of it was already bulldozed)' : ''}${'trees' in a && a.trees?.length ? ', trees replanted' : ''}.`);
+    const put = back ? `, ${back} building${back === 1 ? '' : 's'} it bulldozed put back${lost ? ` (${lost} could not be)` : ''}`
+      : lost ? `; the ${lost === 1 ? 'building' : `${lost} buildings`} it bulldozed could not be put back (${lostWhy})` : '';
+    this.toast(`Undone: ${a.label}, ${usd(refund)} back${refund < a.refund ? ' (part of it was already bulldozed)' : ''}${'trees' in a && a.trees?.length ? ', trees replanted' : ''}${put}.`);
     return true;
   }
 
@@ -766,7 +829,7 @@ export class Game {
   }
 
   onLaneAdded(segs: RSeg[], to: RoadTypeId) {
-    this.feed.push('laneAdded', { road: segs[0]?.name, count: ROAD_TYPES[to].lanesPerDir * (ROAD_TYPES[to].oneWay ? 1 : 2) });
+    this.feed.push('laneAdded', { road: segs[0]?.name, count: ROAD_TYPES[to].lanesPerDir * (ROAD_TYPES[to].oneWay ? 1 : 2), ...(segs[0] ? { at: segMiddle(segs[0]) } : {}) });
   }
 
   // ------------------------------------------------------------------ tool helpers
@@ -782,10 +845,10 @@ export class Game {
     return b ? b.label : null;
   }
 
-  bulldozeAt(p: THREE.Vector3): boolean {
+  bulldozeAt(p: THREE.Vector3, sweep?: number): boolean {
     const b = this.buildings.at(p.x, p.z);
     if (!b) return false;
-    this.buildings.demolish(b, 'bulldozed');
+    this.bulldozeBuilding(b, sweep);
     this.particles.emit('dust', b.x, b.y + 2, b.z, { count: 50, spread: b.hw });
     return true;
   }
@@ -847,7 +910,7 @@ export class Game {
     this.trees.recordCuts();
     const b = this.buildings.placeLandmark(id, spot.x, spot.z, spot.yaw);
     this.pushUndo({ kind: 'place', bldId: b.id, refund: cost, label: name, trees: this.trees.takeCuts() });
-    this.feed.push('buildingOpened', { building: b.label, brand: name });
+    this.feed.push('buildingOpened', { building: b.label, brand: name, at: { x: b.x, z: b.z } });
     this.audio.playAt(id === 'slopCannon' ? 'cannon' : 'build', spot.x, spot.z);
     // it can go down before its road, but it does nothing until one links it to the network
     const off = this.linkProblem?.(b);
@@ -863,11 +926,11 @@ export class Game {
     this.sim.spend(cost, 'Commune payoff', 'communes');
     if (this.dice.float() < this.communes.bribeOdds(c)) {
       c.state = 'leaving';
-      this.feed.push('communeBribed', { commune: c.name, amount: cost });
+      this.feed.push('communeBribed', { commune: c.name, amount: cost, at: { x: c.x, z: c.z } });
       this.toast(`${c.name} took the money and left in a cloud of patchouli.`);
     } else {
       c.stubborn = Math.min(1, c.stubborn + 0.12);
-      this.feed.push('communeProtest', { commune: c.name });
+      this.feed.push('communeProtest', { commune: c.name, at: { x: c.x, z: c.z } });
       this.toast(`${c.name} spent your $${cost.toLocaleString()} on kombucha and stayed.`, true);
     }
   }
@@ -881,7 +944,7 @@ export class Game {
     c.state = 'suing';
     c.suitDays = this.sim.day + 20;
     c.suitOdds = this.communes.suitOdds(c);
-    this.feed.push('communeSued', { commune: c.name, amount: cost });
+    this.feed.push('communeSued', { commune: c.name, amount: cost, at: { x: c.x, z: c.z } });
   }
 
   private communeTick() {
@@ -892,7 +955,7 @@ export class Game {
           c.state = 'leaving';
           // the commune lost the county's suit (the feed's lines for it say so; its buy-out
           // lines, posted here before, thanked them for $0)
-          this.feed.push('communeLawsuitLost', { commune: c.name });
+          this.feed.push('communeLawsuitLost', { commune: c.name, at: { x: c.x, z: c.z } });
           this.ui.banner('Lawsuit won', `${c.name} has been evicted. The drum circle moves on.`);
         } else {
           c.state = 'active';
@@ -909,9 +972,9 @@ export class Game {
           segs.sort((a, b) => Math.hypot(a.samp.pts[0].x - c.x, a.samp.pts[0].z - c.z) - Math.hypot(b.samp.pts[0].x - c.x, b.samp.pts[0].z - c.z));
           const s = segs[0];
           s.blocked = 30;
-          this.feed.push('communeProtest', { commune: c.name, road: s.name });
+          this.feed.push('communeProtest', { commune: c.name, road: s.name, at: segMiddle(s) });
         }
-        if (c.forever && fx.float() < 0.3) this.feed.push('communeForever', { commune: c.name });
+        if (c.forever && fx.float() < 0.3) this.feed.push('communeForever', { commune: c.name, at: { x: c.x, z: c.z } });
       }
     }
   }

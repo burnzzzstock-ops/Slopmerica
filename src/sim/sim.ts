@@ -417,6 +417,13 @@ export class Sim {
     const d = this.popDay();
     d.out[cause] = (d.out[cause] ?? 0) + n;
   }
+  /** They are back after all (a bulldozing undone): taken off today's count of who left for that cause, the rest counted as moving in. */
+  comeBack(n: number, cause: LossCause) {
+    if (!(n > 0)) return;
+    const d = this.popDay(), off = Math.min(d.out[cause] ?? 0, n);
+    if (off > 0) { const left = (d.out[cause] ?? 0) - off; if (left > 0) d.out[cause] = left; else delete d.out[cause]; }
+    d.in += n - off;
+  }
   /** Who moved in and out over the last `days` days, departures by cause, largest first. */
   popFlow(days: number) {
     const since = this.lastWhole - days;

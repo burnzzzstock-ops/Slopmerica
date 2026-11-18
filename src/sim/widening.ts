@@ -10,6 +10,7 @@
 import { fromBase64, toBase64, type Json } from '../core/snapshot';
 import { registerInspector, registerSystem } from '../ext/registry';
 import type { Game } from '../game';
+import { segMiddle } from '../roads/network';
 import { ROAD_TYPES, type RoadTypeId } from '../roads/roadTypes';
 import { TUNING } from './tuning';
 
@@ -125,7 +126,7 @@ registerSystem({
       // back: as full at its busiest as it was (and it was worth widening: a road nobody was on is "back" by default)
       if (w.back === null && w.before >= T.minBefore && w.weeks.length >= T.minWeeks && now >= w.before) {
         w.back = g.sim.day;
-        g.feed.push('laneFilled', { road: s.name, count: Math.max(1, Math.round((w.back - w.day) / 30)) });
+        g.feed.push('laneFilled', { road: s.name, count: Math.max(1, Math.round((w.back - w.day) / 30)), at: segMiddle(s) });
       }
     }
   },

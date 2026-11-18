@@ -1137,6 +1137,10 @@ a {
 .inspector { overflow-y: auto; }
 .subpanel.under-inspector { display: none; }
 .next-bar.yield { display: none; }
+/* Chad's face on the first steps: it keeps its size when the words wrap */
+.next-bar .advisor-sticker {
+  flex: 0 0 auto;
+}
 .side-cards > * {
   pointer-events: auto;
 }
@@ -1385,6 +1389,11 @@ a {
   font-size: 18px;
   color: #fff;
   font-weight: 900;
+}
+/* a regular with a portrait: the picture is the avatar */
+.xav.face .advisor-sticker {
+  width: 34px;
+  height: 34px;
 }
 .xbody {
   min-width: 0;
@@ -1914,6 +1923,15 @@ a {
   border: 2px solid var(--lime);
   border-radius: 16px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+/* Chad's face beside his message */
+.ob-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ob-head .advisor-sticker {
+  flex: 0 0 auto;
 }
 .ob-kicker {
   font-size: 11px;

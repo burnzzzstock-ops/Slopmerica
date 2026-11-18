@@ -6,6 +6,10 @@ import type { FeedContext, FeedEventKind, FeedPost } from '../contracts';
 import { ambientPost, postFor } from '../content/feed';
 import type { FeedSink, Game } from '../game';
 import { MERCH_URL } from '../art/brands';
+import { advisorPortraitHTML, type AdvisorId } from '../art/advisors';
+
+/** The feed's regulars who have a face: the handle they post under (content/feedTags.ts), and whose portrait it is. */
+const FACES: Record<string, AdvisorId> = { ShovelReady: 'chad', OneMoreLane: 'dale', CovenantsFirst: 'deb', BeforeTheBypass: 'earl', BollardEnjoyer: 'skyler' };
 
 /** real seconds between posts, and between small-talk posts (after at least QUIET s without one) */
 const POST_GAP = 14, CHATTER = [50, 90], QUIET = 40;
@@ -142,7 +146,7 @@ export class FeedPanel implements FeedSink {
     const note = p.note ? `<div class="xnote"><b>Readers added context</b>${esc(p.note)}</div>` : '';
     const replies = p.replies?.length ? `<div class="xreplies">${p.replies.slice(0, 2).map((r) => `<div><span class="x-at">@${esc(r.handle)}</span> ${linkify(r.text)}</div>`).join('')}</div>` : '';
     li.innerHTML = `
-      <div class="xav" style="background:${esc(p.avatar.bg)}">${esc(p.avatar.emoji ?? p.name[0] ?? '?')}</div>
+      ${FACES[p.handle] ? `<div class="xav face">${advisorPortraitHTML(FACES[p.handle], 34)}</div>` : `<div class="xav" style="background:${esc(p.avatar.bg)}">${esc(p.avatar.emoji ?? p.name[0] ?? '?')}</div>`}
       <div class="xbody">
         <div class="xmeta"><b>${esc(p.name)}</b>${badge}<span class="xhandle">@${esc(p.handle)}</span><span class="xage">· <span class="xwhen">now</span></span></div>
         <div class="xtext">${linkify(p.text)}</div>

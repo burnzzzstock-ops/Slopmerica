@@ -28,6 +28,7 @@ import { isZoned } from '../sim/buildings';
 import type { ViewMode } from '../render/overlays';
 import { ARCHETYPES } from '../agents/people';
 import { saveGame, snapshot } from '../sim/save';
+import { advisorPortraitHTML } from '../art/advisors';
 import { TITLE_OPEN } from './title';
 import { listSlots, slotName, writeSlot } from '../sim/slots';
 import { VEHICLE_SPECS } from '../agents/vehicles';
@@ -120,6 +121,8 @@ export class Hud implements UiSink {
   private perfVisible = false;
   private floats: { el: HTMLElement; p: THREE.Vector3; t: number }[] = [];
   private panel: PanelId = null;
+  /** the step card as last written */
+  private nextHtml = '';
   /** the pause menu while it is up (ui/pauseMenu.ts, loaded when first asked for) */
   private menu: { close(): void } | null = null;
   private menuAsked = false;
@@ -351,8 +354,8 @@ export class Hud implements UiSink {
     if (seen) return;
     const el = this.mk('div', 'onboard');
     el.innerHTML = `
-      <div class="ob-kicker">A MESSAGE FROM CHAD, ECONOMIC DEVELOPMENT</div>
-      <h3>Welcome, Commissioner.</h3>
+      <div class="ob-head">${advisorPortraitHTML('chad', 64)}<div><div class="ob-kicker">A MESSAGE FROM CHAD, ECONOMIC DEVELOPMENT</div>
+      <h3>Welcome, Commissioner.</h3></div></div>
       <ol>
         <li><b>Roads</b>: draw one off <em>Old County Road</em>. ${IS_TOUCH ? 'Drag your finger to draw. Two fingers move the map.' : 'Click to start, click to end.'} Stroads are the American way (and the dearest to maintain: short gravel and two-lane streets pay for themselves sooner).</li>
         <li><b>Zoning</b>: paint green (homes), blue (shops) and yellow (industry) along it. Watch the R C I O bars.</li>
@@ -1001,8 +1004,12 @@ export class Hud implements UiSink {
     // its button is left out when what it would open is already open
     const P = this.panel, act = a.act ?? '';
     this.nextBar.classList.toggle('act-open', compact && (act === 'road' ? P === 'roads' : act.startsWith('zone:') ? P === 'zones' && this.game.tools.zoneType === act.slice(5) : act === 'budget' ? P === 'budget' : false));
-    const html = `<span class="nb-step">${fs ? `<b>Step ${fs.n}/${fs.of}</b>` : '<b>Next</b>'} ${esc(a.text)}</span>${a.act ? `<button class="chip on" data-act="${a.act}">${actLabel(a.act, a.label ?? 'Go')}</button>` : ''}${unlock}<button class="nb-x" data-act="hide" aria-label="Hide until the next step" title="Hide until the next step">✕</button>`;
-    if (this.nextBar.innerHTML !== html) this.nextBar.innerHTML = html;
+    // the first steps are Chad's, as the welcome card was. Not on a phone: beside his face the words take a line more, and
+    // the card is 79 px over the map where it was 63
+    const html = `${fs && window.innerWidth > 760 ? advisorPortraitHTML('chad', 30) : ''}<span class="nb-step">${fs ? `<b>Step ${fs.n}/${fs.of}</b>` : '<b>Next</b>'} ${esc(a.text)}</span>${a.act ? `<button class="chip on" data-act="${a.act}">${actLabel(a.act, a.label ?? 'Go')}</button>` : ''}${unlock}<button class="nb-x" data-act="hide" aria-label="Hide until the next step" title="Hide until the next step">✕</button>`;
+    // (compared with what was last written, not with what the page hands back: the page rewrites a picture's tag, so the
+    // card would be drawn afresh four times a second, picture and all, and lose a press on its button)
+    if (this.nextHtml !== html) { this.nextHtml = html; this.nextBar.innerHTML = html; }
     this.placeNextBar();
   }
 

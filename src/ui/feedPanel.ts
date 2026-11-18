@@ -7,6 +7,8 @@ import { ambientPost, postFor } from '../content/feed';
 import type { FeedSink, Game } from '../game';
 import { MERCH_URL } from '../art/brands';
 import { advisorPortraitHTML, type AdvisorId } from '../art/advisors';
+import { crumb } from './bugreport';
+import { uiIcon } from './icons';
 
 /** The feed's regulars who have a face: the handle they post under (content/feedTags.ts), and whose portrait it is. */
 const FACES: Record<string, AdvisorId> = { ShovelReady: 'chad', OneMoreLane: 'dale', CovenantsFirst: 'deb', BeforeTheBypass: 'earl', BollardEnjoyer: 'skyler' };
@@ -75,7 +77,15 @@ export class FeedPanel implements FeedSink {
     this.list = this.el.querySelector('.xfeed-list')!;
     this.el.querySelector('#xfeed-toggle')!.addEventListener('click', () => this.setCollapsed(!this.collapsed));
     this.el.querySelector('#xfeed-expand')!.addEventListener('click', () => this.setExpanded(!this.expanded));
-    this.list.addEventListener('click', (e) => { if (!this.expanded && !(e.target as HTMLElement).closest('a')) this.setExpanded(true); });
+    // A post about something that happened somewhere takes the camera there: a click or a tap anywhere on it but a link, or
+    // its Show button from the keyboard. A post with no place opens the whole feed from the peek, as every post did.
+    this.list.addEventListener('click', (e) => {
+      const t = e.target as HTMLElement;
+      if (t.closest('a')) return;
+      const post = t.closest<HTMLElement>('.xpost');
+      if (post?.dataset.x !== undefined && post.dataset.z !== undefined) { this.show(Number(post.dataset.x), Number(post.dataset.z)); return; }
+      if (!this.expanded) this.setExpanded(true);
+    });
     this.el.querySelector('.xfeed-head')!.addEventListener('dblclick', () => this.setCollapsed(!this.collapsed));
   }
 
@@ -86,6 +96,16 @@ export class FeedPanel implements FeedSink {
     const b = this.el.querySelector('#xfeed-expand') as HTMLElement;
     b.textContent = x ? '⤡' : '⤢';
     b.title = b.ariaLabel = x ? 'Just the newest post' : 'Show the whole feed';
+  }
+
+  /** Take the camera to where a post's news happened: over the place, near enough to see it (and never from a ride's few metres). */
+  private show(x: number, z: number) {
+    const rts = this.game.rts;
+    crumb('feed: show where a post happened');
+    this.game.audio.play('click', 0.4);
+    rts.setView(x, z, Math.min(420, Math.max(120, rts.following ? 420 : rts.distance)));
+    // on a phone the open feed is over the map: back to its newest post, so the place can be seen
+    if (this.expanded && window.innerWidth <= 760) this.setExpanded(false);
   }
 
   setCollapsed(c: boolean) {
@@ -139,6 +159,8 @@ export class FeedPanel implements FeedSink {
     const li = document.createElement('article');
     li.className = 'xpost';
     li.dataset.at = String(performance.now());
+    const place = p.at && Number.isFinite(p.at.x) && Number.isFinite(p.at.z) ? p.at : null;
+    if (place) { li.dataset.x = String(place.x); li.dataset.z = String(place.z); li.classList.add('has-place'); }
     const badge = p.badge ? `<span class="xbadge ${p.badge}" title="${p.badge} check">✓</span>` : '';
     const img = p.image
       ? `<div class="ximg ${p.image.kind}"><span>${esc(p.image.caption)}</span>${p.image.kind === 'aiSlop' ? '<em>AI generated</em>' : ''}${p.image.kind === 'merch' ? `<a href="${MERCH_URL}" target="_blank" rel="noopener">Shop imaginesupply.co →</a>` : ''}</div>`
@@ -148,7 +170,7 @@ export class FeedPanel implements FeedSink {
     li.innerHTML = `
       ${FACES[p.handle] ? `<div class="xav face">${advisorPortraitHTML(FACES[p.handle], 34)}</div>` : `<div class="xav" style="background:${esc(p.avatar.bg)}">${esc(p.avatar.emoji ?? p.name[0] ?? '?')}</div>`}
       <div class="xbody">
-        <div class="xmeta"><b>${esc(p.name)}</b>${badge}<span class="xhandle">@${esc(p.handle)}</span><span class="xage">· <span class="xwhen">now</span></span></div>
+        <div class="xmeta"><b>${esc(p.name)}</b>${badge}<span class="xhandle">@${esc(p.handle)}</span><span class="xage">· <span class="xwhen">now</span></span>${place ? `<button class="xgo" aria-label="Show where this happened" title="Show where this happened">${uiIcon('action', 'show', '📍', 16)}</button>` : ''}</div>
         <div class="xtext">${linkify(p.text)}</div>
         ${img}${note}${replies}
         <div class="xstats"><span>💬 ${fmt(Math.round(p.reposts * 0.6))}</span><span>🔁 ${fmt(p.reposts)}</span><span>♥ ${fmt(p.likes)}</span><span>📊 ${fmt(p.views)}</span></div>

@@ -1910,6 +1910,8 @@ export class Hud implements UiSink {
     b.className = 'banner';
     b.innerHTML = `<b>${esc(title)}</b><span>${esc(sub)}</span>`;
     this.root.appendChild(b);
+    // the music and the street step back while it is up (the audio engine holds them down for 1.6 s, then lets them return)
+    this.game.audio.duck();
     setTimeout(() => b.classList.add('out'), 3200);
     setTimeout(() => b.remove(), 4000);
   }

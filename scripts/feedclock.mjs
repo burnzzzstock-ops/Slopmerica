@@ -24,6 +24,7 @@ for (const who of ['desktop', 'phone']) {
     cancelAnimationFrame(g.raf);
     feed.setCollapsed(false); feed.setExpanded(true);
     feed.ambientT = 1e9;   // no small talk of the feed's own while the clock is run forward
+    feed.queue.length = 0;  // nor the news the game itself had waiting (its start-of-game post, under load)
     const list = document.querySelector('.xfeed .xfeed-list');
     list.innerHTML = '';
     const post = (kind, extra) => { feed.push(kind, extra); feed.update(30); return list.firstElementChild; };

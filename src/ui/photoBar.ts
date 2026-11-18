@@ -43,6 +43,17 @@ export class PhotoBar {
       const b = (e.target as HTMLElement).closest('[data-pb]') as HTMLElement | null;
       if (b) void this.act(b.dataset.pb!);
     });
+    // A slider that has been dragged keeps the keyboard, and photo mode's own keys (Esc to leave, W A S D to move) are not
+    // read while an input has it: Esc did nothing after a slider was touched, though the bar says "Esc to leave". Esc on a
+    // slider leaves, and a slider let go by a pointer gives the keyboard back (one reached with Tab keeps it, for the arrows).
+    this.el.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !(e.target as HTMLElement).matches?.('input')) return;
+      e.preventDefault(); e.stopPropagation();
+      this.exit();
+    });
+    const letGo = (e: Event) => { const t = e.target as HTMLElement; if (t.matches?.('input[type="range"]')) t.blur(); };
+    this.el.addEventListener('pointerup', letGo);
+    this.el.addEventListener('pointercancel', letGo);
     this.el.addEventListener('input', (e) => {
       const i = e.target as HTMLInputElement, p = this.game.photo, v = Number(i.value);
       if (i.dataset.pbr === 'hour') { p.hour = v; this.el.querySelector('[data-pbo="hour"]')!.textContent = clock(v); }

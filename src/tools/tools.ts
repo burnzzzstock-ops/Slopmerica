@@ -392,6 +392,8 @@ export class Tools implements PointerHandlers {
         break;
       case 'bulldoze':
         this.painting = true;
+        // one press of the bulldozer, however far it is dragged, is one Undo
+        this.sweep++;
         break;
       case 'inspect':
         break;
@@ -573,9 +575,12 @@ export class Tools implements PointerHandlers {
     if (this.game.upgradeRoads(segs, p).ok) crumb(`one more lane: ${segs.length} block(s) → ${ROAD_TYPES[pick.seg.type].name}`);
   }
 
+  /** the number of the bulldozer's current press: the buildings of one drag are put back by one Undo */
+  private sweep = 0;
+
   private bulldozeAt(p: THREE.Vector3) {
     const what = this.game.buildingAt(p);
-    if (this.game.bulldozeAt(p)) { crumb(`bulldozed ${what}`); return; }
+    if (this.game.bulldozeAt(p, this.sweep)) { crumb(`bulldozed ${what}`); return; }
     const pick = this.game.net.pickSeg(p.x, p.z, 1);
     if (!pick) return;
     crumb(`bulldozed road ${pick.seg.name ?? pick.seg.id}`);

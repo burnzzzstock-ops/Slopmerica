@@ -27,6 +27,34 @@ const CN = (HM_N - 1) / CQ; // chunks per side (12)
 const LOD_STEPS = [1, 2, 4, 8];
 const VERTEX_SPECKLE = [1, 0.7, 0.4, 0.2]; // per-vertex colour noise, by level (shade())
 
+// Topology depends only on the grid step. Each mesh owns its GPU attribute;
+// the immutable CPU indices and skirt-edge lists can serve every chunk.
+function chunkTopology(step: number) {
+  const n = CQ / step + 1;
+  const edges: number[][] = [[], [], [], []];
+  for (let t = 0; t < n; t++) {
+    edges[0].push(t);
+    edges[1].push((n - 1) * n + t);
+    edges[2].push(t * n);
+    edges[3].push(t * n + n - 1);
+  }
+  const index: number[] = [];
+  for (let jj = 0; jj < n - 1; jj++)
+    for (let ii = 0; ii < n - 1; ii++) {
+      const a = jj * n + ii, b = a + 1, c = a + n, d = c + 1;
+      index.push(a, c, b, b, c, d);
+    }
+  edges.forEach((e, ei) => {
+    const skirt = n * n + ei * n;
+    for (let t = 0; t < n - 1; t++) {
+      const a = e[t], b = e[t + 1], c = skirt + t, d = c + 1;
+      index.push(a, b, c, b, d, c, a, c, b, b, c, d);
+    }
+  });
+  return { edges, index: new Uint16Array(index) };
+}
+const CHUNK_TOPOLOGY = LOD_STEPS.map(chunkTopology);
+
 interface Chunk {
   cx: number;
   cz: number;
@@ -735,16 +763,19 @@ if (uInfoOn > 0.0) {
       // uniform bright band along every river (playtest 5: "a less uniformly bright shoreline")
       // (and it varies along the bank, in patches of a few tens of metres: a bar here, a cut bank there, instead of one
       // width all the way along; GRAPHICS ONLY, colours, not heights)
-      const zw = j * HM_STEP - HALF;
-      const irr = 0.4 + 1.2 * (bankNoise(x, zw, 46, 41) * 0.65 + bankNoise(x, zw, 15, 43) * 0.35);
-      const band = shoreBand * (0.55 + 0.9 * c) * irr;
-      if (h < band) {
-        const t = smoothstep(band, band * 0.3, h);
-        col.lerp(mapId === 'appalachia' ? P.mud : tmpA.copy(P.sand).lerp(P.mud, 0.3 + 0.45 * r), t);
-        if (mapId === 'appalachia') dirt += t * 1.5;
-        else sand += t * 2;
+      // Above the maximum possible bank height the shoreline noise has zero influence.
+      if (h < shoreBand * 1.6 * (0.55 + 0.9 * c)) {
+        const zw = j * HM_STEP - HALF;
+        const irr = 0.4 + 1.2 * (bankNoise(x, zw, 46, 41) * 0.65 + bankNoise(x, zw, 15, 43) * 0.35);
+        const band = shoreBand * (0.55 + 0.9 * c) * irr;
+        if (h < band) {
+          const t = smoothstep(band, band * 0.3, h);
+          col.lerp(mapId === 'appalachia' ? P.mud : tmpA.copy(P.sand).lerp(P.mud, 0.3 + 0.45 * r), t);
+          if (mapId === 'appalachia') dirt += t * 1.5;
+          else sand += t * 2;
+        }
       }
-      if (this.map.sand) {
+      if (this.map.sand && h < 9) {
         const beachy = this.map.sand(x, j * HM_STEP - HALF) * smoothstep(9, 3, h);
         if (beachy > 0.01) {
           col.lerp(P.sand, beachy);
@@ -849,18 +880,10 @@ if (uInfoOn > 0.0) {
         mats.set(m, k * 4);
         paintDelta.set(paint, k * 4);
       }
-    const edges: number[][] = [[], [], [], []];
-    for (let t = 0; t < n; t++) {
-      edges[0].push(t);
-      edges[1].push((n - 1) * n + t);
-      edges[2].push(t * n);
-      edges[3].push(t * n + n - 1);
-    }
+    const { edges, index } = CHUNK_TOPOLOGY[lod];
     let o = n * n;
-    const skirtIdx: number[][] = [];
     const drop = 4 + s * 3;
     for (const e of edges) {
-      const row: number[] = [];
       for (const k of e) {
         pos[o * 3] = pos[k * 3];
         pos[o * 3 + 1] = pos[k * 3 + 1] - drop;
@@ -869,30 +892,16 @@ if (uInfoOn > 0.0) {
         colr.copyWithin(o * 3, k * 3, k * 3 + 3);
         mats.copyWithin(o * 4, k * 4, k * 4 + 4);
         paintDelta.copyWithin(o * 4, k * 4, k * 4 + 4);
-        row.push(o++);
+        o++;
       }
-      skirtIdx.push(row);
     }
-    const index: number[] = [];
-    for (let jj = 0; jj < n - 1; jj++)
-      for (let ii = 0; ii < n - 1; ii++) {
-        const a = jj * n + ii, b = a + 1, c = a + n, d = c + 1;
-        index.push(a, c, b, b, c, d);
-      }
-    edges.forEach((e, ei) => {
-      const sk = skirtIdx[ei];
-      for (let t = 0; t < n - 1; t++) {
-        const a = e[t], b = e[t + 1], c = sk[t], d = sk[t + 1];
-        index.push(a, b, c, b, d, c, a, c, b, b, c, d);
-      }
-    });
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(colr, 3));
     geo.setAttribute('mats', new THREE.BufferAttribute(mats, 4));
     geo.setAttribute('paintDelta', new THREE.BufferAttribute(paintDelta, 4));
-    geo.setIndex(count > 65535 ? new THREE.Uint32BufferAttribute(index, 1) : new THREE.Uint16BufferAttribute(index, 1));
+    geo.setIndex(new THREE.BufferAttribute(index, 1));
     ch.minY = minY;
     ch.maxY = maxY;
     const x0 = ch.cx * CQ * HM_STEP - HALF, z0 = ch.cz * CQ * HM_STEP - HALF;

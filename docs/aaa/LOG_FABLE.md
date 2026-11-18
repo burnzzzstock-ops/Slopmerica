@@ -194,6 +194,14 @@ None of these thresholds was loosened. They are what the traffic does on a town 
 
 119 of 128. The nine: hud-icon-art (Photo had no drawn icon; fixed in 5c44154), reflecttest (slowed by my own work running beside the suite; passes alone), nightglow (the coin toss above), photo-reflection and presetlight (the look lane's, failing before), carsolid, crosswalktest, lightstest and landmarktest (the traffic table above).
 
+### Integration at 7eb0b9f (after `main`'s 5f5331f): Drive Mode fitted to a phone and loaded on first use
+
+Five commits, the interface session's but for one: Drive Mode closes the open card on a phone, has 44 px buttons and no key hints on a touch screen (5a4f0e1); its two hooks are debug hooks, and shiptest knows their names (6cb5fc9: it fails on the build of 5f5331f and passes here); the two classes are loaded at the first V, N or Drive press, 15 kB, 5.5 kB over the wire, the first press replayed (9536a34). The main script went from 2,553 kB (gzip 806 kB, 4.6% over the baseline) to 2,539 kB (802 kB, 4.1%); the limit is 5%.
+
+No full suite. On this tip: gate; smoke 15 of 15; drivefit (16 checks), shiptest, savefallback, determinism, camseams, followtest, labeltest, phonetargets and menutest pass. By hand on a desktop and at 390 px, as at 9966b5c: V takes a car, W and D take it to 29.2 m/s and 2.5 m across the road, Exit puts the camera and the station back, Then and Now opens and closes, no page errors.
+
+**Not on `main`:** the owner's yes of 18 Nov was for the push to 5f5331f, and the question is with the owner.
+
 ### Integration at 9966b5c: every lane's branch, the review lane's included, `--gpu`, seed 1. This is what `main` is.
 
 **213 of 215**, in 35 minutes. Gate: all four steps; the build is 2,552 kB, 806 kB gzipped, 4.6% over the budget's baseline (the limit is 5%: Drive Mode and the radio are 23 kB of it, loaded at the start). The two: reflecttest (the look lane's) and landmarktest (17 of 29 seated).

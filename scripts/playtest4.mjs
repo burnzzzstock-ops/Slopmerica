@@ -352,14 +352,20 @@ const cut = await page.evaluate(() => {
   // builders want homes whatever the town's demand is by now
   const boost = (dm) => { dm.res += 90; };
   g.sim.hooks.demand.push(boost);
-  d.run(25);
+  // (the card comes and goes on a street this small: three homes without water are a warning, and when one is abandoned
+  // and two are left it is not, until the next family moves in. Looked at once, on the 25th day, this check passed or failed
+  // by which of those days the 25th was. It is looked at every day, and the last day the card was up is the one read.)
+  const read = () => {
+    g.ui.refreshNow();
+    const e = g.emergency(), card = document.querySelector('.emergency');
+    return { needs: e?.needs.map((n) => `${n.label}: ${n.buildings} ${n.failing} (${n.why})`) ?? [], level: e?.level, text: card && !card.hidden ? card.textContent : '' };
+  };
+  let seen = null, up = 0;
+  for (let day = 1; day <= 25; day++) { d.run(1); const r = read(); if (r.text) { seen = { ...r, day }; up++; } }
   g.sim.hooks.demand.splice(g.sim.hooks.demand.indexOf(boost), 1);
-  g.ui.refreshNow();
-  const e = g.emergency();
-  const card = document.querySelector('.emergency');
-  return { needs: e?.needs.map((n) => `${n.label}: ${n.buildings} ${n.failing} (${n.why})`) ?? [], level: e?.level, text: card && !card.hidden ? card.textContent : '' };
+  return seen ? { ...seen, up } : { ...read(), up };
 });
-check(`buildings with no route to the highway are one line, not three ("${cut.needs?.[0] ?? cut.err}")`, !cut.err && cut.needs.some((n) => /^Utilities: \d+ without power, water and sewage \(on roads with no plant, pump or outfall and no route to the highway\)$/.test(n)) && !cut.needs.some((n) => /^(Power|Water|Sewage):/.test(n)) && /without power, water and sewage/.test(cut.text), cut);
+check(`buildings with no route to the highway are one line, not three ("${cut.needs?.[0] ?? cut.err}"; the card was up on ${cut.up ?? 0} of 25 days, read on day ${cut.day ?? '-'})`, !cut.err && cut.needs.some((n) => /^Utilities: \d+ without power, water and sewage \(on roads with no plant, pump or outfall and no route to the highway\)$/.test(n)) && !cut.needs.some((n) => /^(Power|Water|Sewage):/.test(n)) && /without power, water and sewage/.test(cut.text), cut);
 
 // ---- bug reports carry who left, what's failing and the alert history
 const report = await page.evaluate(() => {

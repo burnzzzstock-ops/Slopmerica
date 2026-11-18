@@ -86,6 +86,57 @@ On the Florida town (14,440 people) a day-ending step is 28 ms on average on thi
 
 So a quarter of the big town's day end is not simulation at all: it is a model being generated and outlined inside the fixed step, because the step is where the building levelled up. The same kind of work shows in ordinary steps on the reference town: a new car's model variant (`quantize`, `src/agents/models/vehicleKit.ts`) when a trip is sent out, and terrain chunks rebuilt (`shade`, `buildChunk`, `src/world/terrain.ts`) when a lot is painted. None of it changes the county, so all of it can wait for a frame with time to spare. It is asked of the look lane in `REQUESTS_FABLE.md`.
 
+## 17 Nov 2026, night: what a step costs with the machine taken out
+
+Every figure above this line was taken while other suites ran on the machine, and two runs of the same measurement disagreed by a factor of two. `scripts/simperf.mjs` now has `RUNS=n` (207cd31): the same town opened n times, the same steps run, each step taken from the run it was fastest in. A pause from the machine or the garbage collector lands on a different step each run, so what is left is the step. Three such measurements, with a full suite running beside them, agree to 0.03 ms.
+
+```sh
+BASE_URL=http://127.0.0.1:5180 TOWN=ref STEPS=960 RUNS=5 node scripts/simperf.mjs
+BASE_URL=http://127.0.0.1:5180 TOWN=shots/towns/florida-10k.json STEPS=640 RUNS=4 node scripts/simperf.mjs
+```
+
+| This PC, ms | Reference town (969 people, 150 cars) | Florida town (14,440 people, 1,000 cars) |
+|---|---|---|
+| A step, on average | 0.87 to 0.90 | 3.5 to 3.7 |
+| Median, 95th, 99th percentile | 0.80, 1.5, 2.9 | 2.9, 4.9 to 5.6, 21 |
+| Slowest step | 6.4 to 7.9 (the one that ends a week) | 34 to 42 |
+| Steps that end a day, on average | 2.7 to 2.8 | 12.0 to 12.6 |
+| Every other step: average, 99th percentile, slowest | 0.82, 1.6 to 1.8, 2.7 to 3.2 | 3.3, 5.5 to 6.3, 34 to 42 (the land value pass at noon every third day) |
+| Traffic alone: median, 95th, 99th, slowest | 0.70, 1.0 to 1.1, 1.3, 1.9 | 2.60, 4.2, 5.2, 8.6 |
+| Share of one core at top speed | 11% | 46% |
+
+One run as it came, on the same machine in the same minutes, reference town: 1.51, 3.36 and 1.38 ms a step on average on three tries, 99th percentile 9.0, 46.7 and 7.9, slowest step 57.6, 336.7 and 12.1.
+
+What it says:
+
+- **The traffic step has no spikes of its own.** On the reference town no traffic step costs more than 1.9 ms on this PC, and on the big one none more than 8.6. It is flat at about 2.8 microseconds a car a step. The traffic steps of 16 to 19 ms that the look lane's diagnostic found, and the 19 and 16 ms ones in this file's own single runs, were a pause landing in the step.
+- **The table above this section overstated the reference town** (1.32 ms a step, day ends 6.3 ms): that was one run on a busy machine. With the day's end spread out (1e9a2b2, 6600d25) and measured this way it is 0.88 and 2.7.
+- **For a phone, multiply by about four:** an ordinary step on the reference town is 3.3 ms, a day's end 11 ms and a week's end about 30. On the big town an ordinary step is 13 ms, a day's end 50 and the noon pass 110 to 170: that town does not run at top speed on a phone, and it hitches at 1x.
+- **Chrome's CPU throttle is not a slower clock.** One run with the throttle at 4: 6.75 ms a step on average, 99th percentile 44, slowest 119. Five such runs, each step from its fastest: 1.09 ms on average, which is the unthrottled figure (0.92 measured the same way that minute). A loop that only counts, under the same throttle, is paused 248 times in two seconds for more than half a millisecond (median 1.2 ms, one in ten over 4.2, the longest 43). So under the throttle a frame's time is part work and part whether a pause landed in it, and the 95th percentile of a short run says as much about the pauses as about the game. `RUNS` refuses `THROTTLE` for that reason: take the unthrottled figure and multiply.
+- **Nothing stands out inside the traffic step.** By line (the profile's own line counts, `shots/simperf.cpuprofile`): working out every car's place is 13% of the loop's own time and the junction box check 7%; no other line reaches 5%, across 103 lines. A car that has not moved already keeps its place (`STILL_FRAMES` in `place()`), so that item is off the list. Making traffic cheaper from here means changing what a car does each step, not finding a slow line.
+
+The big town's two real hitches, by where the profile's samples fell (not by the time between samples, which on a busy machine charged a 16 ms pause to the pollution field's update: 2 samples of 933):
+
+| The land value pass at noon, every third day (27 to 42 ms) | Share |
+|---|---|
+| Level-ups | 55%, of which 48 points is making the levelled-up building's model: generating it, its far-away outline, the contact shading |
+| Finding the buildings within 140 m of each building | 29% (a quarter cheaper since b19927d) |
+| The pass's own arithmetic | 7% |
+
+| A day's end (12 ms on average, 34 to 40 at worst) | Share |
+|---|---|
+| The services' daily pass | 39% (coverage 9, consequences 6, garbage 5, the service-road graph 4) |
+| Freight | 26%, of which sending the day's trucks out is 15: a route search and a launch each |
+| Growth | 14%, of which making the new building's model is 10 |
+| The districts' daily pass | 7% |
+| Listing the lots growth could use | 4% |
+
+So on the big town about half of the noon hitch and a tenth of the day's end is a model being made inside the step. It changes nothing in the county and can wait for a frame; it is asked of the look lane in `REQUESTS_FABLE.md`. What is this lane's: spreading the land value pass over its three days (it changes which step a building levels up on, so it needs its own before and after), the trucks' route searches (each builds two maps, a heap and a set), and the services' pass.
+
+- **The land value pass, spread over its three days (18 Nov):** every building still has its land value and its level-up looked at once in three days, but each on its own step of the 96 (the step its id falls on) and not the whole county in one. On the big town the slowest step that does not end a day went from 31.4 ms to 14.3 (four runs each, the same 640 steps), and the three noon spikes of 21 to 31 ms are gone; an ordinary step's 99th percentile went from 5.3 to 8.0 ms, which is the same work arriving a little at a time. The level-ups come one or two a step, so their models are made one or two a step too. The county takes a different course from the same seed, at the same rate: on four seeds of a small test town, 11 to 12 level-ups by day 60 before and after, 19 to 21 by day 120, 69 to 72 people at day 60 against 70 to 71. `scripts/landround.mjs` holds it: once a round each, on its own step, two buildings at most in a step on the reference town.
+
+- **b19927d, the lookup of who is near:** `Buildings.near()` built a set of everything in the box for every question, adding each building about ten times (it is filed under every 32 m cell its box touches). It now walks the cells and takes each building once, in the same order. Identical county on both towns (45 and 30 days, every fingerprint). For all 635 buildings of the big town at 140 m: 7.1 ms before, 5.3 after.
+
 ## Hot spots
 
 1. **A hitch every third day, in the sim's land value and levels pass** (`Sim.landValueAndLevels`). It runs for every zoned building in one step. On this town: 29 ms warm, and the step it lands in took 44 to 69 ms. At top speed that is a dropped frame or three every three quarters of a second.

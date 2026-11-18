@@ -781,6 +781,59 @@ export class Buildings {
     if (abandoned !== undefined && abandoned >= 0) b.abandoned = abandoned;
     return b;
   }
+  /**
+   * The lots a bulldozed building would go back onto, or why it cannot go back. They are the lots it had, when they are all
+   * still there (the usual case): each must be usable, zoned as it was and empty. When a street has joined its road since, the
+   * road was cut in two there and its lots made again under new names, so they are looked up where the building stood: all of
+   * one road, usable, zoned as they were and empty. A building whose frontage the cut falls in cannot go back: its lots now
+   * belong to two roads, and a building answers to one. (Lots are what say a place is taken, as when a building grows: on a
+   * bend the buildings either side overlap its corners by a metre or two, and always did.)
+   */
+  lotFor(row: BldRow): ZCell[] | string {
+    const [zone, , , w, d, x, z, , yaw, , , , , , id, , , , , , cellIds] = row;
+    if (id === undefined || !cellIds?.length || zone === 'service' || zone === 'landmark') return 'only a building that grew on a zoned lot can be put back';
+    if (this.list.has(id)) return 'it is standing';
+    const foot = { x, z, yaw, hw: (w * CELL) / 2, hd: (d * CELL) / 2 };
+    const usable = (cells: ZCell[]): string | null => {
+      for (const c of cells) {
+        if (!c.valid) return 'a road now runs over its lot';
+        if (c.bld) return 'something else has been built on its lot';
+        if (c.zone !== zone) return 'its lot is no longer zoned for it';
+      }
+      return null;
+    };
+    // (a bought building's pad claims the lots under it; one put down where no lots are would not show in them)
+    if (this.near(x, z, foot.hw + foot.hd + 80).some((o) => !isZoned(o) && (this.contains(o, x, z) || this.contains(foot, o.x, o.z)))) return 'something else has been built on its lot';
+    const had = cellIds.map((cid) => this.zones.cells.get(cid));
+    if (had.every((c) => c !== undefined)) return usable(had as ZCell[]) ?? (had as ZCell[]);
+    // its road has changed: the lots where it stood
+    const inside = this.zones.cellsNear(x, z, foot.hw + foot.hd + 4).filter((c) => this.contains(foot, c.x, c.z, -1));
+    const count = new Map<number, number>();
+    for (const c of inside) if (c.valid || c.zone === zone) count.set(c.seg, (count.get(c.seg) ?? 0) + 1);
+    const seg = [...count].sort((p, q) => q[1] - p[1] || p[0] - q[0])[0]?.[0];
+    const own = inside.filter((c) => c.seg === seg);
+    if (!own.length) return 'the road its lot faced is gone';
+    if (inside.some((c) => c.seg !== seg && c.valid)) return 'another street now joins the road in front of it';
+    return usable(own) ?? own;
+  }
+
+  /**
+   * Put a bulldozed building back as it stood (its row, from rowOf, taken before it came down): the same id, model, level,
+   * people, land value and age. Null when its lot is no longer free (lotFor says why). The ids given out next are not disturbed.
+   */
+  putBack(row: BldRow): Bld | null {
+    const cells = this.lotFor(row);
+    if (typeof cells === 'string') return null;
+    const id = row[14]!, next = this.nextId;
+    const r = row.slice() as BldRow;
+    r[12] = cells[0].seg;
+    r[20] = cells.map((c) => c.id);
+    this.restoring = true;   // (the trees on its lot came down when it was first built)
+    try { this.restoreRows([r]); } finally { this.restoring = false; this.nextId = Math.max(next, id + 1); }
+    // (it claims the lots lotFor gave and no others: on a bend the centres of its neighbours' lots fall inside its outline)
+    return this.list.get(id) ?? null;
+  }
+
   /** what the rows do not hold: the next id to give out and where the dice stand */
   serializeState() { return { nextId: this.nextId, rng: this.rng.state }; }
   restoreState(d: { nextId: number; rng: number } | undefined) { if (d) { this.nextId = d.nextId; this.rng.state = d.rng; } }
@@ -863,7 +916,7 @@ export class Buildings {
     return out;
   }
 
-  contains(b: Bld, x: number, z: number, pad = 0): boolean {
+  contains(b: Pick<Bld, 'x' | 'z' | 'yaw' | 'hw' | 'hd'>, x: number, z: number, pad = 0): boolean {
     const dx = x - b.x, dz = z - b.z;
     const c = Math.cos(b.yaw), s = Math.sin(b.yaw);
     const lx = dx * c - dz * s;
@@ -883,7 +936,8 @@ export class Buildings {
 
   near(x: number, z: number, r: number): Bld[] {
     const out: Bld[] = [];
-    for (const b of this.hash.query(x - r, z - r, x + r, z + r)) if (Math.hypot(b.x - x, b.z - z) <= r) out.push(b);
+    // (each building once, in the order a set of them would give, with no set built: every building is filed once)
+    this.hash.each(x - r, z - r, x + r, z + r, (b) => { if (Math.hypot(b.x - x, b.z - z) <= r) out.push(b); });
     return out;
   }
 

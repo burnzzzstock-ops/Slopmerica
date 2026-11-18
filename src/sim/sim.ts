@@ -4,6 +4,7 @@ import { MAX_LEVEL, ZONE_TYPES, type GameTime, type MoneyKind, type WorldEvents,
 import { Emitter } from '../core/events';
 import { clamp } from '../core/math';
 import { Rng } from '../core/rng';
+import { STEPS_PER_DAY } from '../core/time';
 import { decodeFields, encodeFields, type Json } from '../core/snapshot';
 import { isZoned, type Bld, type Buildings } from './buildings';
 import type { RoadNetwork } from '../roads/network';
@@ -16,6 +17,8 @@ import { MILESTONES, unlockNames } from './milestones';
 export const DAY_SECONDS = 2.5;
 /** the share of the county's sample points the sprawl meter looks at in a game day */
 const SPRAWL_SHARE_A_DAY = 0.2;
+/** how many steps one round of land value and level-ups takes: three game days. Every building has one turn a round. */
+const LAND_ROUND = 3 * STEPS_PER_DAY;
 /** the vacancy reason of a shop with bare shelves (freight.ts): it's still a shop, short of goods */
 export const NO_GOODS = 'No goods to sell';
 export const SPEEDS = [0, 1, 2, 4];
@@ -417,6 +420,13 @@ export class Sim {
     const d = this.popDay();
     d.out[cause] = (d.out[cause] ?? 0) + n;
   }
+  /** They are back after all (a bulldozing undone): taken off today's count of who left for that cause, the rest counted as moving in. */
+  comeBack(n: number, cause: LossCause) {
+    if (!(n > 0)) return;
+    const d = this.popDay(), off = Math.min(d.out[cause] ?? 0, n);
+    if (off > 0) { const left = (d.out[cause] ?? 0) - off; if (left > 0) d.out[cause] = left; else delete d.out[cause]; }
+    d.in += n - off;
+  }
   /** Who moved in and out over the last `days` days, departures by cause, largest first. */
   popFlow(days: number) {
     const since = this.lastWhole - days;
@@ -476,9 +486,11 @@ export class Sim {
     // the sprawl meter looks at a fifth of the county's sample points a day, a few of them every step (it used to look at
     // the day's fifth all at once, in the step that ends the day, which is the step with every other daily job in it)
     this.sweepSprawl(SPRAWL_SHARE_A_DAY * days);
-    // land value and level-ups, every third day, at noon of the day they used to end: the pass looks round every building
-    // in the county, and at the day's end it landed on top of every other daily job
-    if (Math.floor((this.day + 0.5) / 3) > Math.floor((dayWas + 0.5) / 3)) this.landValueAndLevels(3);
+    // land value and level-ups: every building once in three days, as before, each on its own step of the three days'
+    // (LAND_ROUND). The whole county used to be done in one step, which on a county of 14,000 was 27 to 42 ms every third
+    // day, half of it the models of the buildings that levelled up then, all at once.
+    const turn0 = Math.round(dayWas * STEPS_PER_DAY), turn1 = Math.round(this.day * STEPS_PER_DAY);
+    for (let t = Math.max(turn0 + 1, turn1 - LAND_ROUND + 1); t <= turn1; t++) this.landValueAndLevels(3, t % LAND_ROUND);
     const whole = Math.floor(this.day);
     while (this.lastWhole < whole) {
       this.lastWhole++;
@@ -630,7 +642,7 @@ export class Sim {
       void dem;
     }
 
-    // (land value and level-ups run at noon every third day: step())
+    // (land value and level-ups are spread over every step of three days: step())
 
     // ---- stats
     // (the meter's sample points are looked at a few every step: sweepSprawl)
@@ -643,14 +655,18 @@ export class Sim {
     if (this.history.length > 800) this.history.splice(0, this.history.length - 800);
   }
 
-  private landValueAndLevels(days: number) {
+  /**
+   * Land value, and the level-up it earns, for the buildings whose turn this step is: the ones whose id falls on `turn`
+   * (0 to LAND_ROUND - 1). `days`: how long since each one's last turn. With no turn given, every building (a test asking
+   * what a place is worth now).
+   */
+  private landValueAndLevels(days: number, turn?: number) {
     // the landmarks a road reaches (a handful): asked directly below. The pass used to search 300 m round every building
-    // for one, 200 buildings a search on a 14,000-person county, and that search was over half of a 29 ms pass that all
-    // lands in one step every third day.
-    const landmarks: Bld[] = [];
-    for (const o of this.b.list.values()) if (o.zone === 'landmark' && !o.offNet) landmarks.push(o);
+    // for one, 200 buildings a search on a 14,000-person county, and that search was over half of the pass.
+    let landmarks: Bld[] | null = null;
     for (const bld of this.b.list.values()) {
-      if (!isZoned(bld)) continue;
+      if ((turn !== undefined && bld.id % LAND_ROUND !== turn) || !isZoned(bld)) continue;
+      if (!landmarks) { landmarks = []; for (const o of this.b.list.values()) if (o.zone === 'landmark' && !o.offNet) landmarks.push(o); }
       const near = this.b.near(bld.x, bld.z, 140);
       let lv = 18;
       let ind = 0, com = 0, slop = 0, dense = 0, lm = 0;

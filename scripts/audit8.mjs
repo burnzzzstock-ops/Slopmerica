@@ -232,7 +232,8 @@ await game(() => window.__game.select?.(null));
 const openSettings = async () => {
   if (await page.isVisible('#fov-range')) return;
   if (phone) {
-    if (!(await page.$('button.more-btn[data-more="help"]'))) { await tap('button.tbtn[data-t="more"]'); await sleep(500); }
+    // (visible, not just there: the More drawer keeps its buttons in the page after it closes, and a tap on a hidden one has no place to land)
+    if (!(await page.isVisible('button.more-btn[data-more="help"]'))) { await tap('button.tbtn[data-t="more"]'); await sleep(500); }
     await tap('button.more-btn[data-more="help"]');
   } else await tap('button.tbtn[data-t="help"]');
   await sleep(900);

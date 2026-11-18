@@ -1,5 +1,15 @@
 # World and sound work log
 
+## November 17 phone, forest and overview pass
+
+The new 969-resident phone fixture and the original 781-resident overview fixture have different purposes. Keep the current town for frame timing and the original town, cameras and fourth capture frame when comparing the original triangle target. `scripts/look/overview-budget.mjs` enforces both the original frame and a settled frame in all 32 views.
+
+On the Low phone fixture, removing empty batches, culling scenery, combining coarse terrain draws and amortizing steady-camera shadow updates reduced median draws from 211 to 119. Low still interpolates moving cars every frame. Native draws refresh immediately on camera and light jumps and on direct captures. At a ground-level photo camera, detailed tree casters survive even with a distant focus point. Farther above the canopy, tree, building and prop shadows use geometry that matches the shadow map's texel size. The river retains its detailed surface where flow can displace the mesh.
+
+Revisions `69997ef`, `b51ce5a` and `149b543` address rendering work observed during model creation and lot painting. Caching triangle bounds cut silhouette preparation for 120 models from 551.2 to 111.5 ms. Packing vehicle material attributes before merging parts cut the median time to prepare all 59 models at three detail levels from 363.3 to 167.7 ms. All 20,050,668 compared attribute bytes matched. Terrain reuses CPU index arrays across instances while each GPU geometry keeps its own disposable attribute. Replaying 143 saved lots rebuilt the same 153 chunks and reduced measured rebuild time from 422.7 to 344.3 ms. The 36 original versus optimized terrain geometry cases matched across all three climates, three ground types and four detail levels.
+
+The single-file production build from `149b543` is 12,340,467 bytes, SHA256 `2a8ba39f968d426adad24cf04ff6b952939b90806182b6f874174fdea829e1ec`. Desktop and touch production checks passed. With networking disabled, loading the current town, exporting its save, and importing it in a fresh browser preserved every measured simulation fingerprint, 143 buildings and 128 roads.
+
 ## 2026-11-17 · HUD integration and bundle baseline
 
 Incoming `584ab95` is merged as `6cd7d80`, including the drawn HUD controls, PhotoBar, inspector Follow actions and SVG-aware copy scanner. All 31 gate checks pass. The focused copy-scanner unit test passes all three cases. The 189-test integration run completed with 183 passing checks. Four failures, carsolid, landmarktest, crosswalktest and lightstest, reproduce identically on untouched parent `584ab95` at seed 1. Their seven failure lines match exactly. The other two failures are the audio-source and depth-focus fixtures corrected in `7bc0f07` and `dd151c9`. Both pass the focused suite on final `027b18f` product source, along with the new transparent-water check. The four parent replays and their exit codes are retained in `../incoming-584ab95-regressions`.

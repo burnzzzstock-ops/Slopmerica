@@ -76,7 +76,7 @@ await listen(Number(process.env.PORT || 5186)).catch(async (e) => {
 const base = `http://127.0.0.1:${server.address().port}`;
 
 // every hook a test drives; none may exist for a player
-const HOOKS = ['__game', '__dbg', '__ext', '__services', '__land', '__startSite', '__vault', '__genMs'];
+const HOOKS = ['__game', '__dbg', '__ext', '__services', '__land', '__startSite', '__vault', '__genMs', '__drive', '__thenNow'];
 const browser = await launch({ debug: false });
 const errs = [];
 const DESK = { viewport: { width: 1280, height: 720 } };

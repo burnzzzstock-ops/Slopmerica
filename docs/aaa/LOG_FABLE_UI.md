@@ -36,6 +36,9 @@ Merged into the local `claude/aaa-play` (436a5a3; nothing has been pushed from t
 | eeef0e5 | A bus's card is headed by its line, with Driver and Next stop rows | `followtest` 22 of 26 before, 26 of 26 |
 | dd67996 | Statistics: four charts (population, treasury, nature and sprawl, moved in and left) in a drawer under More, in `src/ui/statsPanel.ts`, loaded when first opened (a 5.1 kB script of its own, the first thing in the game loaded on demand) | `statstest` (new) 22 of 22 |
 | eea0ce8 | Follow on a bus rides the bus across its stops (the simulation's `fields.busOf` and a target of kind 'bus'); the pill says where on the line it is; the pill is as wide as its words on a phone | `busridetest` (new) 21 of 21 |
+| eb61c0d | A car's speed is in miles an hour (the third lane's phone audit). Every length on screen is still metric | `followtest` 26 of 28 before, 28 of 28 |
+| 2eacc53 | Phone: a card that opens puts the tool in hand and its drawer away (the audit's lingering Done badge). The desktop keeps the tool | `sheettool` (new) 8 of 12 before, 12 of 12 |
+| 0d4bd35 | Photo mode's bar is up however photo mode began (it looks at `game.photo.active` itself) | `phototest` 28 of 32 before, 32 of 32 |
 
 Two of these put right something an earlier commit of this session broke, and the same care applies to what comes next:
 
@@ -50,9 +53,14 @@ Two of these put right something an earlier commit of this session broke, and th
 
 129 of 135. `photo-reflection`, `presetlight`, `carsolid`, `landmarktest` and `lightstest` as before (the simulation session bisected the last two: not the walkers; `landmarktest` failed on 5 of 6 seeds before them, and `lightstest` counts too few cars to tell 17% from 20%). `nightglow` is new and fails the same way on the simulation session's own tip 0e682a4 ("the street at 110.1 vs 149.5 at noon"). After merging 0e682a4 the look lane's `follow-camera` fails too ("Target disappeared early"), also on that tip alone: `poseOf` now answers null for a car in the step before it has a place on the road, and the test asks straight after launching one. Both reported.
 
+### The third full suite, on a42bd66 (0e682a4 merged in, with the bus ride)
+
+131 of 137: `photo-reflection`, `follow-camera`, `nightglow`, `carsolid`, `landmarktest`, `lightstest`, all as reported above. After merging 4e4a22c (integration: the look lane's 78 commits and the third lane's portraits) the interface's own twenty tests pass but for `shiptest` (below).
+
 ### Numbers worth knowing
 
-- **The build is at +5.0% of its gzip budget, which is the limit** (`scripts/budgets.json`; the gate printed +5.0% on eea0ce8 and passed). The next byte in the main script from either session fails the gate until the owner answers the re-baseline question in `DECISIONS_FABLE.md`. New interface work goes in a script loaded on demand, as `statsPanel.ts` is, or waits.
+- The size budget was raised on 17 Nov (the owner: "Yes, raise it"): `scripts/budgets.json` is 2,447,673 bytes and 771,012 gzip with 5% allowed. With the look lane's local tip merged, this branch's build is 2,494 kB and 788 kB gzip, +2.2% of it. Something rarely opened still belongs in a script loaded on demand, as `statsPanel.ts` is.
+- **`shiptest` fails on this branch's tip, on a false alarm.** Its scan for an API key finds "sk-" in the built script: `Math.ceil(sk-u)`, where the minifier has named a variable `sk`. Which names it hands out depends on everything in the bundle, so it shows with this branch merged and not without. The scan is the simulation session's; reported, with a tighter pattern suggested (a key is "sk-" and then sixteen or more letters, digits, dashes).
 - `phonefree` holds Roads at 60.6% and Zoning at 61% of the screen against a 60% floor. A card one line taller trips it.
 - A phone's inspector sheet is 403 px of an 844 px screen; a plain home's card is about 400 px and the tallest on presstest's street 482 px (79 px over). The action row is pinned to the sheet's foot, so a taller card scrolls under it.
 - `scripts/textfloor.mjs` (a measure, not pass/fail): what is still under 12 px is the one-row top bar and toolbar (8 to 11 px), and on a phone the second line of a road, zone or service card, the road modes and the tool readout (11 px).
@@ -71,7 +79,7 @@ Drawings the icon set does not have, so the control keeps an emoji or words: the
 
 ## Next
 
-1. After the simulation session says integration (the look lane's 78 commits merged, 2368bf3) is good, and not before, the look lane's requests that land in this session's files (`docs/aaa/REQUESTS_ASTRA.md` on that tree): Photo, Follow and Street are drawn, so Photo moves into the toolbar's core list (run `hud-icon-art` after); `game.audio.duck()` once when a banner shows; `AudioEngine.onRadioAd(text)` to the feed or a caption; `audio.zonePaint(x, z, changedCells)` on each successful step of a held zoning drag; need bubbles through `S.icons.set(raw)` with `clusterText` for `hit.id < 0`.
+1. Integration is good (190 of 197 on 2368bf3, none of the seven in these files) and is merged here (d94074a). So, next: the third lane's advisor portraits (`advisorPortraitHTML(id, size)` in `src/art/advisors.ts`: chad on the welcome card and the step hints, earl for Honest Mode when it exists, the feed's advisor handles), and the look lane's requests that land in this session's files (`docs/aaa/REQUESTS_ASTRA.md` on that tree): Photo, Follow and Street are drawn, so Photo moves into the toolbar's core list (run `hud-icon-art` after); `game.audio.duck()` once when a banner shows; `AudioEngine.onRadioAd(text)` to the feed or a caption; `audio.zonePaint(x, z, changedCells)` on each successful step of a held zoning drag; need bubbles through `S.icons.set(raw)` with `clusterText` for `hit.id < 0`.
 2. The budget chart, when the weekly series exists.
 3. The label of the look lane's `vaulttest` check still reads "Services > Looks"; theirs to reword.
 3. The statistics and budget charts (the brief's U2), from what the simulation gives: loaded on demand, like nothing else in the main bundle should be until the budget is re-baselined.

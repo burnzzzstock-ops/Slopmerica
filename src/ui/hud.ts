@@ -1203,6 +1203,7 @@ export class Hud implements UiSink {
       ['bulldoze', '💣', 'Bulldoze'],
       ['landmarks', '💥', 'Landmarks'],
       ['views', '🗺️', 'Info Views'],
+      ['photo', '📷', 'Photo'],
       ['budget', '💰', 'Budget'],
       ['communes', '☮️', 'Communes'],
       ['feed', '𝕏', 'Feed'],
@@ -1210,15 +1211,15 @@ export class Hud implements UiSink {
       // testers get the bug button on the toolbar; everyone else reports from Settings
       ...(PLAYTEST ? [['bug', '🐞', 'Report bug'] as [string, string, string]] : []),
     ];
-    // extension panels slot in by `order` (core buttons sit at 10, 20, 30, ...)
-    const withOrder = items.map((it, i) => ({ it, o: (i + 1) * 10 }));
+    // Extension panels slot in by `order` (core buttons sit at 10, 20, 30, ...). Photo joined the list late and takes the half
+    // step after Info Views, so every other button keeps the ten the extension panels' order numbers were written against.
+    let ten = 0;
+    const withOrder = items.map((it) => ({ it, o: it[0] === 'photo' ? ten * 10 + 5 : ++ten * 10 }));
     for (const ep of EXT.panels) withOrder.push({ it: [`ext:${ep.id}`, ep.icon, ep.label], o: ep.order ?? 65 });
-    // Photo sits after Info Views. It is added here and not in the list above because the look lane's icon test
-    // (scripts/look/hud-icons.mjs) reads that list and wants drawn art for every id in it, and Photo has none yet
-    // (asked for in docs/aaa/REQUESTS_FABLE.md). When it has, this line moves up into the list.
-    withOrder.push({ it: ['photo', '📷', 'Photo'], o: (items.findIndex((x) => x[0] === 'views') + 1) * 10 + 5 });
-    // Statistics sits after Budget, and joins the list here for the same reason as Photo: it has no drawn icon yet.
-    withOrder.push({ it: ['stats', '📈', 'Statistics'], o: (items.findIndex((x) => x[0] === 'budget') + 1) * 10 + 5 });
+    // Statistics sits after Budget. It is added here and not in the list above because the look lane's icon test
+    // (scripts/look/hud-icons.mjs) reads that list and wants drawn art for every id in it, and Statistics has none yet.
+    // When it has, it moves up into the list as Photo did.
+    withOrder.push({ it: ['stats', '📈', 'Statistics'], o: (withOrder.find((x) => x.it[0] === 'budget')?.o ?? 80) + 5 });
     withOrder.sort((a, b) => a.o - b.o);
     const all = withOrder.map((x) => x.it);
     const btn = ([id, icon, label]: [string, string, string]) => `<button class="tbtn" data-t="${id}" title="${label}"><span class="ti">${uiIcon('toolbar', id, icon, 24)}</span><span class="tl">${label}</span>${id === 'feed' || id === 'more' ? '<i id="feed-badge" class="badge" hidden></i>' : ''}</button>`;

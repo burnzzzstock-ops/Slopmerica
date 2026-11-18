@@ -3,6 +3,7 @@ import { GLOW } from '../config';
 // polygons, concrete skirts / bridge decks / barriers / pillars, and street lights.
 import * as THREE from 'three';
 import { litByLamps } from '../world/nightLights';
+import { withVisualRandom } from '../render/visualRandom';
 import { clamp, convexHull, lerp, locate, norm, sub, V2 } from '../core/math';
 import { mulberry32 } from '../core/rng';
 import { carriageHalf, laneOffset, ROAD_TYPES, RoadType, RoadTypeId, ROAD_ORDER } from './roadTypes';
@@ -26,6 +27,8 @@ class Buf {
   uv: number[] = [];
   col: number[] = [];
   idx: number[] = [];
+  // Offsets of curb and bank-skirt quads that disappear below a coarse sun-map texel.
+  fineShadowQuads?: number[];
   get count() {
     return this.pos.length / 3;
   }
@@ -42,6 +45,7 @@ class Buf {
   /** Append another buffer's geometry (its indices shifted to follow this one's vertices). */
   absorb(o: Buf) {
     const at = this.count;
+    if (o.fineShadowQuads) for (const offset of o.fineShadowQuads) (this.fineShadowQuads ??= []).push(this.idx.length + offset);
     for (const v of o.pos) this.pos.push(v);
     for (const v of o.nor) this.nor.push(v);
     for (const v of o.uv) this.uv.push(v);
@@ -53,7 +57,8 @@ class Buf {
     this.idx.push(a, b, c, a, c, d);
   }
   /** A quad wound so its front side faces (nx, ny, nz): the concrete is double-sided and lit by its normals, so the winding decides which side is the front */
-  quadN(a: number, b: number, c: number, d: number, nx: number, ny: number, nz: number) {
+  quadN(a: number, b: number, c: number, d: number, nx: number, ny: number, nz: number, fineShadow = false) {
+    if (fineShadow) (this.fineShadowQuads ??= []).push(this.idx.length);
     const P = this.pos;
     const ux = P[b * 3] - P[a * 3], uy = P[b * 3 + 1] - P[a * 3 + 1], uz = P[b * 3 + 2] - P[a * 3 + 2];
     const vx = P[c * 3] - P[a * 3], vy = P[c * 3 + 1] - P[a * 3 + 1], vz = P[c * 3 + 2] - P[a * 3 + 2];
@@ -84,6 +89,47 @@ class Buf {
   }
 }
 
+interface EdgeQuad {
+  a: number; b: number; c: number; d: number;
+  begin: number; end: number; nx: number; ny: number; nz: number; fine: boolean;
+}
+
+/** Several consecutive curb faces may span the same plane. Keep the driveway
+ * flares, curves and twisting banks by checking both edges of every removed
+ * cross-section before extending the strip.
+ */
+function emitRoadStrip(buf: Buf, faces: EdgeQuad[]) {
+  const pa = new THREE.Vector3(), pb = new THREE.Vector3(), pc = new THREE.Vector3(), pd = new THREE.Vector3();
+  function canSpan(first: number, last: number) {
+    const l = faces[first], r = faces[last];
+    if (r.end - l.begin > 24 || r.fine !== l.fine || faces[last - 1].d !== r.a || faces[last - 1].c !== r.b) return false;
+    pa.fromArray(buf.pos, l.a * 3);
+    pb.fromArray(buf.pos, l.b * 3).sub(pa);
+    pc.fromArray(buf.pos, r.d * 3).sub(pa);
+    pd.fromArray(buf.pos, r.c * 3).sub(pa);
+    const normal = pb.cross(pc);
+    if (Math.abs(normal.dot(pd)) > 0.012 * normal.length()) return false;
+    for (let i = first; i < last; i++) {
+      const q = faces[i], t = (q.end - l.begin) / (r.end - l.begin);
+      for (let edge = 0; edge < 2; edge++) {
+        const a = (edge ? l.b : l.a) * 3, b = (edge ? r.c : r.d) * 3, m = (edge ? q.c : q.d) * 3;
+        for (let k = 0; k < 3; k++) {
+          if (Math.abs(buf.pos[m + k] - (buf.pos[a + k] + t * (buf.pos[b + k] - buf.pos[a + k]))) > .012 ||
+              Math.abs(buf.nor[m + k] - (buf.nor[a + k] + t * (buf.nor[b + k] - buf.nor[a + k]))) > .015) return false;
+        }
+      }
+    }
+    return true;
+  }
+  for (let i = 0; i < faces.length;) {
+    let j = i;
+    while (j + 1 < faces.length && canSpan(i, j + 1)) j++;
+    const l = faces[i], r = faces[j];
+    buf.quadN(l.a, l.b, r.c, r.d, r.nx, r.ny, r.nz, l.fine);
+    i = j + 1;
+  }
+}
+
 /** The points (and their heights) with any that sit within a centimetre of the one before dropped. */
 /** A street lamp: foot position, and the yaw that swings its arm (local -z) over the road. */
 type Lamp = { x: number; y: number; z: number; yaw: number };
@@ -106,6 +152,32 @@ function upTri(b: Buf, a: number, c: number, d: number) {
   // (y of (c-a) x (d-a)) is  (cz-az)(dx-ax) - (cx-ax)(dz-az)
   if (cross >= 0) b.tri(a, c, d);
   else b.tri(a, d, c);
+}
+
+/** Put the large casters first so each shadow cascade can use the same vertex buffers. */
+function partitionRoadShadowQuads(geometry: THREE.BufferGeometry, buffers: Buf[]) {
+  const index = geometry.getIndex()!;
+  const fineCount = buffers.reduce((total, b) => total + (b.fineShadowQuads?.length ?? 0) * 6, 0);
+  if (!fineCount) return;
+  const coarseCount = index.count - fineCount;
+  const indices = index.array.slice();
+  let coarse = 0, fine = coarseCount, base = 0;
+  for (const buffer of buffers) {
+    let from = base;
+    for (const offset of buffer.fineShadowQuads ?? []) {
+      const start = base + offset;
+      indices.set(index.array.subarray(from, start), coarse);
+      coarse += start - from;
+      indices.set(index.array.subarray(start, start + 6), fine);
+      fine += 6;
+      from = start + 6;
+    }
+    base += buffer.idx.length;
+    indices.set(index.array.subarray(from, base), coarse);
+    coarse += base - from;
+  }
+  index.array.set(indices);
+  geometry.userData.coarseShadowIndices = coarseCount;
 }
 
 function concat(bufs: Buf[], withColor: boolean, withUv: boolean): THREE.BufferGeometry {
@@ -657,6 +729,23 @@ export class RoadRenderer {
     this.group.add(this.crosswalkMesh);
     this.concMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, side: THREE.DoubleSide }));
     this.concMesh.castShadow = true;
+    let shortenedShadow = false;
+    this.concMesh.onBeforeShadow = (renderer, _object, _camera, shadowCamera, geometry) => {
+      if (!(shadowCamera instanceof THREE.OrthographicCamera)) return;
+      if (geometry.drawRange.start !== 0 || geometry.drawRange.count !== Infinity) return;
+      const pixels = renderer.getRenderTarget()?.width;
+      if (!pixels || geometry.userData.coarseShadowIndices === undefined) return;
+      // At grazing sun angles even a curb casts a long shadow along the road.
+      const texel = (shadowCamera.right - shadowCamera.left) / (shadowCamera.zoom * pixels);
+      if (texel * Math.abs(shadowCamera.matrixWorld.elements[9]) >= 2) {
+        geometry.setDrawRange(0, geometry.userData.coarseShadowIndices);
+        shortenedShadow = true;
+      }
+    };
+    this.concMesh.onAfterShadow = (_renderer, _object, _camera, _shadowCamera, geometry) => {
+      if (shortenedShadow) geometry.setDrawRange(0, Infinity);
+      shortenedShadow = false;
+    };
     this.concMesh.receiveShadow = true;
     litByLamps(this.concMesh.material as THREE.MeshStandardMaterial);
     if (net.terrain.detail) {
@@ -683,8 +772,26 @@ export class RoadRenderer {
     pole.translate(0, 4, 0);
     const arm = new THREE.BoxGeometry(0.12, 0.12, 2.2);
     arm.translate(0, 7.9, -1.0);
-    const poleGeo = mergeSimple([pole, arm]);
+    // A three-sided mast and arm retain the full shadow length. Their cross
+    // sections differ by less than a texel on all but the closest sun maps.
+    const fullPole = mergeSimple([pole, arm]);
+    const fullPoleVertices = fullPole.getAttribute('position').count;
+    const poleGeo = withVisualRandom(() => {
+      const mastCaster = shadowPrism(.13, .09, 8);
+      const armCaster = shadowPrism(.085, .085, 2.2);
+      armCaster.rotateX(-Math.PI / 2).translate(0, 7.9, .1);
+      return mergeSimple([fullPole, mastCaster, armCaster]);
+    });
+    const casterVertices = poleGeo.getAttribute('position').count - fullPoleVertices;
+    poleGeo.setDrawRange(0, fullPoleVertices);
     this.lampPoles = new THREE.InstancedMesh(poleGeo, new THREE.MeshStandardMaterial({ color: 0x55585c, roughness: 0.6, metalness: 0.4 }), 4000);
+    this.lampPoles.onBeforeShadow = (renderer, _object, _camera, sun) => {
+      const pixels = renderer.getRenderTarget()?.width;
+      if (pixels && sun instanceof THREE.OrthographicCamera && (sun.right - sun.left) / (pixels * sun.zoom) >= .45) {
+        poleGeo.setDrawRange(fullPoleVertices, casterVertices);
+      }
+    };
+    this.lampPoles.onAfterShadow = () => poleGeo.setDrawRange(0, fullPoleVertices);
     const head = new THREE.BoxGeometry(0.5, 0.18, 0.9);
     head.translate(0, 7.8, -2.0);
     // the lamp head: sodium amber (was 0xffc27a, which the tone curve showed as a pale yellow; owner: "cozy warm night lights")
@@ -819,6 +926,7 @@ export class RoadRenderer {
     this.surfaceState.attach(this.crosswalkMesh.geometry);
     this.concMesh.geometry.dispose();
     this.concMesh.geometry = conc.length ? concat(conc, true, true) : new THREE.BufferGeometry();
+    if (conc.length) partitionRoadShadowQuads(this.concMesh.geometry, conc);
 
     const m = new THREE.Matrix4();
     const n = Math.min(lights.length, 4000);
@@ -902,6 +1010,7 @@ export class RoadRenderer {
     interface SideIds { face: [number, number]; wedge: [number, number, number]; fascia: [number, number]; }
     interface Row { road: number[]; walkL: number[]; walkR: number[]; L: SideIds; R: SideIds; elevated: boolean; bl: number; br: number; }
     let prev: Row | undefined;
+    const strips: EdgeQuad[][] = Array.from({ length: 9 }, () => []);
     const join = (a: number[], b: number[]) => {
       for (let i = 0; i + 1 < a.length; i++) { surf.tri(a[i], a[i + 1], b[i]); surf.tri(a[i + 1], b[i + 1], b[i]); }
     };
@@ -962,18 +1071,23 @@ export class RoadRenderer {
       if (prev) {
         join(prev.road, row.road);
         if (walk) { join(prev.walkL, row.walkL); join(prev.walkR, row.walkR); }
+        const queue = (strip: number, a: number, b: number, c: number, endVertex: number, nx: number, ny: number, nz: number, fine = false) => {
+          strips[strip].push({ a, b, c, d: endVertex, begin: steps[k - 1], end: d, nx, ny, nz, fine });
+        };
         for (const side of [-1, 1] as const) {
           const P = side < 0 ? prev.L : prev.R, S = side < 0 ? row.L : row.R;
+          const strip = side < 0 ? 0 : 4;
           const out = { x: side * r.x, z: side * r.z };
-          if (walk) conc.quadN(P.face[0], P.face[1], S.face[1], S.face[0], -out.x, 0, -out.z);
-          if (elevated && prev.elevated) conc.quadN(P.fascia[0], P.fascia[1], S.fascia[1], S.fascia[0], out.x, 0, out.z);
+          if (walk) queue(strip, P.face[0], P.face[1], S.face[1], S.face[0], -out.x, 0, -out.z, !elevated && !prev.elevated);
+          if (elevated && prev.elevated) queue(strip + 1, P.fascia[0], P.fascia[1], S.fascia[1], S.fascia[0], out.x, 0, out.z);
           if (!elevated && !prev.elevated) {
             const nw = [conc.nor[S.wedge[0] * 3], conc.nor[S.wedge[0] * 3 + 1], conc.nor[S.wedge[0] * 3 + 2]];
-            conc.quadN(P.wedge[0], P.wedge[1], S.wedge[1], S.wedge[0], nw[0], nw[1], nw[2]);
-            conc.quadN(P.wedge[1], P.wedge[2], S.wedge[2], S.wedge[1], out.x, 0, out.z);
+            const shallow = [P, S].every(row => conc.pos[row.wedge[0] * 3 + 1] - conc.pos[row.wedge[1] * 3 + 1] < 0.5);
+            queue(strip + 2, P.wedge[0], P.wedge[1], S.wedge[1], S.wedge[0], nw[0], nw[1], nw[2], shallow);
+            queue(strip + 3, P.wedge[1], P.wedge[2], S.wedge[2], S.wedge[1], out.x, 0, out.z, true);
           }
         }
-        if (elevated && prev.elevated) conc.quadN(prev.bl, prev.br, row.br, row.bl, 0, -1, 0);
+        if (elevated && prev.elevated) queue(8, prev.bl, prev.br, row.br, row.bl, 0, -1, 0);
       }
       // where a real junction starts or ends the block, close the walk's raised end (the corner slabs come with the junction)
       if (walk && (k === 0 || k === steps.length - 1)) {
@@ -991,6 +1105,7 @@ export class RoadRenderer {
       }
       prev = row;
     }
+    for (const strip of strips) if (strip.length) emitRoadStrip(conc, strip);
     // Pillars and lighting. Guardrails and median rails are instanced by StreetDetails.
     const yaw = (d: number) => {
       const F = RoadRenderer.frame(seg, d);
@@ -1175,7 +1290,7 @@ export class RoadRenderer {
       }
       for (let m = 0; m + 1 < N; m++) {
         const l = Math.hypot(nrm[m].x + nrm[m + 1].x, nrm[m].z + nrm[m + 1].z) || 1;
-        conc.quadN(fb[m], fb[m + 1], ft[m + 1], ft[m], (nrm[m].x + nrm[m + 1].x) / l, 0, (nrm[m].z + nrm[m + 1].z) / l);
+        conc.quadN(fb[m], fb[m + 1], ft[m + 1], ft[m], (nrm[m].x + nrm[m + 1].x) / l, 0, (nrm[m].z + nrm[m + 1].z) / l, true);
       }
       // the walk slab between the curb and the walks' outer edges, and the bank beyond it
       const outer = c.kind === 'fillet' ? [at(Lj, -Lj.h), c.pOut!, at(Li, Li.h)] : [at(Lj, -Lj.h), at(Li, Li.h)];
@@ -1216,7 +1331,7 @@ export class RoadRenderer {
       for (let m = 0; m + 1 < K; m++) {
         const ox = dir[m].x + dir[m + 1].x, oz = dir[m].z + dir[m + 1].z;
         conc.quadN(wt[m], wf[m], wf[m + 1], wt[m + 1], ox, 1.2, oz);
-        conc.quadN(wf[m], ws[m], ws[m + 1], wf[m + 1], ox, 0, oz);
+        conc.quadN(wf[m], ws[m], ws[m + 1], wf[m + 1], ox, 0, oz, true);
       }
     }
     // the asphalt inside the curbs, pinned to the node's height at the middle and meeting each road at its own
@@ -1250,6 +1365,21 @@ export class RoadRenderer {
     return true;
   }
 
+}
+
+function shadowPrism(bottom: number, top: number, height: number) {
+  const vertices: number[] = [];
+  for (const [radius, y] of [[bottom, 0], [top, height]]) {
+    for (let i = 0; i < 3; i++) {
+      const angle = i * Math.PI * 2 / 3;
+      vertices.push(radius * Math.cos(angle), y, radius * Math.sin(angle));
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setIndex([0, 1, 2, 5, 4, 3, 0, 3, 1, 1, 3, 4, 1, 4, 2, 2, 4, 5, 2, 5, 0, 0, 5, 3]);
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
 function mergeSimple(geos: THREE.BufferGeometry[]): THREE.BufferGeometry {

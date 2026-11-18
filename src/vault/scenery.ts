@@ -6,6 +6,7 @@
 // to Nowhere at the end of every dead end. Drawn with the building
 // material as instanced meshes, re-placed when the roads or buildings change.
 import * as THREE from 'three';
+import { bindPropShadow } from '../render/propShadowLod';
 import type { Game } from '../game';
 import type { RSeg } from '../roads/network';
 import { ROAD_TYPES, carriageHalf } from '../roads/roadTypes';
@@ -203,8 +204,8 @@ export class VaultScenery {
         if (m) { this.group.remove(m); m.geometry.dispose(); m.dispose(); }
         m = new THREE.InstancedMesh(model.geometry, mat, Math.max(4, list.length * 2));
         m.castShadow = true;
+        bindPropShadow(m);
         m.receiveShadow = true;
-        m.frustumCulled = false;
         this.group.add(m);
         this.meshes.set(key, m);
       }
@@ -216,6 +217,9 @@ export class VaultScenery {
       m.count = list.length;
       m.visible = true;
       m.instanceMatrix.needsUpdate = true;
+      // Placements stay fixed between uploads. Each camera can now reject
+      // whole furniture families using their updated instance bounds.
+      m.computeBoundingSphere();
     }
   }
 }

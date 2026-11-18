@@ -3,11 +3,12 @@ import { GLOW, QUALITY, type Quality } from '../config';
 import type { VehicleKind } from '../contracts';
 import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from '../world/atmos';
 import { bindLamps, CAR_SHEEN, LAMP_PARS } from '../world/nightLights';
-import { buildModelLod, modelDef, vehicleDecalAtlas, vehicleModelList, variantsOf, type ModelLod } from './models/vehicleModels';
+import { buildModelLod, modelDef, vehicleDecalAtlas, vehicleModelList, variantsOf, type ModelDef, type ModelLod } from './models/vehicleModels';
 import type { LampSet, V3 } from './models/vehicleKit';
 import { pickLook, type Look } from './models/vehiclePaint';
 import { WHEEL_GLSL } from './models/vehicleWheel';
 import { VehicleFx, type FxEnvironment } from './vehicleFx';
+import { withVisualRandom } from '../render/visualRandom';
 import { VehiclePresentation, type VehicleCandidate } from './vehiclePresentation';
 import type { Car } from './traffic';
 
@@ -299,8 +300,9 @@ const PICK_MATERIAL = new THREE.MeshBasicMaterial();
 // instancing
 
 interface Attrs {
-  paint: THREE.InstancedBufferAttribute; look: THREE.InstancedBufferAttribute; misc: THREE.InstancedBufferAttribute;
-  wheel: THREE.InstancedBufferAttribute; body: THREE.InstancedBufferAttribute;
+  paint: THREE.InstancedBufferAttribute; look: THREE.InstancedBufferAttribute;
+  misc: THREE.InterleavedBufferAttribute; wheel: THREE.InterleavedBufferAttribute; body: THREE.InterleavedBufferAttribute;
+  motion: THREE.InstancedInterleavedBuffer;
 }
 interface LodBatch {
   mesh: THREE.InstancedMesh; attrs: Attrs; count: number;
@@ -310,6 +312,7 @@ interface LodBatch {
 interface VariantBatch { id: string; kind: VehicleKind; lamps: LampSet; wheelRadius: number; nearTriangles: number; closeTriangles: number; close?: LodBatch; near: LodBatch }
 interface KindBatch {
   kind: VehicleKind; used: number; free: number[];
+  models: readonly ModelDef[];
   presentation?: boolean;
   far: LodBatch; variants: Map<string, VariantBatch>;
   pickMesh: THREE.InstancedMesh; wheelRadius: number; farTriangles: number;
@@ -341,19 +344,30 @@ function vehicleState(n: number) {
 const inst = (capacity: number, size: number) => new THREE.InstancedBufferAttribute(new Float32Array(capacity * size), size).setUsage(THREE.DynamicDrawUsage);
 
 function makeLod(name: string, geometry: THREE.BufferGeometry, capacity: number, shadows: boolean): LodBatch {
-  const attrs: Attrs = { paint: inst(capacity, 3), look: inst(capacity, 4), misc: inst(capacity, 4), wheel: inst(capacity, 2), body: inst(capacity, 3) };
+  // These three shader inputs change together. One GPU buffer carries them
+  // while paint and wear retain their less frequent update ranges.
+  const motion = withVisualRandom(() => new THREE.InstancedInterleavedBuffer(new Float32Array(capacity * 9), 9));
+  motion.setUsage(THREE.DynamicDrawUsage);
+  const attrs: Attrs = {
+    paint: inst(capacity, 3), look: inst(capacity, 4), motion,
+    misc: new THREE.InterleavedBufferAttribute(motion, 4, 0),
+    wheel: new THREE.InterleavedBufferAttribute(motion, 2, 4),
+    body: new THREE.InterleavedBufferAttribute(motion, 3, 6),
+  };
   geometry.setAttribute('iPaint', attrs.paint); geometry.setAttribute('iLook', attrs.look); geometry.setAttribute('iMisc', attrs.misc);
   geometry.setAttribute('iWheel', attrs.wheel); geometry.setAttribute('iBody', attrs.body);
   const mesh = new THREE.InstancedMesh(geometry, MATERIAL, capacity);
-  mesh.name = name; mesh.count = 0; mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.frustumCulled = false;
+  mesh.name = name; mesh.count = 0; mesh.visible = false;
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.frustumCulled = false;
   mesh.castShadow = shadows; mesh.receiveShadow = true;
   return { mesh, attrs, count: 0, sourceByRender: new Int32Array(capacity).fill(-1), revisionByRender: new Uint32Array(capacity), staticStart: capacity, staticEnd: 0 };
 }
 
 type UploadRange = { start: number; count: number };
-const UPLOAD_RANGES = new WeakMap<THREE.BufferAttribute, UploadRange>();
+type UploadBuffer = THREE.BufferAttribute | THREE.InstancedInterleavedBuffer;
+const UPLOAD_RANGES = new WeakMap<UploadBuffer, UploadRange>();
 /** Reuses Three's update-range object instead of allocating in the frame loop. */
-function markAttributeRange(attribute: THREE.BufferAttribute | THREE.InstancedBufferAttribute | undefined, start: number, end: number, itemSize = 1): void {
+function markAttributeRange(attribute: UploadBuffer | undefined, start: number, end: number, itemSize = 1): void {
   if (!attribute || end <= start) return;
   let range = UPLOAD_RANGES.get(attribute);
   if (!range) { range = { start: 0, count: 0 }; UPLOAD_RANGES.set(attribute, range); }
@@ -370,9 +384,10 @@ function markAttributeRange(attribute: THREE.BufferAttribute | THREE.InstancedBu
 }
 function markLod(lod: LodBatch, count: number): void {
   lod.count = count; lod.mesh.count = count;
+  // Three prepares materials, attributes and shadows even for a draw with no instances.
+  lod.mesh.visible = count > 0;
   markAttributeRange(lod.mesh.instanceMatrix, 0, count, 16);
-  markAttributeRange(lod.attrs.wheel, 0, count, 2); markAttributeRange(lod.attrs.body, 0, count, 3);
-  markAttributeRange(lod.attrs.misc, 0, count, 4); // the lamp state changes often; it rides with the static fields
+  markAttributeRange(lod.attrs.motion, 0, count, lod.attrs.motion.stride);
   markAttributeRange(lod.attrs.paint, lod.staticStart, lod.staticEnd, 3); markAttributeRange(lod.attrs.look, lod.staticStart, lod.staticEnd, 4);
   lod.staticStart = lod.sourceByRender.length; lod.staticEnd = 0;
 }
@@ -458,7 +473,7 @@ export class VehicleRenderer {
 
   private buildKind(kind: VehicleKind): void {
     const spec = VEHICLE_SPECS[kind];
-    const base = variantsOf(kind)[0];
+    const models = variantsOf(kind), base = models[0];
     // start-up builds only the near and far levels of each kind's base model (the close level, and the other variants, come in on demand)
     const nearModel = buildModelLod(kind, spec, base.id, 1);
     const farModel = buildModelLod(kind, spec, base.id, 2);
@@ -472,7 +487,7 @@ export class VehicleRenderer {
     pickMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.object.add(pickMesh);
     const n = this.perKind;
     const kb: KindBatch = {
-      kind, used: 0, free: [], far, variants: new Map(), pickMesh, wheelRadius: nearModel.wheelRadius, farTriangles: farModel.triangles,
+      kind, models, used: 0, free: [], far, variants: new Map(), pickMesh, wheelRadius: nearModel.wheelRadius, farTriangles: farModel.triangles,
       ...vehicleState(n),
     };
     this.batches.set(kind, kb);
@@ -521,7 +536,7 @@ export class VehicleRenderer {
   private pickVariant(kind: VehicleKind, requested?: string): string {
     const kb = this.batches.get(kind)!;
     if (requested) { const d = modelDef(requested); if (d && d.kind === kind) { this.attachVariant(kb, requested); return requested; } }
-    const list = variantsOf(kind).filter((d) => kb.variants.has(d.id));
+    const list = kb.models.filter((d) => kb.variants.has(d.id));
     let total = 0; for (const d of list) total += d.weight;
     let r = this.rnd() * total;
     for (const d of list) { r -= d.weight; if (r <= 0) return d.id; }
@@ -551,7 +566,7 @@ export class VehicleRenderer {
     batch.look[instance * 4] = look.finish; batch.look[instance * 4 + 1] = look.age; batch.look[instance * 4 + 2] = look.dirt; batch.look[instance * 4 + 3] = look.special;
     batch.seed[instance] = this.rnd();
     const id = this.pickVariant(kind, options?.variant);
-    batch.variantOf[instance] = Math.max(0, variantsOf(kind).findIndex((d) => d.id === id));
+    batch.variantOf[instance] = Math.max(0, batch.models.findIndex((d) => d.id === id));
     if (!this.presentation) batch.pickMesh.count = batch.used;
     this.activeTotal++; return handle;
   }
@@ -742,7 +757,7 @@ export class VehicleRenderer {
           const rng = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return (seed >>> 0) / 4294967296; };
           const liveried = FIXED_PAINT[car.kind] !== undefined;
           const look = pickLook(car.kind, liveried ? FIXED_PAINT[car.kind] : RANDOM_PAINT_REQUEST.has(car.paint) ? undefined : car.paint, liveried, rng);
-          const variants = variantsOf(car.kind);
+          const variants = batch.models;
           let weight = 0; for (const v of variants) if (batch.variants.has(v.id)) weight += v.weight;
           let r = rng() * weight, variant = 0;
           for (let k = 0; k < variants.length; k++) {
@@ -774,7 +789,7 @@ export class VehicleRenderer {
   }
 
   private lampCode(b: KindBatch, i: number): number {
-    const model = variantsOf(b.kind)[b.variantOf[i]];
+    const model = b.models[b.variantOf[i]];
     const siren = this.warningOn(b, i, b.variants.get(model?.id)?.lamps) ? 1 : 0;
     return (b.braking[i] && !b.parked[i] ? 1 : 0) + (b.turn[i] + 1) * 2 + (b.parked[i] ? 1 : b.headlights[i]) * 6 + (!b.parked[i] && (b.reversing[i] || b.reverseTimer[i] > 0) ? 18 : 0) + siren * 36;
   }
@@ -816,11 +831,9 @@ export class VehicleRenderer {
       la[target * 4] = b.look[source * 4]; la[target * 4 + 1] = b.look[source * 4 + 1]; la[target * 4 + 2] = b.look[source * 4 + 2]; la[target * 4 + 3] = b.look[source * 4 + 3];
       lod.staticStart = Math.min(lod.staticStart, target); lod.staticEnd = Math.max(lod.staticEnd, target + 1);
     }
-    const ma = a.misc.array as Float32Array;
-    ma[target * 4] = b.seed[source]; ma[target * 4 + 1] = b.damaged[source]; ma[target * 4 + 2] = this.lampCode(b, source); ma[target * 4 + 3] = length;
-    const wa = a.wheel.array as Float32Array, ba = a.body.array as Float32Array;
-    wa[target * 2] = b.spin[source]; wa[target * 2 + 1] = b.steer[source];
-    ba[target * 3] = b.heave[source]; ba[target * 3 + 1] = b.pitch[source]; ba[target * 3 + 2] = b.roll[source];
+    a.misc.setXYZW(target, b.seed[source], b.damaged[source], this.lampCode(b, source), length);
+    a.wheel.setXY(target, b.spin[source], b.steer[source]);
+    a.body.setXYZ(target, b.heave[source], b.pitch[source], b.roll[source]);
   }
 
   private readonly v3 = new THREE.Vector3();
@@ -937,7 +950,7 @@ export class VehicleRenderer {
     // still sees the new camera so the fleet can re-enter on the following frame.
     let sentinelClaimed = false;
     for (const logical of this.batches.values()) {
-      const kindVariants = variantsOf(logical.kind);
+      const kindVariants = logical.models;
       const length = VEHICLE_SPECS[logical.kind].length;
       const selected = this.presentation ? this.presentationLists.get(logical.kind)! : undefined;
       let farCount = 0, pickCount = 0;

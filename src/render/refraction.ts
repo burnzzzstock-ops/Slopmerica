@@ -17,6 +17,7 @@ export class WaterRefraction {
   private rasterViewport = new THREE.Vector4();
   private scissor = new THREE.Vector4();
   private transparency: WaterTransparency;
+  private waterObjects = new Set<THREE.Object3D>();
   private rendering = false;
   copies = 0;
   waterDraws = 0;
@@ -27,12 +28,14 @@ export class WaterRefraction {
     private water: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>,
     quality: Quality['name'] = 'high', maxPixels = 3840 * 2160) {
     this.maxPixels = maxPixels;
-    water.traverse(o => this.objects.push(o));
-    this.transparency = new WaterTransparency(scene, new Set(this.objects));
+    this.transparency = new WaterTransparency(scene, this.waterObjects);
     this.setQuality(quality, maxPixels);
   }
 
   setQuality(quality: Quality['name'], maxPixels = this.maxPixels) {
+    this.objects.length = 0;
+    this.waterObjects.clear();
+    this.water.traverse(object => { this.objects.push(object); this.waterObjects.add(object); });
     this.enabled = quality === 'high' || quality === 'ultra';
     this.maxPixels = Math.max(1, maxPixels);
     if (!this.enabled) this.dispose();
@@ -88,8 +91,10 @@ export class WaterRefraction {
         withVisualRandom(() => r.initRenderTarget(this.surface!));
         // Only the animated surface writes this depth. Its normal fragment
         // shader retains the exact terrain/shore discard and wave displacement.
-        for (const object of this.objects) object.layers.mask = 0;
-        this.water.layers.set(31);
+        for (const object of this.objects) {
+          if ((object as THREE.Mesh).material === this.water.material) object.layers.set(31);
+          else object.layers.mask = 0;
+        }
         cam.layers.set(31);
         this.scene.background = null;
         r.shadowMap.autoUpdate = r.shadowMap.needsUpdate = false;

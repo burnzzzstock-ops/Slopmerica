@@ -1,5 +1,39 @@
 # Graphics performance
 
+## Low phone frame time, November 17
+
+The enforced RTX 5090 phone proxy requires the 95th percentile of 300 consecutive frame intervals to be **below 16 ms**. It runs the 969-resident town with four-times CPU throttling, a 390 × 844 touch viewport, device pixel ratio 3 and a 585 × 1266 drawing buffer. The previous source is `b1fb132` and the shipping source is `149b543`. The controls use identical town data, camera, seed 271828 and game speed. Each run reported zero page errors.
+
+| Run | Previous frame median / p95 | Shipping frame median / p95 |
+| --- | ---: | ---: |
+| First pair on the busier host | 34.1 / 78.7 ms | 10.6 / 33.1 ms |
+| Second pair on the busier host | 15.4 / 47.2 ms | 16.8 / 61.3 ms |
+| First pair under lighter load | 22.6 / 42.1 ms | 15.7 / 30.1 ms |
+| Second pair under lighter load | 30.6 / 56.5 ms | 29.5 / 55.8 ms |
+| Single-file production builds under lighter load | 20.9 / 39.6 ms | 16.6 / 34.6 ms |
+
+Each development series ran in control, shipping, shipping, control order. Local graphics checks released their slots during both series. Other applications continued using the host. The shipping build consistently needed 119 median draws and about 554,000 triangles, compared with 211 draws and about 1.115 million triangles on the previous build. Both development repeats and the production check missed the frame-time target. Physical-phone timing remains unmeasured. [Previous production measurement](measurements/phone-027b18f-production.json) · [Shipping production measurement](measurements/phone-149b543-production.json)
+
+In a separate 300-frame diagnostic under the lighter load, 59 of 64 frames containing a fixed simulation step and 70 of 236 frames without one reached 16 ms. All 15 slowest intervals included a step. Step duration alone had a p95 of 17.8 ms among the 64 step frames. Frames without a step had a p95 of 22.1 ms. The unchanged check can be repeated with `node scripts/look/phone.mjs --enforce`, `SCENES=reference`, `RATES=4` and the current town.
+
+## Forest and whole-scene geometry, November 17
+
+On shipping source `149b543`, all six original noon forest views pass the 40% reduction in masked brightness variation, both as measured and after equalizing the mean. The masks match the originals byte for byte. The original draw-call and triangle ceilings also pass in each view. At a camera height of 2 m a distant photo focus keeps the detailed tree shadows. The same camera above the trees uses species-specific silhouettes, with bare deciduous trees retaining their branch shadows in winter. [Six original and updated views](figures/forest-variation.jpg)
+
+| Landscape | Low variation reduction | High variation reduction | Low / High after matching mean |
+| --- | ---: | ---: | ---: |
+| Appalachia | 52.4% | 46.6% | 54.6% / 43.5% |
+| NorCal | 55.2% | 54.6% | 56.7% / 53.6% |
+| Florida | 47.1% | 55.2% | 49.5% / 53.1% |
+
+The archived whole-scene comparator is the original pre-W13 source `93ee555`, seed 1776. The populated Block uses the historical 781-resident fixture. Low and High each cover that town plus three landscapes at noon, golden hour, moonless night and in rain. All 32 views draw at least 30% fewer triangles on the original fourth frame and after terrain detail settles. The smallest fourth-frame reduction is High Block in rain, 1,419,559 to 990,162 (30.25%). The same comparison after settling is 1,559,079 to 1,023,698 (34.34%). Both 61-position zooms preserve all 262 buildings. At 1,600 m the reductions are 44.14% on Low and 35.34% on High.
+
+The shipping game reproduced all 64 measured triangle counts from the initial graphics revision `5f6b94c`. [High Block, before and after in rain](figures/overview-rain-geometry.jpg)
+
+On the 969-resident current town the road-edge mesh fell from 67,134 to 33,662 triangles. Across 403,184 bidirectional samples, the maximum surface displacement was 1.61 cm. The river keeps the original triangles wherever the flow texture can displace a vertex. Eighteen camera, surge, edited-bed and photo comparisons averaged 0.333 of 255 RGB levels of absolute change.
+
+Run `node scripts/suite.mjs --only overview-budget --serve 5191 --gpu` to repeat all 32 cases on a frozen copy. The check reads the original counts from `scripts/look/overview-original.json` and requires the original viewport, camera, legacy Block population and building count. To check saved counts, use `node scripts/look/overview-budget.mjs --check <report.json>`. The unoptimized original fails all 32 comparisons.
+
 ## Final committed counter baseline
 
 Revision `027b18f` passes all twelve paused reference views with zero counter violations. The run uses the committed 969-resident town, seed 271828, Chrome 157.0.8103.51 and NVIDIA RTX 5090 through ANGLE D3D11. Each row records the maximum over twelve frames.

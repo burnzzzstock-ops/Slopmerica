@@ -17,7 +17,7 @@ import type { Trees } from '../world/trees';
 import type { ZCell, Zoning } from '../zones/zoning';
 import type { RoadNetwork } from '../roads/network';
 import { ROAD_TYPES } from '../roads/roadTypes';
-import { buildingLod, buildingSilhouette, timeBuildingLod, withBuildingLodRandom } from '../render/buildingLod';
+import { buildingLod, buildingSilhouette, coarseBuildingShadow, timeBuildingLod, withBuildingLodRandom } from '../render/buildingLod';
 import { BuildingClip, addBuildingClipAttribute, constructionHeight } from '../render/buildingClip';
 import { constructionFrame } from '../render/constructionFrame';
 import { scaledTowerModel, towerInstanceScale } from '../render/towerScale';
@@ -87,7 +87,7 @@ class Batch {
   usedVerts = 0;
   private usedIndices = 0;
   private count = 0;
-  private lods = new Map<number, { far: number; silhouette: number; center: THREE.Vector3 }>();
+  private lods = new Map<number, { far: number; silhouette: number; coarseShadow: number; center: THREE.Vector3 }>();
   private instances = new Map<number, { original: number; written: number; far: boolean; verticalScale: number }>();
   private lodMatrix = new THREE.Matrix4();
   private lodPoint = new THREE.Vector3();
@@ -123,7 +123,10 @@ class Batch {
     const shadow = this.mesh.onBeforeShadow;
     this.mesh.onBeforeShadow = (renderer, object, camera, shadowCamera, geometry, material, group) => {
       this.clip.activate();
-      this.updateLod(camera, true);
+      const texels = renderer.getRenderTarget()?.width ?? 0;
+      const coarseMap = shadowCamera instanceof THREE.OrthographicCamera && texels > 0 &&
+        (shadowCamera.right - shadowCamera.left) / (shadowCamera.zoom * texels) >= 3;
+      this.updateLod(camera, true, coarseMap);
       this.shadowPass = true;
       try { shadow.call(this.mesh, renderer, object, camera, shadowCamera, geometry, material, group); }
       finally { this.shadowPass = false; }
@@ -153,7 +156,10 @@ class Batch {
           g.computeBoundingBox();
           const farId = this.addGeometry(far, false);
           const coarse = buildingSilhouette(far), silhouette = coarse ? this.addGeometry(coarse, false) : farId;
-          this.lods.set(id, { far: farId, silhouette, center: g.boundingBox!.getCenter(new THREE.Vector3()) });
+          const depth = coarseBuildingShadow(coarse ?? far);
+          const coarseShadow = depth ? this.addGeometry(depth, false) : silhouette;
+          this.lods.set(id, { far: farId, silhouette, coarseShadow, center: g.boundingBox!.getCenter(new THREE.Vector3()) });
+          if (depth) { this.lodVerts += depth.getAttribute('position').count; depth.dispose(); }
           this.lodVerts += far.getAttribute('position').count;
           if (coarse) { this.lodVerts += coarse.getAttribute('position').count; coarse.dispose(); }
           far.dispose();
@@ -229,7 +235,7 @@ class Batch {
       this.mesh.setMatrixAt(ghost.handle, this.lodMatrix);
     }
   }
-  private updateLod(camera: THREE.Camera, shadow: boolean) {
+  private updateLod(camera: THREE.Camera, shadow: boolean, coarseMap = false) {
     const perspective = camera as THREE.PerspectiveCamera;
     const fovScale = perspective.isPerspectiveCamera ? Math.tan(THREE.MathUtils.degToRad(perspective.fov) * 0.5) / Math.tan(THREE.MathUtils.degToRad(50) * 0.5) : 1;
     let farCount = 0;
@@ -247,13 +253,13 @@ class Batch {
         // sub-pixel furniture can disappear earlier than the visible facade.
         const collapsing = this.ghosts.some(ghost => ghost.handle === id);
         const growing = this.clip.active(id) || collapsing || Math.abs(this.lodMatrix.elements[5] - state.verticalScale) > 0.001;
-        useFar = !growing && distance > (shadow ? 300 : state.far ? 700 : 850);
+        useFar = !growing && distance > (shadow ? 300 : state.far ? 410 : 480);
         // Atlas repeats must stay exact in the visible scene. Coalesced wall
         // quads are silhouettes for the shadow pass only, never facade LODs.
         coarse = useFar && shadow;
         if (!shadow) state.far = useFar;
       }
-      const desired = useFar ? coarse ? lod!.silhouette : lod!.far : state.original;
+      const desired = useFar ? coarse ? (coarseMap ? lod!.coarseShadow : lod!.silhouette) : lod!.far : state.original;
       if (current !== desired) this.mesh.setGeometryIdAt(id, desired);
       state.written = desired;
       if (useFar) farCount++;

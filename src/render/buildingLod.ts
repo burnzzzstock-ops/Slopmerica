@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { clusteredShadowIndices } from './propShadowLod';
 import { T, tileNames, type Tile } from '../art';
 import { withVisualRandom } from './visualRandom';
 export { withVisualRandom as withBuildingLodRandom } from './visualRandom';
@@ -10,15 +11,36 @@ export function timeBuildingLod(build: () => void): number {
   return performance.now() - started;
 }
 
+/** Coarse depth maps only need the position of a wall or roof to a fraction
+ * of a texel. Preserve original representatives and the batch's attribute
+ * layout, including its indexed/non-indexed distinction. */
+export function coarseBuildingShadow(source: THREE.BufferGeometry) {
+  const position = source.getAttribute('position'), index = source.index;
+  const count = index?.count ?? position.count;
+  const faces = clusteredShadowIndices(source, 1.5);
+  if (faces.length < 3 || faces.length >= count * .8) return null;
+  const geometry = new THREE.BufferGeometry();
+  const vertices = index ? Array.from(new Set(faces)) : faces;
+  for (const [name, attr] of Object.entries(source.attributes)) {
+    const packed = new Float32Array(vertices.length * attr.itemSize);
+    for (let i = 0; i < vertices.length; i++) for (let k = 0; k < attr.itemSize; k++) {
+      packed[i * attr.itemSize + k] = attr.getComponent(vertices[i], k);
+    }
+    geometry.setAttribute(name, new THREE.BufferAttribute(packed, attr.itemSize));
+  }
+  if (index) {
+    const slots = new Map(vertices.map((id, slot) => [id, slot]));
+    geometry.setIndex(faces.map(id => slots.get(id)!));
+  }
+  return geometry;
+}
+
 let tiles: Tile[] | undefined;
 const tileCache = new Map<string, string>();
 type Point2 = [number, number];
 const signedArea = (a: Point2, b: Point2, c: Point2) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
 /** Area equality cannot distinguish a hole from an equal-area overlap. */
 function overlap(a: Point2[], b: Point2[]) {
-  const bounds = (p: Point2[]) => [Math.min(...p.map(v => v[0])), Math.max(...p.map(v => v[0])), Math.min(...p.map(v => v[1])), Math.max(...p.map(v => v[1]))];
-  const ba = bounds(a), bb = bounds(b);
-  if (Math.min(ba[1], bb[1]) - Math.max(ba[0], bb[0]) <= 1e-6 || Math.min(ba[3], bb[3]) - Math.max(ba[2], bb[2]) <= 1e-6) return 0;
   let polygon = a;
   const sign = Math.sign(signedArea(b[0], b[1], b[2]));
   for (let edge = 0; edge < 3 && polygon.length; edge++) {
@@ -85,11 +107,25 @@ export function buildingSilhouette(source: THREE.BufferGeometry): THREE.BufferGe
     // Only a real rectangular boundary may collapse. Separate coplanar wings
     // or overlapping trim must not fill a gap in the building's silhouette.
     if (chosen.some((i, c) => Math.abs(p.getComponent(i, f.u) - corners[c][0]) > 0.001 || Math.abs(p.getComponent(i, f.v) - corners[c][1]) > 0.001)) { for (const i of f.ids) copy(i); continue; }
-    const triangles: Point2[][] = [];
-    for (let i = 0; i < f.ids.length; i += 3) triangles.push(f.ids.slice(i, i + 3).map(j => [p.getComponent(j, f.u), p.getComponent(j, f.v)]));
-    // Equal total area, no overlap and all vertices within these bounds prove
-    // the rectangle has no holes. Bound the uncommon large-face analysis.
-    if (triangles.length > 80 || triangles.some((a, i) => triangles.slice(i + 1).some(b => overlap(a, b) > Math.max(1e-5, area * 1e-7)))) { for (const i of f.ids) copy(i); continue; }
+    // Compute each triangle's bounds once. Only clip pairs whose projected
+    // bounds overlap on both axes by more than the original tolerance.
+    let intersects = f.ids.length > 80 * 3;
+    const triangles: { points: Point2[]; left: number; right: number; bottom: number; top: number }[] = [];
+    const tolerance = Math.max(1e-5, area * 1e-7);
+    for (let i = 0; i < f.ids.length && !intersects; i += 3) {
+      const points: Point2[] = [];
+      for (let j = i; j < i + 3; j++) points.push([p.getComponent(f.ids[j], f.u), p.getComponent(f.ids[j], f.v)]);
+      const [a, b, c] = points;
+      const left = Math.min(a[0], b[0], c[0]), right = Math.max(a[0], b[0], c[0]);
+      const bottom = Math.min(a[1], b[1], c[1]), top = Math.max(a[1], b[1], c[1]);
+      for (const prior of triangles) {
+        if (Math.min(right, prior.right) - Math.max(left, prior.left) <= 1e-6 ||
+            Math.min(top, prior.top) - Math.max(bottom, prior.bottom) <= 1e-6) continue;
+        if (overlap(prior.points, points) > tolerance) { intersects = true; break; }
+      }
+      triangles.push({ points, left, right, bottom, top });
+    }
+    if (intersects) { for (const i of f.ids) copy(i); continue; }
     const winding = (f.axis === 2 ? 1 : -1) * f.sign;
     const [a, b, c] = f.ids;
     const dx1 = p.getComponent(b, f.u) - p.getComponent(a, f.u), dy1 = p.getComponent(b, f.v) - p.getComponent(a, f.v);
@@ -115,7 +151,7 @@ export function buildingSilhouette(source: THREE.BufferGeometry): THREE.BufferGe
 /** Strip disconnected sub-pixel furnishings while retaining the exact wall,
  * roof and atlas vertices. Connected components preserve stepped silhouettes
  * and rooflines without inventing a replacement texture or material. */
-export function buildingLod(source: THREE.BufferGeometry): THREE.BufferGeometry | null {
+export function distantComponentIndices(source: THREE.BufferGeometry, minimumArea = 20): number[] | null {
   const position = source.getAttribute('position'), count = source.index?.count ?? position.count;
   if (count < 240) return null;
   const parent = new Int32Array(position.count);
@@ -149,12 +185,18 @@ export function buildingLod(source: THREE.BufferGeometry): THREE.BufferGeometry 
     box.getSize(size);
     const area = Math.max(size.x * size.y, size.x * size.z, size.y * size.z);
     if (area > largestArea) { largest = root; largestArea = area; }
-    if (area >= 20) keep.add(root);
+    if (area >= minimumArea) keep.add(root);
   }
   keep.add(largest);
   const indices: number[] = [];
   for (let i = 0; i < count; i += 3) if (keep.has(find(index(i)))) indices.push(index(i), index(i + 1), index(i + 2));
   if (indices.length > count * 0.85 || indices.length === 0) return null;
+  return indices;
+}
+
+export function buildingLod(source: THREE.BufferGeometry): THREE.BufferGeometry | null {
+  const indices = distantComponentIndices(source);
+  if (!indices) return null;
   // Preserve every attribute, including Kit's tile/night values and vertex AO.
   const geometry = new THREE.BufferGeometry();
   const remap = new Map<number, number>(), vertices: number[] = [], faces: number[] = [];

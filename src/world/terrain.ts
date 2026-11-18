@@ -10,7 +10,9 @@ import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from './atmos';
 import { hash2 } from '../core/rng';
 import type { MapData } from './maps';
 import { createGroundTextures } from './groundTextures';
-import { ForestFloor } from './forestFloor';
+import { groveAlbedo, DISTANT_FOREST_LIGHT, ForestFloor } from './forestFloor';
+import { withVisualRandom } from '../render/visualRandom';
+import { batchGroundSurface } from '../render/groundSurfaceBatch';
 
 export const enum Paint {
   None = 0,
@@ -25,11 +27,41 @@ const CN = (HM_N - 1) / CQ; // chunks per side (12)
 const LOD_STEPS = [1, 2, 4, 8];
 const VERTEX_SPECKLE = [1, 0.7, 0.4, 0.2]; // per-vertex colour noise, by level (shade())
 
+// Topology depends only on the grid step. Each mesh owns its GPU attribute;
+// the immutable CPU indices and skirt-edge lists can serve every chunk.
+function chunkTopology(step: number) {
+  const n = CQ / step + 1;
+  const edges: number[][] = [[], [], [], []];
+  for (let t = 0; t < n; t++) {
+    edges[0].push(t);
+    edges[1].push((n - 1) * n + t);
+    edges[2].push(t * n);
+    edges[3].push(t * n + n - 1);
+  }
+  const index: number[] = [];
+  for (let jj = 0; jj < n - 1; jj++)
+    for (let ii = 0; ii < n - 1; ii++) {
+      const a = jj * n + ii, b = a + 1, c = a + n, d = c + 1;
+      index.push(a, c, b, b, c, d);
+    }
+  edges.forEach((e, ei) => {
+    const skirt = n * n + ei * n;
+    for (let t = 0; t < n - 1; t++) {
+      const a = e[t], b = e[t + 1], c = skirt + t, d = c + 1;
+      index.push(a, b, c, b, d, c, a, c, b, b, c, d);
+    }
+  });
+  return { edges, index: new Uint16Array(index) };
+}
+const CHUNK_TOPOLOGY = LOD_STEPS.map(chunkTopology);
+
 interface Chunk {
   cx: number;
   cz: number;
   mesh: THREE.Mesh;
   lod: number;
+  coarseGeometry?: number;
+  coarseInstance?: number;
   geos: (THREE.BufferGeometry | null)[];
   minY: number;
   maxY: number;
@@ -92,6 +124,7 @@ export class Terrain {
   /** Increments when grading or ground paint changes near-surface scenery. */
   surfaceVersion = 0;
   private chunks: Chunk[] = [];
+  private coarseChunks: THREE.BatchedMesh;
   private dirty = new Set<number>();
   private texRows: [number, number] | null = null;
   private pal: Record<string, THREE.Color> = {};
@@ -121,9 +154,20 @@ export class Terrain {
     this.detail = createGroundTextures(renderer);
     this.material = this.makeMaterial();
 
+    // Coarse chunks share a material, vertex layout and index count. Submit
+    // them together while retaining the original bounds for per-chunk culling.
+    const side = CQ / LOD_STEPS[3] + 1, count = CN * CN;
+    this.coarseChunks = withVisualRandom(() => new THREE.BatchedMesh(count, count * (side * side + 4 * side),
+      count * (6 * (side - 1) ** 2 + 48 * (side - 1)), this.material));
+    this.coarseChunks.frustumCulled = false;
+    this.coarseChunks.sortObjects = false;
+    this.coarseChunks.receiveShadow = true;
+    this.group.add(this.coarseChunks);
     for (let cz = 0; cz < CN; cz++)
       for (let cx = 0; cx < CN; cx++) {
         const mesh = new THREE.Mesh(new THREE.BufferGeometry(), this.material);
+        const worldBounds = new THREE.Box3();
+        mesh.intersectsFrustum = frustum => frustum.intersectsBox(worldBounds.copy(mesh.geometry.boundingBox!).applyMatrix4(mesh.matrixWorld));
         mesh.receiveShadow = true;
         const ch: Chunk = { cx, cz, mesh, lod: -1, geos: [null, null, null, null], minY: 0, maxY: 0, roads: 0 };
         this.chunks.push(ch);
@@ -138,6 +182,7 @@ export class Terrain {
     const detail = this.detail;
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.tDetail = { value: detail };
+      sh.uniforms.uGroveAlbedo = { value: groveAlbedo(this.map.def.palette.grass2) };
       sh.uniforms.tForestFloor = { value: this.forestFloor.texture };
       sh.uniforms.tClearedForest = { value: this.forestFloor.clearedTexture };
       sh.uniforms.tInfo = INFO_OVERLAY.tex;
@@ -161,6 +206,7 @@ uniform sampler2DArray tDetail;
 uniform sampler2D tForestFloor;
 uniform sampler2D tClearedForest;
 float gCanopy;
+float gGrove;
 varying vec4 vMats;
 varying vec4 vPaintDelta;
 varying vec3 vWPos;
@@ -263,7 +309,7 @@ uniform float uLandOn;`,
   // seasons: grass browns in winter, NorCal hills green up in the rainy season
   diffuseColor.rgb *= mix(vec3(1.0), uGrassTint, w.x);
   // Live crowns shelter a darker, less saturated needle-and-moss floor.
-  // Understory albedo is 35–45% darker in linear light, before ambient AO.
+  // Understory albedo is 35ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“45% darker in linear light, before ambient AO.
   // Changing the terrain beneath trees preserves their rich crown shading.
   vec2 forestUv = vWPos.xz / ${WORLD.toFixed(1)} + 0.5;
   // Keep the actual crown footprint. Open ground receives no forest tint.
@@ -272,6 +318,11 @@ uniform float uLandOn;`,
   // Material weights are grass/dirt/rock/sand. Paved paint contributes rock;
   // only a predominantly vegetated or earthen surface receives understory.
   float soil = county * smoothstep(0.45, 0.75, w.x + w.y) * smoothstep(0.02, 0.3, vWPos.y);
+  float grove = textureLod(tForestFloor, forestUv, 2.5).r;
+  // Sand in coastal stands also receives light reflected by the canopy.
+  // Leave painted paving, bare rock and underwater surfaces alone.
+  float porous = county * (1. - smoothstep(.3, .7, w.z)) * smoothstep(.02, .3, vWPos.y);
+  gGrove = porous * smoothstep(.006, .08, grove);
   float crownNoise = tn(vWPos.xz * 0.092);
   gCanopy = smoothstep(0.35, 0.70, floorMask.r) * soil;
   float groundLuma = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
@@ -340,6 +391,8 @@ uniform float uLandOn;`,
   }
 }`,
         )
+        .replace('#include <lights_pars_begin>', `#include <lights_pars_begin>
+${DISTANT_FOREST_LIGHT}`)
         .replace('#include <aomap_fragment>', '#include <aomap_fragment>\nreflectedLight.indirectDiffuse *= mix(1.0, 0.52, gCanopy * (1.0 - gSnow));')
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.45, uWet * 0.7 * (1.0 - gSnow));\nroughnessFactor = mix(roughnessFactor, 0.06, gPuddle);\nroughnessFactor = mix(roughnessFactor, 0.5, gShoreWet * 0.65);')
         .replace(
@@ -357,6 +410,7 @@ uniform float uLandOn;`,
   }
   outgoingLight = mix(outgoingLight, uSkyRefl * (0.55 + ring), gPuddle * (0.2 + 0.4 * fres));
 }
+outgoingLight = distantForestLight(outgoingLight, .96 * gGrove * smoothstep(360., 690., length(vViewPosition)) * (1. - gSnow));
 if (uLandOn > 0.0) {
   // land you don't own yet: dimmer and a bit washed out
   float own = texture(tLand, vWPos.xz / ${WORLD.toFixed(1)} + 0.5).r;
@@ -635,7 +689,11 @@ if (uInfoOn > 0.0) {
       const dz = Math.max(minZ - cam.z, 0, cam.z - (minZ + size));
       const dy = Math.max(ch.minY - cam.y, 0, cam.y - ch.maxY);
       // chunks with roads keep full detail farther out (road cuts are narrow)
-      const d = Math.hypot(dx, dy * 0.7, dz) * (ch.roads ? 0.6 : 1);
+      // From street level keep fine road cuts. High above a chunk the
+      // camera sees their footprint shrink along both screen axes.
+      const overview = smoothstep(65, 275, dy);
+      const d = Math.hypot(dx, dy * (0.7 + 6 * overview), dz)
+        * (ch.roads ? 0.6 + 0.4 * overview : 1);
       const want = d < d0 ? 0 : d < d1 ? 1 : d < d2 ? 2 : 3;
       if (want === ch.lod) continue;
       if (ch.geos[want]) this.setLod(ch, want);
@@ -651,8 +709,18 @@ if (uInfoOn > 0.0) {
     if (ch.lod === lod && ch.geos[lod]) return;
     if (!ch.geos[lod]) {
       ch.geos[lod] = this.buildChunk(ch, lod);
+      if (lod === 3) {
+        if (ch.coarseGeometry === undefined) {
+          ch.coarseGeometry = this.coarseChunks.addGeometry(ch.geos[lod]!);
+          ch.coarseInstance = this.coarseChunks.addInstance(ch.coarseGeometry);
+        } else {
+          this.coarseChunks.setGeometryAt(ch.coarseGeometry, ch.geos[lod]!);
+        }
+      }
       this.builtThisFrame++;
     }
+    this.coarseChunks.setVisibleAt(ch.coarseInstance!, lod === 3);
+    ch.mesh.visible = lod !== 3;
     ch.mesh.geometry = ch.geos[lod]!;
     ch.lod = lod;
   }
@@ -695,16 +763,19 @@ if (uInfoOn > 0.0) {
       // uniform bright band along every river (playtest 5: "a less uniformly bright shoreline")
       // (and it varies along the bank, in patches of a few tens of metres: a bar here, a cut bank there, instead of one
       // width all the way along; GRAPHICS ONLY, colours, not heights)
-      const zw = j * HM_STEP - HALF;
-      const irr = 0.4 + 1.2 * (bankNoise(x, zw, 46, 41) * 0.65 + bankNoise(x, zw, 15, 43) * 0.35);
-      const band = shoreBand * (0.55 + 0.9 * c) * irr;
-      if (h < band) {
-        const t = smoothstep(band, band * 0.3, h);
-        col.lerp(mapId === 'appalachia' ? P.mud : tmpA.copy(P.sand).lerp(P.mud, 0.3 + 0.45 * r), t);
-        if (mapId === 'appalachia') dirt += t * 1.5;
-        else sand += t * 2;
+      // Above the maximum possible bank height the shoreline noise has zero influence.
+      if (h < shoreBand * 1.6 * (0.55 + 0.9 * c)) {
+        const zw = j * HM_STEP - HALF;
+        const irr = 0.4 + 1.2 * (bankNoise(x, zw, 46, 41) * 0.65 + bankNoise(x, zw, 15, 43) * 0.35);
+        const band = shoreBand * (0.55 + 0.9 * c) * irr;
+        if (h < band) {
+          const t = smoothstep(band, band * 0.3, h);
+          col.lerp(mapId === 'appalachia' ? P.mud : tmpA.copy(P.sand).lerp(P.mud, 0.3 + 0.45 * r), t);
+          if (mapId === 'appalachia') dirt += t * 1.5;
+          else sand += t * 2;
+        }
       }
-      if (this.map.sand) {
+      if (this.map.sand && h < 9) {
         const beachy = this.map.sand(x, j * HM_STEP - HALF) * smoothstep(9, 3, h);
         if (beachy > 0.01) {
           col.lerp(P.sand, beachy);
@@ -809,18 +880,10 @@ if (uInfoOn > 0.0) {
         mats.set(m, k * 4);
         paintDelta.set(paint, k * 4);
       }
-    const edges: number[][] = [[], [], [], []];
-    for (let t = 0; t < n; t++) {
-      edges[0].push(t);
-      edges[1].push((n - 1) * n + t);
-      edges[2].push(t * n);
-      edges[3].push(t * n + n - 1);
-    }
+    const { edges, index } = CHUNK_TOPOLOGY[lod];
     let o = n * n;
-    const skirtIdx: number[][] = [];
     const drop = 4 + s * 3;
     for (const e of edges) {
-      const row: number[] = [];
       for (const k of e) {
         pos[o * 3] = pos[k * 3];
         pos[o * 3 + 1] = pos[k * 3 + 1] - drop;
@@ -829,30 +892,16 @@ if (uInfoOn > 0.0) {
         colr.copyWithin(o * 3, k * 3, k * 3 + 3);
         mats.copyWithin(o * 4, k * 4, k * 4 + 4);
         paintDelta.copyWithin(o * 4, k * 4, k * 4 + 4);
-        row.push(o++);
+        o++;
       }
-      skirtIdx.push(row);
     }
-    const index: number[] = [];
-    for (let jj = 0; jj < n - 1; jj++)
-      for (let ii = 0; ii < n - 1; ii++) {
-        const a = jj * n + ii, b = a + 1, c = a + n, d = c + 1;
-        index.push(a, c, b, b, c, d);
-      }
-    edges.forEach((e, ei) => {
-      const sk = skirtIdx[ei];
-      for (let t = 0; t < n - 1; t++) {
-        const a = e[t], b = e[t + 1], c = sk[t], d = sk[t + 1];
-        index.push(a, b, c, b, d, c, a, c, b, b, c, d);
-      }
-    });
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(colr, 3));
     geo.setAttribute('mats', new THREE.BufferAttribute(mats, 4));
     geo.setAttribute('paintDelta', new THREE.BufferAttribute(paintDelta, 4));
-    geo.setIndex(count > 65535 ? new THREE.Uint32BufferAttribute(index, 1) : new THREE.Uint16BufferAttribute(index, 1));
+    geo.setIndex(new THREE.BufferAttribute(index, 1));
     ch.minY = minY;
     ch.maxY = maxY;
     const x0 = ch.cx * CQ * HM_STEP - HALF, z0 = ch.cz * CQ * HM_STEP - HALF;
@@ -863,7 +912,7 @@ if (uInfoOn > 0.0) {
 
   /** Low-res landscape out to the horizon, blended into the map edges. The grid
    *  is fine along the rim (so it meets the terrain) and coarsens outward. */
-  private buildHorizon(): THREE.Mesh {
+  private buildHorizon(): THREE.Group {
     const R = HALF * 3.4;
     const side: number[] = [];
     for (let x = 0; x <= HALF; x += 32) side.push(x);
@@ -938,10 +987,12 @@ if (uInfoOn > 0.0) {
     geo.setAttribute('paintDelta', new THREE.BufferAttribute(new Float32Array(n * n * 4), 4));
     geo.setIndex(index);
     geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, this.material);
-    mesh.frustumCulled = false;
-    mesh.receiveShadow = true;
-    return mesh;
+    const group = new THREE.Group();
+    const ring = batchGroundSurface(geo, this.material, 1024);
+    ring.receiveShadow = true;
+    group.add(ring);
+    geo.dispose();
+    return group;
   }
 
   /** March a ray against the heightfield. */

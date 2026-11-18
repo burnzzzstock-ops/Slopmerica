@@ -248,24 +248,41 @@ export class ModelBuilder {
   finish(): THREE.BufferGeometry {
     const gs: THREE.BufferGeometry[] = [];
     for (const p of this.parts) {
-      const g = p.g.clone();
-      if (!g.getAttribute('normal')) g.computeVertexNormals();
+      // A specialised geometry can also construct helper meshes when cloned.
+      // Preserve those constructor calls on the seeded model-building path.
+      const g = p.g.constructor === THREE.BufferGeometry ? new THREE.BufferGeometry() : p.g.clone();
+      // mergeGeometries copies the completed streams. Source positions,
+      // normals and UVs can be read directly until that copy.
+      g.setAttribute('position', p.g.getAttribute('position'));
+      const normal = p.g.getAttribute('normal');
+      if (normal) g.setAttribute('normal', normal);
+      else g.computeVertexNormals();
       const n = g.getAttribute('position').count;
-      const tint = new Float32Array(n * 4), info = new Float32Array(n * 4), hub = new Float32Array(n * 3);
-      const own = g.getAttribute('tint') as THREE.BufferAttribute | undefined;
+      g.setAttribute('uv', p.g.getAttribute('uv') ?? new THREE.BufferAttribute(new Float32Array(n * 2), 2));
+      const tint = new Uint8Array(n * 4), info = new Uint8Array(n * 4), hub = new Int16Array(n * 3);
+      const own = p.g.getAttribute('tint') as THREE.BufferAttribute | undefined;
+      // A part shares its material and wheel hub. Pack those values once at
+      // their original Float32 precision, before merging the model's parts.
+      const red = tintByte(p.rgb[0]), green = tintByte(p.rgb[1]), blue = tintByte(p.rgb[2]), paint = tintByte(p.paint);
+      const zone = Math.round(Math.fround(p.zone)), wheel = Math.round(Math.fround(p.wheel));
+      const hx = Math.round(Math.fround(p.hub[0]) * 1024), hy = Math.round(Math.fround(p.hub[1]) * 1024);
+      const hz = Math.round(Math.fround(p.hub[2]) * 1024);
       for (let i = 0; i < n; i++) {
-        if (own) { tint[i * 4] = own.getX(i) * p.rgb[0]; tint[i * 4 + 1] = own.getY(i) * p.rgb[1]; tint[i * 4 + 2] = own.getZ(i) * p.rgb[2]; tint[i * 4 + 3] = own.getW(i) * p.paint; }
-        else { tint[i * 4] = p.rgb[0]; tint[i * 4 + 1] = p.rgb[1]; tint[i * 4 + 2] = p.rgb[2]; tint[i * 4 + 3] = p.paint; }
-        info[i * 4] = p.zone; info[i * 4 + 1] = p.wheel;
-        hub[i * 3] = p.hub[0]; hub[i * 3 + 1] = p.hub[1]; hub[i * 3 + 2] = p.hub[2];
+        const at = i * 4;
+        tint[at] = own ? tintByte(own.getX(i) * p.rgb[0]) : red;
+        tint[at + 1] = own ? tintByte(own.getY(i) * p.rgb[1]) : green;
+        tint[at + 2] = own ? tintByte(own.getZ(i) * p.rgb[2]) : blue;
+        tint[at + 3] = own ? tintByte(own.getW(i) * p.paint) : paint;
+        info[at] = zone; info[at + 1] = wheel;
+        hub[i * 3] = hx; hub[i * 3 + 1] = hy; hub[i * 3 + 2] = hz;
       }
-      g.deleteAttribute('tint');
-      g.setAttribute('aTint', new THREE.BufferAttribute(tint, 4));
+      g.setAttribute('aTint', new THREE.BufferAttribute(tint, 4, true));
       g.setAttribute('aInfo', new THREE.BufferAttribute(info, 4));
       g.setAttribute('aHub', new THREE.BufferAttribute(hub, 3));
-      if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
       g.setIndex(null);
-      for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'aTint', 'aInfo', 'aHub'].includes(k)) g.deleteAttribute(k);
+      for (const name of Object.keys(g.attributes)) {
+        if (!['position', 'normal', 'uv', 'aTint', 'aInfo', 'aHub'].includes(name)) g.deleteAttribute(name);
+      }
       gs.push(g);
     }
     const merged = mergeGeometries(gs, false);
@@ -275,25 +292,26 @@ export class ModelBuilder {
   }
 }
 
-/** Pack the merged geometry into the small vertex layout the vehicle shader reads (about 33 bytes a vertex). */
+function tintByte(value: number) {
+  return Math.round(clamp(Math.fround(value), 0, 1) * 255);
+}
+
+/** Finish packing the merged normals and UVs into the vehicle shader's vertex layout. */
 function quantize(g: THREE.BufferGeometry): THREE.BufferGeometry {
   const n = g.getAttribute('position').count;
   const normal = g.getAttribute('normal') as THREE.BufferAttribute, uv = g.getAttribute('uv') as THREE.BufferAttribute;
-  const tint = g.getAttribute('aTint') as THREE.BufferAttribute, info = g.getAttribute('aInfo') as THREE.BufferAttribute, hub = g.getAttribute('aHub') as THREE.BufferAttribute;
-  const nrm = new Int8Array(n * 3), uvs = new Uint16Array(n * 2), tin = new Uint8Array(n * 4), inf = new Uint8Array(n * 4), hb = new Int16Array(n * 3);
+  const nrm = new Int8Array(n * 3), uvs = new Uint16Array(n * 2);
   for (let i = 0; i < n; i++) {
     nrm[i * 3] = Math.round(normal.getX(i) * 127); nrm[i * 3 + 1] = Math.round(normal.getY(i) * 127); nrm[i * 3 + 2] = Math.round(normal.getZ(i) * 127);
     uvs[i * 2] = Math.round(clamp(uv.getX(i), 0, 1) * 65535); uvs[i * 2 + 1] = Math.round(clamp(uv.getY(i), 0, 1) * 65535);
-    for (let k = 0; k < 4; k++) { tin[i * 4 + k] = Math.round(clamp(tint.array[i * 4 + k], 0, 1) * 255); inf[i * 4 + k] = Math.round(info.array[i * 4 + k]); }
-    for (let k = 0; k < 3; k++) hb[i * 3 + k] = Math.round(hub.array[i * 3 + k] * 1024);
   }
   const out = new THREE.BufferGeometry();
   out.setAttribute('position', g.getAttribute('position'));
   out.setAttribute('normal', new THREE.BufferAttribute(nrm, 3, true));
   out.setAttribute('uv', new THREE.BufferAttribute(uvs, 2, true));
-  out.setAttribute('aTint', new THREE.BufferAttribute(tin, 4, true));
-  out.setAttribute('aInfo', new THREE.BufferAttribute(inf, 4, false));
-  out.setAttribute('aHub', new THREE.BufferAttribute(hb, 3, false));
+  out.setAttribute('aTint', g.getAttribute('aTint'));
+  out.setAttribute('aInfo', g.getAttribute('aInfo'));
+  out.setAttribute('aHub', g.getAttribute('aHub'));
   out.computeBoundingBox(); out.computeBoundingSphere();
   g.dispose();
   return out;

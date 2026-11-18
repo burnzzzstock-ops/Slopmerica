@@ -9,6 +9,7 @@ import type { Terrain } from './terrain';
 import type { WorldFields } from '../contracts';
 import { riverFlowTexture, WaterPollution, WATER_POLLUTION_RANGE } from './waterFields';
 import { RiverFire } from './riverFire';
+import { batchGroundSurface } from '../render/groundSurfaceBatch';
 
 /**
  * Planar reflection for the water plane (high quality). A mirrored camera
@@ -247,14 +248,54 @@ function inlandMask(terrain: Terrain, hasSea: boolean): THREE.DataTexture {
   return tex;
 }
 
-function waterGeometry(segments: number) {
+export function waterGeometry(segments: number, flow: THREE.DataTexture) {
   // A tessellated county surface carries the sub-metre river relief. The
   // uninhabited ocean beyond it uses coarse strips instead of a giant grid.
   // Shared boundary subdivisions keep raised river inlets watertight.
   const geo = new THREE.PlaneGeometry(WORLD, WORLD, segments, segments);
   geo.rotateX(-Math.PI / 2);
   const positions = Array.from(geo.attributes.position.array);
-  const indices = Array.from(geo.index!.array);
+  const indices: number[] = [];
+  const stride = segments + 1;
+  const { width, height, data } = flow.image;
+  if (!data) throw new Error('Water relief texture has no samples');
+  const relief = new Uint8Array(stride * stride);
+  // Relief multiplies the blue channel of the linearly filtered flow texture.
+  // A zero footprint is planar for every bed height, tide and terrain edit.
+  for (let z = 0; z <= segments; z++) for (let x = 0; x <= segments; x++) {
+    const u = Math.floor(x / segments * width - 0.5), v = Math.floor(z / segments * height - 0.5);
+    for (let j = v; j <= v + 1; j++) for (let i = u; i <= u + 1; i++) {
+      const texel = Math.max(0, Math.min(height - 1, j)) * width + Math.max(0, Math.min(width - 1, i));
+      if (data[texel * 4 + 2]) relief[z * stride + x] = 1;
+    }
+  }
+  const tile = (x: number, z: number, side: number) => {
+    let flat = true;
+    for (let j = z; j <= z + side && flat; j++) for (let i = x; i <= x + side; i++) {
+      if (relief[j * stride + i]) { flat = false; break; }
+    }
+    const start = z * stride + x;
+    if (flat) {
+      // Keep every original boundary vertex, including where an adjacent tile
+      // has river relief. The fan has exactly the same planar coverage.
+      const middle = start + (side / 2) * (stride + 1);
+      for (let k = 0; k < side; k++) {
+        const left = start + k * stride, bottom = start + side * stride + k;
+        indices.push(middle, left, left + stride, middle, bottom, bottom + 1);
+        indices.push(middle, left + side + stride, left + side, middle, start + k + 1, start + k);
+      }
+    } else if (side > 4) {
+      const half = side / 2;
+      tile(x, z, half); tile(x + half, z, half);
+      tile(x, z + half, half); tile(x + half, z + half, half);
+    } else {
+      for (let j = 0; j < side; j++) for (let i = 0; i < side; i++) {
+        const a = start + j * stride + i, b = a + stride;
+        indices.push(a, b, a + 1, b, b + 1, a + 1);
+      }
+    }
+  };
+  for (let z = 0; z < segments; z += 16) for (let x = 0; x < segments; x += 16) tile(x, z, 16);
   for (const [x0, z0, x1, z1] of [
     [-HALF, -HALF, HALF, -HALF], [HALF, -HALF, HALF, HALF],
     [HALF, HALF, -HALF, HALF], [-HALF, HALF, -HALF, -HALF],
@@ -318,7 +359,8 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
   let reflection = reflect ? new WaterReflection(typeof reflect === 'number' ? reflect : .5, terrain) : undefined;
   const pollution = new WaterPollution();
   uniforms.uPollutionField.value = pollution.texture;
-  uniforms.uFlow.value = riverFlowTexture(terrain);
+  const flow = riverFlowTexture(terrain);
+  uniforms.uFlow.value = flow;
   uniforms.uInland.value = inlandMask(terrain, mapId !== 'appalachia');
   if (reflection) {
     uniforms.uRefl.value = reflection.rt.texture;
@@ -525,8 +567,16 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
       }
     `,
   });
-  const geo = waterGeometry(reflect ? 256 : 128);
+  const geo = waterGeometry(reflect ? 256 : 128, flow);
   const mesh = new THREE.Mesh(geo, mat);
+  const batchSurface = (geometry: THREE.BufferGeometry) => {
+    const batch = batchGroundSurface(geometry, mat, 512, .3);
+    batch.renderOrder = 2;
+    geometry.setDrawRange(0, 0);
+    mesh.add(batch);
+    return batch;
+  };
+  let surface = batchSurface(geo);
   mesh.position.y = WATER;
   mesh.renderOrder = 2;
   mesh.frustumCulled = false;
@@ -544,11 +594,14 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
       uniforms.uReflOn.value = reflection ? 1 : 0;
       const segments = scale ? 256 : 128;
       if ((mesh.geometry as THREE.PlaneGeometry).parameters.widthSegments !== segments) {
-        mesh.geometry.dispose(); mesh.geometry = waterGeometry(segments);
+        mesh.remove(surface); surface.dispose();
+        mesh.geometry.dispose(); mesh.geometry = waterGeometry(segments, flow);
+        surface = batchSurface(mesh.geometry);
       }
     },
     updateFields(fields: WorldFields) { if (pollution.update(fields)) fire.update(fields); },
     dispose() {
+      surface.dispose();
       mesh.geometry.dispose(); mat.dispose(); reflection?.rt.dispose(); pollution.dispose(); fire.dispose();
       (uniforms.uFlow.value as THREE.Texture).dispose();
       (uniforms.uInland.value as THREE.Texture).dispose();

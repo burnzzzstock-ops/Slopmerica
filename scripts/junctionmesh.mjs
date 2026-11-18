@@ -91,5 +91,31 @@ const check = (label, ok) => { console.log(ok ? 'OK  ' : 'FAIL', label); if (!ok
 check(`no holes: ${res.holes} of ${res.gridPoints} grid points in the roads' full-width strips have nothing drawn (${res.junctions} junctions; target 0)`, res.holes === 0);
 check(`zebra strips face up: ${res.zebra.down} of ${res.zebra.of} triangles face down`, res.zebra.of > 0 && res.zebra.down === 0);
 check(`junction asphalt faces up: ${res.junctionAsphalt.down} of ${res.junctionAsphalt.of} triangles face down`, res.junctionAsphalt.of > 0 && res.junctionAsphalt.down === 0);
+// Exercise the same per-light callbacks Three uses, including a long sunset shadow.
+const concrete = rr.concMesh, geometry = concrete.geometry;
+const shadowCount = (extent, altitude) => {
+  const sunCamera = new THREE.OrthographicCamera(-extent, extent, extent, -extent);
+  sunCamera.position.set(0, Math.sin(altitude), Math.cos(altitude));
+  sunCamera.lookAt(0, 0, 0); sunCamera.updateMatrixWorld();
+  const renderer = { getRenderTarget: () => ({ width: 1024 }) };
+  concrete.onBeforeShadow(renderer, concrete, null, sunCamera, geometry);
+  const count = Math.min(geometry.drawRange.count, geometry.index.count);
+  concrete.onAfterShadow(renderer, concrete, null, sunCamera, geometry);
+  return count;
+};
+const full = geometry.index.count, far = shadowCount(4000, 1);
+check(`coarse sun map submits ${far / 3} of ${full / 3} concrete triangles`, far >= 0 && far < full);
+check('street and grazing-light cascades restore the full road surface', shadowCount(100, 1) === full && shadowCount(4000, 0.05) === full && geometry.drawRange.count === Infinity);
+const poles = rr.lampPoles, poleGeometry = poles.geometry;
+const fullPole = poleGeometry.drawRange.count;
+const poleCount = extent => {
+  const sun = new THREE.OrthographicCamera(-extent, extent, extent, -extent);
+  const renderer = { getRenderTarget: () => ({ width: 2048 }) };
+  poles.onBeforeShadow(renderer, poles, null, sun, poleGeometry);
+  const count = poleGeometry.drawRange.count;
+  poles.onAfterShadow(renderer, poles, null, sun, poleGeometry);
+  return count / 3;
+};
+check('lamp pole and arm use 16 shadow triangles at a distance and all 32 up close', poleCount(2000) === 16 && poleCount(100) === 32 && poleGeometry.drawRange.count === fullPole);
 await server.close();
 process.exit(bad ? 1 : 0);

@@ -1,5 +1,5 @@
 // The pause menu: Esc with nothing else open (hud.ts). The game waits while it is up, and goes on at the speed it had.
-// Resume, Save, Settings, Quit to title. Loaded when first opened, so it costs the main script nothing: for that it
+// Resume, Save, Load, Settings, Quit to title. Loaded when first opened, so it costs the main script nothing: for that it
 // imports types only, and the HUD hands it everything it does (an import of the save code from here made the bundler cut
 // 800 kB of the simulation out of the main script into a file of its own).
 import type { Game } from '../game';
@@ -13,6 +13,8 @@ export interface PauseMenuHost {
   settings(): void;
   /** leave for the title screen (the city has been saved, or the player has been told it could not be and pressed again) */
   quit(): void;
+  /** the same, for the title screen's saved cities: the list is open there */
+  load(): void;
   /** the menu has gone, by any way out */
   closed(): void;
 }
@@ -34,6 +36,7 @@ export function openPauseMenu(parent: HTMLElement, g: Game, host: PauseMenuHost)
       <p class="pm-city">${esc(g.cityName)} · ${esc(g.sim.dateLabel())}</p>
       <button class="pm-primary" data-pm="resume">Resume</button>
       <button data-pm="save">Save</button>
+      <button data-pm="load">Load</button>
       <button data-pm="settings">Settings</button>
       <button data-pm="quit">Quit to title</button>
       <div class="pm-status" role="status"></div>
@@ -70,19 +73,20 @@ export function openPauseMenu(parent: HTMLElement, g: Game, host: PauseMenuHost)
   // outside the sheet is Resume, as on the bug report
   el.addEventListener('pointerdown', (e) => { if (e.target === el) close(); });
 
-  // Quit leaves for the title screen. The city is saved first; if this browser will not store it, the first press says so
-  // and the second leaves anyway.
-  let warned = false;
+  // Load and Quit leave for the title screen: Load for its list of saved cities, which is where a city is chosen (and where a
+  // city file is loaded or pasted). The city is saved first; if this browser will not store it, the first press says so and
+  // the second leaves anyway.
+  let warned = '';
   el.addEventListener('click', (e) => {
     const act = (e.target as HTMLElement).closest<HTMLElement>('[data-pm]')?.dataset.pm;
     if (act === 'resume') close();
     else if (act === 'save') { const ok = host.save(); host.crumb(`pause menu: save ${ok ? 'ok' : 'failed'}`); say(ok ? 'Saved.' : 'Could not save in this browser', !ok); }
     else if (act === 'settings') { close(); host.settings(); }
-    else if (act === 'quit') {
+    else if (act === 'quit' || act === 'load') {
       const ok = host.save();
-      if (!ok && !warned) { warned = true; say('Could not save in this browser. Press again to leave without saving.', true); return; }
-      host.crumb(`pause menu: quit${ok ? '' : ' (not saved)'}`);
-      host.quit();
+      if (!ok && warned !== act) { warned = act; say('Could not save in this browser. Press again to leave without saving.', true); return; }
+      host.crumb(`pause menu: ${act}${ok ? '' : ' (not saved)'}`);
+      if (act === 'load') host.load(); else host.quit();
     }
   });
   buttons[0].focus({ preventScroll: true });

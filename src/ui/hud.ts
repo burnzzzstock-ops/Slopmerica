@@ -28,6 +28,7 @@ import { isZoned } from '../sim/buildings';
 import type { ViewMode } from '../render/overlays';
 import { ARCHETYPES } from '../agents/people';
 import { saveGame, snapshot } from '../sim/save';
+import { TITLE_OPEN } from './title';
 import { listSlots, slotName, writeSlot } from '../sim/slots';
 import { VEHICLE_SPECS } from '../agents/vehicles';
 import { LANDMARK_EVENTS } from '../agents/parking';
@@ -1323,7 +1324,7 @@ export class Hud implements UiSink {
   }
 
   /**
-   * The pause menu: Resume, Save, Settings, Quit to title. Esc opens it when nothing else is open. The game waits from this
+   * The pause menu: Resume, Save, Load, Settings, Quit to title. Esc opens it when nothing else is open. The game waits from this
    * call on (not from when the menu's script has arrived), and goes on at the speed it had when the menu closes.
    */
   openMenu() {
@@ -1341,6 +1342,11 @@ export class Hud implements UiSink {
         crumb,
         settings: () => { if (this.panel !== 'help') this.onTool('help'); },
         quit: () => { location.hash = ''; location.reload(); },
+        load: () => {
+          try { sessionStorage.setItem(TITLE_OPEN, 'slots'); } catch { /* the title opens as usual */ }
+          location.hash = '';
+          location.reload();
+        },
         closed: () => { this.menu = null; this.refreshTop(); },
       });
       this.refreshTop();

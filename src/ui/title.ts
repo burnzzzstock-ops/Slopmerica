@@ -13,6 +13,9 @@ import appalachiaArt from '../art/keyart/appalachia.webp';
 import norcalArt from '../art/keyart/norcal.webp';
 import floridaArt from '../art/keyart/florida.webp';
 
+/** sessionStorage, read once: how the title screen should open. 'slots' is the pause menu's Load: the saved cities, open. */
+export const TITLE_OPEN = 'slopmerica.titleOpen';
+
 export interface StartChoice {
   map: MapId;
   mode: Mode;
@@ -218,7 +221,14 @@ export function showTitle(parent: HTMLElement): Promise<StartChoice> {
         </div>`).join('');
     };
     const refreshSlots = () => listSlots().then((list) => { slots = list; drawSlots(); });
-    void refreshSlots();
+    // the pause menu's Load comes here for the saved cities: the list is open and its first Load has the focus
+    let wantSlots = false;
+    try { wantSlots = sessionStorage.getItem(TITLE_OPEN) === 'slots'; sessionStorage.removeItem(TITLE_OPEN); } catch { /* it opens as usual */ }
+    void refreshSlots().then(() => {
+      if (!wantSlots || !slots.length) return;
+      slotsEl.hidden = false;
+      (slotsEl.querySelector('[data-slot-load]') as HTMLElement | null)?.focus({ preventScroll: true });
+    });
     slotsBtn.addEventListener('click', () => { slotsEl.hidden = !slotsEl.hidden; });
     slotsEl.addEventListener('click', async (e) => {
       const t = e.target as HTMLElement, load = t.closest<HTMLElement>('[data-slot-load]'), del = t.closest<HTMLElement>('[data-slot-del]');

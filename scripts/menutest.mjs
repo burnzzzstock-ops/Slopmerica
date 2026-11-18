@@ -1,8 +1,10 @@
 // The pause menu. Esc closes what is open (a drawer, the tool in hand, a card), lets go of a followed car, and with nothing
-// left to put away opens a menu: Resume, Save, Settings, Quit to title. While it is up the game waits and the game's own
+// left to put away opens a menu: Resume, Save, Load, Settings, Quit to title. While it is up the game waits and the game's own
 // keys do nothing; Esc, Resume or a press outside it goes on at the speed the game had. Tab and the arrows stay inside it.
 // Save saves; Settings opens the drawer; Quit to title saves and goes to the title screen, where the city is there to
-// resume; when the browser will not store the city, the first press says so and the second leaves. On a 390 x 844 phone
+// resume; when the browser will not store the city, the first press says so and the second leaves. Load saves the same
+// way and goes to the title screen with its list of saved cities open, the first Load there in focus (Quit leaves the
+// list closed). On a 390 x 844 phone
 // the menu fits and every button is 44 px or more. An ending's card is not interrupted.
 // Exits nonzero on failure.
 //
@@ -73,7 +75,7 @@ for (const who of ['desktop', 'phone']) {
   if (phone) await page.evaluate(() => window.__game.ui.openMenu()); else await esc();
   let up = await menuUp();
   let s = await state();
-  check(`${who}: ${phone ? 'openMenu()' : 'Esc with nothing open'} brings up the pause menu (${s.labels.join(', ')})`, up && s.up && ['Resume', 'Save', 'Settings', 'Quit to title'].every((l) => s.labels.includes(l)), s);
+  check(`${who}: ${phone ? 'openMenu()' : 'Esc with nothing open'} brings up the pause menu (${s.labels.join(', ')})`, up && s.up && ['Resume', 'Save', 'Load', 'Settings', 'Quit to title'].join('|') === s.labels.join('|'), s);
   check(`${who}: the game waits while it is up (speed ${s.speed}), and the top bar shows it paused`, s.speed === 0 && s.paused !== false, s);
   check(`${who}: it is a dialog with a name ("${s.title}"), and Resume has the focus`, s.role === 'dialog' && s.modal === 'true' && s.title === 'Paused' && s.focus === 'Resume', s);
   check(`${who}: it fits the screen (${s.box?.left} to ${s.box?.right} px, ${s.box?.top} to ${s.box?.bottom}); buttons ${s.minH} px or more, text ${s.minPx} px or more`, !!s.box && s.box.left >= 0 && s.box.right <= W && s.box.top >= 0 && s.box.bottom <= H && s.minH >= 44 && s.minPx >= 12, s);
@@ -140,14 +142,43 @@ for (const who of ['desktop', 'phone']) {
     await page.evaluate(() => { document.querySelector('.ending')?.remove(); window.__game.sim.speed = 2; });
   }
 
+  // ---- Load: the city is saved, and the title screen opens on its saved cities ----
+  const city0 = await page.evaluate(() => window.__game.cityName);
+  await page.evaluate(() => window.__game.ui.openPanel('help'));
+  await press('#save-slot');
+  const slotToast = await page.waitForFunction(() => [...document.querySelectorAll('.toasts .toast')].map((t) => t.textContent).find((t) => /^Saved as "/.test(t)) ?? null, null, { timeout: 15000 }).then((h) => h.jsonValue(), () => null);
+  const slot = slotToast?.match(/^Saved as "([^"]+)"/)?.[1] ?? null;
+  check(`${who}: a city is put in a slot to load from ("${slot}")`, !!slot, slotToast);
+  await page.evaluate(() => { const g = window.__game; g.ui.openPanel(null); g.tools.set('inspect'); localStorage.removeItem('slopmerica.save.v1'); });
+  if (phone) await page.evaluate(() => window.__game.ui.openMenu()); else await esc();
+  await menuUp();
+  await Promise.all([page.waitForSelector('.title #slots .aaa-slot', { timeout: 120000 }).catch(() => null), press('.pause [data-pm="load"]')]);
+  await page.waitForTimeout(300);
+  const loadAt = await page.evaluate(() => {
+    const list = document.querySelector('.title #slots');
+    return { title: !!document.querySelector('.title'), open: !!list && !list.hidden && list.getBoundingClientRect().height > 0, names: [...(list?.querySelectorAll('.aaa-slot-what b') ?? [])].map((b) => b.textContent),
+      at: (() => { const r = list?.querySelector('[data-slot-load]')?.getBoundingClientRect(); return r ? { top: Math.round(r.top), bottom: Math.round(r.bottom), h: innerHeight } : null; })(),
+      focus: document.activeElement?.matches?.('[data-slot-load]') ? document.activeElement.textContent.trim() : (document.activeElement?.tagName ?? null), resume: document.querySelector('.title #continue')?.textContent.replace(/\s+/g, ' ').trim() ?? null, flag: sessionStorage.getItem('slopmerica.titleOpen') };
+  });
+  check(`${who}: Load goes to the title screen with the saved cities open (${loadAt.names.join(', ')}), the first Load in focus`, loadAt.title && loadAt.open && loadAt.names.includes(slot) && loadAt.focus === 'Load' && loadAt.flag === null, loadAt);
+  check(`${who}: that Load is on the screen (${loadAt.at?.top} to ${loadAt.at?.bottom} px of ${loadAt.at?.h})`, !!loadAt.at && loadAt.at.top >= 0 && loadAt.at.bottom <= loadAt.at.h, loadAt.at);
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/title-load-${who}.png` });
+  check(`${who}: and the city it left is saved, there to resume ("${(loadAt.resume ?? '').slice(0, 40)}")`, !!loadAt.resume && loadAt.resume.includes(city0), loadAt);
+  // back into the city, for Quit
+  await press('.title #continue');
+  await page.waitForFunction(() => window.__game && window.__dbg && !document.querySelector('.loading'), null, { timeout: 180000 });
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => { const g = window.__game; cancelAnimationFrame(g.raf); document.querySelector('.onboard')?.remove(); g.ui.openPanel(null); g.tools.set('inspect'); g.ui.select(null); g.sim.speed = 2; });
+
   // ---- Quit to title: the city is saved and the title screen offers it ----
   await page.evaluate(() => localStorage.removeItem('slopmerica.save.v1'));
   if (phone) await page.evaluate(() => window.__game.ui.openMenu()); else await esc();
   await menuUp();
   const city = await page.evaluate(() => window.__game.cityName);
   await Promise.all([page.waitForSelector('.title #continue', { timeout: 120000 }).catch(() => null), press('.pause [data-pm="quit"]')]);
-  const title = await page.evaluate(() => ({ title: !!document.querySelector('.title'), resume: document.querySelector('.title #continue')?.textContent.replace(/\s+/g, ' ').trim() ?? null, game: !!window.__game }));
-  check(`${who}: Quit to title goes to the title screen, with the city there to resume ("${(title.resume ?? '').slice(0, 44)}")`, title.title && !!title.resume && title.resume.includes(city), title);
+  await page.waitForTimeout(300);
+  const title = await page.evaluate(() => ({ list: !(document.querySelector('.title #slots')?.hidden ?? true), title: !!document.querySelector('.title'), resume: document.querySelector('.title #continue')?.textContent.replace(/\s+/g, ' ').trim() ?? null, game: !!window.__game }));
+  check(`${who}: Quit to title goes to the title screen, its list of saved cities closed, with the city there to resume ("${(title.resume ?? '').slice(0, 44)}")`, title.title && !!title.resume && title.resume.includes(city) && !title.list, title);
 
   // ---- a browser that will not store the city: the first press says so, the second leaves ----
   if (!phone && title.resume) {

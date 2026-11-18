@@ -7,6 +7,9 @@
 // 2. Photo mode's keys are not read while an input has the keyboard, and a slider that has been dragged keeps it: Esc did
 //    not leave photo mode after the Hour slider was touched. Here the slider is dragged with the mouse and Esc pressed
 //    (photo mode ends); and a slider reached with the keyboard still answers the arrow keys, and Esc from it leaves too.
+// 3. An emergency card's Show flies to the worst neighbourhood at the height the camera has, 460 m at most. While the camera
+//    rides with a car that height is the few metres to the car, so Show put the camera in the street. Here Show is asked
+//    for while following: the camera must end well above the neighbourhood, and at the height it had when not following.
 // Exits nonzero on failure.
 //
 //   BASE_URL=http://127.0.0.1:5173 node scripts/camseams.mjs
@@ -95,6 +98,29 @@ if (car) {
   check(`and Esc from it leaves photo mode (photo mode ${p.on ? 'on' : 'off'})`, !p.on && !p.bar, p);
   const menu = await page.evaluate(() => !!document.querySelector('.pause'));
   check('that Esc did not also open the pause menu', !menu);
+}
+
+// ---- 3. Show, from an emergency card, while riding with a car ----
+{
+  const r = await page.evaluate(async () => {
+    const g = window.__game, c = g.traffic.cars.find((x) => !x.parked && x.posed) ?? null, S = g.startView();
+    const run = (n) => { for (let i = 0; i < n; i++) { g.frame(1 / 60); g.ui.update(1 / 60); } };
+    const e = { hot: [{ x: S.x + 300, z: S.z + 200 }], needs: [] };
+    g.sim.speed = 1;
+    // not following, at 300 m: Show keeps that height
+    g.rts.setView(S.x, S.z, 300, 0.6, 0.85, true); run(3);
+    g.ui.showWorst(e); run(180);
+    const free = g.rts.distance;
+    if (!c) return { free, err: 'no car to ride with' };
+    g.rts.setView(c.x, c.z, 120, 0.6, 0.85, true); run(3);
+    g.rts.follow({ kind: 'car', id: c.id }); run(60);
+    const riding = { following: !!g.rts.following, distance: g.rts.distance };
+    g.ui.showWorst(e); run(180);
+    return { free, riding, after: g.rts.distance, stillFollowing: !!g.rts.following, at: Math.hypot(g.rts.target.x - e.hot[0].x, g.rts.target.z - e.hot[0].z) };
+  });
+  check(`Show with the camera at 300 m keeps that height (${r.free?.toFixed(0)} m)`, Math.abs(r.free - 300) < 15, r);
+  if (r.err) console.log(`(${r.err}: the rest of this check is skipped)`);
+  else check(`Show while riding with a car (the camera ${r.riding.distance.toFixed(0)} m from it) ends above the neighbourhood, not in its street (${r.after.toFixed(0)} m up, ${r.at.toFixed(0)} m from the spot)`, r.riding.following && r.riding.distance < 60 && !r.stillFollowing && r.after > 300 && r.at < 40, r);
 }
 
 check('no page errors', errs.length === 0, errs.slice(0, 3));

@@ -605,7 +605,8 @@ export class Hud implements UiSink {
     this.hotIdx++;
     const g = this.game, top = e.needs[0];
     if (top) EXT.panels.find((p) => p.id === 'services')?.focus?.(g, top.cat);
-    g.rts.setView(h.x, h.z, Math.min(g.rts.distance, 460));
+    // (while the camera rides with a car its distance is the few metres to that car, not a height to look at a neighbourhood from)
+    g.rts.setView(h.x, h.z, g.rts.following ? 460 : Math.min(g.rts.distance, 460));
     const b = g.buildings.list.get(h.id);
     if (b) g.select({ kind: 'building', b });
     crumb(`emergency: show area ${this.hotIdx} (${h.n} buildings)`);

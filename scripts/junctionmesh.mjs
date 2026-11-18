@@ -106,5 +106,16 @@ const shadowCount = (extent, altitude) => {
 const full = geometry.index.count, far = shadowCount(4000, 1);
 check(`coarse sun map submits ${far / 3} of ${full / 3} concrete triangles`, far >= 0 && far < full);
 check('street and grazing-light cascades restore the full road surface', shadowCount(100, 1) === full && shadowCount(4000, 0.05) === full && geometry.drawRange.count === Infinity);
+const poles = rr.lampPoles, poleGeometry = poles.geometry;
+const fullPole = poleGeometry.drawRange.count;
+const poleCount = extent => {
+  const sun = new THREE.OrthographicCamera(-extent, extent, extent, -extent);
+  const renderer = { getRenderTarget: () => ({ width: 2048 }) };
+  poles.onBeforeShadow(renderer, poles, null, sun, poleGeometry);
+  const count = poleGeometry.drawRange.count;
+  poles.onAfterShadow(renderer, poles, null, sun, poleGeometry);
+  return count / 3;
+};
+check('lamp pole and arm use 16 shadow triangles at a distance and all 32 up close', poleCount(2000) === 16 && poleCount(100) === 32 && poleGeometry.drawRange.count === fullPole);
 await server.close();
 process.exit(bad ? 1 : 0);

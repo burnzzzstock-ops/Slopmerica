@@ -3,6 +3,7 @@ import { GLOW } from '../config';
 // polygons, concrete skirts / bridge decks / barriers / pillars, and street lights.
 import * as THREE from 'three';
 import { litByLamps } from '../world/nightLights';
+import { withVisualRandom } from '../render/visualRandom';
 import { clamp, convexHull, lerp, locate, norm, sub, V2 } from '../core/math';
 import { mulberry32 } from '../core/rng';
 import { carriageHalf, laneOffset, ROAD_TYPES, RoadType, RoadTypeId, ROAD_ORDER } from './roadTypes';
@@ -771,8 +772,26 @@ export class RoadRenderer {
     pole.translate(0, 4, 0);
     const arm = new THREE.BoxGeometry(0.12, 0.12, 2.2);
     arm.translate(0, 7.9, -1.0);
-    const poleGeo = mergeSimple([pole, arm]);
+    // A three-sided mast and arm retain the full shadow length. Their cross
+    // sections differ by less than a texel on all but the closest sun maps.
+    const fullPole = mergeSimple([pole, arm]);
+    const fullPoleVertices = fullPole.getAttribute('position').count;
+    const poleGeo = withVisualRandom(() => {
+      const mastCaster = shadowPrism(.13, .09, 8);
+      const armCaster = shadowPrism(.085, .085, 2.2);
+      armCaster.rotateX(-Math.PI / 2).translate(0, 7.9, .1);
+      return mergeSimple([fullPole, mastCaster, armCaster]);
+    });
+    const casterVertices = poleGeo.getAttribute('position').count - fullPoleVertices;
+    poleGeo.setDrawRange(0, fullPoleVertices);
     this.lampPoles = new THREE.InstancedMesh(poleGeo, new THREE.MeshStandardMaterial({ color: 0x55585c, roughness: 0.6, metalness: 0.4 }), 4000);
+    this.lampPoles.onBeforeShadow = (renderer, _object, _camera, sun) => {
+      const pixels = renderer.getRenderTarget()?.width;
+      if (pixels && sun instanceof THREE.OrthographicCamera && (sun.right - sun.left) / (pixels * sun.zoom) >= .45) {
+        poleGeo.setDrawRange(fullPoleVertices, casterVertices);
+      }
+    };
+    this.lampPoles.onAfterShadow = () => poleGeo.setDrawRange(0, fullPoleVertices);
     const head = new THREE.BoxGeometry(0.5, 0.18, 0.9);
     head.translate(0, 7.8, -2.0);
     // the lamp head: sodium amber (was 0xffc27a, which the tone curve showed as a pale yellow; owner: "cozy warm night lights")
@@ -1346,6 +1365,21 @@ export class RoadRenderer {
     return true;
   }
 
+}
+
+function shadowPrism(bottom: number, top: number, height: number) {
+  const vertices: number[] = [];
+  for (const [radius, y] of [[bottom, 0], [top, height]]) {
+    for (let i = 0; i < 3; i++) {
+      const angle = i * Math.PI * 2 / 3;
+      vertices.push(radius * Math.cos(angle), y, radius * Math.sin(angle));
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setIndex([0, 1, 2, 5, 4, 3, 0, 3, 1, 1, 3, 4, 1, 4, 2, 2, 4, 5, 2, 5, 0, 0, 5, 3]);
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
 function mergeSimple(geos: THREE.BufferGeometry[]): THREE.BufferGeometry {

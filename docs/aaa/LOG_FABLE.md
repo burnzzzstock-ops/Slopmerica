@@ -38,7 +38,7 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 
 ## State of the work (17 Nov 2026)
 
-`aaa/integration` is pushed at 879816b (18 Nov): the look lane's 7bc24ee, the interface session's d4b6b8f and feed posts with a place; 204 of 209, under "Test results". `claude/aaa-play` is pushed ahead of it at the commit this file is in, with the step timer, the near lookup, the bulldozer's undo, land value in turns and the traffic fixes; the merge of it with the look lane's 56c44e1 and the interface session's 91a17a5 is 75892a6, and its suite is under "Test results" once read. Everything below is committed. The registry has 302 entries (31 gate, 15 smoke, 164 full, 92 measure), the look lane's among them.
+`aaa/integration` is pushed at 75892a6 (18 Nov) and then fast-forwarded with this lane's test and harness commits: the look lane's 56c44e1, the interface session's 91a17a5, and this lane's bulldozer undo, land value in turns and traffic fixes; **212 of 214**, under "Test results", the two left being reflecttest (the look lane's) and landmarktest. `claude/aaa-play` is pushed at the commit this file is in. Everything below is committed. The registry has 307 entries on integration (31 gate, 15 smoke, 169 full, 92 measure), the look lane's among them.
 
 | Item | State |
 |---|---|
@@ -190,6 +190,15 @@ None of these thresholds was loosened. They are what the traffic does on a town 
 ### Integration at 556917f (the HUD wiring), `--gpu`, seed 1
 
 119 of 128. The nine: hud-icon-art (Photo had no drawn icon; fixed in 5c44154), reflecttest (slowed by my own work running beside the suite; passes alone), nightglow (the coin toss above), photo-reflection and presetlight (the look lane's, failing before), carsolid, crosswalktest, lightstest and landmarktest (the traffic table above).
+
+### Integration at 75892a6 (the look lane's 56c44e1; this lane to af068df; the interface session's sixth batch, 9 commits to 91a17a5), `--gpu`, seed 1
+
+**212 of 214**, in 37 minutes. Gate: all four steps; the build is 2,529 kB, 799 kB gzipped, 3.6% over the budget's baseline. The two:
+
+- reflecttest: the look lane's, the same two checks as before.
+- landmarktest: 16 of 29 fans seated by kickoff where it asks 20. Standing; where their time goes is in the traffic table above.
+
+Passing for the first time on integration: **carsolid** (every check) and **lightstest**. Passing again: world-audio inside the suite. The new tests pass: razeundo, landround, feedplace, and the interface session's razeui, feedgo and camseams. playtest4, botclinics and parkingtest pass with the repairs of 94d6f0d, cb613c3 and c0c790b.
 
 ### Integration at 879816b (the look lane's 7bc24ee, 9 commits; the interface session's fifth batch, 11 commits; feed posts with a place), `--gpu`, seed 1
 

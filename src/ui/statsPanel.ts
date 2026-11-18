@@ -1,6 +1,6 @@
 // The Statistics drawer: the county over time, drawn from what the simulation already keeps (sim.history, one row every two
-// days; sim.popLog, the last 60 days of who moved in and who left and why). Four charts for a start: population, the treasury,
-// nature against sprawl, and arrivals and departures. Each is a small inline SVG made here (no library); a pointer or a finger
+// days; sim.weeks, a row for every closed week; sim.popLog, the last 60 days of who moved in and who left and why). Five
+// charts: population, the treasury, the weekly bill, nature against sprawl, and arrivals and departures. Each is a small inline SVG made here (no library); a pointer or a finger
 // across a chart reads off the day under it. Loaded when the drawer is first opened, so a player who never looks at a chart
 // never downloads it.
 import type { Game } from '../game';
@@ -9,11 +9,13 @@ import { LOSS_LABEL, usd, type LossCause } from '../sim/sim';
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 const n0 = (v: number) => Math.round(v).toLocaleString();
 const pct = (v: number) => `${v > 0 && v < 0.1 ? (v * 100).toFixed(1) : Math.round(v * 100)}%`;
+/** money with its sign written out: +$1,200, −$340 */
+const signed = (v: number) => `${v < 0 ? '−' : '+'}${usd(Math.abs(v))}`;
 
 /** one line on a chart: its points (already in order of day), its colour and how a value reads */
 interface Line { name: string; color: string; ys: number[]; say: (v: number) => string; fill?: boolean }
 /** what a chart needs to answer a pointer: the day of each column and each line's values */
-interface Probe { days: number[]; lines: Line[]; bars?: { in: number[]; out: number[] } }
+interface Probe { days: number[]; lines: Line[]; bars?: { in: number[]; out: number[]; say?: (i: number) => string } }
 
 /** A polyline through `ys` on a 100 x 100 box, low values at the bottom (the box is stretched to the plot by the SVG). */
 function path(ys: number[], lo: number, hi: number, close = false): string {
@@ -66,6 +68,19 @@ export function drawStats(el: HTMLElement, g: Game): () => void {
         const ys = H.map((h) => h.money), net = s.weeklyNet();
         const money = lineChart(g, 'money', 'Treasury', days, [{ name: 'treasury', color: 'var(--ind)', ys, say: usd }], Math.min(0, ...ys), Math.max(1000, ...ys), `${net >= 0 ? '+' : ''}${usd(net)}/wk running`);
         out.push(money.html); probes.set('money', money.probe);
+        // The weekly bill, closed week by closed week (sim.weeks, two years of them at most): what it brought in above the
+        // line and what it took out below. One-time money (building, grants, refunds) is not in the bars; the pointer says it.
+        const W = s.weeks;
+        if (!W.length) out.push(`<figure class="st-chart" data-chart="weeks"><figcaption class="st-head"><b>Weekly balance</b></figcaption><p class="st-empty">A bar for every week, from the first weekly close.</p></figure>`);
+        else {
+          const top = Math.max(1, ...W.map((w) => Math.max(w.income, w.expense))), bw = 100 / W.length, last = W[W.length - 1];
+          const bars = W.map((w, i) => `${w.income > 0 ? `<rect x="${(i * bw + bw * 0.1).toFixed(2)}" y="${(50 - (w.income / top) * 50).toFixed(2)}" width="${(bw * 0.8).toFixed(2)}" height="${((w.income / top) * 50).toFixed(2)}" fill="var(--good)"/>` : ''}${w.expense > 0 ? `<rect x="${(i * bw + bw * 0.1).toFixed(2)}" y="50" width="${(bw * 0.8).toFixed(2)}" height="${((w.expense / top) * 50).toFixed(2)}" fill="var(--bad)"/>` : ''}`).join('');
+          const weeks = `${W.length} week${W.length === 1 ? '' : 's'}`;
+          const legend = `<div class="st-legend"><span><i style="background:var(--good)"></i>income</span><span><i style="background:var(--bad)"></i>costs</span><span class="st-why">Taxes and upkeep, as billed at each week's end. One-time money is not in the bars.</span></div>`;
+          out.push(frame('weeks', 'Weekly balance', `${signed(last.net)} last week`, `last ${weeks}`, `<path d="M0 50L100 50" stroke="var(--line)"/>${bars}`, s.dateOf(W[0].day, false), s.dateOf(last.day, false),
+            `Weekly balance over the last ${weeks}: income ${usd(last.income)} and costs ${usd(last.expense)} in the last one, a balance of ${signed(last.net)}`, legend));
+          probes.set('weeks', { days: W.map((w) => w.day), lines: [], bars: { in: W.map((w) => w.income), out: W.map((w) => w.expense), say: (i) => `+${usd(W[i].income)} · −${usd(W[i].expense)} · balance ${signed(W[i].net)}${Math.round(W[i].oneTime) ? ` · one-time ${signed(W[i].oneTime)}` : ''}` } });
+        }
       }
       // what is left of the county's trees against how much of it is paved and built
       const land = lineChart(g, 'land', 'Nature and sprawl', days, [
@@ -102,7 +117,7 @@ export function drawStats(el: HTMLElement, g: Game): () => void {
     if (!plot || !fig || !p) return;
     const r = plot.getBoundingClientRect(), f = Math.max(0, Math.min(1, (e.clientX - r.left) / Math.max(1, r.width)));
     const i = p.bars ? Math.min(p.days.length - 1, Math.floor(f * p.days.length)) : Math.round(f * (p.days.length - 1));
-    const at = p.bars ? `+${n0(p.bars.in[i])} · −${n0(p.bars.out[i])}` : p.lines.map((l) => l.say(l.ys[i])).join(' · ');
+    const at = p.bars ? p.bars.say?.(i) ?? `+${n0(p.bars.in[i])} · −${n0(p.bars.out[i])}` : p.lines.map((l) => l.say(l.ys[i])).join(' · ');
     fig.querySelector('.st-at')!.textContent = `${g.sim.dateOf(p.days[i], false)}: ${at}`;
     const guide = fig.querySelector<HTMLElement>('.st-guide')!;
     guide.hidden = false;

@@ -1,9 +1,11 @@
 // The interface and the audio engine tell each other what is going on. A banner (a milestone, a landmark) asks the engine
 // to duck the music and the street once, when it is put on screen; when a tool is in hand the banner is a toast instead and
 // asks for nothing. The radio's ad is a jingle with no voice: when the engine says one has started, its words come up as a
-// caption, whole and inside the screen on a 390 x 844 phone too, and stay out of a bug report's recent actions. The
-// engine's calls are counted in the page; what a duck or a jingle sounds like, and when the engine plays one, is the audio
-// tests' business (scripts/look/action-audio.mjs, score.mjs). Exits nonzero on failure.
+// caption, whole and inside the screen on a 390 x 844 phone too, and stay out of a bug report's recent actions. The zoning
+// brush tells the engine every time it changes lots during a stroke, with how many, so the brush is heard for as long as
+// it paints; a stroke over land it leaves as it was says nothing, and the stroke's one completed event (zonePainted) is
+// still one. The engine's calls are counted in the page; what a duck, a jingle or the brush sounds like, and when the
+// engine plays an ad, is the audio tests' business (scripts/look/action-audio.mjs, score.mjs). Exits nonzero on failure.
 //
 //   BASE_URL=http://127.0.0.1:5173 node scripts/soundhooks.mjs
 import { readFileSync } from 'node:fs';
@@ -91,6 +93,47 @@ for (const who of ['desktop', 'phone']) {
     check(`${who}: the same ad again while its caption is up keeps one caption (${r.twice})`, r.twice === 1, r);
     check(`${who}: a caption does not duck the jingle it is the words of (${r.ducks} calls)`, r.ducks === 0, r);
     check(`${who}: the ads stay out of a bug report's recent actions (${r.inReport} of ${ADS.length} in it)`, r.inReport === 0 && r.reportHasActions, { inReport: r.inReport, actions: r.reportHasActions });
+  }
+
+  // ---- the zoning brush is heard while it lays zone down, and only then ----
+  if (!phone) {
+    const z = await page.evaluate(() => {
+      const g = window.__game, d = window.__dbg, t = g.tools, c = window.__calls, S0 = g.startView();
+      // a new street on open land beside the starting town (the town's own streets are where the camera starts)
+      let S = null, why = [];
+      for (const dz of [200, -200, 320, -320, 440, -440]) {
+        const r = d.road(S0.x - 160, S0.z + dz, S0.x + 160, S0.z + dz, 'twoLane');
+        if (typeof r === 'number') { S = { x: S0.x, z: S0.z + dz }; break; }
+        why.push(r);
+      }
+      if (!S) return { err: 'no street', why };
+      g.zones.update();
+      const done = [];
+      g.sim.events.on('zonePainted', (p) => done.push(p.cells));
+      const ev = (type) => ({ button: 0, pointerType: 'mouse', timeStamp: performance.now(), type });
+      const V = g.camera.position.constructor;
+      const stroke = (tool, zone, xs) => {
+        t.zoneType = zone; t.brush = 1; t.set(tool);
+        const P = xs.map((dx) => new V(S.x + dx, g.terrain.h(S.x + dx, S.z), S.z));
+        const c0 = c.zonePaint.length, e0 = done.length;
+        t.down(P[0], ev('pointerdown'));
+        for (const p of P.slice(1)) t.move(p, ev('pointermove'), true);
+        const held = c.zonePaint.slice(c0);
+        t.up(P[P.length - 1], ev('pointerup'), true);
+        return { points: P.length, held: held.length, cells: held.map((h) => h.n), at: held.every((h) => P.some((p) => p.x === h.x && p.z === h.z)), after: c.zonePaint.length - c0 - held.length, events: done.slice(e0) };
+      };
+      const xs = [-120, -90, -60, -30, 0, 30, 60, 90, 120];
+      const first = stroke('zone', 'resLow', xs);
+      const again = stroke('zone', 'resLow', xs);
+      const dez = stroke('dezone', 'resLow', xs.slice(0, 4));
+      t.set('inspect');
+      return { first, again, dez };
+    });
+    const f = z.first, a = z.again, dz = z.dez;
+    check(`a brush stroke over open lots is heard as it goes (${f?.held} calls over ${f?.points} points, ${f?.cells?.join(' ')} lots), each at the brush`, !z.err && f.held >= 4 && f.cells.every((n) => n > 0) && f.at, z);
+    check(`the stroke still ends with its one completed event (${f?.events?.length}: ${f?.events?.[0]} lots, the ${f?.cells?.reduce((s, n) => s + n, 0)} it was heard laying)`, !z.err && f.events.length === 1 && f.events[0] === f.cells.reduce((s, n) => s + n, 0) && f.after === 1, f);
+    check(`the same stroke again changes nothing and is silent (${a?.held} calls, ${a?.events?.length} events)`, !z.err && a.held === 0 && a.after === 0 && a.events.length === 0, a);
+    check(`taking zone off is heard the same way (${dz?.held} calls, ${dz?.events?.length} event)`, !z.err && dz.held >= 2 && dz.cells.every((n) => n > 0) && dz.events.length === 1, dz);
   }
 
   check(`${who}: no page errors`, errs.length === 0, errs.slice(0, 3));

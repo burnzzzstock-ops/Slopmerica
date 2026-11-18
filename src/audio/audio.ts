@@ -13,6 +13,7 @@ import { AmbientPiano } from './piano';
 import { AdaptiveScore } from './score';
 import { WorldSound } from './worldSound';
 import type { WorldSoundSource } from './worldSources';
+import { SlopRadio, type RadioStation } from './radio';
 
 export class AudioEngine {
   muted = false;
@@ -41,7 +42,10 @@ export class AudioEngine {
   private disasterLevel = 0;
   /** The feed can display this copy when a procedural radio jingle starts. */
   onRadioAd?: (text: string) => void;
-  /** Settings → Music (remembered): procedural score on/off and its volume */
+  radio?: SlopRadio;
+  /** Radio station ('piano' = default felt piano; 'banjo' | 'muzak' | 'country' = adaptive SlopRadio stems) */
+  station: RadioStation = 'piano';
+  /** Settings → Music (remembered): ambient piano on/off and its volume */
   musicOn = true;
   musicVolume = 0.55;
   private volume = 0.8;
@@ -140,6 +144,10 @@ export class AudioEngine {
     this.piano = this.score.piano;
     this.piano.enabled = this.musicOn;
     this.piano.volume = this.musicVolume;
+    this.radio = new SlopRadio(s, this.master, this.revIn);
+    this.radio.station = this.station;
+    this.radio.enabled = this.musicOn && this.station !== 'piano';
+    this.radio.volume = this.musicVolume;
     this.amb.mapId = this.mapId;
     if (c.state === 'suspended') void c.resume();
   }
@@ -208,9 +216,15 @@ export class AudioEngine {
     this.rainNow = (RAIN[mix.weather] ?? 0) * mix.weatherIntensity;
     this.hushNow = mix.weather === 'snow' || mix.weather === 'blizzard' ? 0.5 * mix.weatherIntensity : 0;
     if (this.piano) {
-      this.piano.enabled = this.musicOn;
+      this.piano.enabled = this.musicOn && this.station === 'piano';
       this.piano.volume = this.musicVolume;
       this.score?.update(Math.min(dt, 0.1), mix.night, mix, this.disasterLevel);
+    }
+    if (this.radio) {
+      this.radio.station = this.station;
+      this.radio.enabled = this.musicOn && this.station !== 'piano';
+      this.radio.volume = this.musicVolume;
+      this.radio.update(mix.night);
     }
   }
 

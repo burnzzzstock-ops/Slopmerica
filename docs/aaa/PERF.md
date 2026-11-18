@@ -1,5 +1,13 @@
 # Graphics performance
 
+## Startup readback and final production build at 8bc9025
+
+The startup and quality-change check samples up to 25 pixels for a black frame. Each read asks the GPU for a result synchronously. Commit `8bc9025` returns on the first visibly lit pixel. Across 16 Low samples per version on the RTX 5090, median time on a lit town frame fell from 41.55 to 2.40 ms. With the GPU already finished it fell from 42.60 to 2.05 ms. All 25 first-lit positions, the threshold, both black-frame fallbacks and context loss produced the same decisions across 29 cases.
+
+The first final-production phone run recorded 36.7 ms median and 127.7 ms p95. The strict p95 requirement is below 16 ms. Host CPU use ranged from 82.0% to 98.4%, with a 91.2% median during this run. The 300 intervals contained a median 119 draw calls and 533,587 triangles. The test completed with zero page errors. [Hardware report](measurements/phone-8bc9025-production.json)
+
+The final source reproduced every numeric result from the six forest measurements and the 32 original overviews below. All 15 pre-push smoke tests passed. The 12,359,933-byte single-file release passed 32 production checks on desktop and touch. With networking disabled, a saved 969-resident town with 143 buildings and 128 roads reloaded with matching simulation fingerprints.
+
 ## Corrected integration at dae9c68
 
 The Low phone target is a frame interval below 16 ms at the 95th percentile. The released HTML files ran consecutively on the RTX 5090 with the original 4× CPU throttle, current 969-resident town, seed 271828, 390 × 844 touch viewport and 300 measured intervals. Both runs completed with zero page errors.

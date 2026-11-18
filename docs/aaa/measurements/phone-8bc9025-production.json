@@ -1,0 +1,73 @@
+{
+  "date": "2026-11-18T04:25:39.150Z",
+  "chrome": "157.0.8103.79",
+  "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "seed": 271828,
+  "quality": "low",
+  "size": "390x844",
+  "scene": "reference",
+  "camera": "middle",
+  "dpr": 3,
+  "cpuThrottle": 4,
+  "phoneProxy": true,
+  "fixture": "a3aa48b02a0ed6f692235b948f4149a3f9c2d75a003abc05acb74e437008f8d9",
+  "buffer": [
+    585,
+    1266
+  ],
+  "frames": 300,
+  "frameMs": {
+    "median": 36.7,
+    "p95": 127.7,
+    "peak": 458.1000000014901
+  },
+  "cpuWorkMs": {
+    "median": 34.1,
+    "p95": 115,
+    "peak": 456.20000000298023
+  },
+  "calls": {
+    "median": 119,
+    "p95": 137,
+    "peak": 137
+  },
+  "triangles": {
+    "median": 533587,
+    "p95": 559745,
+    "peak": 561727
+  },
+  "town": "f74d7be",
+  "pageErrors": [],
+  "passMs": {
+    "other": {
+      "median": 0,
+      "p95": 9.66,
+      "peak": 9.66112
+    },
+    "people pose": {
+      "median": 0.01,
+      "p95": 14.94,
+      "peak": 14.942656
+    },
+    "scene": {
+      "median": 36.84,
+      "p95": 87.84,
+      "peak": 87.83750400000001
+    },
+    "shadow map": {
+      "median": 2.25,
+      "p95": 9.56,
+      "peak": 9.562208
+    },
+    "road mirror": {
+      "median": 0,
+      "p95": 0,
+      "peak": 0.000032
+    }
+  },
+  "gpuMs": {
+    "median": 43.24,
+    "p95": 96.05,
+    "peak": 96.04796800000001
+  }
+}

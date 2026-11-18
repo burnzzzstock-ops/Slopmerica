@@ -1737,10 +1737,11 @@ function clusterIcons(raw: ProblemItem[], cell: number): ProblemItem[] {
   return merged;
 }
 
-/** What a merged bubble stands for (hovering it says this). */
+/** What a merged bubble stands for (hovering it says this). One left with a single building by the open view's filter still says it. */
 function clusterText(it: ProblemItem): string {
-  const parts = (Object.entries(it.mix ?? {}) as [Problem, number][]).sort((a, b) => b[1] - a[1]).map(([p, n]) => `${n} ${PROBLEM_WORDS[p]}`);
-  return `${it.n} buildings with problems here: ${parts.join(', ')}. Zoom in to see each one.`;
+  const n = it.n ?? 1;
+  const parts = (Object.entries(it.mix ?? { [it.p]: n }) as [Problem, number][]).sort((a, b) => b[1] - a[1]).map(([p, c]) => `${c} ${PROBLEM_WORDS[p]}`);
+  return `${n} building${n === 1 ? '' : 's'} with problems here: ${parts.join(', ')}. Zoom in to see each one.`;
 }
 
 // ---------------------------------------------------------------- info views
@@ -2395,7 +2396,9 @@ registerSystem({
     S.icons = new ProblemIcons(g.scene);
     g.problemAt = (cx, cy) => {
       const hit = S.icons?.pick(g.camera, g.renderer.domElement.getBoundingClientRect(), cx, cy);
-      return hit ? { id: hit.id, text: (hit.n ?? 1) > 1 ? clusterText(hit) : problemText(g, hit.id) } : null;
+      // (a merged bubble has an id below zero; the bubbles' own filter for the open view can leave it standing for one building,
+      // and it is still not a building to look up)
+      return hit ? { id: hit.id, text: hit.id < 0 || (hit.n ?? 1) > 1 ? clusterText(hit) : problemText(g, hit.id) } : null;
     };
     g.emergency = () => S.emergency;
     g.net.events.on('changed', () => { S.graphDirty = true; S.compDirty = true; });

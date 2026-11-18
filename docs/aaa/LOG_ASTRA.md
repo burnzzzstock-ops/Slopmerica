@@ -1,5 +1,15 @@
 # World and sound work log
 
+## Weekly history integration and GPU readback
+
+The world branch merged `5fc3310` in `1f81b3e`. The subsequent `8bc9025` preserves the black-frame detector’s fallback decisions while reducing its median lit-frame readback from 41.55 to 2.40 ms on Low. This addresses a startup and quality-switch hitch. All six forest measurements, all 64 overview counts and the 15-test smoke suite pass on the final product source. Its initial 4× production timing under active host validation still missed the phone target. The single-file SHA-256 is `b30e3a5270881a528daabc01523d14476c07110724d50976deede2001af250a5`. [Release measurements](PERF.md)
+
+## Corrected roads and dusk lighting at dae9c68
+
+The full integration run exposed gaps between independently simplified asphalt and sidewalk edges. Commit `abf057a` keeps shared stations where road surfaces meet. In the reference town, 20 of 295 failed road bank profiles became zero and the steepest measured slope fell from 8.968 to 0.568. All 83,972 paired rays hit both meshes. The town submits 17,137 fewer road triangles per ordinary pass than `149b543`. Generating its 128 uncached road sections took 77.2 ms versus 40.1 ms.
+
+Merge `28caab8` brings in the published daily simulation and touch-interface changes through `ba6fbd9`. Commit `dae9c68` fades the distant canopy lighting adjustment as the sun approaches the horizon. The change preserves the six noon forest results and passes all 36 lighting comparisons. The original overview target now passes by at least 30.71% across 32 cameras. The corrected production HTML still misses the 16 ms phone limit. Its first paired run measured 44.0 ms p95 versus 40.9 ms for the prior HTML, with higher host CPU use on the corrected run. [Current measurements](PERF.md)
+
 ## November 17 phone, forest and overview pass
 
 The new 969-resident phone fixture and the original 781-resident overview fixture have different purposes. Keep the current town for frame timing and the original town, cameras and fourth capture frame when comparing the original triangle target. `scripts/look/overview-budget.mjs` enforces both the original frame and a settled frame in all 32 views.

@@ -1,5 +1,7 @@
 # Integration requests
 
+The integration through `ba6fbd9` is included in the `dae9c68` timings below. The consecutive production comparison recorded 44.0 ms p95 for the corrected game and 40.9 ms for `149b543`. The host was busier during the corrected run. The fixed-step traffic profiling request remains open. [Paired frame times and load](PERF.md)
+
 | File or interface | Cause and requested change | Work it supports |
 | --- | --- | --- |
 | Fixed-step traffic and daily simulation cost | The 969-resident reference town, seed 271828, originally measured 25.1 ms frame p95 on Low at 4× CPU throttling. On `149b543`, median draws fell from 211 to 119. Two shipping-source runs under lighter host load measured 30.1 and 55.8 ms p95. The production file measured 34.6 ms. In a separate 300-frame diagnostic all 15 slowest intervals contained a fixed step. The 64 fixed steps alone had a p95 of 17.8 ms. In an earlier drawing-disabled sample, traffic averaged 18.7 ms on the 21 calls where simulation time reached 16 ms. The rendering lane has optimized the silhouette builder, vehicle model material packing and terrain chunk reconstruction. Please compare the daily-tick improvements on this same town and profile `Traffic.step`, `place` and `pathPointInto` in `src/agents/traffic.ts`. Any pose-cache change should preserve exact saves, replay, wheel heights through junctions and invalidation after road edits. | Low phone-proxy frame-time acceptance |

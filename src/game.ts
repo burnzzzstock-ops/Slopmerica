@@ -1179,12 +1179,10 @@ export class Game {
     const gl = this.renderer.getContext();
     if (gl.isContextLost()) return 'context lost'; // reads come back as zeros; main.ts handles it
     const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, px = new Uint8Array(4);
-    let lit = 0;
     for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) {
       gl.readPixels(Math.floor((w * (i + 0.5)) / 5), Math.floor((h * (j + 0.5)) / 5), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-      if (px[0] + px[1] + px[2] > 12) lit++;
+      if (px[0] + px[1] + px[2] > 12) return 'ok';
     }
-    if (lit > 0) return 'ok';
     if (this.post.active) {
       this.post.turnOff('the picture came out black with them on');
       crumb('black frame: turned post effects off');

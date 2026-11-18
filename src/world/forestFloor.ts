@@ -13,7 +13,10 @@ const COVERAGE = 1024;
 // for changing illumination so the wood remains dark after sunset.
 export const DISTANT_FOREST_LIGHT = `
 uniform vec3 uGroveAlbedo;
+uniform float uCanopyDaylight;
 vec3 distantForestLight(vec3 lit, float amount) {
+  // Grazing sunlight leaves the far canopy lit by its ordinary sky and shadows.
+  amount *= uCanopyDaylight;
   if (amount <= 0.) return lit;
   const vec3 luma = vec3(.2126, .7152, .0722);
   vec3 light = ambientLightColor;

@@ -1,0 +1,157 @@
+{
+  "revision": "upstream ba6fbd9 with corrected road and dusk",
+  "sourceTree": "5050ec7424872c92b70824761adca4477673e964",
+  "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "rows": [
+    {
+      "view": "appalachia-high-overview-noon",
+      "raw": 0.4657627632691582,
+      "equalMean": 0.4349706278538774,
+      "mean": [
+        99.83132077730146,
+        94.39086104264182
+      ],
+      "sd": [
+        28.842081552560966,
+        15.408513950205759
+      ],
+      "calls": [
+        141,
+        129
+      ],
+      "triangles": [
+        1137509,
+        744321
+      ],
+      "referenceSHA256": "baf9677a62ffebc94d8fc80f050493beb4f481091369339162d3731779c13f16",
+      "fixedMaskSHA256": "74b875bce902d3a19456c0af81500b7465fe23e544602b8b0f78614a47076ec8",
+      "candidateSHA256": "9b0640ee06abdf3e127dec5b730ca7d65ec6c43a6bdbe3297685be58d65760f5",
+      "pixels": 725049
+    },
+    {
+      "view": "appalachia-low-overview-noon",
+      "raw": 0.5243540662959489,
+      "equalMean": 0.5458805513146952,
+      "mean": [
+        94.68521561079815,
+        99.17354986127653
+      ],
+      "sd": [
+        27.726616379418466,
+        13.188052336242531
+      ],
+      "calls": [
+        72,
+        56
+      ],
+      "triangles": [
+        396982,
+        201831
+      ],
+      "referenceSHA256": "eafb92e115af218ffa0b1b72aa3c60247e1179847e9547e46bb9b26c3655e0dc",
+      "fixedMaskSHA256": "23c157ce1de0ba2f8e085fda2bcd61656504164053a86181a98884def744cb91",
+      "candidateSHA256": "ce58c3b063d2c6dadde048e9fdc0e2d7bea5a40702e0aa8045859e6946779e14",
+      "pixels": 2264686
+    },
+    {
+      "view": "florida-high-overview-noon",
+      "raw": 0.5515297555423246,
+      "equalMean": 0.5310368086109445,
+      "mean": [
+        149.61592528040805,
+        143.07794687792594
+      ],
+      "sd": [
+        36.610690919536914,
+        16.418805506449118
+      ],
+      "calls": [
+        115,
+        96
+      ],
+      "triangles": [
+        580689,
+        334580
+      ],
+      "referenceSHA256": "be98b887e7f07315ec1eec9b370026b975e1818a26d7bcf19d8b57e3084bf8e8",
+      "fixedMaskSHA256": "d7691219d49b411c7536fd2beb9d9b1725a0f11bf5d8f794e9876362bf38915a",
+      "candidateSHA256": "5832502bdc474f86418a4261eda27dadf676064aa09695e1c0e749610172d307",
+      "pixels": 285422
+    },
+    {
+      "view": "florida-low-overview-noon",
+      "raw": 0.4708340107997607,
+      "equalMean": 0.4945844751275511,
+      "mean": [
+        145.6187498013059,
+        152.46165974849475
+      ],
+      "sd": [
+        30.794285597713877,
+        16.295288600028947
+      ],
+      "calls": [
+        59,
+        25
+      ],
+      "triangles": [
+        260252,
+        105030
+      ],
+      "referenceSHA256": "07e3de769ece68e79aa54f26dd8374da3ef76390be01c27aa6fa60e266328719",
+      "fixedMaskSHA256": "035de1640040c6d02988e46c038d263b9bcad1251d9736c21dba603d4d684c4f",
+      "candidateSHA256": "a5b348cd3307fd7cba1d1f99d23ad0535fcb5a682f048a3cfc00626bd40d232a",
+      "pixels": 1155098
+    },
+    {
+      "view": "norcal-high-overview-noon",
+      "raw": 0.5458266849100585,
+      "equalMean": 0.5360379563184408,
+      "mean": [
+        153.25486974149214,
+        150.02147954142475
+      ],
+      "sd": [
+        39.30800562623295,
+        17.85264722484029
+      ],
+      "calls": [
+        169,
+        144
+      ],
+      "triangles": [
+        897709,
+        523836
+      ],
+      "referenceSHA256": "18ce37152492fcd4175e1396daa7d23c90f33ba163a55297c391963a2f724be6",
+      "fixedMaskSHA256": "ef854931165fe5541cc45b093b5aa1e75d536954b8948be405c0c56873f511c0",
+      "candidateSHA256": "e34072999dea5a4107a932acc6fb449657ef920a390c628cc3ce247d2007afbf",
+      "pixels": 149776
+    },
+    {
+      "view": "norcal-low-overview-noon",
+      "raw": 0.552073817508933,
+      "equalMean": 0.5665459258056593,
+      "mean": [
+        162.87945815344926,
+        168.31765633416813
+      ],
+      "sd": [
+        31.83456768188858,
+        14.259536373001849
+      ],
+      "calls": [
+        88,
+        42
+      ],
+      "triangles": [
+        539241,
+        191740
+      ],
+      "referenceSHA256": "36e7e9dd5b1332ff4b1f3c83e5d3933a7cb54647232584424df5dc7f5eb894e0",
+      "fixedMaskSHA256": "c83969ca5cef01277794ebd58d953fab6aaa49a1f966594afb7c8d69a32d3cf8",
+      "candidateSHA256": "675889fdc7841b98bed3407aa7ed4e8ee9a18071d7b8fec6f62c8bafc5c116fd",
+      "pixels": 391835
+    }
+  ]
+}

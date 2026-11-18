@@ -558,6 +558,7 @@ export class Environment {
 
     const daylight = THREE.MathUtils.smoothstep(elev, -7, 8);
     this.night = 1 - daylight;
+    ATMOS.uCanopyDaylight.value = THREE.MathUtils.smoothstep(elev, 8, 22);
     const oc = this.overcast;
     const clear = 1 - oc;
 

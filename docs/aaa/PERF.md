@@ -1,6 +1,44 @@
 # Graphics performance
 
-## Low phone frame time, November 17
+## Phone frame times after the integration suites finished
+
+The final `8bc9025` production game missed the strict 16 ms Low frame-time target in both runs. Each used the same 969-resident town, seed 271828, on Chrome 157 with an RTX 5090, 4× CPU throttling and a 390 × 844 touch viewport at DPR 3. The drawing buffer was 585 × 1266. Each run measured 300 frame intervals with zero page errors.
+
+| Production HTML in run order | Frame median | Frame p95 | CPU work p95 | Median triangles | Median host CPU |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Previous `149b543` | 14.9 ms | 32.8 ms | 31.6 ms | 553,505 | 55.4% |
+| Final `8bc9025` | 13.4 ms | 28.4 ms | 27.3 ms | 533,719 | 53.5% |
+| Final `8bc9025` | 15.1 ms | 31.4 ms | 30.5 ms | 533,719 | 55.4% |
+| Previous `149b543` | 18.6 ms | 42.2 ms | 41.0 ms | 553,505 | 59.3% |
+
+All four runs submitted 119 median draws. The host did not sustain 30 seconds below 35% CPU during the ten minutes before measurement. These figures describe the desktop phone proxy. [All 1,200 measured frames, host samples and release hashes](measurements/phone-8bc9025-after-validation.json)
+
+The final source passed 199 of 203 registered integration checks, including all 96 visual regression captures. The four outstanding checks also failed on upstream game code. They cover first-reflection shader compilation, car overlap and heading changes, stadium attendance and traffic-signal timing.
+
+## Startup readback and final production build at 8bc9025
+
+The startup and quality-change check samples up to 25 pixels for a black frame. Each read asks the GPU for a result synchronously. Commit `8bc9025` returns on the first visibly lit pixel. Across 16 Low samples per version on the RTX 5090, median time on a lit town frame fell from 41.55 to 2.40 ms. With the GPU already finished it fell from 42.60 to 2.05 ms. All 25 first-lit positions, the threshold, both black-frame fallbacks and context loss produced the same decisions across 29 cases.
+
+The first final-production phone run recorded 36.7 ms median and 127.7 ms p95. The strict p95 requirement is below 16 ms. Host CPU use ranged from 82.0% to 98.4%, with a 91.2% median during this run. The 300 intervals contained a median 119 draw calls and 533,587 triangles. The test completed with zero page errors. [Hardware report](measurements/phone-8bc9025-production.json)
+
+The final source reproduced every numeric result from the six forest measurements and the 32 original overviews below. All 15 pre-push smoke tests passed. The 12,359,933-byte single-file release passed 32 production checks on desktop and touch. With networking disabled, a saved 969-resident town with 143 buildings and 128 roads reloaded with matching simulation fingerprints.
+
+## Corrected integration at dae9c68
+
+The Low phone target is a frame interval below 16 ms at the 95th percentile. The released HTML files ran consecutively on the RTX 5090 with the original 4× CPU throttle, current 969-resident town, seed 271828, 390 × 844 touch viewport and 300 measured intervals. Both runs completed with zero page errors.
+
+| Production HTML | Frame median | Frame p95 | Median draws | Median triangles | Median host CPU use |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Previous, `149b543` | 19.5 ms | 40.9 ms | 119 | 553,505 | 47.2% |
+| Corrected, `dae9c68` | 21.6 ms | 44.0 ms | 119 | 533,719 | 62.3% |
+
+The corrected build missed the limit by 28.0 ms. Its first development run measured 52.6 ms p95 at 90.4% median host CPU use. These are desktop phone-proxy timings. Physical-phone timings remain unmeasured. [Previous production run](measurements/phone-149b543-paired-dae9c68.json) · [Corrected production run](measurements/phone-dae9c68-production.json)
+
+Forest brightness variation fell 46.58–55.20% in the six original noon views and 43.50–56.65% after matching mean brightness. Each view also passed its original draw and triangle ceilings. With the sun near the horizon, the distant canopy now uses more of its ordinary sky and shadow lighting. All 36 reference-town lighting comparisons passed. At dusk the overview mean luminance measured 0.294 on High, 0.320 on Medium and 0.318 on Low. [Six fixed-mask measurements](measurements/forest-dae9c68.json)
+
+All 32 original overview cameras submitted at least 30% fewer whole-scene triangles on the fourth frame and after terrain detail settled. The closest was High Block in rain, falling from 1,419,559 to 983,679 on frame four (30.71%) and from 1,559,079 to 1,017,215 after settling (34.76%). Run `node scripts/look/overview-budget.mjs --check docs/aaa/measurements/overview-dae9c68.json` to verify all 64 counts. [Hardware measurements](measurements/overview-dae9c68.json)
+
+## Low phone frame time at 149b543, November 17
 
 The enforced RTX 5090 phone proxy requires the 95th percentile of 300 consecutive frame intervals to be **below 16 ms**. It runs the 969-resident town with four-times CPU throttling, a 390 × 844 touch viewport, device pixel ratio 3 and a 585 × 1266 drawing buffer. The previous source is `b1fb132` and the shipping source is `149b543`. The controls use identical town data, camera, seed 271828 and game speed. Each run reported zero page errors.
 

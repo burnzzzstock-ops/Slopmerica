@@ -1,0 +1,1154 @@
+[
+  {
+    "id": "block-low-overview-noon",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      195,
+      45,
+      600,
+      0.7,
+      0.63
+    ],
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "dpr": 3,
+    "buffer": [
+      585,
+      1266
+    ],
+    "calls": 90,
+    "triangles": 380159,
+    "measurement": {
+      "triangles": 487034,
+      "calls": 137,
+      "population": 781,
+      "buildings": 262,
+      "frames": 10
+    }
+  },
+  {
+    "id": "block-low-overview-golden",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      195,
+      45,
+      600,
+      0.7,
+      0.63
+    ],
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "dpr": 3,
+    "buffer": [
+      585,
+      1266
+    ],
+    "calls": 91,
+    "triangles": 380627,
+    "measurement": {
+      "triangles": 488263,
+      "calls": 139,
+      "population": 781,
+      "buildings": 262,
+      "frames": 10
+    }
+  },
+  {
+    "id": "block-low-overview-moonless",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      195,
+      45,
+      600,
+      0.7,
+      0.63
+    ],
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "dpr": 3,
+    "buffer": [
+      585,
+      1266
+    ],
+    "calls": 89,
+    "triangles": 376495,
+    "measurement": {
+      "triangles": 481779,
+      "calls": 136,
+      "population": 781,
+      "buildings": 262,
+      "frames": 10
+    }
+  },
+  {
+    "id": "block-low-overview-rain",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 84,
+      "wet": 0.9964871896634488,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      195,
+      45,
+      600,
+      0.7,
+      0.63
+    ],
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "dpr": 3,
+    "buffer": [
+      585,
+      1266
+    ],
+    "calls": 92,
+    "triangles": 386669,
+    "measurement": {
+      "triangles": 493004,
+      "calls": 138,
+      "population": 781,
+      "buildings": 262,
+      "frames": 10
+    }
+  },
+  {
+    "id": "block-high-overview-noon",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      195,
+      45,
+      600,
+      0.7,
+      0.63
+    ],
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "dpr": 1,
+    "buffer": [
+      1280,
+      720
+    ],
+    "calls": 283,
+    "triangles": 938392,
+    "measurement": {
+      "triangles": 971928,
+      "calls": 306,
+      "population": 781,
+      "buildings": 262,
+      "frames": 17
+    }
+  },
+  {
+    "id": "block-high-overview-golden",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      195,
+      45,
+      600,
+      0.7,
+      0.63
+    ],
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "dpr": 1,
+    "buffer": [
+      1280,
+      720
+    ],
+    "calls": 255,
+    "triangles": 913676,
+    "measurement": {
+      "triangles": 947212,
+      "calls": 278,
+      "population": 781,
+      "buildings": 262,
+      "frames": 17
+    }
+  },
+  {
+    "id": "block-high-overview-moonless",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      195,
+      45,
+      600,
+      0.7,
+      0.63
+    ],
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "dpr": 1,
+    "buffer": [
+      1280,
+      720
+    ],
+    "calls": 281,
+    "triangles": 923281,
+    "measurement": {
+      "triangles": 956817,
+      "calls": 304,
+      "population": 781,
+      "buildings": 262,
+      "frames": 17
+    }
+  },
+  {
+    "id": "block-high-overview-rain",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 84,
+      "wet": 0.9964871896634488,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      195,
+      45,
+      600,
+      0.7,
+      0.63
+    ],
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "dpr": 1,
+    "buffer": [
+      1280,
+      720
+    ],
+    "calls": 284,
+    "triangles": 983679,
+    "measurement": {
+      "triangles": 1017215,
+      "calls": 307,
+      "population": 781,
+      "buildings": 262,
+      "frames": 17
+    }
+  },
+  {
+    "id": "appalachia-low-overview-noon",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      10,
+      -170,
+      1440,
+      0.48,
+      0.53
+    ],
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "dpr": 3,
+    "buffer": [
+      585,
+      1266
+    ],
+    "calls": 56,
+    "triangles": 201831,
+    "measurement": {
+      "triangles": 201831,
+      "calls": 56,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "appalachia-low-overview-golden",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      10,
+      -170,
+      1440,
+      0.48,
+      0.53
+    ],
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "dpr": 3,
+    "buffer": [
+      585,
+      1266
+    ],
+    "calls": 68,
+    "triangles": 229798,
+    "measurement": {
+      "triangles": 229798,
+      "calls": 68,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "appalachia-low-overview-moonless",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      10,
+      -170,
+      1440,
+      0.48,
+      0.53
+    ],
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "dpr": 3,
+    "buffer": [
+      585,
+      1266
+    ],
+    "calls": 59,
+    "triangles": 207248,
+    "measurement": {
+      "triangles": 207248,
+      "calls": 59,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "appalachia-low-overview-rain",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 84,
+      "wet": 0.9964871896634488,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      10,
+      -170,
+      1440,
+      0.48,
+      0.53
+    ],
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "dpr": 3,
+    "buffer": [
+      585,
+      1266
+    ],
+    "calls": 60,
+    "triangles": 213227,
+    "measurement": {
+      "triangles": 213227,
+      "calls": 60,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "appalachia-high-overview-noon",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      10,
+      -170,
+      1440,
+      0.48,
+      0.53
+    ],
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "dpr": 1,
+    "buffer": [
+      1280,
+      720
+    ],
+    "calls": 129,
+    "triangles": 744321,
+    "measurement": {
+      "triangles": 744321,
+      "calls": 129,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "appalachia-high-overview-golden",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      10,
+      -170,
+      1440,
+      0.48,
+      0.53
+    ],
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "dpr": 1,
+    "buffer": [
+      1280,
+      720
+    ],
+    "calls": 134,
+    "triangles": 780215,
+    "measurement": {
+      "triangles": 780215,
+      "calls": 134,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "appalachia-high-overview-moonless",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      10,
+      -170,
+      1440,
+      0.48,
+      0.53
+    ],
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "dpr": 1,
+    "buffer": [
+      1280,
+      720
+    ],
+    "calls": 134,
+    "triangles": 742541,
+    "measurement": {
+      "triangles": 742541,
+      "calls": 134,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "appalachia-high-overview-rain",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 84,
+      "wet": 0.9964871896634488,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      10,
+      -170,
+      1440,
+      0.48,
+      0.53
+    ],
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "dpr": 1,
+    "buffer": [
+      1280,
+      720
+    ],
+    "calls": 137,
+    "triangles": 814770,
+    "measurement": {
+      "triangles": 814770,
+      "calls": 137,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "norcal-low-overview-noon",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      480,
+      100,
+      1670,
+      1.04,
+      0.49
+    ],
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "dpr": 3,
+    "buffer": [
+      585,
+      1266
+    ],
+    "calls": 42,
+    "triangles": 191740,
+    "measurement": {
+      "triangles": 213849,
+      "calls": 64,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "norcal-low-overview-golden",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      480,
+      100,
+      1670,
+      1.04,
+      0.49
+    ],
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "dpr": 3,
+    "buffer": [
+      585,
+      1266
+    ],
+    "calls": 44,
+    "triangles": 216347,
+    "measurement": {
+      "triangles": 239610,
+      "calls": 68,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "norcal-low-overview-moonless",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      480,
+      100,
+      1670,
+      1.04,
+      0.49
+    ],
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "dpr": 3,
+    "buffer": [
+      585,
+      1266
+    ],
+    "calls": 43,
+    "triangles": 192715,
+    "measurement": {
+      "triangles": 213645,
+      "calls": 63,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "norcal-low-overview-rain",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 84,
+      "wet": 0.9964871896634488,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      480,
+      100,
+      1670,
+      1.04,
+      0.49
+    ],
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "dpr": 3,
+    "buffer": [
+      585,
+      1266
+    ],
+    "calls": 45,
+    "triangles": 223056,
+    "measurement": {
+      "triangles": 243494,
+      "calls": 64,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "norcal-high-overview-noon",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      480,
+      100,
+      1670,
+      1.04,
+      0.49
+    ],
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "dpr": 1,
+    "buffer": [
+      1280,
+      720
+    ],
+    "calls": 144,
+    "triangles": 523836,
+    "measurement": {
+      "triangles": 523836,
+      "calls": 144,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "norcal-high-overview-golden",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      480,
+      100,
+      1670,
+      1.04,
+      0.49
+    ],
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "dpr": 1,
+    "buffer": [
+      1280,
+      720
+    ],
+    "calls": 144,
+    "triangles": 555788,
+    "measurement": {
+      "triangles": 555788,
+      "calls": 144,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "norcal-high-overview-moonless",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      480,
+      100,
+      1670,
+      1.04,
+      0.49
+    ],
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "dpr": 1,
+    "buffer": [
+      1280,
+      720
+    ],
+    "calls": 143,
+    "triangles": 513075,
+    "measurement": {
+      "triangles": 513075,
+      "calls": 143,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "norcal-high-overview-rain",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 84,
+      "wet": 0.9964871896634488,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      480,
+      100,
+      1670,
+      1.04,
+      0.49
+    ],
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "dpr": 1,
+    "buffer": [
+      1280,
+      720
+    ],
+    "calls": 146,
+    "triangles": 574952,
+    "measurement": {
+      "triangles": 574952,
+      "calls": 146,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "florida-low-overview-noon",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      300,
+      950,
+      1440,
+      -2.45,
+      0.57
+    ],
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "dpr": 3,
+    "buffer": [
+      585,
+      1266
+    ],
+    "calls": 25,
+    "triangles": 105030,
+    "measurement": {
+      "triangles": 108420,
+      "calls": 30,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "florida-low-overview-golden",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      300,
+      950,
+      1440,
+      -2.45,
+      0.57
+    ],
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "dpr": 3,
+    "buffer": [
+      585,
+      1266
+    ],
+    "calls": 35,
+    "triangles": 131130,
+    "measurement": {
+      "triangles": 147346,
+      "calls": 42,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "florida-low-overview-moonless",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      300,
+      950,
+      1440,
+      -2.45,
+      0.57
+    ],
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "dpr": 3,
+    "buffer": [
+      585,
+      1266
+    ],
+    "calls": 27,
+    "triangles": 109109,
+    "measurement": {
+      "triangles": 111726,
+      "calls": 31,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "florida-low-overview-rain",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 84,
+      "wet": 0.9964871896634488,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      300,
+      950,
+      1440,
+      -2.45,
+      0.57
+    ],
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "dpr": 3,
+    "buffer": [
+      585,
+      1266
+    ],
+    "calls": 27,
+    "triangles": 117617,
+    "measurement": {
+      "triangles": 121869,
+      "calls": 33,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "florida-high-overview-noon",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      300,
+      950,
+      1440,
+      -2.45,
+      0.57
+    ],
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "dpr": 1,
+    "buffer": [
+      1280,
+      720
+    ],
+    "calls": 96,
+    "triangles": 334580,
+    "measurement": {
+      "triangles": 334580,
+      "calls": 96,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "florida-high-overview-golden",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      300,
+      950,
+      1440,
+      -2.45,
+      0.57
+    ],
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "dpr": 1,
+    "buffer": [
+      1280,
+      720
+    ],
+    "calls": 107,
+    "triangles": 383536,
+    "measurement": {
+      "triangles": 383536,
+      "calls": 107,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "florida-high-overview-moonless",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 0,
+      "wet": 0,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      300,
+      950,
+      1440,
+      -2.45,
+      0.57
+    ],
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "dpr": 1,
+    "buffer": [
+      1280,
+      720
+    ],
+    "calls": 95,
+    "triangles": 333838,
+    "measurement": {
+      "triangles": 333838,
+      "calls": 95,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  },
+  {
+    "id": "florida-high-overview-rain",
+    "weatherSurface": {
+      "source": "climate-history",
+      "seed": 1776,
+      "historyDays": 84,
+      "wet": 0.9964871896634488,
+      "snow": 0
+    },
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "camera": [
+      300,
+      950,
+      1440,
+      -2.45,
+      0.57
+    ],
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "dpr": 1,
+    "buffer": [
+      1280,
+      720
+    ],
+    "calls": 98,
+    "triangles": 398994,
+    "measurement": {
+      "triangles": 398994,
+      "calls": 98,
+      "population": 0,
+      "buildings": 0,
+      "frames": 8
+    }
+  }
+]

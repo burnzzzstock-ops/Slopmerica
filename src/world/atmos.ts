@@ -55,6 +55,7 @@ function makeCloudTexture(): THREE.DataTexture {
 }
 
 export const ATMOS = {
+  uCanopyDaylight: { value: 1 },
   uCloudTex: { value: makeCloudTexture() },
   uCloudOffset: { value: new THREE.Vector2() },
   uCloudCover: { value: 0.35 },

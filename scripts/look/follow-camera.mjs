@@ -18,7 +18,8 @@ try {
     for(const kind of ['sedan','cityBus']){
       const car=g.traffic.launch({seg,s:seg.length*.1},{seg,s:seg.length*.9},null,null,kind,'camera check','town',true,12,true);
       if(!car)throw Error('No test route for '+kind);
-      g.traffic.update(.05,1,12,1000,200,g.rts.target);g.frame(0,true);
+      // A dispatched car receives its first pose on the next fixed simulation step.
+      g.runSteps(1);g.frame(0,true);
       const target={kind:'car',id:car.id};
       const ok=g.rts.follow(target), samples=[];
       for(let i=0;i<210;i++){

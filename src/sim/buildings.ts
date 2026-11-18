@@ -883,7 +883,8 @@ export class Buildings {
 
   near(x: number, z: number, r: number): Bld[] {
     const out: Bld[] = [];
-    for (const b of this.hash.query(x - r, z - r, x + r, z + r)) if (Math.hypot(b.x - x, b.z - z) <= r) out.push(b);
+    // (each building once, in the order a set of them would give, with no set built: every building is filed once)
+    this.hash.each(x - r, z - r, x + r, z + r, (b) => { if (Math.hypot(b.x - x, b.z - z) <= r) out.push(b); });
     return out;
   }
 

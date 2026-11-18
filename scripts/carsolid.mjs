@@ -48,8 +48,20 @@ const r = await page.evaluate((SECONDS) => {
     return true;
   };
   const where = (c) => { const st = c.path[c.pi]; const seg = st && net.segs.get(st.seg); return `${c.kind}#${c.id} ${seg?.type ?? '?'} seg ${st?.seg} lane ${c.lane} s ${c.s.toFixed(1)} v ${c.v.toFixed(1)}${c.junction ? ' (in junction)' : ''}${c.pi === 0 ? ' (first road)' : ''}`; };
+  // vehicles that came out of a lot: where on their road they joined it, against where their whole body fits
+  // (behind them the road's start and its junction, ahead the stop line at the far end)
+  const joined = new Set(), tailOut = [];
+  let fromLots = 0;
   for (let f = 0; f < SECONDS * 20; f++) {
     step();
+    for (const c of tr.cars) {
+      if (joined.has(c.id) || c.pi !== 0 || !c.lotO) continue;
+      joined.add(c.id); fromLots++;
+      const st = c.path[0], seg = net.segs.get(st.seg);
+      if (!seg) continue;
+      const lo = Math.max(2, tr.entryOf(seg, st.dir) + c.len + 0.5), hi = Math.min(seg.length - 2, tr.exitOf(seg, st.dir) - tr.stopBack(st.dir > 0 ? seg.b : seg.a, seg.id) - 1);
+      if (lo <= hi && c.startS < lo - 0.01 && tailOut.length < 40) tailOut.push(`${c.kind}#${c.id} (${c.len} m) joins seg ${st.seg} at ${c.startS.toFixed(1)} m, its tail ${(lo - c.startS).toFixed(1)} m short of fitting`);
+    }
     const ids = new Map(tr.cars.map((c) => [c.id, c.crashed]));
     for (const [id, crashed] of prevIds) if (!ids.has(id) && crashed <= 0) finished++;
     prevIds = ids;
@@ -101,7 +113,7 @@ const r = await page.evaluate((SECONDS) => {
   return {
     signals: tr.signals.size, badGreens,
     pop: g.sim.population, cars: tr.cars.length, samples,
-    lanePerSample: laneOverlaps / samples, boxPerSample: boxOverlaps / samples, laneEx, boxEx,
+    lanePerSample: laneOverlaps / samples, boxPerSample: boxOverlaps / samples, laneEx, boxEx, fromLots, tailOut,
     longest: { s: +longest.s.toFixed(1), car: longest.car }, snaps, movingShare: moving / Math.max(1, total),
     crashes: tr.crashes - crashes0, byCause: { rear: cc.rear - cause0.rear, random: cc.random - cause0.random, junction: cc.junction - cause0.junction }, finished,
   };
@@ -109,6 +121,7 @@ const r = await page.evaluate((SECONDS) => {
 console.log(`${r.pop} residents, ${r.cars} cars, ${SECONDS} s of morning traffic: ${(r.movingShare * 100).toFixed(0)}% moving, ${r.finished} trips finished, ${r.crashes} crashes ${JSON.stringify(r.byCause)}`);
 check(`no two cars inside each other in a lane (${r.lanePerSample.toFixed(2)} pairs at any moment)`, r.lanePerSample === 0, r.laneEx);
 check(`no two cars inside each other in a junction (${r.boxPerSample.toFixed(2)} pairs at any moment)`, r.boxPerSample === 0, r.boxEx);
+check(`a vehicle leaving a lot joins its road where its whole body is on it, not hanging back over the road's start (${r.tailOut.length} of ${r.fromLots} did not)`, r.fromLots > 20 && r.tailOut.length === 0, r.tailOut.slice(0, 4));
 check(`no car waits over 60 s away from a red light (longest ${r.longest.s} s)`, r.longest.s <= 60, r.longest);
 check(`no heading snaps over 0.35 rad in a frame (${r.snaps})`, r.snaps === 0);
 check(`traffic still flows (${(r.movingShare * 100).toFixed(0)}% of cars moving, target at least 50%)`, r.movingShare >= 0.5);

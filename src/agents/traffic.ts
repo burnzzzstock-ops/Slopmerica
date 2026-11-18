@@ -1208,6 +1208,10 @@ export class Traffic {
         if (!busyAt(s)) { rt.startS = s; ok = true; break; }
       }
       if (!ok && !oB) return null;
+      // (out of a lot with every place along the road taken: it waits in the lot for a gap as before, but where its whole
+      // body will be on this road. Left where its frontage was, a semi 5 m from the road's start pulled out with 11 m of
+      // itself on the road before, where the cars coming up that road did not know it: carsolid)
+      if (!ok && lo <= hi) rt.startS = clamp(rt.startS, lo, hi);
     }
     const spec = VEHICLE_SPECS[kind];
     // a trip happens whether or not the graphics preset has a free vehicle

@@ -12,14 +12,17 @@ The play lane has two sessions since 17 Nov 2026 (the owner's decision; the spli
 - **Every fix has a check that fails on its parent.** To run a test against the parent: `git archive <commit> -- src scripts public index.html package.json tsconfig.json vite.config.ts` into a scratch folder, link `node_modules` there with `mklink /J`, serve it with `scripts/snapshot.mjs` on 5188, and run the test with `BASE_URL`. Remove the link with `rmdir` (not `rm -rf`) before deleting the folder.
 - **Long text for a commit or an edit goes through a file, not a shell heredoc.** Git Bash on this PC trips on apostrophes in a heredoc and halves doubled backslashes.
 - **A new test's registry entry goes at the end of `scripts/tests/fable.json`,** one per commit.
+- **A test does not press Esc to tidy up.** With nothing open Esc is the pause menu since 77aa8bc, which stops the game and covers the screen. Close what the test opened by name (`g.ui.openPanel(null)`, `g.tools.set('inspect')`, `g.ui.select(null)`), or use `audit8`'s `tidy()`, which puts the menu away again.
+- **A script loaded on demand imports types only.** `pauseMenu.ts` first imported the save code, and the bundler cut 800 kB of the simulation out of the main script into a second file that every player would have loaded anyway. The gate's size line said -30.7%, which is how it was seen. The HUD hands such a script what it needs (`PauseMenuHost`), as it hands `statsPanel.ts` the game.
+- **A gate test that times out may be the PC, not the change.** With another session's suite running (look for its browsers and servers: `netstat -ano`, `tasklist`), `road-bank-unit` took over its 30 s and passes alone in 2 s. Run the one test alone before believing it. Each checkout has its own four browser slots (`scripts/lib/slots.mjs`), so two sessions' suites at once are eight browsers on one graphics card: expect timeouts, and rerun alone what fails.
 - **Before changing markup or words a test may read, grep `scripts/` for the old text.** The drawn utility row broke `playtest4` (it looked for "🗑️ 12d") and moving the Looks row broke the look lane's `vaulttest`; neither is in the sets this session ran by habit.
 - **Run the full suite on the tip before handing a batch over** (`node scripts/suite.mjs --serve 5187 --gpu --fresh --dir shots/suite/full-ui`, about 44 minutes with the look lane's tests in it, in the background). It serves a frozen copy of `src/`, so source can be edited while it runs; the scripts under `scripts/` are read live and must be left alone. Do not run other tests from this checkout while it runs: they share its four browser slots and time out.
 
-## State of the work (17 Nov 2026)
+## State of the work (17 Nov 2026, late)
 
-Merged into `claude/aaa-play` (699ec0e, pushed): the tool badge, top bar and inspector drawn with the icon set; photo mode's Focus slider and the P key; the step card changing shape the moment a drawer opens; step 5 of 5 ending on day 15; and, cherry-picked earlier, the inspector not redrawing under a held mouse press.
+Everything in the table below through f7f6887 (and the log commit 81d8f9b) is merged into `claude/aaa-play` and `aaa/integration` and pushed (the simulation session's b4f1332, on origin since ba6fbd9; pushing works again). Earlier and also there: the tool badge, top bar and inspector drawn with the icon set; photo mode's Focus slider and the P key; the step card changing shape the moment a drawer opens; step 5 of 5 ending on day 15; the inspector not redrawing under a held mouse press.
 
-Merged into the local `claude/aaa-play` (436a5a3; nothing has been pushed from this PC since the GitHub sign-in lapsed on the evening of 17 Nov), all but the last two rows, which wait on `claude/aaa-play-polish`:
+Waiting on `claude/aaa-play-polish` for the simulation session's next merge: the last four rows of this table (77aa8bc to d42c12a) and the four in "After d42c12a" further down. `origin/claude/aaa-play` at 5fc3310 is merged in here (72fe488).
 
 | Commit | What | Check |
 |---|---|---|
@@ -43,6 +46,10 @@ Merged into the local `claude/aaa-play` (436a5a3; nothing has been pushed from t
 | 284e16a | A banner asks the audio engine to duck the music and the street, once, when it is put on screen (not when it is shown as a toast) | `soundhooks` (new) 2 of 4 before, 4 of 4 |
 | 055b18a | The radio's ads have their words on screen: a toast with a radio in front of the ad's own words when the engine says the jingle has started (`AudioEngine.onRadioAd`). It makes no sound, and stays out of a bug report's recent actions | `soundhooks` 10 of 18 before, 18 of 18 |
 | f7f6887 | The zoning brush tells the engine each time it changes lots during a stroke, so it is heard for as long as it paints; the stroke's one `zonePainted` at the end is untouched | `soundhooks` 19 of 22 before, 22 of 22 |
+| 77aa8bc | Esc with nothing open is a pause menu: Resume, Save, Settings, Quit to title. The game waits while it is up; the game's keys stay out of it; Tab and the arrows stay in. Esc still closes a drawer, a tool or a card first, and lets go of a followed car. `src/ui/pauseMenu.ts`, 2.2 kB, loaded when first asked for | `menutest` (new) no menu before, 27 of 27 |
+| ea7b473 | `audit8`'s phone run finds Settings when More is closed (it took a hidden tile for a visible one and stopped at step 24, before the menu too) | 42 of 42 steps, 168 s (it stopped after 446 s) |
+| af3832a | The pause menu has Load: it saves, then opens the title screen on its saved cities with the first Load in focus (`TITLE_OPEN` in `src/ui/title.ts`, one sessionStorage flag read once) | `menutest` 15 pass and a stop before, 35 of 35 |
+| d42c12a | UI: every control has a name a screen reader can say. The Land map's 64 tiles and the bug report's preview box had none. The Land map is 242 px, so every tile is 30 px to a finger | `labeltest` (new) 130 nameless before, 0 of 2,112; `phonetargets` |
 
 Two of these put right something an earlier commit of this session broke, and the same care applies to what comes next:
 
@@ -65,10 +72,28 @@ Two of these put right something an earlier commit of this session broke, and th
 
 195 of 202 (the look lane's tests are in the suite since integration; it takes 44 minutes now, not 19). None of the seven is from the interface. `follow-camera`, `carsolid`, `landmarktest` and `lightstest` as before. `golden-regression` stops at once: it wants its own pinned browser, which this worktree has not installed (`node scripts/look/golden.mjs --install-browser`). `reflecttest` ("the first mirror frame compiles nothing of its own": 8 new programs) and `disasterloop` ("every road it closed is open again": 1 still closed, after the wildfire) are new here, and both fail the same way run alone against a copy of the simulation session's own tip 6600d25 with its own scripts. Reported.
 
+### After d42c12a
+
+| Commit | What | Check |
+|---|---|---|
+| 5b7045f | A feed post says how long ago it was posted (now, 4m, 2h, 3d, real time), and the age is outside the part of the line a long handle cuts short | `feedclock` (new) 2 of 12 before, 12 of 12 |
+| 618ff9f | The advisors have faces (the owner's "Yes, use them" of 17 Nov, for these six pictures): Chad on the welcome card and on the desktop's first steps, and the feed's five regulars who are advisors post under their portraits. A phone's step card has no face (it made the card a line taller). The step card is compared with what was last written, not with the page | `facestest` (new) 14 of 22 before, 22 of 22 |
+| c6f9cd4 | UI: a merged need bubble left with one building by the open view's filter still says what it is (it said nothing). The hover and `clusterText` in `src/sim/services.ts`, with the simulation session's leave | `needhover` (new) 3 of 4 before, 4 of 4 |
+| 0c52b07 | Statistics has a fifth chart, Weekly balance: a bar up for a week's income and a bar down for its costs, from `game.sim.weeks`; a pointer reads the week, with its one-time money | `statstest` 28 of 28 (it had 22 checks) |
+
+### The fifth full suite, on 513a15b (b4f1332 merged in, with the pause menu, Load and the labels)
+
+196 of 204, with another session's suite running on the PC at the same time. The six standing ones (`golden-regression`, `follow-camera`, `reflecttest`, `carsolid`, `landmarktest`, `lightstest`), and two that were the PC: `vaulttest` ("growing the town stayed quick": 7.4 s) and `world-audio` (a timeout at 602 s) both pass alone, in 31 s and 15 s. `follow-camera` passes since the look lane's change to its test came in with ba6fbd9.
+
+### The sixth full suite, on 0c52b07 (5fc3310 merged in, with everything in the two tables above)
+
+201 of 208 in 36 minutes, nothing else running. None of the seven is from the interface: the simulation session's standing three (`carsolid`, `landmarktest`, `lightstest`) and four in the look lane's work, which are in the review of that lane (`docs/aaa/REVIEW_ASTRA.md`): `golden-regression` (its pinned browser is not in this checkout), `reflecttest` (the first frame with water compiles 8 shader programs), `presetlight` (two camera and hour pairs more than 0.03 luma from the high preset) and `roadsection` (the walk's edge is a sheer skirt again: 8.97 rise per run against 1.2).
+
 ### Numbers worth knowing
 
-- The size budget was raised on 17 Nov (the owner: "Yes, raise it"): `scripts/budgets.json` is 2,447,673 bytes and 771,012 gzip with 5% allowed. With the look lane's local tip merged, this branch's build is 2,494 kB and 788 kB gzip, +2.2% of it. Something rarely opened still belongs in a script loaded on demand, as `statsPanel.ts` is.
-- **`shiptest` fails on this branch's tip, on a false alarm.** Its scan for an API key finds "sk-" in the built script: `Math.ceil(sk-u)`, where the minifier has named a variable `sk`. Which names it hands out depends on everything in the bundle, so it shows with this branch merged and not without. The scan is the simulation session's; reported, with a tighter pattern suggested (a key is "sk-" and then sixteen or more letters, digits, dashes).
+- The size budget was raised on 17 Nov (the owner: "Yes, raise it"): `scripts/budgets.json` is 2,447,673 bytes and 771,012 gzip with 5% allowed. On 0c52b07 the main script is 2,520 kB and 796 kB gzip, +3.2% of it. Loaded on demand and not counted: `statsPanel` 6.6 kB, `pauseMenu` 2.2 kB. The six portraits are files beside the page (116 kB), inside the page in the one-file build.
+- `shiptest`'s false alarm on "sk-" is fixed by the simulation session (9c418f3).
+- **Need bubbles, by distance.** The look lane's screen layout drops a single bubble more than 1,900 m from the camera before it merges anything, and lets a merged one through to 4,400 m; the camera goes out to 6,500 m. On the look lane's `needs-town` save (79 buildings with a problem) the shown bubbles stand for 79 of them at 700, 1,200, 1,800, 2,600 and 3,600 m as things are, and for 79, 79, 67, 0 and 0 if the simulation hands them over unmerged at every zoom. So `clusterIcons` in `src/sim/services.ts` (merging beyond 600 m) is what keeps the far overview, and it stays until the layout keeps far singles. Reported to the simulation session for the look lane.
 - **How often a radio caption shows.** The engine plays an ad only with Music on and the county an Edge City (2,800 people) or more: every sixteenth bar, about every 40 to 46 s by day, three lines in rotation, so the same line about every two minutes. Each caption is up for 4.0 to 4.6 s. If that is too often on screen, the place to thin it is the one line in the `Hud` constructor that sets `game.audio.onRadioAd`; how often the jingle plays is the look lane's (`src/audio/score.ts`).
 - `phonefree` holds Roads at 60.6% and Zoning at 61% of the screen against a 60% floor. A card one line taller trips it.
 - A phone's inspector sheet is 403 px of an 844 px screen; a plain home's card is about 400 px and the tallest on presstest's street 482 px (79 px over). The action row is pinned to the sheet's foot, so a taller card scrolls under it.
@@ -80,8 +105,10 @@ Two of these put right something an earlier commit of this session broke, and th
 |---|---|---|
 | An export from `src/sim/services.ts` for the look of the service buildings | The "Looks: Asset Vault / Classic" row moves from the Services drawer to Settings | Done by this session with the simulation session's leave (1be543b: the one export and the panel block) |
 | A follow target for a bus that lasts across its stops | Follow on a bus | Done by the simulation session (0e682a4: `fields.busOf`, `bus`, `buses`, a `ViewTarget` of kind 'bus'); wired here in eea0ce8. (A moving bus was one of `traffic.cars` all along; what was missing was a target that outlives one leg.) |
-| A series of the budget by week: one row per weekly close for about two years, `{ day, income, expense, net, money }` (and the one-time total if cheap) | The budget chart and, later, the liability forecast drawn on it | Asked 17 Nov |
-| The look lane's need-bubble request (`REQUESTS_ASTRA.md`: raw problems to `S.icons.set(raw)`, and `clusterText` when `hit.id < 0` as well as when `n > 1`) | It was passed to this session with the audio hooks, but the three lines are in `src/sim/services.ts` outside the blocks that draw a panel or an inspector row (the icon update near line 1700, `clusterText` near 1741, the hover text near 2398), so they are the simulation session's | Passed back 18 Nov |
+| A series of the budget by week: one row per weekly close for about two years, `{ day, income, expense, net, money }` (and the one-time total if cheap) | The budget chart and, later, the liability forecast drawn on it | Done by the simulation session (aaa0e66: `game.sim.weeks`, with `oneTime`); charted in 0c52b07 |
+| The look lane's need-bubble request (`REQUESTS_ASTRA.md`: raw problems to `S.icons.set(raw)`, and `clusterText` when `hit.id < 0` as well as when `n > 1`) | Its lines are in `src/sim/services.ts` outside the panel blocks; the simulation session gave leave | The hover half done (c6f9cd4). The raw half not done, on purpose: it loses the far overview (Numbers, above) |
+| A place for a feed post: `at?: { x, z }` on what `feed.push` is given, at the sites that have one (a building opened, levelled or demolished, a crash, a jam, a road built, a service built, a commune) | Feed posts that take the camera to where the news happened (the brief's U5). The panel's half is small once a post has a place | To ask |
+| A way to put back what the bulldozer took (a building with its level and people, a road) | Undo for the bulldozer (U5: "bulldozing a grown building asks or can be undone"). The other way, a second press to confirm on a grown building, is all in `src/tools/tools.ts` but slows every sweep: the owner's call | To ask |
 
 ## Asked of the look lane (through the simulation session's `REQUESTS_FABLE.md`)
 
@@ -89,10 +116,11 @@ Drawings the icon set does not have, so the control keeps an emoji or words: the
 
 ## Next
 
-1. **The third lane's advisor portraits wait on the owner.** The six pictures are in the tree (`src/art/advisors/*.webp`, 17 to 23 kB each, with `advisorPortraitHTML(id, size)` in `src/art/advisors.ts`) but nothing imports them, so they are not in the build. They are generated art, and `DECISIONS_FABLE.md` keeps generated art out of the build until the owner says yes. Asked 18 Nov. On a yes: chad on the welcome card and the step card, the feed's advisor handles, earl for Honest Mode when it exists; check the phone's map share (`phonefree`) with a portrait on the step card.
-1. The look lane's requests that landed in this session's files are done: Photo in the toolbar's list, the banner's duck, the radio caption, the brush sound (the table above). The need-bubble one is the simulation session's (above).
-2. The budget chart, when the weekly series exists.
+1. The advisors' portraits are on screen (618ff9f). Left for later: Earl on Honest Mode's toggle when Honest Mode exists; Pastor Rick has a portrait and no place.
+1. The look lane's requests that landed in this session's files are done: Photo in the toolbar's list, the banner's duck, the radio caption, the brush sound, the hover of a merged bubble.
+2. On the weekly series: the liability forecast drawn on the budget (the brief's U2), when the simulation has liabilities to forecast.
+2. A milestone's banner and the step card overlap on a phone with a drawer open (seen in `shots/stats/phone.png`: "Population 50" under the Next line). Not looked into.
 3. The label of the look lane's `vaulttest` check still reads "Services > Looks"; theirs to reword.
-3. The statistics and budget charts (the brief's U2), from what the simulation gives: loaded on demand, like nothing else in the main bundle should be until the budget is re-baselined.
 4. Honest Mode's toggle waits on the owner (today's labels are the plain words; the booster's words would have to become the default first, which is a content decision).
-5. From the brief, in this session's files and not started: the layout of the top bar and the toolbar as one system with a 12 px floor (U4), long refusals as cards (U3), a pause menu (U5), text scale and keyboard focus order (U6).
+5. The pause menu has no way in for a finger or a mouse: Esc only. A phone still has everything it offers in Settings (Save now, slots, New city). A button for it belongs with the top bar's redesign (U4), which waits on the owner's go-ahead.
+6. From the brief, in this session's files and not started. U5: bulldozing a grown building asks or can be undone; the toolbar rebuilt on resize and rotate; every refusal names a next step (new words: list them for the owner first); feed posts that fly the camera to their place. U6: the text scale (100 to 200%), zone patterns for colour-blind players, key remapping and the keyboard's focus order through the HUD, reduced motion. U3: long refusals as cards, and a script that times each primary action's response. U4: the top bar and the toolbar as one system with a 12 px floor.

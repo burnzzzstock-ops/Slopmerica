@@ -6,6 +6,10 @@ import type { FeedContext, FeedEventKind, FeedPost } from '../contracts';
 import { ambientPost, postFor } from '../content/feed';
 import type { FeedSink, Game } from '../game';
 import { MERCH_URL } from '../art/brands';
+import { advisorPortraitHTML, type AdvisorId } from '../art/advisors';
+
+/** The feed's regulars who have a face: the handle they post under (content/feedTags.ts), and whose portrait it is. */
+const FACES: Record<string, AdvisorId> = { ShovelReady: 'chad', OneMoreLane: 'dale', CovenantsFirst: 'deb', BeforeTheBypass: 'earl', BollardEnjoyer: 'skyler' };
 
 /** real seconds between posts, and between small-talk posts (after at least QUIET s without one) */
 const POST_GAP = 14, CHATTER = [50, 90], QUIET = 40;
@@ -20,6 +24,15 @@ function fmt(n: number) {
   if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
   if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
   return String(n);
+}
+
+/** how long ago, the way a timeline writes it: now, 4m, 2h, 3d (real time: the feed is the player's own afternoon) */
+export function ageLabel(ms: number): string {
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return 'now';
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`;
 }
 
 function linkify(t: string) {
@@ -37,6 +50,8 @@ export class FeedPanel implements FeedSink {
   private ambientT = 20;
   /** seconds since the last post */
   private since = 0;
+  /** seconds until the posts' ages are written again */
+  private ageT = 0;
   unread = 0;
   collapsed: boolean;
   onUnread?: (n: number) => void;
@@ -98,6 +113,8 @@ export class FeedPanel implements FeedSink {
     this.cooldown -= dt;
     this.ambientT -= dt;
     this.since += dt;
+    this.ageT -= dt;
+    if (this.ageT <= 0) { this.ageT = 10; this.refreshAges(); }
     if (this.ambientT <= 0) {
       this.ambientT = CHATTER[0] + Math.random() * (CHATTER[1] - CHATTER[0]);
       if (!this.queue.length && this.since > QUIET) this.queue.push(ambientPost(this.game.ctx(), Math.random));
@@ -109,9 +126,19 @@ export class FeedPanel implements FeedSink {
     }
   }
 
+  /** Every post says how long ago it was posted. Each said "now" for as long as it stayed in the list, half an hour later too. */
+  refreshAges() {
+    const now = performance.now();
+    for (const li of this.list.children) {
+      const when = li.querySelector('.xwhen'), text = ageLabel(now - Number((li as HTMLElement).dataset.at ?? now));
+      if (when && when.textContent !== text) when.textContent = text;
+    }
+  }
+
   private render(p: FeedPost) {
     const li = document.createElement('article');
     li.className = 'xpost';
+    li.dataset.at = String(performance.now());
     const badge = p.badge ? `<span class="xbadge ${p.badge}" title="${p.badge} check">✓</span>` : '';
     const img = p.image
       ? `<div class="ximg ${p.image.kind}"><span>${esc(p.image.caption)}</span>${p.image.kind === 'aiSlop' ? '<em>AI generated</em>' : ''}${p.image.kind === 'merch' ? `<a href="${MERCH_URL}" target="_blank" rel="noopener">Shop imaginesupply.co →</a>` : ''}</div>`
@@ -119,9 +146,9 @@ export class FeedPanel implements FeedSink {
     const note = p.note ? `<div class="xnote"><b>Readers added context</b>${esc(p.note)}</div>` : '';
     const replies = p.replies?.length ? `<div class="xreplies">${p.replies.slice(0, 2).map((r) => `<div><span class="x-at">@${esc(r.handle)}</span> ${linkify(r.text)}</div>`).join('')}</div>` : '';
     li.innerHTML = `
-      <div class="xav" style="background:${esc(p.avatar.bg)}">${esc(p.avatar.emoji ?? p.name[0] ?? '?')}</div>
+      ${FACES[p.handle] ? `<div class="xav face">${advisorPortraitHTML(FACES[p.handle], 34)}</div>` : `<div class="xav" style="background:${esc(p.avatar.bg)}">${esc(p.avatar.emoji ?? p.name[0] ?? '?')}</div>`}
       <div class="xbody">
-        <div class="xmeta"><b>${esc(p.name)}</b>${badge}<span class="xhandle">@${esc(p.handle)} · now</span></div>
+        <div class="xmeta"><b>${esc(p.name)}</b>${badge}<span class="xhandle">@${esc(p.handle)}</span><span class="xage">· <span class="xwhen">now</span></span></div>
         <div class="xtext">${linkify(p.text)}</div>
         ${img}${note}${replies}
         <div class="xstats"><span>💬 ${fmt(Math.round(p.reposts * 0.6))}</span><span>🔁 ${fmt(p.reposts)}</span><span>♥ ${fmt(p.likes)}</span><span>📊 ${fmt(p.views)}</span></div>

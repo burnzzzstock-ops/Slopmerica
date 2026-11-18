@@ -58,6 +58,7 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 
 | Commit | What |
 |---|---|
+| 8eeabd1 | `shoot()` takes the ground under its weather from a seeded history run through the game's own climate (the look lane's fixture): a rainy capture has wet roads (0.997, was 0.007), a snowy one snow |
 | 56a68de | The golden-save test (F0.5): two version 1 saves and two version 2 saves each load to the county recorded in `scripts/fixtures/saves/golden.json`, system by system, and play on |
 | af068df | **At a green, a car waits while someone is across its path in the box.** A green was taken as a clear box, and a car drove into a truck that had turned across it or into the last lefts of a leading green. With it **carsolid passes on all eight seeds**, every check; it had not passed on any seed since the push began. The cost: through traffic that waits is later (landmarktest, failing before and after: 16, 11, 16 of 29 seated against 15, 19, 17) |
 | dd9db04 | A trip that leaves in a parked car of another model is drawn: it backs out in its own body (the review's A1, measured by the interface session; `scripts/parkingtest.mjs`) |

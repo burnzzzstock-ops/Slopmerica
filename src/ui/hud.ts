@@ -1875,7 +1875,8 @@ export class Hud implements UiSink {
     });
     this.inspector.querySelector('#in-road')?.addEventListener('click', () => { crumb('draw a road (inspector: not connected)'); g.tools.roadMode = 'straight'; if (this.panel !== 'roads') this.onTool('roads'); g.tools.set('road'); });
     this.inspector.querySelector('#in-bulldoze')?.addEventListener('click', () => {
-      if (sel.kind === 'building') { crumb(`bulldozed ${sel.b.label} (inspector)`); g.buildings.demolish(sel.b, 'bulldozed'); g.audio.play('bulldoze'); }
+      // (the game's own command, as the map tool uses: a building that grew on a zoned lot can be put back with Undo)
+      if (sel.kind === 'building') { crumb(`bulldozed ${sel.b.label} (inspector)`); const label = sel.b.label; if (g.bulldozeBuilding(sel.b)) { g.audio.play('bulldoze'); if (g.undoLabel === `bulldozing ${label}`) this.offerUndo(label); } }
       if (sel.kind === 'road') { crumb(`bulldozed road ${sel.s.name} (inspector)`); g.bulldozeRoad(sel.s); }
       g.select(null);
     });
@@ -1956,6 +1957,28 @@ export class Hud implements UiSink {
     this.toasts.appendChild(t);
     setTimeout(() => t.classList.add('out'), 15000);
     setTimeout(() => t.remove(), 15600);
+    while (this.toasts.children.length > 3) this.toasts.firstChild?.remove();
+  }
+
+  /**
+   * A building has been bulldozed from its card: say so, with a button that puts it back. The card has closed and no tool is
+   * in hand, so the tool badge's Undo is not on screen, and a phone has no Ctrl+Z. It goes when pressed, when something else
+   * has become the thing Undo would reverse, or after eight seconds.
+   */
+  private offerUndo(label: string) {
+    this.toasts.querySelector('.toast.undo-offer')?.remove();
+    const want = `bulldozing ${label}`;
+    const t = document.createElement('div');
+    t.className = 'toast unlock undo-offer';
+    t.setAttribute('role', 'status');
+    t.innerHTML = `<span>Bulldozed <b>${esc(label)}</b>.</span><button class="chip on">${uiIcon('action', 'undo', '↶', 18)} Undo</button>`;
+    t.querySelector('button')!.addEventListener('click', () => {
+      if (this.game.undoLabel === want) this.game.undo();
+      t.remove();
+    });
+    this.toasts.appendChild(t);
+    setTimeout(() => t.classList.add('out'), 8000);
+    setTimeout(() => t.remove(), 8600);
     while (this.toasts.children.length > 3) this.toasts.firstChild?.remove();
   }
 
@@ -2070,7 +2093,8 @@ export class Hud implements UiSink {
     // phones: every map tool gets the bar (hint + Done), since there's no hover tip
     const placingLabel = t.placingLabel;
     // desktop: placing a building shows a "Placing …" badge with Cancel
-    const showActions = t.active === 'road' || t.active === 'upgrade' || (IS_TOUCH && t.active !== 'inspect') || !!placingLabel;
+    // (and with the bulldozer in hand once there is a bulldozing to take back: the badge is then its Undo button)
+    const showActions = t.active === 'road' || t.active === 'upgrade' || (IS_TOUCH && t.active !== 'inspect') || !!placingLabel || (t.active === 'bulldoze' && !!this.game.undoLabel?.startsWith('bulldozing'));
     const barChanged = this.actions.hidden === showActions;
     this.actions.hidden = !showActions;
     if (barChanged || this.remeasureToasts) {
@@ -2106,7 +2130,8 @@ export class Hud implements UiSink {
       build.disabled = !plan || plan.cost === null;
       this.badge('#ta-build', 'build', '🔨', plan && plan.cost !== null ? `Build $${plan.cost.toLocaleString()}` : 'Build');
       const undo = this.actions.querySelector('#ta-undo') as HTMLButtonElement;
-      undo.hidden = t.active !== 'road' && t.active !== 'upgrade' && !placingLabel;
+      // (with the bulldozer in hand too: a drag over homes is one Undo, and a phone has no Ctrl+Z)
+      undo.hidden = t.active !== 'road' && t.active !== 'upgrade' && t.active !== 'bulldoze' && !placingLabel;
       undo.disabled = !this.game.canUndo;
       // name what Undo will reverse and what comes back
       const ul = this.game.undoLabel, utitle = ul ? `Undo ${ul} (Ctrl+Z)` : 'Nothing to undo';

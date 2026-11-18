@@ -38,7 +38,7 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 
 ## State of the work (17 Nov 2026)
 
-`aaa/integration` and `claude/aaa-play` are pushed at `cb722cb`. `aaa/integration` has both lanes' local tips and the third lane's portraits (190 of 197 at 2368bf3, 192 with the two that pass run as they need to be: under "Test results"), and is fast-forwarded to `claude/aaa-play` at the commit this file is in after smoke, determinism and the bus and traffic tests passed on it. Everything below is committed. The registry has 289 entries (31 gate, 15 smoke, 152 full, 91 measure), the look lane's among them.
+`aaa/integration` and `claude/aaa-play` are pushed at the commit this file is in (5d14657 plus docs): 194 of 202, under "Test results". `aaa/integration` has both lanes' local tips and the third lane's portraits (190 of 197 at 2368bf3, 192 with the two that pass run as they need to be: under "Test results"), and is fast-forwarded to `claude/aaa-play` at the commit this file is in after smoke, determinism and the bus and traffic tests passed on it. Everything below is committed. The registry has 289 entries (31 gate, 15 smoke, 152 full, 91 measure), the look lane's among them.
 
 | Item | State |
 |---|---|
@@ -92,6 +92,7 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 | 7f727f1, c5a94a8 | `scripts/simperf.mjs`; the land value pass no longer searches 300 m round every building for a landmark (the same county, a third less hitch) |
 | 1ea4162 | **Saves:** slots on the title screen and in Settings; Start paving asks before a new city takes the old one's place; an unreadable stored city is said so and kept |
 | cd31237 | playtest4 reads the inspector's garbage sign, not the emoji the row used to start with |
+| eb61c0d … 81d8f9b (17 commits, merged at b4f1332) | The interface session's fourth batch: the third lane's three phone findings (a car's speed in miles an hour, a card that opens puts the tool in hand away, the photo bar is up however photo mode began), the look lane's (Photo in the toolbar's own list, a banner steps the music back, the radio's ads have their words on screen, the zoning brush is heard while it paints), a stats panel and a bus you can ride across its stops |
 | b4559eb, 1e9a2b2, 6600d25 | The step that ends a game day does half the simulation work it did: the sprawl meter skips empty land and looks at its points a few every step, and land value runs at noon on its third day (`docs/aaa/PERF_SIM.md`: 101 ms to 48 over 21 day ends on the reference town; 29 ms a day end on average with the CPU slowed four times before). The county takes a different course than before from the same seed |
 | 6611966 | `scripts/simperf.mjs`: `TOWN=ref`, `THROTTLE=4`, `PROFILE=1` |
 | fee122e | `scripts/determinism.mjs`: `WHY=system@day` prints the values that differ |
@@ -175,6 +176,18 @@ None of these thresholds was loosened. They are what the traffic does on a town 
 ### Integration at 556917f (the HUD wiring), `--gpu`, seed 1
 
 119 of 128. The nine: hud-icon-art (Photo had no drawn icon; fixed in 5c44154), reflecttest (slowed by my own work running beside the suite; passes alone), nightglow (the coin toss above), photo-reflection and presetlight (the look lane's, failing before), carsolid, crosswalktest, lightstest and landmarktest (the traffic table above).
+
+### Integration at 5d14657 (the day's end spread out; the interface session's fourth batch, 17 commits; the look lane's bb6c6c2, 16 commits), `--gpu`, seed 1
+
+194 of 202, on a machine two other suites were also running on (62 minutes where it takes 33). The eight:
+
+- carsolid, landmarktest, lightstest: the traffic table above.
+- reflecttest and presetlight: as at 2368bf3.
+- roadsection: fails on the look lane's tip alone ("the walk's edge falls to the ground as a bank": 8.97 rise per run where 1.2 is asked). Passes on this lane's tip. Its own.
+- golden-regression: every one of the 96 captures differs from its reviewed image, 80 past the tolerance, wilderness with no town in it included. Two of them run on the look lane's tip alone differ by exactly the same number of pixels (30,891 and 300,432): its rendering changed in its last 16 commits and the reviewed images were not taken again. The towns in the captures are saves, and the same counts on both trees say nothing in this lane's work reaches them.
+- streetaudio: read a moving garbage truck's whine at 33% in the suite, where it reads 14 to 17% alone on integration (twice), on this lane's tip and on the look lane's. Unsteady under load. Reported.
+
+Before the merge, on this lane's tree: 32 of 32 UI tests with the interface session's four new ones (statstest, busridetest, sheettool, soundhooks), smoke 15 of 15, and the determinism test seven ways to day 180.
 
 ### Integration at 2368bf3 (the interface session's third batch; the look lane's local tip b1fb132, 78 commits), `--gpu`, seed 1
 

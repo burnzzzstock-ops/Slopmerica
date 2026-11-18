@@ -50,7 +50,7 @@
       }
     },
     "block-low-junction-golden": {
-      "sha256": "536558f94b6a7c3aa380e7014e10d582dc4e4cafc1b2323dff05e97957d37745",
+      "sha256": "224015e5fb543b4dc98c1bb9fab4966a423ac71d1d0719718cb4acb37e8f806d",
       "camera": [
         485,
         15,
@@ -84,7 +84,7 @@
       }
     },
     "block-low-junction-moonless": {
-      "sha256": "bfaa5035eeba9cf5b7425ba71a38975edd58b6be219beb130d3f0b12e685adce",
+      "sha256": "815e64696d02ed023478624568586dc4ba12e9a45c027d4fb30a5cbe6f415198",
       "camera": [
         485,
         15,
@@ -186,7 +186,7 @@
       }
     },
     "block-low-mid-golden": {
-      "sha256": "05ca741443d6141f9786316ed212afbe7059ed6f86513d7979a6033858f7dcc6",
+      "sha256": "8b77051f5e4e5d95e5b2850eba00c0464d7f8cdc062185c9f8de57e739bf3293",
       "camera": [
         540,
         55,
@@ -220,7 +220,7 @@
       }
     },
     "block-low-mid-moonless": {
-      "sha256": "49601b45aabd2a9a1c2d7ebc3b54c20bca0d390f06f6b003e29b576a3eebca7d",
+      "sha256": "69278750066ed11966fb36166e0dff8e0f6f95393f97a24ad73bb325ec8726c3",
       "camera": [
         540,
         55,
@@ -322,7 +322,7 @@
       }
     },
     "block-low-overview-golden": {
-      "sha256": "259d38b3ce3cbdf0dfd842ec6d7774b6d700f74924c266d315e0bd08016130fd",
+      "sha256": "58166316fcdf01c709210f4c329b923ad9589552d1553832a1afc7cfc6bf3bd1",
       "camera": [
         525,
         45,
@@ -356,7 +356,7 @@
       }
     },
     "block-low-overview-moonless": {
-      "sha256": "393b37d3c2035e853dad4c1f194290c45b941e1a4c20d7fa8684e3d2149fbf35",
+      "sha256": "4089bf9ec0ee6024db70d7ce55653eae8c54901b964e52a30171e20c8397391c",
       "camera": [
         525,
         45,
@@ -458,7 +458,7 @@
       }
     },
     "block-high-junction-golden": {
-      "sha256": "b7c2a49c499b65cb2917ba395f6991cbbbf0defeaff3fb06fb117ada76f6cd9a",
+      "sha256": "118244a6f4cfe0f937bf26c31d664a2ed554ee11fe5df27d577d370593f52d7a",
       "camera": [
         485,
         15,
@@ -492,7 +492,7 @@
       }
     },
     "block-high-junction-moonless": {
-      "sha256": "e6ca2ddb99c8d09bd04fd5d84d2471c9c096af469b7c79b3a6e541d7b68098ba",
+      "sha256": "16021e23fec8e336db034f57f64511395114452474d8488c99d476b15e8f74c6",
       "camera": [
         485,
         15,
@@ -594,7 +594,7 @@
       }
     },
     "block-high-mid-golden": {
-      "sha256": "059cd55611943e12b3e44ac7fa2b44e595ad99d7d0cdc68083b86d559e13ce2f",
+      "sha256": "c40ada20c8102f64d9acf77efb129ef069dea27284c8e32755d70e74075c5858",
       "camera": [
         540,
         55,
@@ -628,7 +628,7 @@
       }
     },
     "block-high-mid-moonless": {
-      "sha256": "508e13db9ade78aceab1452edf1e7de0046ed5e3f9302fa57b68affad07a2d04",
+      "sha256": "ea36c90cff635b8681e9b8fc42e4fd2d61878aabd50b8bb729d37102195ea0f6",
       "camera": [
         540,
         55,
@@ -730,7 +730,7 @@
       }
     },
     "block-high-overview-golden": {
-      "sha256": "13f266304f0fd1679750f35f952c1325fec0f84d2bc91b1cc0284e52fc053b0d",
+      "sha256": "3526b9dabddd523f362c3bd6156c8a17edb48b1ec29ed308328e8675b1b4a76d",
       "camera": [
         525,
         45,
@@ -764,7 +764,7 @@
       }
     },
     "block-high-overview-moonless": {
-      "sha256": "38e64c9a5f120a410559981ee224472a01d5d9b0c5e8cbd7d4abdcd3252f60af",
+      "sha256": "0fa2a8624ea837af4b80bc4e27867def2b5db9f4a516d0ad53536dc95519cf42",
       "camera": [
         525,
         45,
@@ -866,7 +866,7 @@
       }
     },
     "appalachia-low-overview-golden": {
-      "sha256": "c586a9d89e36dc9d0009b06c639e53c45344786edb1c465e383dca63a7fb5444",
+      "sha256": "699706d7b2bce2999c0532d0962aab5938a428e6b180731244f194f0a449141a",
       "camera": [
         10,
         -170,
@@ -900,7 +900,7 @@
       }
     },
     "appalachia-low-overview-moonless": {
-      "sha256": "9b225c054971eb713a9c1002d0fa17422d655e4d695885d698fb6cb1f00d90b6",
+      "sha256": "65de8f8cc6ebbd51cdcc39e99427e67be9fc939cfac8600997de13027c787a5d",
       "camera": [
         10,
         -170,
@@ -1002,7 +1002,7 @@
       }
     },
     "appalachia-low-water-golden": {
-      "sha256": "6d7b99478979a2ff442d8ca221cde5382ae1bdaa192739c5f1aa400793c106d7",
+      "sha256": "28c330b114d4ed4bdffcfb88ab9edb9ecd5e56da9465e906a05386586c3c319d",
       "camera": [
         7,
         -170,
@@ -1036,7 +1036,7 @@
       }
     },
     "appalachia-low-water-moonless": {
-      "sha256": "53aabdb0565825b85eab04cb19d4c53b8e33e4c679860184c8bea0e413950757",
+      "sha256": "0ca182804f37b604c1643d7d4c44dc8702bcafc52c6d283ced535d7b322b9681",
       "camera": [
         7,
         -170,
@@ -1138,7 +1138,7 @@
       }
     },
     "appalachia-low-forest-golden": {
-      "sha256": "004eded218f63b2af98506267d5e87173ab4a706a0855678f3a2af27a6f7de0e",
+      "sha256": "e958594b2dba627650f730958afb347b90410188072184fe4175bea3798ba851",
       "camera": [
         140,
         380,
@@ -1172,7 +1172,7 @@
       }
     },
     "appalachia-low-forest-moonless": {
-      "sha256": "94f43341d18fcd97d97711349d93b17b88ee45b5951bc54125c8353c22b49bbc",
+      "sha256": "434b341418aabe279b2faa31ee11f1d1061f3f60ced6d85aa715590de38550ab",
       "camera": [
         140,
         380,
@@ -1274,7 +1274,7 @@
       }
     },
     "appalachia-high-overview-golden": {
-      "sha256": "617785b949b741bd623c1cf29a9f335e54f936d3bcbd530180a378b465690a9d",
+      "sha256": "a5531ecaad7ff249b7840c2bae2d2e468d46367f2f67642b7c148992d74368a7",
       "camera": [
         10,
         -170,
@@ -1308,7 +1308,7 @@
       }
     },
     "appalachia-high-overview-moonless": {
-      "sha256": "9f57e095c2f43d54513aea91162e77b47e18ebad4d5ecbfe36118b560c0d4154",
+      "sha256": "9b3f2142c80def418fe6036383fb968173107e1305a386a2a200d15df06c1fd9",
       "camera": [
         10,
         -170,
@@ -1410,7 +1410,7 @@
       }
     },
     "appalachia-high-water-golden": {
-      "sha256": "7e02d8f11d68645464b30381dea8c056118fdece4a5d6fb26fee759ea220a633",
+      "sha256": "d462c348ddbaf84640cc7e03332d7afe77535701064ad10b91a1d9578d7ac7c7",
       "camera": [
         7,
         -170,
@@ -1444,7 +1444,7 @@
       }
     },
     "appalachia-high-water-moonless": {
-      "sha256": "a1b993b058e9e7895c03980efd83d85e401d1fa8fa869600d1cbfef1a06f8171",
+      "sha256": "26ce35183af66e8f288e7f9cc31fe1d785ae91c94c00e157341e9922e7af3e16",
       "camera": [
         7,
         -170,
@@ -1546,7 +1546,7 @@
       }
     },
     "appalachia-high-forest-golden": {
-      "sha256": "ae8e9fecf41f9dcf1afa9455c6317e00bf226d3e9f7a3f173f43a454ddba2c37",
+      "sha256": "2645d8ab4359bfdbb2ecb55b8076b0007762a8d450f73c4165f56452cc965f10",
       "camera": [
         140,
         380,
@@ -1580,7 +1580,7 @@
       }
     },
     "appalachia-high-forest-moonless": {
-      "sha256": "fee3ede8f87d38a503e9a0cc30e8d8a04928feb4fdc9e1bac464e296b53be4c7",
+      "sha256": "a3382be2c32b3a02602b992da3b9f972eb46f2295348d3be453434936a41371a",
       "camera": [
         140,
         380,
@@ -1682,7 +1682,7 @@
       }
     },
     "norcal-low-overview-golden": {
-      "sha256": "72030163b3814f2a58ea757182521b147008d4001c75929b83f706304f943b01",
+      "sha256": "11732a484d0983f65f7e095a12b133d3464ff01b461c65babf7923effe39a340",
       "camera": [
         480,
         100,
@@ -1716,7 +1716,7 @@
       }
     },
     "norcal-low-overview-moonless": {
-      "sha256": "92bab75fb302cf5a38c090792847d097d64b2351b871f14cdec97acd46643b66",
+      "sha256": "367277bff6c897bd79ce873a1196acd01b8d583978cbe4793714dff2f58fd677",
       "camera": [
         480,
         100,
@@ -1954,7 +1954,7 @@
       }
     },
     "norcal-low-forest-golden": {
-      "sha256": "f6edff3689fbc16733a0e81ceeff6bfc9c1162b9280a5b2d209d32ea53d67959",
+      "sha256": "9440c2ae9ce57f79a88182f2e9fd19fd1afb7ed98e11df83c533043dedcc7026",
       "camera": [
         1540,
         -220,
@@ -1988,7 +1988,7 @@
       }
     },
     "norcal-low-forest-moonless": {
-      "sha256": "af9ce430b2c537e2e741ae34eb9a06580d6b3444d2b0a4d40366b9218891253d",
+      "sha256": "e6f71441f5bf9edf194cce44ac39edf4714f174d169a9975c0e2eda6437caa2e",
       "camera": [
         1540,
         -220,
@@ -2090,7 +2090,7 @@
       }
     },
     "norcal-high-overview-golden": {
-      "sha256": "a181c298ba046b1723cdfb4e0081c1774d0641314c2f46a5e063df2d449971c2",
+      "sha256": "9a9ca70db126d6b09841e4d25804c63a3ceceeda5dbf332a4e6beaec28653acb",
       "camera": [
         480,
         100,
@@ -2124,7 +2124,7 @@
       }
     },
     "norcal-high-overview-moonless": {
-      "sha256": "628276a3ef9c43a9720eb4e2cacdb1196d2c0b2f124669979ad03fae3c2abd12",
+      "sha256": "0a31217fb43fdd2b22352c667cf60423542b922cc484d585d125d30335bc577d",
       "camera": [
         480,
         100,
@@ -2362,7 +2362,7 @@
       }
     },
     "norcal-high-forest-golden": {
-      "sha256": "aed6d0d458ab411b49062e478a0b492e8a8df0ec7cd8ab17328cddcd8c13de5f",
+      "sha256": "e9fd1c3811bd43b231913c78406a3e12702111a6e10e53172c639b6ecd18e4e4",
       "camera": [
         1540,
         -220,
@@ -2396,7 +2396,7 @@
       }
     },
     "norcal-high-forest-moonless": {
-      "sha256": "8e2858f980508bbe6ae1d6cb668d974d76e9fc5c9d68bd80a8c671c23f71ba32",
+      "sha256": "3fb87a672d290eabde596617ca506ced4f6871a3eea4fe0ba40ca7b0fe768a54",
       "camera": [
         1540,
         -220,
@@ -2498,7 +2498,7 @@
       }
     },
     "florida-low-overview-golden": {
-      "sha256": "7e3f472d15a6d7f2950f086fbef323bad656ee11d3fb2e2007d9e628d5946aa1",
+      "sha256": "24317f7cde354c51ef38387810e07bfc4417653f5d0fa73c57bfbd9482772bf2",
       "camera": [
         300,
         950,
@@ -2532,7 +2532,7 @@
       }
     },
     "florida-low-overview-moonless": {
-      "sha256": "1e8985dc4f535468b0d668d953e23582610b9079a4910f5e42fff94b9dee99e5",
+      "sha256": "cc490109e7f1749950b78410d25501827dde567bd3a32a8bba99bf01fd3baeda",
       "camera": [
         300,
         950,
@@ -2770,7 +2770,7 @@
       }
     },
     "florida-low-forest-golden": {
-      "sha256": "7f6e0e628807032877a760b628fbf44564eea2beb41469f3eadafb9957a498ca",
+      "sha256": "2f5e14765654179651150439d2391cd2544a491b35fae8771fb4c654d11154d6",
       "camera": [
         900,
         -860,
@@ -2804,7 +2804,7 @@
       }
     },
     "florida-low-forest-moonless": {
-      "sha256": "7fa4858049897e39fe8a1920258ccdf1caf113ebfd665c20e23410cc5a75680e",
+      "sha256": "3c2f5399197767ae76dc66ff70574cd3bc65d0b9967262161e0f843e4ce57f24",
       "camera": [
         900,
         -860,
@@ -2906,7 +2906,7 @@
       }
     },
     "florida-high-overview-golden": {
-      "sha256": "ecc7a44e644087b9912e1f254b01ec191f1a2f6e686e77bfe7142a27a9ee2d56",
+      "sha256": "f8310030d94e7d375f9f0b342af5907333899fd7a3b0c333cf4591db52f5e4f6",
       "camera": [
         300,
         950,
@@ -2940,7 +2940,7 @@
       }
     },
     "florida-high-overview-moonless": {
-      "sha256": "0bfcc5f45b463d7ba20ee9fc72e436d575c41bc47dc3b6dd7bc072441d44bb3f",
+      "sha256": "33124729306f0c71e941f9423739d460480d2604e1666ec30a354bb699db5e07",
       "camera": [
         300,
         950,
@@ -3178,7 +3178,7 @@
       }
     },
     "florida-high-forest-golden": {
-      "sha256": "5211db9e33f066aea956681d60da70dc962022163df7bf35170cc592817f724f",
+      "sha256": "2b20fa31aac3d2a69d38e8e9a66df759dde6d15fea2a1042fcbf93506b2a64f0",
       "camera": [
         900,
         -860,
@@ -3212,7 +3212,7 @@
       }
     },
     "florida-high-forest-moonless": {
-      "sha256": "1ff2c2dd9ca8d979002442fba8bdec720498055107130124c1f8616999522cd3",
+      "sha256": "25cf663257ca1aad006249de266426b365bf432f3dc545699333f4bd188fde2a",
       "camera": [
         900,
         -860,

@@ -1,5 +1,21 @@
 # Graphics performance
 
+## Forest and whole-scene geometry, November 17
+
+On `5f6b94c`, all six original noon forest views pass the 40% reduction in masked brightness variation, both as measured and after equalizing the mean. The masks match the originals byte for byte. The original draw-call and triangle ceilings also pass in each view. At a camera height of 2 m a distant photo focus keeps the detailed tree shadows. The same camera above the trees uses species-specific silhouettes, with bare deciduous trees retaining their branch shadows in winter.
+
+| Landscape | Low variation reduction | High variation reduction | Low / High after matching mean |
+| --- | ---: | ---: | ---: |
+| Appalachia | 52.4% | 46.6% | 54.6% / 43.5% |
+| NorCal | 55.2% | 54.6% | 56.7% / 53.6% |
+| Florida | 47.1% | 55.2% | 49.5% / 53.1% |
+
+The archived whole-scene comparator is the original pre-W13 source `93ee555`, seed 1776. The populated Block uses the historical 781-resident fixture. Low and High each cover that town plus three landscapes at noon, golden hour, moonless night and in rain. All 32 views draw at least 30% fewer triangles on the original fourth frame and after terrain detail settles. The smallest fourth-frame reduction is High Block in rain, 1,419,559 to 990,162 (30.25%). The same comparison after settling is 1,559,079 to 1,023,698 (34.34%). Both 61-position zooms preserve all 262 buildings. At 1,600 m the reductions are 44.14% on Low and 35.34% on High.
+
+On the 969-resident current town the road-edge mesh fell from 67,134 to 33,662 triangles. Across 403,184 bidirectional samples, the maximum surface displacement was 1.61 cm. The river keeps the original triangles wherever the flow texture can displace a vertex. Eighteen camera, surge, edited-bed and photo comparisons averaged 0.333 of 255 RGB levels of absolute change.
+
+Run `node scripts/suite.mjs --only overview-budget --serve 5191 --gpu` to repeat all 32 cases on a frozen copy. The check reads the original counts from `scripts/look/overview-original.json` and requires the original viewport, camera, legacy Block population and building count. To check saved counts, use `node scripts/look/overview-budget.mjs --check <report.json>`. The unoptimized original fails all 32 comparisons.
+
 ## Final committed counter baseline
 
 Revision `027b18f` passes all twelve paused reference views with zero counter violations. The run uses the committed 969-resident town, seed 271828, Chrome 157.0.8103.51 and NVIDIA RTX 5090 through ANGLE D3D11. Each row records the maximum over twelve frames.

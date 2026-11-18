@@ -36,6 +36,17 @@ const r = await page.evaluate((SECONDS) => {
   let samples = 0, laneOverlaps = 0, boxOverlaps = 0, moving = 0, total = 0, snaps = 0;
   const laneEx = [], boxEx = [], still = new Map(), prevYaw = new Map();
   let longest = { s: 0 };
+  const boxesOverlap = (a, b, dx, dz) => {
+    const ya = a.ryaw ?? a.yaw, yb = b.ryaw ?? b.yaw;
+    const A = [Math.sin(ya), Math.cos(ya)], B = [Math.sin(yb), Math.cos(yb)], la = a.len * 0.4, lb = b.len * 0.4, w = 0.7;
+    // separating axes: each box's heading and its normal
+    for (const [ux, uz] of [A, [A[1], -A[0]], B, [B[1], -B[0]]]) {
+      const ra = la * Math.abs(A[0] * ux + A[1] * uz) + w * Math.abs(A[1] * ux - A[0] * uz);
+      const rb = lb * Math.abs(B[0] * ux + B[1] * uz) + w * Math.abs(B[1] * ux - B[0] * uz);
+      if (Math.abs(dx * ux + dz * uz) >= ra + rb) return false;
+    }
+    return true;
+  };
   const where = (c) => { const st = c.path[c.pi]; const seg = st && net.segs.get(st.seg); return `${c.kind}#${c.id} ${seg?.type ?? '?'} seg ${st?.seg} lane ${c.lane} s ${c.s.toFixed(1)} v ${c.v.toFixed(1)}${c.junction ? ' (in junction)' : ''}${c.pi === 0 ? ' (first road)' : ''}`; };
   for (let f = 0; f < SECONDS * 20; f++) {
     step();
@@ -61,10 +72,11 @@ const r = await page.evaluate((SECONDS) => {
     total += cars.length; moving += cars.filter((c) => c.v > 0.5).length;
     for (let i = 0; i < cars.length; i++) for (let j = i + 1; j < cars.length; j++) {
       const a = cars[i], b = cars[j], dx = a.x - b.x, dz = a.z - b.z;
-      if (dx * dx + dz * dz > 144) continue;
-      const y = a.ryaw ?? a.yaw, hx = Math.sin(y), hz = Math.cos(y);
-      const along = Math.abs(dx * hx + dz * hz), across = Math.abs(dx * hz - dz * hx);
-      if (!(along < ((a.len + b.len) / 2) * 0.8 && across < 1.4)) continue; // bodies overlap by 20% or more
+      if (dx * dx + dz * dz > 400) continue;
+      // bodies overlap by 20% or more: each car a box along its own heading, four fifths of its length and 1.4 m wide
+      // (two cars side by side in neighbouring lanes are 3.5 m apart). The boxes are turned as the cars are: measured
+      // along one car's heading only, a truck crossing 4 m in front of a car waiting at its line counted as inside it.
+      if (!boxesOverlap(a, b, dx, dz)) continue;
       const ex = a.junction || b.junction ? boxEx : laneEx;
       if (a.junction || b.junction) boxOverlaps++; else laneOverlaps++;
       if (ex.length < 4) ex.push(`${where(a)}  ×  ${where(b)}`);

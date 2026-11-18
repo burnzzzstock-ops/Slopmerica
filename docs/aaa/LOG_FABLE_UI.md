@@ -85,6 +85,18 @@ Two of these put right something an earlier commit of this session broke, and th
 
 196 of 204, with another session's suite running on the PC at the same time. The six standing ones (`golden-regression`, `follow-camera`, `reflecttest`, `carsolid`, `landmarktest`, `lightstest`), and two that were the PC: `vaulttest` ("growing the town stayed quick": 7.4 s) and `world-audio` (a timeout at 602 s) both pass alone, in 31 s and 15 s. `follow-camera` passes since the look lane's change to its test came in with ba6fbd9.
 
+### The review of the look lane's work (the owner, 18 Nov: "review astras work too")
+
+`docs/aaa/REVIEW_ASTRA.md`: its 106 commits since the push began, read by area and then checked here, with what was measured marked as such. Three things it found were in this session's own files and are fixed:
+
+| Commit | What | Check |
+|---|---|---|
+| f85c2e6 | The wheel zooms again while a car's card is open: the HUD travelled with the car by a `setView` every frame, which the camera's new zoom treats as the end of a zoom. It now slides the view by the car's own movement (`rts.nudge`) | `camseams` (new): a notch from 150 m went to 151 m, now 195 m as with nothing selected |
+| 2071fdd | Esc leaves photo mode after a slider has been dragged (the slider kept the keyboard, and photo mode's keys are not read while an input has it) | `camseams` 10 of 10 |
+| 7f0349e | An emergency card's Show asked for while riding with a car goes to 460 m, not to the 17 m the chase camera was from the car | `camseams` 11 of 12 before, 12 of 12 |
+
+The probes that measured the review's findings are in the session's scratch folder and are not in the repository; the numbers are in the review.
+
 ### The sixth full suite, on 0c52b07 (5fc3310 merged in, with everything in the two tables above)
 
 201 of 208 in 36 minutes, nothing else running. None of the seven is from the interface: the simulation session's standing three (`carsolid`, `landmarktest`, `lightstest`) and four in the look lane's work, which are in the review of that lane (`docs/aaa/REVIEW_ASTRA.md`): `golden-regression` (its pinned browser is not in this checkout), `reflecttest` (the first frame with water compiles 8 shader programs), `presetlight` (two camera and hour pairs more than 0.03 luma from the high preset) and `roadsection` (the walk's edge is a sheer skirt again: 8.97 rise per run against 1.2).

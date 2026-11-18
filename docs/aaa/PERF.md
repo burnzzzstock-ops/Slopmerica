@@ -1,6 +1,21 @@
 # Graphics performance
 
-## Low phone frame time, November 17
+## Corrected integration at dae9c68
+
+The Low phone target is a frame interval below 16 ms at the 95th percentile. The released HTML files ran consecutively on the RTX 5090 with the original 4× CPU throttle, current 969-resident town, seed 271828, 390 × 844 touch viewport and 300 measured intervals. Both runs completed with zero page errors.
+
+| Production HTML | Frame median | Frame p95 | Median draws | Median triangles | Median host CPU use |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Previous, `149b543` | 19.5 ms | 40.9 ms | 119 | 553,505 | 47.2% |
+| Corrected, `dae9c68` | 21.6 ms | 44.0 ms | 119 | 533,719 | 62.3% |
+
+The corrected build missed the limit by 28.0 ms. Its first development run measured 52.6 ms p95 at 90.4% median host CPU use. These are desktop phone-proxy timings. Physical-phone timings remain unmeasured. [Previous production run](measurements/phone-149b543-paired-dae9c68.json) · [Corrected production run](measurements/phone-dae9c68-production.json)
+
+Forest brightness variation fell 46.58–55.20% in the six original noon views and 43.50–56.65% after matching mean brightness. Each view also passed its original draw and triangle ceilings. With the sun near the horizon, the distant canopy now uses more of its ordinary sky and shadow lighting. All 36 reference-town lighting comparisons passed. At dusk the overview mean luminance measured 0.294 on High, 0.320 on Medium and 0.318 on Low. [Six fixed-mask measurements](measurements/forest-dae9c68.json)
+
+All 32 original overview cameras submitted at least 30% fewer whole-scene triangles on the fourth frame and after terrain detail settled. The closest was High Block in rain, falling from 1,419,559 to 983,679 on frame four (30.71%) and from 1,559,079 to 1,017,215 after settling (34.76%). Run `node scripts/look/overview-budget.mjs --check docs/aaa/measurements/overview-dae9c68.json` to verify all 64 counts. [Hardware measurements](measurements/overview-dae9c68.json)
+
+## Low phone frame time at 149b543, November 17
 
 The enforced RTX 5090 phone proxy requires the 95th percentile of 300 consecutive frame intervals to be **below 16 ms**. It runs the 969-resident town with four-times CPU throttling, a 390 × 844 touch viewport, device pixel ratio 3 and a 585 × 1266 drawing buffer. The previous source is `b1fb132` and the shipping source is `149b543`. The controls use identical town data, camera, seed 271828 and game speed. Each run reported zero page errors.
 

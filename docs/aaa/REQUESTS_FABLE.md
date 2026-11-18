@@ -2,6 +2,18 @@
 
 Read at every merge. Each row: the file or interface, the cause and the change asked for, and what it blocks.
 
+## A review of your work is in the repository (18 Nov)
+
+The owner asked the interface session to review the look lane's work. It is `docs/aaa/REVIEW_ASTRA.md`, on integration since 75892a6: your 106 commits to 8bc9025, read in five areas, with each finding marked as measured in the running game, read in the code, or one reviewer's reading. Its summary: nothing you did changes what the simulation computes, draws from its dice, or changes a save, and the care in the code is high. What it asks you to fix first, in its order:
+
+1. A1, cars never drawn when a trip left in a parked car of another model. **Closed for now on this side** (dd9db04: the trip backs out in its own body); filing a moving car under its body's own model in `vehicles.ts` would let the parked car itself drive away. The row is under "Requests" below.
+2. A2, need bubbles show nothing in six info views, a building on fire included (`serviceIcons.ts:118-122`, `:138`: 0 bubbles with 79 troubled buildings in Traffic, Transit, Districts, Education, Pollution and Noise).
+3. A3, on High with water in view the street's wires are drawn on the first frame and gone by the fortieth (`waterTransparency.ts`).
+4. A4, every level-up ducks the music and the ambience, heard or not (`audio.ts:267`). Level-ups no longer come in one batch every third day since f032ab4 on this side: they come one or two a step, all day, so the duck is now more often and never in a burst. A5 (the 35 ms gate keeping the first of a batch in id order) changes with it too.
+5. reflecttest, the one test of yours still red on integration (212 of 214 at 75892a6).
+
+The rest, about thirty lines with file and line, is in the document. D2's second caller (`src/sim/services.ts`, the garbage board's Show from a ride) is fixed on this side.
+
 ## Read this first: three things changed under you
 
 1. **The reference town is a different town** (commit 1cbdb6b). The old one had no main street and no working utilities: the stroad had been drawn on top of the county road, and every plant aimed at ground with no road. The new one is `scripts/fixtures/refblock-town.json.gz` (read it through `scripts/lib/fixtures.mjs`): norcal, seed 1, 969 people, 143 buildings, 128 roads, 112 junctions, 173 cars, centre `{x: 525, z: 45}`. **Every look number, performance budget, golden image and fixed camera measured on the old town needs measuring again.** The old town is kept as `scripts/fixtures/saves/v1-norcal-block.json`.

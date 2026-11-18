@@ -995,7 +995,7 @@ function landfillWarnings(g: Game, f: Bld, d: SvcDef, fs: FS, served: number) {
     fs.full = true;
     fs.warned = 100;
     S.graphDirty = true; // it stops covering: its buildings go to the next facility in reach, if any
-    post(g, 'landfillFull', { building: f.label }, 1);
+    post(g, 'landfillFull', { building: f.label, at: { x: f.x, z: f.z } }, 1);
     // the rest of the garbage system may already handle the whole town (playtest: a full site read as an
     // emergency while another one took all the trash)
     const others = facilities(g).filter((o) => o.id !== f.id && o.def.collect && !fsOf(o).full).reduce((a, o) => a + (o.def.collect ?? 0), 0);
@@ -1078,7 +1078,7 @@ function fires(g: Game, zoned: ZB[]) {
       if (fire < 0.3) for (const n of g.buildings.near(b.x, b.z, 22)) if (n !== b && isZoned(n) && S.rng.float() < 0.18) igniteBuilding(g, n);
       if (bs.burning <= 0) {
         S.counts.burned++;
-        post(g, 'buildingBurned', { building: b.label }, 0.8);
+        post(g, 'buildingBurned', { building: b.label, at: { x: b.x, z: b.z } }, 0.8);
         g.terrain.paintCircle(b.x, b.z, Math.min(b.hw, b.hd) + 2, Paint.Scorched);
         g.particles.emit('smoke', b.x, b.y + 4, b.z, { count: 40, spread: b.hw });
         g.buildings.demolish(b, 'fire');
@@ -1100,7 +1100,7 @@ export function igniteBuilding(g: Game, b: Bld) {
   if (bs.burning > 0) return;
   bs.burning = 3;
   S.counts.fires++;
-  post(g, 'buildingFire', { building: b.label }, 0.5);
+  post(g, 'buildingFire', { building: b.label, at: { x: b.x, z: b.z } }, 0.5);
   const hit = reachOf(g, b, S.covT.fire);
   const st = hit && g.buildings.list.get(hit.o);
   if (st) dispatchFrom(g, st, b, 'responding to a fire', b.label);
@@ -1186,7 +1186,7 @@ function consequences(g: Game, zoned: ZB[]) {
       if (bs.bad >= ABANDON_DAYS) {
         // its residents leave with it: book them to what emptied it (setAbandoned zeroes occ)
         if (isRes(b) && b.occ > 0) loseToNeeds(g, b, bs, td);
-        g.buildings.setAbandoned(b, true); bs.ok = 0; newlyAbandoned++; post(g, 'abandoned', { building: b.label }, 0.3);
+        g.buildings.setAbandoned(b, true); bs.ok = 0; newlyAbandoned++; post(g, 'abandoned', { building: b.label, at: { x: b.x, z: b.z } }, 0.3);
       }
     } else {
       c.abandoned++;
@@ -2069,7 +2069,7 @@ export function placeService(g: Game, id: SvcId, x: number, z: number, yaw?: num
   g.audio.play('build');
   g.particles.emit('dust', b.x, b.y + 2, b.z, { count: 40, spread: b.hw });
   g.floatText(`✅ ${d.name}`, new THREE.Vector3(b.x, b.y + d.height, b.z), '#9dff3c');
-  post(g, 'serviceBuilt', { building: d.name }, 0.6);
+  post(g, 'serviceBuilt', { building: d.name, at: { x: b.x, z: b.z } }, 0.6);
   if (linkProblem(g, b)) g.toast(`🚧 ${d.name} is built, but its road doesn't join the rest of your roads (no route to the highway): it only serves the buildings on that road. Connect it to your streets (🛣️ Roads).`, true);
   return b;
 }

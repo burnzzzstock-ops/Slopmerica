@@ -1286,7 +1286,7 @@ export class Game {
     P.lap('weather');
     this.terrain.updateLOD(this.camera.position);
     this.trees.setDayOfYear(t.dayOfYear);
-    this.trees.update(this.time, this.rts.target, this.rts.distance);
+    this.trees.update(this.time, this.rts.target, this.rts.distance, this.camera.position);
     P.lap('terrain+trees');
     this.zones.update();
     this.roads.update();

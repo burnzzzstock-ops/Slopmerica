@@ -124,7 +124,7 @@ export class PhotoMode {
     GLOW.value = 1 / nightLift(n, g.env.moonLight);
     setBuildingNight(n); setKitNight(n); g.roads.setNight(n); g.roads.setWet(wet, (g.pendingQuality ?? g.q.name) === 'ultra');
     g.zones.setNight(n); g.traffic.setNight(n); g.peds.setNight(n); g.nightLights.update(0, n);
-    g.terrain.updateLOD(cam.position); g.trees.update(g.time, this.target, dist);
+    g.terrain.updateLOD(cam.position); g.trees.update(g.time, this.target, dist, cam.position);
     g.groundDetail.update(g.time, this.target, dist, { season: g.weather.season, snowCover: g.weather.snowCover, wind: g.weather.wind });
     const wu = g.water.mat.uniforms;
     wu.uNight.value = n; wu.uSky.value.copy(g.env.fog.color); wu.uSunDir.value.copy(g.env.sunDirection); wu.uSunColor.value.copy(g.env.sunColor);

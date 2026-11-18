@@ -13,6 +13,7 @@ import { bindLamps, FOREST_LAMP, LAMP_PARS, lampAdd } from './nightLights';
 import { newSeasonLook, sampleSeason } from './seasons';
 import type { MapId } from './maps';
 import { groveAlbedo, DISTANT_FOREST_LIGHT } from './forestFloor';
+import { treeShadowImpostor, bindTreeShadowRange } from './treeShadow';
 import { Shore } from './shore';
 import { withVisualRandom } from '../render/visualRandom';
 
@@ -114,6 +115,8 @@ export class Trees {
   private uniforms = { uTime: { value: 0 }, uLeaf: { value: 1 } };
   private lastFocus = new THREE.Vector3(1e9, 0, 1e9);
   private lastDist = 0;
+  private shadowDetail = 0;
+  private shadowLods: { mesh: THREE.InstancedMesh; detailed: THREE.Material; overview: THREE.Material; deciduous: boolean }[] = [];
   private dirty = true;
   private season = { day: -1, fall: 0, bare: 0, spring: 0, blossom: 0, dry: 0, dull: 0 };
   private look = newSeasonLook();
@@ -264,6 +267,14 @@ vCanopy = canopy;`)
     });
 
     const spriteTex = this.bakeSprites(renderer, models.map((m) => m[0]), atlas);
+    KINDS.forEach((kind, ki) => {
+      const overview = withVisualRandom(() => treeShadowImpostor(spriteTex, ki, KINDS.length, this.spriteSize[ki]));
+      const deciduous = DECIDUOUS.has(kind);
+      for (let v = 0; v < VARIANTS; v++) {
+        const mesh = this.near[ki * VARIANTS + v];
+        if (bindTreeShadowRange(mesh, overview)) this.shadowLods.push({ mesh, overview, detailed: mesh.customDepthMaterial!, deciduous });
+      }
+    });
     const farMat = new THREE.MeshLambertMaterial({ map: spriteTex, alphaTest: 0.3, side: THREE.DoubleSide, alphaToCoverage: msaa });
     farMat.onBeforeCompile = (sh) => {
       lightTreeStand(sh);
@@ -783,10 +794,20 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
     if (this.recolorMesh >= meshes.length) this.recolor = false;
   }
 
-  update(time: number, focus: THREE.Vector3, camDist: number) {
+  update(time: number, focus: THREE.Vector3, camDist: number, eye?: THREE.Vector3) {
     this.uniforms.uTime.value = time;
     this.wind.value = time;
     this.shore.update(time, focus, camDist);
+    // Streets retain every leaf and branch. When deciduous trees are shedding
+    // their leaves, their true alpha-tested geometry also casts in overviews.
+    const highView = camDist >= 480 && eye && eye.y - Math.max(WATER, this.terrain.h(eye.x, eye.z)) >= 100;
+    const shadowDetail = !highView ? 0 : this.uniforms.uLeaf.value < .9 ? 1 : 2;
+    if (shadowDetail !== this.shadowDetail) {
+      this.shadowDetail = shadowDetail;
+      for (const lod of this.shadowLods) {
+        lod.mesh.customDepthMaterial = shadowDetail === 2 || (shadowDetail === 1 && !lod.deciduous) ? lod.overview : lod.detailed;
+      }
+    }
     // Detailed trees cover the view when zoomed in. Zoomed out past what their
     // budget can cover, they fade out tree by tree everywhere instead of
     // shrinking to a disc of different-looking trees that follows the camera

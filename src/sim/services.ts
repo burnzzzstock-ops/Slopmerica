@@ -2296,7 +2296,8 @@ registerPanel({
       const id = Number((e.target as HTMLElement).closest<HTMLElement>('[data-goto]')?.dataset.goto);
       const b = g.buildings.list.get(id);
       if (!b) return;
-      g.rts.setView(b.x, b.z, Math.min(g.rts.distance, 420));
+      // (while the camera rides with a car its distance is the few metres to that car, not a height to look at a site from)
+      g.rts.setView(b.x, b.z, g.rts.following ? 420 : Math.min(g.rts.distance, 420));
       g.select({ kind: 'building', b });
     });
     el.querySelectorAll<HTMLButtonElement>('[data-svc]').forEach((b) => b.addEventListener('click', () => {

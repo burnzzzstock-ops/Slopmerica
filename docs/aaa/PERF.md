@@ -1,5 +1,20 @@
 # Graphics performance
 
+## Phone frame times after the integration suites finished
+
+The final `8bc9025` production game missed the strict 16 ms Low frame-time target in both runs. Each used the same 969-resident town, seed 271828, on Chrome 157 with an RTX 5090, 4× CPU throttling and a 390 × 844 touch viewport at DPR 3. The drawing buffer was 585 × 1266. Each run measured 300 frame intervals with zero page errors.
+
+| Production HTML in run order | Frame median | Frame p95 | CPU work p95 | Median triangles | Median host CPU |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Previous `149b543` | 14.9 ms | 32.8 ms | 31.6 ms | 553,505 | 55.4% |
+| Final `8bc9025` | 13.4 ms | 28.4 ms | 27.3 ms | 533,719 | 53.5% |
+| Final `8bc9025` | 15.1 ms | 31.4 ms | 30.5 ms | 533,719 | 55.4% |
+| Previous `149b543` | 18.6 ms | 42.2 ms | 41.0 ms | 553,505 | 59.3% |
+
+All four runs submitted 119 median draws. The host did not sustain 30 seconds below 35% CPU during the ten minutes before measurement. These figures describe the desktop phone proxy. [All 1,200 measured frames, host samples and release hashes](measurements/phone-8bc9025-after-validation.json)
+
+The final source passed 199 of 203 registered integration checks, including all 96 visual regression captures. The four outstanding checks also failed on upstream game code. They cover first-reflection shader compilation, car overlap and heading changes, stadium attendance and traffic-signal timing.
+
 ## Startup readback and final production build at 8bc9025
 
 The startup and quality-change check samples up to 25 pixels for a black frame. Each read asks the GPU for a result synchronously. Commit `8bc9025` returns on the first visibly lit pixel. Across 16 Low samples per version on the RTX 5090, median time on a lit town frame fell from 41.55 to 2.40 ms. With the GPU already finished it fell from 42.60 to 2.05 ms. All 25 first-lit positions, the threshold, both black-frame fallbacks and context loss produced the same decisions across 29 cases.

@@ -25,6 +25,9 @@ const DAYS = Number(process.env.DAYS || 60), RELOAD = Number(process.env.RELOAD 
 const MODES = (process.env.MODES || 'stepped,again,f30,f144').split(',').filter(Boolean);
 const TOWN = process.env.TOWN || 'block', QUALITY = process.env.QUALITY || 'low';
 const seed = testSeed();
+// WHY=ext.services@7: when a system differs at a day, the values that differ there (the fingerprint only says that they do)
+const WHY = process.env.WHY ? { sys: process.env.WHY.split('@')[0], day: Number(process.env.WHY.split('@')[1]) } : null;
+const whys = {};
 const marks = [1, 2, 3, 5, 7, 10, 14, 20, 30, 45, 60, 90, 120, 180, 270, 365, 545, 730].filter((d) => d <= DAYS);
 if (marks[marks.length - 1] !== DAYS) marks.push(DAYS);
 
@@ -82,7 +85,7 @@ const layBlock = () => {
  * exactly that many steps. Everything scripted happens inside the game's onStep hook at a set step number, so it is the same step
  * in every mode: a frame of 1/30 s at top speed covers more than one step, and a loop of frames would overshoot.
  */
-const advance = ({ to, how, player }) => {
+const advance = ({ to, how, player, why }) => {
   const g = window.__game, d = window.__dbg;
   // (days are counted from step 0 of the county, which a save carries: a reloaded page goes on counting from where the save was)
   const D = (window.__det ??= { base: 0, want: new Map(), prints: {}, hooked: false });
@@ -94,6 +97,7 @@ const advance = ({ to, how, player }) => {
       if (!w) return;
       D.want.delete(n);
       if (w.mark !== undefined) D.prints[w.mark] = d.fingerprint();
+      if (w.mark !== undefined && why && why.day === w.mark) D.why = d.dump()[why.sys] ?? [];
       if (w.act) window.__player.step(0);   // the scripted commissioner looks at the county and builds (no time passes: run(0))
     });
   }
@@ -154,7 +158,8 @@ for (const mode of MODES) {
       roundTrips.push({ day: before.day, bytes: save.length, lost, diffs });
       lastReload = to;
     }
-    prints[to] = await page.evaluate(advance, { to, how, player: TOWN === 'player' });
+    prints[to] = await page.evaluate(advance, { to, how, player: TOWN === 'player', why: WHY });
+    if (WHY && WHY.day === to) whys[mode] = await page.evaluate(() => window.__det.why ?? []);
   }
   runs[mode] = prints;
   const last = prints[marks[marks.length - 1]];
@@ -176,6 +181,19 @@ for (const sys of systems) {
     return String(at ?? '-').padEnd(9);
   });
   console.log(`${sys.padEnd(16)}${cells.join('')}`);
+}
+if (WHY) for (const m of MODES.slice(1)) {
+  const A = whys[ref] ?? [], B = whys[m] ?? [], at = [];
+  for (let i = 0; i < Math.max(A.length, B.length) && at.length < Number(process.env.WHY_TOP || 12); i++) if (A[i] !== B[i]) {
+    // (a system kept as one long line: from a little before the first character that differs)
+    const a = String(A[i]), b = String(B[i]);
+    let k = 0;
+    while (k < a.length && k < b.length && a[k] === b[k]) k++;
+    const from = Math.max(0, k - 90);
+    at.push(`  [${i}] at character ${k}: …${a.slice(from, k + 70)}\n${' '.repeat(String(i).length + 5)}                 …${b.slice(from, k + 70)}`);
+  }
+  console.log(`${WHY.sys} at day ${WHY.day}, "${ref}" | "${m}" (${A.length} and ${B.length} values): ${at.length ? '' : 'the same'}`);
+  for (const l of at) console.log(l);
 }
 for (const r of roundTrips) {
   console.log(`save at day ${r.day} (${(r.bytes / 1024).toFixed(0)} kB): ${r.lost.length ? `came back different in ${r.lost.join(', ')}` : 'every system came back the same'}`);

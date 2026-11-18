@@ -33,7 +33,7 @@ interface Step {
 }
 
 /** What a car on the road is following or waiting for (diagnostics: the tests and probes ask why a queue isn't moving) */
-export type Hold = 'lead' | 'side' | 'box tail' | 'box merge' | 'drive-thru' | 'walker' | 'left: oncoming' | 'courtesy' | 'driveway' | 'no room past the box' | 'red' | 'blocked' | 'all-way stop';
+export type Hold = 'lead' | 'side' | 'box tail' | 'box merge' | 'drive-thru' | 'walker' | 'left: oncoming' | 'courtesy' | 'driveway' | 'no room past the box' | 'red' | 'blocked' | 'all-way stop' | 'box: crossing';
 
 export interface Car {
   id: number;
@@ -384,6 +384,8 @@ export class Traffic {
   private mergeBlocks = new Map<number, { s: number; len: number; courtesy: boolean }[]>();
   /** per approach lane (seg/dir/lane key): the car that entered the box last from it (least of its curve covered) */
   private boxTail = new Map<number, Car>();
+  /** vehicles out of a box whose rear is still in it, by node (this step's; a long one takes a second or two to clear) */
+  private boxRears = new Map<number, Car[]>();
   /** per exit lane key: the cars in the box heading for it */
   private boxByExit = new Map<number, Car[]>();
   /** cars waiting in each building's lot to pull out: a jammed driveway stops new trips from there */
@@ -1417,6 +1419,8 @@ export class Traffic {
     for (const s of this.net.segs.values()) s.load[0] = s.load[1] = 0;
     this.junctionTargets.clear();
     this.boxTail.clear();
+    for (const a of this.boxRears.values()) { a.length = 0; this.listPool.push(a); }
+    this.boxRears.clear();
     this.boxByExit.clear();
     for (const c of this.cars) {
       if (c.crashed === -1) continue;
@@ -1444,6 +1448,9 @@ export class Traffic {
       if (P && c.prevEntryS !== undefined && c.s - c.prevEntryS < c.len) {
         const tk = P.fromSeg * 16 + (P.fromDir > 0 ? 0 : 8) + P.fromLane, tail = this.boxTail.get(tk);
         if (!tail || this.pastLine(c) < this.pastLine(tail)) this.boxTail.set(tk, c);
+        let rears = this.boxRears.get(P.node);
+        if (!rears) this.boxRears.set(P.node, (rears = this.listPool.pop() ?? []));
+        rears.push(c);
       }
       const st = c.path[c.pi];
       const key = st.seg * 16 + (st.dir > 0 ? 0 : 8) + c.lane;
@@ -1630,6 +1637,36 @@ export class Traffic {
         if (seg.blocked > 0) {
           const mid = seg.length / 2 - c.len;
           if (c.s < mid) { const g3 = mid - c.s; if (g3 < gap) { gap = g3; dv = c.v; hold = 'blocked'; } }
+        }
+        // at lights, on a green: wait at the line while a vehicle from another road, or its tail, is across your path
+        // in the box (a truck that turned left in front of you and is not out of your lane yet; someone late out of the
+        // road that has just gone red). A green was taken as a clear box: the oncoming car drove into the side of
+        // whatever had turned across it (carsolid: two trucks at the junction of roads 137 and 142, on every seed).
+        if (!last && exitS - c.s < 22 + extra) {
+          const nodeId = st.dir > 0 ? seg.b : seg.a;
+          if (this.signals.has(nodeId)) {
+            const inBox = this.junctionCars.get(nodeId), rears = this.boxRears.get(nodeId);
+            const nx = c.path[c.pi + 1], ns = nx && this.net.segs.get(nx.seg);
+            if (ns && ((inBox && inBox.length) || (rears && rears.length))) {
+              let hit = false;
+              for (const list of [inBox, rears]) {
+                if (!list || hit) continue;
+                for (const o of list) {
+                  const J = o.junction ?? o.prevJ;
+                  if (!J || o === c || o.crashed !== 0 || J.fromSeg === seg.id) continue;
+                  const K = c.boxPath;
+                  const mine = K && K.path === c.path && K.pi === c.pi && K.lane === c.lane && K.turn === c.turn && K.lat === c.lat && K.epoch === this.netEpoch ? K : (c.boxPath = this.boxPathFor(c, seg, st, ns, nx));
+                  if (this.crossesBox(mine.pts, o, mine.bend < 0.5 ? 0 : c.len, mine.bb)) { hit = true; break; }
+                }
+              }
+              if (hit) {
+                // (wherever it stands short of the box: a car held at a red waits at the box's edge, 3 m past its stop
+                // line, and when a leading green for the road across ended it set off into the last of that road's lefts)
+                const g9 = exitS - this.stopBack(nodeId, seg.id, c.lane) - c.s;
+                if (g9 < gap) { gap = Math.max(0, g9); dv = c.v; hold = 'box: crossing'; }
+              }
+            }
+          }
         }
         // no lights here: wait at the line while someone from another road is crossing near your entry
         if (!last && exitS - c.s < 22 + extra) {

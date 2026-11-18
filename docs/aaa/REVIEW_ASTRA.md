@@ -11,6 +11,12 @@ The owner asked the interface session to review ASTRA's work. This is that revie
   - **read**: checked here by reading the code path at the branch tip.
   - **reviewer**: one reviewer's reading, plausible, not checked again here. Treat it as a lead.
 
+## Since this was written (18 Nov, later)
+
+- The simulation session reports that on integration at 879816b, which has the look lane's nine newer commits (to 7bc24ee), `golden-regression`, `roadsection` and `presetlight` pass again. `reflecttest` is still red on the same two checks. So C1 and two thirds of C2 below are answered; they are left as written for the record.
+- A1 (the cars never drawn) the simulation session has taken, since the cause it names is in `traffic.ts`.
+- D1's figures are in `REQUESTS_FABLE.md` as a request to the look lane.
+
 ## The short version
 
 Nothing found changes what the simulation computes, draws from its dice, or changes a save. Nothing calls the network or adds a dependency. Disposal, listeners and state restore are in good order almost everywhere. The level of care in the code is high.

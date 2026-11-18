@@ -12,6 +12,7 @@ import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from './atmos';
 import { bindLamps, FOREST_LAMP, LAMP_PARS, lampAdd } from './nightLights';
 import { newSeasonLook, sampleSeason } from './seasons';
 import type { MapId } from './maps';
+import { groveAlbedo, DISTANT_FOREST_LIGHT } from './forestFloor';
 import { Shore } from './shore';
 import { withVisualRandom } from '../render/visualRandom';
 
@@ -133,9 +134,22 @@ export class Trees {
 
     // soft, non-shimmering foliage edges when the canvas is multisampled
     const msaa = q.post || renderer.getContext().getContextAttributes()?.antialias === true;
+    // Both tree representations sample the same pooled woodland light as the
+    // terrain. A camera move can exchange a tree model for its billboard at
+    // different distances on each preset.
+    const groveUniform = { value: groveAlbedo(map.def.palette.grass2) };
+    const lightTreeStand = (shader: THREE.WebGLProgramParametersWithUniforms) => {
+      shader.uniforms.uGroveAlbedo = groveUniform;
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <lights_pars_begin>', `#include <lights_pars_begin>
+${DISTANT_FOREST_LIGHT}`)
+        .replace('#include <opaque_fragment>', `outgoingLight = distantForestLight(outgoingLight, .96 * smoothstep(360., 690., distance(cameraPosition, vTWPos)) * (1. - uSnow));
+#include <opaque_fragment>`);
+    };
     const mkNearMat = (decid: boolean) => {
       const m = new THREE.MeshStandardMaterial({ map: atlas, vertexColors: true, alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.9, metalness: 0, alphaToCoverage: msaa, envMapIntensity: 0.35 });
       m.onBeforeCompile = (sh) => {
+        lightTreeStand(sh);
         sh.uniforms.uTime = this.uniforms.uTime;
         sh.uniforms.uLeaf = decid ? this.uniforms.uLeaf : { value: 1 };
         bindAtmos(sh);
@@ -252,6 +266,7 @@ vCanopy = canopy;`)
     const spriteTex = this.bakeSprites(renderer, models.map((m) => m[0]), atlas);
     const farMat = new THREE.MeshLambertMaterial({ map: spriteTex, alphaTest: 0.3, side: THREE.DoubleSide, alphaToCoverage: msaa });
     farMat.onBeforeCompile = (sh) => {
+      lightTreeStand(sh);
       sh.uniforms.uCanopyDensity = { value: this.terrain.forestFloor.texture };
       sh.uniforms.uLeaf = { value: 1 };
       bindAtmos(sh);

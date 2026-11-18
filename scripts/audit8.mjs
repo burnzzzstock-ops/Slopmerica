@@ -87,6 +87,12 @@ const step = async (name, fn, { shot = true } = {}) => {
   writeFileSync(`${out}/log.json`, JSON.stringify(log, null, 1));
 };
 const game = (fn, arg) => page.evaluate(fn, arg);
+// Esc as a tidy-up between steps. With nothing open, Esc brings up the pause menu (ui/pauseMenu.ts): put it away again.
+const tidy = async () => {
+  await page.keyboard.press('Escape').catch(() => {});
+  await sleep(200);
+  if (await page.$('.pause')) { await page.keyboard.press('Escape').catch(() => {}); await sleep(150); }
+};
 
 // ---------------------------------------------------------------------------------------------------------------- the title
 await step('title', async () => {
@@ -178,7 +184,7 @@ await step('town-view', async () => { await game(({ x, z }) => window.__dbg.view
 // ---------------------------------------------------------------------------------------------------------------- every panel
 const ids = await game(() => [...document.querySelectorAll('.toolbar button.tbtn')].map((b) => b.dataset.t));
 log.toolbar = ids;
-await page.keyboard.press('Escape').catch(() => {});
+await tidy();
 for (const id of ids.filter((i) => i !== 'more' && (!LITE || ['inspect', 'roads', 'zones', 'ext:services', 'views'].includes(i)))) {
   await step(`panel-${id}`, async () => { await tap(`button.tbtn[data-t="${id}"]`); await sleep(900); }).catch(() => {});
   if (id === 'bug') await page.keyboard.press('Escape');
@@ -196,7 +202,7 @@ if (ids.includes('more') && !LITE) {
       await tap(`[data-t="${id}"]`); await sleep(900);
     }).catch(() => {});
     if (id === 'bug') await page.keyboard.press('Escape');
-    await page.keyboard.press('Escape').catch(() => {});
+    await tidy();
     await game(() => window.__game.tools.cancel?.());
     await sleep(300);
   }
@@ -210,7 +216,7 @@ await step('demand-bar', async () => {
   if (bar) { await tap('.tb-demand .dbar'); await sleep(900); return 'tapped the first demand bar'; }
   return 'no demand bar found';
 });
-await page.keyboard.press('Escape').catch(() => {});
+await tidy();
 await step('inspect-building', async () => {
   return await game(() => {
     const g = window.__game, b = [...g.buildings.list.values()].find((x) => x.state === 'active') ?? [...g.buildings.list.values()][0];
@@ -265,6 +271,16 @@ await step('rain-night-overview', async () => {
 });
 await game(() => { const g = window.__game; g.weather.force('clear', 30); g.weather.settle(); window.__dbg.hour(12); });
 
+// ---------------------------------------------------------------------------------------------------------------- the pause menu
+await tidy();
+await step('pause-menu', async () => {
+  await game(() => window.__game.ui.openMenu());
+  await page.waitForSelector('.pause', { timeout: 15000 });
+  await sleep(400);
+  return await game(() => [...document.querySelectorAll('.pause button')].map((b) => b.textContent.trim()).join(', '));
+});
+await tidy();
+
 // ---------------------------------------------------------------------------------------------------------------- save and resume
 await step('save-now', async () => { await openSettings(); await tap('#save-now'); await sleep(700); });
 await step('bug-sheet-save-city', async () => {
@@ -275,7 +291,7 @@ await step('bug-sheet-save-city', async () => {
   if (b) { await b.scrollIntoViewIfNeeded().catch(() => {}); await tap('#bug-city'); await sleep(900); }
   return await game(() => document.querySelector('.bug-say, .bug-msg, [role="status"]')?.textContent ?? '(no message)');
 });
-await page.keyboard.press('Escape').catch(() => {});
+await tidy();
 await step('reload-resume', async () => {
   await page.goto(`${base}/`, { waitUntil: 'load', timeout: 180000 });
   await page.waitForSelector('.title .aaa-nav', { timeout: 180000 });

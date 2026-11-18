@@ -2389,6 +2389,70 @@ a {
 }
 
 
+/* ---- the pause menu (ui/pauseMenu.ts): Esc with nothing else open. It takes the screen, as the bug report does ---- */
+.pause {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  background: rgba(8, 7, 14, 0.62);
+  color: var(--ink);
+  font-family: 'Overpass', system-ui, sans-serif;
+  pointer-events: auto;
+}
+.pm-sheet {
+  width: min(320px, 100%);
+  max-height: calc(100vh - 24px - var(--safe-t, 0px) - var(--safe-b, 0px));
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px;
+  background: var(--panel-2);
+  border: 2px solid var(--lime);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.pm-sheet h2 {
+  margin: 0;
+  font-family: 'Bungee', Impact, sans-serif;
+  font-size: 22px;
+  text-align: center;
+}
+.pm-city {
+  margin: 0 0 6px;
+  text-align: center;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.pm-sheet button {
+  min-height: 48px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #1a1726;
+  color: var(--ink);
+  font-weight: 800;
+  font-size: 15px;
+}
+.pm-sheet .pm-primary {
+  background: var(--lime);
+  border-color: var(--lime);
+  color: #111;
+}
+.pm-status {
+  min-height: 1.3em;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--lime);
+}
+.pm-status.bad {
+  color: #ffb36b;
+}
+
 /* ---------------------------------------------------------------- playtest */
 .bug {
   position: fixed;

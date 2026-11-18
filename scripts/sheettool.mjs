@@ -50,7 +50,8 @@ for (const kind of ['phone', 'desk']) {
     await frames();
     s = await state();
     if (phone) check(`${kind}: with the card closed nothing is in hand and no badge comes back`, !s.sheet && s.tool === 'inspect' && !s.badge && !s.drawer, s);
-    await page.keyboard.press('Escape');
+    // (not Esc: on the phone nothing is open by now, and Esc with nothing open is the pause menu)
+    await page.evaluate(() => { const g = window.__game; g.ui.openPanel(null); g.tools.set('inspect'); });
     await frames();
   }
   check(`${kind}: no page errors`, errs.length === 0, errs.slice(0, 3));

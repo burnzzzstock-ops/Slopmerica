@@ -119,6 +119,9 @@ export class Hud implements UiSink {
   private perfVisible = false;
   private floats: { el: HTMLElement; p: THREE.Vector3; t: number }[] = [];
   private panel: PanelId = null;
+  /** the pause menu while it is up (ui/pauseMenu.ts, loaded when first asked for) */
+  private menu: { close(): void } | null = null;
+  private menuAsked = false;
   private demandPop!: HTMLElement;
   private meterPop: HTMLElement | null = null;
   /** tools unlocked this session and not used yet (their cards say NEW) */
@@ -1319,6 +1322,31 @@ export class Hud implements UiSink {
     this.refreshPanelLive();
   }
 
+  /**
+   * The pause menu: Resume, Save, Settings, Quit to title. Esc opens it when nothing else is open. The game waits from this
+   * call on (not from when the menu's script has arrived), and goes on at the speed it had when the menu closes.
+   */
+  openMenu() {
+    if (this.menu || this.menuAsked || this.endingUp()) return;
+    const g = this.game, speed = g.sim.speed;
+    this.menuAsked = true;
+    g.sim.speed = 0;
+    this.refreshTop();
+    void import('./pauseMenu').then((m) => {
+      this.menuAsked = false;
+      // (the menu puts the game back to the speed it finds, so hand it the one from before the wait)
+      g.sim.speed = speed;
+      this.menu = m.openPauseMenu(this.root, g, {
+        save: () => saveGame(g),
+        crumb,
+        settings: () => { if (this.panel !== 'help') this.onTool('help'); },
+        quit: () => { location.hash = ''; location.reload(); },
+        closed: () => { this.menu = null; this.refreshTop(); },
+      });
+      this.refreshTop();
+    }).catch(() => { this.menuAsked = false; g.sim.speed = speed; this.refreshTop(); });
+  }
+
   /** Open the playtest bug report sheet. */
   reportBug(prefill?: string) {
     openBugReport(this.root, this.game, { prefill });
@@ -1513,6 +1541,7 @@ export class Hud implements UiSink {
           <div><b>Roads</b> click start, click end. Keeps chaining. Esc / right-click stops.</div>
           <div><b>Speed</b> Space pause · 1 2 3</div>
           <div><b>Tools</b> B bulldoze · U one more lane · Z zoning · Esc cancel</div>
+          <div><b>Menu</b> Esc, with nothing else open</div>
           <div><b>Interchanges</b> Roads → Interchanges · , and . rotate</div>
           <div><b>Photo mode</b> P, or Photo under More · Esc leaves</div>${PLAYTEST ? `
           <div><b>Performance</b> F3 shows FPS, frame time, draw calls and triangles</div>` : ''}`}
@@ -1648,7 +1677,15 @@ export class Hud implements UiSink {
     } else if (e.key === 'Escape' && this.popPop && !this.popPop.hidden) {
       this.closePop();
       (this.top.querySelector('#tb-popstat') as HTMLElement | null)?.focus();
-    } else if (e.key === 'Escape') { this.openPanel(null); this.game.tools.set('inspect'); this.select(null); }
+    } else if (e.key === 'Escape') {
+      // Esc closes what is open: a drawer, the tool in hand, a card. With none of those it lets go of a followed car, and
+      // with nothing at all to put away it opens the pause menu. (The camera lets go of a follow on Esc itself, and hears
+      // the key first: the pill, which is up until the next frame, says that this press was for the follow.)
+      const g = this.game;
+      if (this.panel || g.tools.active !== 'inspect' || !this.inspector.hidden) { this.openPanel(null); g.tools.set('inspect'); this.select(null); }
+      else if (g.rts.following || !this.followPill.hidden) { crumb('stop following (Esc)'); g.rts.follow(null); }
+      else this.openMenu();
+    }
     this.refreshTop();
   }
 

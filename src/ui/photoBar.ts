@@ -29,6 +29,16 @@ export class PhotoBar {
     this.el.setAttribute('role', 'toolbar');
     this.el.setAttribute('aria-label', 'Photo mode');
     root.appendChild(this.el);
+    // The bar is up whenever photo mode is, however it began: the HUD's own button, an extension, or game.photo.enter() from
+    // code, which hid the HUD and left no Done to leave by. The HUD is not refreshed while photo mode is on, so the bar looks
+    // for itself, a glance a frame.
+    const watch = () => {
+      const on = this.game.photo.active;
+      if (on && this.el.hidden) { this.adjust = false; this.render(); this.el.hidden = false; }
+      else if (!on && !this.el.hidden) this.el.hidden = true;
+      requestAnimationFrame(watch);
+    };
+    requestAnimationFrame(watch);
     this.el.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest('[data-pb]') as HTMLElement | null;
       if (b) void this.act(b.dataset.pb!);
@@ -53,9 +63,6 @@ export class PhotoBar {
     this.adjust = false;
     this.render();
     this.el.hidden = false;
-    // photo mode ends itself on Esc, and the HUD is not refreshed while it is up: watch for the end from here
-    const watch = () => { if (!this.game.photo.active) this.el.hidden = true; else requestAnimationFrame(watch); };
-    requestAnimationFrame(watch);
   }
 
   exit() {

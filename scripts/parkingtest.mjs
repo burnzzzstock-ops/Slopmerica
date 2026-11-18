@@ -53,11 +53,22 @@ const pct = (x) => `${Math.round(x * 100)}%`;
     // 0.4 m), and how many of them backed out of its stall: every one should
     const lots = P.lots, launch0 = tr.launch;
     let couldBack = 0, didBack = 0;
+    // and the body each of them drives off in: the renderer keeps a body under the model it was made as, and a trip
+    // simulated as one model in another model's body was never drawn at all
+    let bodies = 0, wrongBody = 0, fromOther = 0;
+    const wrong = [];
     tr.launch = function (...a) {
       const oB = a[2], len = VEHICLE_SPECS[a[4]]?.length ?? 0;
-      const could = !!oB && !!lots.get(oB)?.taken.some((p) => p && p !== 'held' && Math.abs(VEHICLE_SPECS[p.kind].length - len) <= 0.4);
+      const there = oB ? (lots.get(oB)?.taken ?? []).filter((p) => p && p !== 'held' && Math.abs(VEHICLE_SPECS[p.kind].length - len) <= 0.4) : [];
+      const could = there.length > 0;
       const c = launch0.apply(this, a);
       if (c && could) { couldBack++; if (c.fromSpot) didBack++; }
+      if (c && c.fromSpot && c.h >= 0) {
+        bodies++;
+        if (!there.some((p) => p.kind === c.kind)) fromOther++;   // (no parked car of its own model: it took another's stall)
+        const body = tr.renderer.slots?.[c.h]?.kind;
+        if (body !== undefined && body !== c.kind) { wrongBody++; if (wrong.length < 4) wrong.push(`${c.kind}#${c.id} in a ${body}'s body`); }
+      }
       return c;
     };
     const lotsAt = [...g.buildings.list.values()].filter((b) => P.parkedAt(b).spots > 0).map((b) => `${b.label} (${P.parkedAt(b).spots})`);
@@ -122,7 +133,7 @@ const pct = (x) => `${Math.round(x * 100)}%`;
     let spill = null;
     if (thru.length) {
       const b = thru[0];
-      let spills = 0, maxRoad = 0, heldBehind = 0, clearedAt = -1;
+      let spills = 0, maxRoad = 0, heldBehind = 0, heldOthers = 0, clearedAt = -1;
       tr.onDriveThruSpill = () => spills++;
       tr.grandOpening(b);
       for (let f = 0; f < 20 * 900 && clearedAt < 0; f++) {
@@ -133,13 +144,16 @@ const pct = (x) => `${Math.round(x * 100)}%`;
         // someone stopped in the lane behind a car waiting for room in the line
         for (const w of tr.cars.filter((c) => c.thruB === b && !c.thru && (c.thruWait ?? 0) > 0)) {
           const st = w.path[w.pi], q = tr.buckets.get(st.seg * 16 + (st.dir > 0 ? 0 : 8) + w.lane) ?? [], i = q.indexOf(w);
-          if (i > 0 && q[i - 1].v < 0.5 && w.s - w.len - q[i - 1].s < 8 && q[i - 1].thruB !== b) heldBehind++;
+          // (whoever it is: the next customer for the line is stopped in the lane as surely as someone driving past.
+          // Counting only the ones driving past, a run where everyone behind the line was a customer read as no one held:
+          // seed 1 on 18 Nov, seven cars waiting on the road and 0 counted)
+          if (i > 0 && q[i - 1].v < 0.5 && w.s - w.len - q[i - 1].s < 8) { heldBehind++; if (q[i - 1].thruB !== b) heldOthers++; }
         }
         if (f > 20 * 300 && s.onRoad === 0) clearedAt = f / 20;
       }
-      spill = { b: b.label, made, places: tr.thruStats().find((x) => x.b === b).places, maxRoad, heldBehind, spills, clearedAt };
+      spill = { b: b.label, made, places: tr.thruStats().find((x) => x.b === b).places, maxRoad, heldBehind, heldOthers, spills, clearedAt };
     }
-    return { occ, pulledIn, backedOut, couldBack, didBack, lotsAt, spill, parked: P.count, cap: P.cap };
+    return { occ, pulledIn, backedOut, couldBack, didBack, lotsAt, spill, parked: P.count, cap: P.cap, bodies, wrongBody, fromOther, wrong, slots: Array.isArray(tr.renderer.slots) };
   }, { seed: SEED, center });
   const row = (h) => Object.entries(r.occ[h]).map(([k, v]) => `${k} ${pct(v.share)} of ${v.spots}${v.want !== undefined ? ` (its curves: ${pct(v.want)})` : ''}`).join(', ');
   for (const h of Object.keys(r.occ).sort((a, b) => a - b)) console.log(`  ${String(h).padStart(4)}:00  ${row(h)}`);
@@ -158,12 +172,13 @@ const pct = (x) => `${Math.round(x * 100)}%`;
   // which shut the stroad westward and keep the town over its traffic budget, so it starts few new trips at all)
   console.log(`  lots: ${r.lotsAt.join(', ')}`);
   check(`leaving cars back out of their stalls (${r.didBack} of the ${r.couldBack} trips that left a lot with a car their length in it; ${r.backedOut} backed out in all)`, r.didBack === r.couldBack && r.couldBack > 3);
+  check(`and each drives off in a body of its own model (${r.wrongBody} of ${r.bodies} in another model's; ${r.fromOther} of them left from a stall a different model was parked in)`, r.slots && r.bodies > 3 && r.wrongBody === 0, r.wrong);
   if (r.spill?.made) check(`a shop lot rebuilt as a drive-thru gets its lane (traffic.ts thruAt: ${r.spill.made.lane ? 'it does' : 'a "no drive-thru" kept from its old model hides the new lane'})`, r.spill.made.lane);
   if (r.spill) {
     if (r.spill.made) console.log(`  (the block has no drive-thru: ${r.spill.made.was} on ${r.spill.made.road} is rebuilt as ${r.spill.b} for the grand opening)`);
     console.log(`  grand opening at ${r.spill.b}: ${r.spill.places} places in the lane, up to ${r.spill.maxRoad} cars waiting on the road, ${r.spill.spills} feed posts, clear after ${r.spill.clearedAt} s`);
     check(`a grand opening spills the drive-thru line onto the road (${r.spill.maxRoad} waiting on it)`, r.spill.maxRoad > 0);
-    check(`the spill holds the lane behind it (${r.spill.heldBehind} car-seconds held)`, r.spill.heldBehind > 0);
+    check(`the spill holds the lane behind it (${r.spill.heldBehind} car-seconds held, ${r.spill.heldOthers} of them drivers who were not going there)`, r.spill.heldBehind > 0);
     check(`the feed says so (${r.spill.spills})`, r.spill.spills > 0);
     check(`and the line clears (${r.spill.clearedAt} s)`, r.spill.clearedAt > 0);
   } else check('the block has a drive-thru', false);

@@ -33,7 +33,7 @@ interface Step {
 }
 
 /** What a car on the road is following or waiting for (diagnostics: the tests and probes ask why a queue isn't moving) */
-export type Hold = 'lead' | 'side' | 'box tail' | 'box merge' | 'drive-thru' | 'walker' | 'left: oncoming' | 'courtesy' | 'driveway' | 'no room past the box' | 'red' | 'blocked' | 'all-way stop';
+export type Hold = 'lead' | 'side' | 'box tail' | 'box merge' | 'drive-thru' | 'walker' | 'left: oncoming' | 'courtesy' | 'driveway' | 'no room past the box' | 'red' | 'blocked' | 'all-way stop' | 'box: crossing';
 
 export interface Car {
   id: number;
@@ -148,7 +148,7 @@ export interface Car {
 interface PathPoint { x: number; z: number; y: number; tx: number; tz: number }
 
 /** A car crossing a junction on a cubic from the lane it left to the lane it joins; t is the share of the curve's length covered by its front. */
-interface JunctionCurve { t: number; len: number; /** its real length (len is at least 2 m for timing; a bend in the road with no box is ~0) */ arc: number; p0: V2; c1: V2; c2: V2; p2: V2; t1: V2; t2: V2; lut: number[]; y0: number; y1: number; node: number; fromSeg: number; lane2: number; /** the lane and direction it came from */ fromDir: 1 | -1; fromLane: number; /** entered this step (it already moved) */ fresh?: boolean; /** points along it, for conflict tests (made on first use), and their bounds */ pts?: V2[]; bb?: [number, number, number, number] }
+interface JunctionCurve { /** where across the next road the car comes out, when that is not its lane's place (a join with lanes out of line: see enterJunction) */ latIn?: number; t: number; len: number; /** its real length (len is at least 2 m for timing; a bend in the road with no box is ~0) */ arc: number; p0: V2; c1: V2; c2: V2; p2: V2; t1: V2; t2: V2; lut: number[]; y0: number; y1: number; node: number; fromSeg: number; lane2: number; /** the lane and direction it came from */ fromDir: 1 | -1; fromLane: number; /** entered this step (it already moved) */ fresh?: boolean; /** points along it, for conflict tests (made on first use), and their bounds */ pts?: V2[]; bb?: [number, number, number, number] }
 
 /** Endpoint of a dispatched trip: a building, or 'edge' (an outside connection). */
 export type TripEnd = Bld | 'edge';
@@ -384,6 +384,8 @@ export class Traffic {
   private mergeBlocks = new Map<number, { s: number; len: number; courtesy: boolean }[]>();
   /** per approach lane (seg/dir/lane key): the car that entered the box last from it (least of its curve covered) */
   private boxTail = new Map<number, Car>();
+  /** vehicles out of a box whose rear is still in it, by node (this step's; a long one takes a second or two to clear) */
+  private boxRears = new Map<number, Car[]>();
   /** per exit lane key: the cars in the box heading for it */
   private boxByExit = new Map<number, Car[]>();
   /** cars waiting in each building's lot to pull out: a jammed driveway stops new trips from there */
@@ -1196,7 +1198,10 @@ export class Traffic {
       const seg0 = this.net.segs.get(st0.seg)!;
       // (the cars on that road and way, indexed once a step: not a scan of every car per try)
       const near = this.onSegDir().get(st0.seg * 2 + (st0.dir > 0 ? 0 : 1)) ?? [];
-      const busyAt = (s: number) => near.some((c) => !c.junction && c.crashed !== -1 && c.path[c.pi].seg === st0.seg && c.path[c.pi].dir === st0.dir && Math.abs(c.s - s) < 9);
+      // (a place is taken when a vehicle's body, front bumper back to rear, would be within 4 m of this one's: for two cars
+      // that is about the 9 m between bumpers it always was; behind a 16 m semi it is 20, where 9 put a van 4 m inside its trailer)
+      const myLen = VEHICLE_SPECS[kind].length;
+      const busyAt = (s: number) => near.some((c) => !c.junction && c.crashed !== -1 && c.path[c.pi].seg === st0.seg && c.path[c.pi].dir === st0.dir && c.s - c.len - 4 < s && s - myLen - 4 < c.s);
       let ok = false;
       // (its whole body on the road, out of the junctions at both ends and behind the far one's stop line: from a
       // driveway by a junction it joined inside the box, where cars turning through swept over it; AUDIT_ROUND8_SIM.md #8)
@@ -1208,6 +1213,10 @@ export class Traffic {
         if (!busyAt(s)) { rt.startS = s; ok = true; break; }
       }
       if (!ok && !oB) return null;
+      // (out of a lot with every place along the road taken: it waits in the lot for a gap as before, but where its whole
+      // body will be on this road. Left where its frontage was, a semi 5 m from the road's start pulled out with 11 m of
+      // itself on the road before, where the cars coming up that road did not know it: carsolid)
+      if (!ok && lo <= hi) rt.startS = clamp(rt.startS, lo, hi);
     }
     const spec = VEHICLE_SPECS[kind];
     // a trip happens whether or not the graphics preset has a free vehicle
@@ -1251,7 +1260,14 @@ export class Traffic {
     // a car parked at the building backs out of its stall (drawn only: the trip is the same)
     if (oB && this.parking) {
       const p = this.parking.take(oB, kind);
-      if (p) { if (car.h >= 0) this.renderer.remove(car.h); car.h = p.h; car.fromSpot = p.spot; }
+      if (p) {
+        // the parked car is this trip's car, body and all, when it is the same model. One of another model as long gives
+        // up its stall to this trip's own body: the renderer keeps every body under the model it was made as, and a trip
+        // driving another model's body was filed under the wrong one and never drawn, for the whole trip (measured by the
+        // review of 18 Nov: it left a hole in the traffic that other cars queued behind)
+        if (p.kind === kind) { if (car.h >= 0) this.renderer.remove(car.h); car.h = p.h; } else this.renderer.remove(p.h);
+        car.fromSpot = p.spot;
+      }
     }
     if (dB) {
       car.destB = dB;
@@ -1403,6 +1419,8 @@ export class Traffic {
     for (const s of this.net.segs.values()) s.load[0] = s.load[1] = 0;
     this.junctionTargets.clear();
     this.boxTail.clear();
+    for (const a of this.boxRears.values()) { a.length = 0; this.listPool.push(a); }
+    this.boxRears.clear();
     this.boxByExit.clear();
     for (const c of this.cars) {
       if (c.crashed === -1) continue;
@@ -1430,6 +1448,9 @@ export class Traffic {
       if (P && c.prevEntryS !== undefined && c.s - c.prevEntryS < c.len) {
         const tk = P.fromSeg * 16 + (P.fromDir > 0 ? 0 : 8) + P.fromLane, tail = this.boxTail.get(tk);
         if (!tail || this.pastLine(c) < this.pastLine(tail)) this.boxTail.set(tk, c);
+        let rears = this.boxRears.get(P.node);
+        if (!rears) this.boxRears.set(P.node, (rears = this.listPool.pop() ?? []));
+        rears.push(c);
       }
       const st = c.path[c.pi];
       const key = st.seg * 16 + (st.dir > 0 ? 0 : 8) + c.lane;
@@ -1617,6 +1638,36 @@ export class Traffic {
           const mid = seg.length / 2 - c.len;
           if (c.s < mid) { const g3 = mid - c.s; if (g3 < gap) { gap = g3; dv = c.v; hold = 'blocked'; } }
         }
+        // at lights, on a green: wait at the line while a vehicle from another road, or its tail, is across your path
+        // in the box (a truck that turned left in front of you and is not out of your lane yet; someone late out of the
+        // road that has just gone red). A green was taken as a clear box: the oncoming car drove into the side of
+        // whatever had turned across it (carsolid: two trucks at the junction of roads 137 and 142, on every seed).
+        if (!last && exitS - c.s < 22 + extra) {
+          const nodeId = st.dir > 0 ? seg.b : seg.a;
+          if (this.signals.has(nodeId)) {
+            const inBox = this.junctionCars.get(nodeId), rears = this.boxRears.get(nodeId);
+            const nx = c.path[c.pi + 1], ns = nx && this.net.segs.get(nx.seg);
+            if (ns && ((inBox && inBox.length) || (rears && rears.length))) {
+              let hit = false;
+              for (const list of [inBox, rears]) {
+                if (!list || hit) continue;
+                for (const o of list) {
+                  const J = o.junction ?? o.prevJ;
+                  if (!J || o === c || o.crashed !== 0 || J.fromSeg === seg.id) continue;
+                  const K = c.boxPath;
+                  const mine = K && K.path === c.path && K.pi === c.pi && K.lane === c.lane && K.turn === c.turn && K.lat === c.lat && K.epoch === this.netEpoch ? K : (c.boxPath = this.boxPathFor(c, seg, st, ns, nx));
+                  if (this.crossesBox(mine.pts, o, mine.bend < 0.5 ? 0 : c.len, mine.bb)) { hit = true; break; }
+                }
+              }
+              if (hit) {
+                // (wherever it stands short of the box: a car held at a red waits at the box's edge, 3 m past its stop
+                // line, and when a leading green for the road across ended it set off into the last of that road's lefts)
+                const g9 = exitS - this.stopBack(nodeId, seg.id, c.lane) - c.s;
+                if (g9 < gap) { gap = Math.max(0, g9); dv = c.v; hold = 'box: crossing'; }
+              }
+            }
+          }
+        }
         // no lights here: wait at the line while someone from another road is crossing near your entry
         if (!last && exitS - c.s < 22 + extra) {
           const nodeId = st.dir > 0 ? seg.b : seg.a;
@@ -1759,7 +1810,8 @@ export class Traffic {
           c.s = entryS;
           this.enteredAt.set(key, entryS - c.len);
           c.lane = J.lane2;
-          c.lat = laneOffset(ROAD_TYPES[nseg.type], c.lane);
+          // (in its lane; or, out of a join whose lanes are out of line, where it is, to steer across from there)
+          c.lat = J.latIn ?? laneOffset(ROAD_TYPES[nseg.type], c.lane);
           c.latV = 0;
           c.redsRun = 0;
         }
@@ -1942,8 +1994,22 @@ export class Traffic {
     // a join that makes no headway (lanes far from the centreline at a slight
     // bend: the next lane can start a little behind this one) is a sideways
     // blend of a few centimetres, not a curve that doubles back
-    if (K.d < 1.5 && (K.p2.x - K.p0.x) * K.t1.x + (K.p2.z - K.p0.z) * K.t1.z < 0.5) L = 0;
-    c.junction = { t: Math.min(1, over / Math.max(2, L)), len: Math.max(2, L), arc: L, p0: K.p0, c1: K.c1, c2: K.c2, p2: K.p2, t1: K.t1, t2: K.t2, lut, y0: K.y0, y1: K.y1, node: nodeId, fromSeg: seg.id, lane2: K.lane2, fromDir: st.dir, fromLane: c.lane, fresh: true, pts: undefined, bb: undefined };
+    const headway = (K.p2.x - K.p0.x) * K.t1.x + (K.p2.z - K.p0.z) * K.t1.z;
+    if (K.d < 1.5 && headway < 0.5) L = 0;
+    // and where the two roads' lanes are out of line by more than that with no headway between them (a two-lane road
+    // running on as a one-way, whose one lane is in the middle: 1.75 m across in 0.2 m), there is no curve at all: the
+    // car comes out on the next road where it is, and steers across to its lane there as for a lane change. Carried
+    // across on a curve it went sideways, and its heading swung round by 0.6 rad for a step as each axle crossed
+    // (carsolid's heading snaps, a 9 m garbage truck at 14 m/s).
+    let p2 = K.p2, c1 = K.c1, c2 = K.c2, latIn: number | undefined;
+    // (only where both roads run the same way: a U-turn at a dead end is also 3.5 m across with no headway, and keeps its curve)
+    if (K.d >= 1.5 && K.d < 4.5 && headway < 0.5 && K.t1.x * K.t2.x + K.t1.z * K.t2.z > 0.9) {
+      const f = this.frameAt(nseg, next.dir, this.entryOf(nseg, next.dir));
+      latIn = (K.p0.x - f.x) * f.r.x + (K.p0.z - f.z) * f.r.z;
+      p2 = c1 = c2 = K.p0; L = 0;
+      for (let i = 1; i <= 10; i++) lut[i] = i / 10;
+    }
+    c.junction = { t: Math.min(1, over / Math.max(2, L)), len: Math.max(2, L), arc: L, p0: K.p0, c1, c2, p2, t1: K.t1, t2: K.t2, lut, y0: K.y0, y1: K.y1, node: nodeId, fromSeg: seg.id, lane2: K.lane2, fromDir: st.dir, fromLane: c.lane, fresh: true, pts: undefined, bb: undefined, latIn };
     // (visible to everyone else this step: two cars can't both take an empty box at once)
     let inBox = this.junctionCars.get(nodeId);
     if (!inBox) this.junctionCars.set(nodeId, (inBox = []));

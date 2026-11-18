@@ -236,7 +236,7 @@ export class Parking {
    * A trip leaving this building in a car of this kind: a parked one, if there
    * is one (its handle and the spot it backs out of). It is no longer parked.
    */
-  take(b: Bld, kind: VehicleKind): { h: number; spot: WorldSpot } | null {
+  take(b: Bld, kind: VehicleKind): { h: number; spot: WorldSpot; kind: VehicleKind } | null {
     const L = this.lots.get(b);
     if (!L) return null;
     // the same kind, or one as long (the traffic moves it as the length it has)
@@ -253,7 +253,7 @@ export class Parking {
     L.taken[best] = null;
     this.parked.delete(p);
     (this.renderer as { setParked?: (h: number, on: boolean) => void }).setParked?.(p.h, false);
-    return { h: p.h, spot: p.spot };
+    return { h: p.h, spot: p.spot, kind: p.kind };
   }
 
   /**

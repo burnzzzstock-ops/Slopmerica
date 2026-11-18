@@ -5,6 +5,7 @@
 // same one and the node-only junction checks need no browser to have run first.
 // Delete the file to grow a fresh one (then every number measured on it moves: say so
 // in the commit). Shared by lookbook.mjs, nighttest.mjs and the traffic tests.
+import { installWeatherFixture } from './look/weather-fixture.mjs';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { OLD_TOWN, readSave, REFBLOCK, REFBLOCK_CENTER, writeSave } from './lib/fixtures.mjs';
@@ -216,13 +217,18 @@ export async function openBlock(browser, { base, quality = 'high', width = 1280,
 /**
  * Set the hour, moon and weather, frame the camera, render. `view` is
  * [dx, dz, distance, yaw, pitch] from the block's centre.
+ * The ground under the weather (wet roads, lying snow) is the simulation's: the sky copies the county's climate every frame,
+ * so setting the sky's own values here was undone on the next one, and a rainy capture had dry roads. The look lane's fixture
+ * (scripts/look/weather-fixture.mjs) runs that weather through the game's own climate for a seeded 84 days (28 for snow) and
+ * loads what it leaves on the ground; clear weather loads a dry, bare one. The town's day and its save are not touched.
  */
 export async function shoot(page, center, { hour, moon = 0.5, weather = 'clear', view }) {
-  await page.evaluate(({ center, hour, moon, weather, view }) => {
+  await page.evaluate(installWeatherFixture);
+  await page.evaluate(async ({ center, hour, moon, weather, view }) => {
     const g = window.__game, d = window.__dbg;
     g.env.moonPhaseOverride = moon;
-    g.weather.force(weather, 30); g.weather.settle(); g.weather.snowCover = 0;
-    d.hour(hour);
+    d.hour(hour);   // (first: the fixture's history ends at this hour)
+    await window.__weatherFixture(weather);
     d.view(center.x + view[0], center.z + view[1], view[2], view[3], view[4]);
     for (let i = 0; i < 8; i++) g.frame(0.016);
   }, { center, hour, moon, weather, view });

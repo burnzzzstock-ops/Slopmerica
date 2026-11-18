@@ -1863,6 +1863,15 @@ a {
     max-height: 48vh;
     overflow-y: auto;
   }
+  /* The sheet scrolls when a card is taller than it. What the card offers (Bulldoze, One More Lane, Follow) stays at the
+     sheet's foot, in view, and the facts scroll under it: on a card a few lines too tall the buttons were under the fold. */
+  .inspector .in-actions {
+    position: sticky;
+    bottom: -14px;
+    margin: 10px -14px -14px;
+    padding: 8px 14px 14px;
+    background: #1e1b2d;
+  }
   .toasts {
     top: calc(100px + var(--safe-t));
   }
@@ -2292,10 +2301,6 @@ a {
   .meter b,
   .tb-weather small {
     display: none;
-  }
-  #tb-pop::before {
-    content: '👥 ';
-    font-size: 11px;
   }
   .tb-stat b {
     font-size: 13px;
@@ -3413,6 +3418,8 @@ a {
   .bug-x { min-width: 44px; min-height: 44px; }
   .bug-chk { min-height: 44px; }
   .bug-actions button, .bf-actions button { min-height: 44px; }
+  /* the inspector's Bulldoze, One More Lane, Follow, Pay off: 38 px until a finger was measured against them (scripts/presstest.mjs) */
+  .in-actions button { min-height: 44px; }
   .subpanel summary, .bug summary { padding-block: 14px; }
   input[type='range'] { min-height: 44px; }
   /* the title screen's text links (Load a city file, Paste a copied city, merch) were 28 px tall, its back arrow 42 */
@@ -3434,6 +3441,22 @@ a {
   .tb-demand { gap: 3px; }
   .mtrack { width: 26px; }
 }
+/* ---- saved cities on the title screen, the question before a new city, and the unreadable-save notice ---- */
+.aaa-slots { display: grid; gap: 6px; max-height: 38vh; overflow-y: auto; margin-top: 8px; padding-right: 2px; }
+.aaa-slots[hidden] { display: none; }
+.aaa-slot { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid rgba(239, 230, 207, 0.25); border-radius: 10px; background: rgba(17, 17, 17, 0.55); }
+.aaa-slot-what { flex: 1 1 auto; min-width: 0; display: grid; }
+.aaa-slot-what b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aaa-slot-what small { opacity: 0.75; font-size: 12px; line-height: 1.35; }
+.aaa-slot .aaa-link { flex: none; }
+.aaa-slot [data-sure='1'] { color: #ff8a80; }
+.aaa-unreadable { margin: 8px 0; padding: 10px 12px; border: 1px solid #b3202a; border-radius: 10px; background: rgba(17, 17, 17, 0.7); font-size: 13px; line-height: 1.4; }
+.aaa-keep { margin-top: 12px; padding: 12px; border: 1px solid rgba(239, 230, 207, 0.35); border-radius: 12px; background: rgba(17, 17, 17, 0.7); }
+.aaa-keep[hidden] { display: none; }
+.aaa-keep p { margin: 0 0 10px; font-size: 14px; line-height: 1.4; }
+.aaa-keep-row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.aaa-keep-msg { margin-top: 8px; font-size: 13px; color: #ff8a80; }
+
 /* ---- photo mode's bar: the HUD is hidden while photo mode is up, and this stays (src/ui/photoBar.ts) ---- */
 .photo-bar {
   position: absolute;
@@ -3460,6 +3483,7 @@ a {
 .photo-bar .pb-adjust label { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-2); }
 .photo-bar .pb-adjust input[type='range'] { width: 100%; min-width: 180px; }
 .photo-bar .pb-adjust output { color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; }
+.photo-bar .pb-note { color: var(--muted); font-size: 11px; }
 .photo-bar .pb-hint { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* the toasts say "Postcard saved" while the rest of the HUD is hidden */
 .hud:has(.photo-bar:not([hidden])) .toasts { visibility: visible; }
@@ -3561,6 +3585,17 @@ a {
    placed against it still clears it (overlaptest: 3 px of drawer over the bar); the drawing itself is 1.4em and overhangs */
 .ti .ui-icon { height: 1.1em; align-items: center; }
 .ti .ui-icon svg { width: 1.4em; height: 1.4em; flex: none; }
+/* the tool badge is an icon and its words in a row; a building's utility row is a sign for the utility and one for yes or no */
+.tool-actions button { display: inline-flex; align-items: center; gap: 5px; }
+.svc-util > span { display: inline-flex; align-items: center; gap: 2px; }
+.in-actions button .ui-icon, .in-stats b .ui-icon, .in-note .ui-icon, .dp-name .ui-icon, .svc-covs .ui-icon { margin-right: 3px; vertical-align: -0.25em; }
+/* the phone's one-row bar has no room for the word "Pop": the stat leads with its drawn icon (the emoji that stood there
+   was a different width in every font, and one left the stat too narrow for a finger) */
+.tb-ico { display: none; }
+@media (max-width: 760px) {
+  .tb-popstat { flex-direction: row; align-items: center; }
+  .tb-ico { display: inline-flex; margin-right: 3px; }
+}
 
 /* ---- a phone's map stays in view (scripts/phonefree.mjs measures the share of the screen that is free map) ---- */
 @media (pointer: coarse) and (max-width: 760px) {
@@ -3571,6 +3606,9 @@ a {
   /* under a drawing finger: no step card, and a readout of two lines */
   .hud.touch-draw .next-bar { display: none; }
   .ta-tip.clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+  /* a long readout with no finger down: a row of its own across the badge, and the buttons under it at the right */
+  .tool-actions:has(.ta-tip.wide) { flex-wrap: wrap; justify-content: flex-end; }
+  .ta-tip.wide { flex: 1 1 100%; max-width: none; padding: 2px 6px; }
   /* a tool drawer's name is on the lit toolbar button under it: the title row shows only when the drawer is folded to its pill */
   .subpanel:not(.min):has(> .sp-title + .sp-row) > .sp-title { display: none; }
   /* a row of choices is one row that scrolls sideways, not three that wrap */
@@ -3582,4 +3620,32 @@ a {
    (36% of the screen, now that a row of choices is one line; half hid too much map to place a service by touch) */
 @media (pointer: coarse) and (max-width: 760px) and (min-height: 700px) {
   .subpanel { max-height: min(36vh, 320px); }
+}
+
+/* ---- the smallest text (scripts/textfloor.mjs lists every size on the HUD) ----
+   What is read as a sentence or a figure in the inspector, the demand and budget cards, the More grid, the lists and the
+   small print of a drawer is 12 px at least; it was 10 to 11.7 px. Not raised: the labels of the one-row top bar and the
+   toolbar (8 to 11 px), which have no room until those two rows are laid out again; and the second line of a road, zone or
+   service card on a phone (11 px) and in a short desktop window (10.5 px), where a taller card takes the map's room: at
+   12 px the phone's Roads drawer took two more points of the screen (phonefree: 60.6% map to 58.4%). */
+.subpanel small, .inspector small, .li small, .sp-row small, .tax small, .svc-stat, .svc-stat small, .svc-trade, .land-hint,
+.in-stats span, .in-bind span, .in-kicker, .svc-covs span, .dp-h, .dp-base, .dp-trend, .dp-head b, .bg-top span, .budget tr.head td,
+.more-btn, .chip small { font-size: 12px; }
+@media (max-width: 760px) { .card small { font-size: 11px; } }
+@media (min-width: 761px) and (max-height: 760px) { .card small { font-size: 10.5px; } }
+
+/* ---- every control answers a press, and a mouse over it (scripts/presslook.mjs) ----
+   A finger has no hover, and the tap highlight is switched off for the whole page: until now a touch changed nothing on a
+   button until whatever it did had happened. Pressed, a control brightens and the plain buttons sink a little; under a
+   mouse it brightens a shade. A disabled one does neither. With reduced motion the brightening stays and the sinking goes.
+   `.pressed` is set by the HUD the moment a pointer goes down (hud.ts): on a touch screen :active waits for the browser's
+   own press timer, and on some phones never comes. :active stays for a press from the keyboard. */
+.hud :is(button:not(:disabled), [role='button']):is(:active, .pressed) { filter: brightness(1.35); }
+:is(.tbtn, .chip, .card, .more-btn, .li, .in-actions button, .tool-actions button):not(:disabled):is(:active, .pressed) { transform: scale(0.96); }
+@media (hover: hover) {
+  .hud :is(button:not(:disabled), [role='button']):hover { filter: brightness(1.14); }
+  .hud :is(button:not(:disabled), [role='button']):is(:active, .pressed) { filter: brightness(1.35); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.tbtn, .chip, .card, .more-btn, .li, .in-actions button, .tool-actions button):is(:active, .pressed) { transform: none; }
 }

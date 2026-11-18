@@ -58,6 +58,26 @@ for (const phone of [false, true]) {
     await page.evaluate(() => window.__game.select(null));
     await frames(6);
   }
+  // A bus in service. Transit sends each leg of a line out as a cityBus whose purpose is "running <line>" and whose
+  // destination is the next stop: its card is headed by the line, not by whoever is at the wheel, and so is the pill.
+  const bus = await page.evaluate(() => {
+    const g = window.__game, seg = [...g.net.segs.values()].sort((a, b) => b.length - a.length)[0];
+    const c = g.traffic.launch({ seg, s: seg.length * 0.1 }, { seg, s: seg.length * 0.9 }, null, null, 'cityBus', 'running The 69 Express', 'Stop 3', true, 12, true);
+    if (!c) return null;
+    g.select({ kind: 'car', c });
+    return c.id;
+  });
+  await frames(12);
+  const card = await page.evaluate(() => { const i = document.querySelector('.inspector'); return { head: i.querySelector('h3')?.textContent ?? '', rows: [...i.querySelectorAll('.in-stats div')].map((d) => `${d.querySelector('span')?.textContent}: ${d.querySelector('b')?.textContent}`), bio: !!i.querySelector('.in-blurb') }; });
+  check(`${who}: a bus's card is headed by its line ("${card.head}"), with its next stop and its driver`, bus !== null && card.head === 'The 69 Express' && card.rows.includes('Next stop: Stop 3') && card.rows.some((r) => r.startsWith('Driver: ')) && !card.bio, card);
+  if (phone) await page.waitForTimeout(450);
+  await (phone ? page.tap('#in-follow') : page.click('#in-follow'));
+  await frames(30);
+  const riding = await state();
+  check(`${who}: followed, the pill names the line ("${riding.pill?.text}")`, riding.following === `car:${bus}` && /Following The 69 Express/.test(riding.pill?.text ?? ''), riding);
+  await (phone ? page.tap('.follow-pill') : page.click('.follow-pill'));
+  await page.evaluate(() => window.__game.select(null));
+  await frames(6);
   check(`${who}: no page errors`, errs.length === 0, errs.slice(0, 3));
   await page.close();
 }

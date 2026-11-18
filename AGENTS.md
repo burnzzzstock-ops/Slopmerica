@@ -25,6 +25,17 @@ SLOPMERICA is a satirical 3D city builder in the browser: TypeScript, three.js, 
 
 If a fix belongs in the other lane's files, do not make it: write it in your `REQUESTS_*.md` (file, cause, proposed fix, what it blocks) and move on.
 
+The play lane is worked by two sessions (the owner's decision, 17 Nov), and they do not edit each other's files:
+
+| | Play: simulation | Play: interface |
+|---|---|---|
+| Owns | `src/sim/*`, `src/zones/*`, `src/transit/*`, `src/agents/traffic.ts`, `parking.ts`, `pedestrians.ts`, `communes.ts`, `src/roads/network.ts`, `roadJunction.ts`, `roadTypes.ts`, `src/core/*`, `src/ext/*`, `src/content/*`, `src/world/maps.ts`, `src/dev/debug.ts`, saves, the test harness (`scripts/suite.mjs`, `gate.mjs`, `lib/*`, `refblock.mjs`, the fixtures, the registry format) and the simulation's tests. It also merges and pushes `aaa/integration`, and nobody else does | `src/ui/*`, `src/tools/*`, `src/style.css`, `index.html`, and the interface's tests. Inside a simulation file, the blocks that draw a panel or an inspector row (`registerPanel`, `registerInspector`, `registerView` in `src/sim/services.ts`, `districts.ts`, `disasters.ts`, `land.ts`, `freight.ts`, `widening.ts` and `src/transit/system.ts`) are the interface's too: commits that touch only those are titled `UI:` |
+| Branch | `claude/aaa-play` | its own, cut from `claude/aaa-play`; the simulation session merges it into `claude/aaa-play` at each integration, after the interface's tests pass on the merged tree |
+| Ports | 5180 to 5184, and 5189 for integration | 5185 to 5188 |
+| Log | `docs/aaa/LOG_FABLE.md` | `docs/aaa/LOG_FABLE_UI.md` |
+
+When the interface needs something the simulation does not give it yet (a number, an event, a save field), it asks the simulation session in a message and notes it in its log; it does not add it itself. When the simulation adds something a player should see, it says so the same way. A feature that is both (a new tool that lays roads, a panel for a new system) is split along that line: what the county does in one commit by one session, how the player reaches it in another by the other. `scripts/tests/fable.json` is shared: one entry per commit, at the end of the file.
+
 A third lane directs and reviews: it listens to rendered audio, looks at screenshots and recordings, plays the game in a live browser and makes 2D art. It works on `agy/aaa-director` with ports 5170 to 5179, and writes what it finds in `docs/aaa/REQUESTS_ORION.md`. It owns the art it adds, in folders agreed with the look lane; a change it wants in a file one of the two lanes owns is a request, or a commit on its own branch that touches only that file.
 
 Heightfield generation is frozen for everyone: saves keep only edits, and the world regenerates from its seed.
@@ -55,7 +66,7 @@ npm run suite:gpu   # at every integration merge: every pass/fail test (about 20
 - From the repo root of your own worktree, always.
 - `node scripts/suite.mjs --only <name> --serve <port>` copies your tree to a frozen snapshot and serves it for the run, so editing `src/` never reloads a running test. Use it for one test as well as for many.
 - `node scripts/snapshot.mjs <name> <port>` serves a frozen copy yourself, for a before/after pair on two ports.
-- Ports: 5180 to 5189 for the play lane, 5190 to 5199 for the look lane. One `--serve` run per port at a time.
+- Ports: 5180 to 5189 for the play lane (split between its two sessions as the Lanes section says), 5190 to 5199 for the look lane, 5170 to 5179 for the review lane. One `--serve` run per port at a time.
 - At most 4 browsers at once per checkout (`scripts/lib/slots.mjs`); `launch()` from `scripts/lib/browser.mjs` takes a slot itself. Start every browser through `launch()`: nothing else may name a browser path.
 - `GPU=1` (or `--gpu` on the suite) draws with the real graphics card. `SEED=n` sets the county's dice for a seeded test (default 1; `FUZZ=1` picks one and prints it). One run proves nothing for anything with traffic in it: compare several seeds.
 - A Node rig that loads `src/` through Vite in middleware mode must pass `ws: false`, or two rigs at once clash on a port.

@@ -3,7 +3,8 @@
 import { MAPS, MapId } from '../world/maps';
 import type { Mode } from '../sim/sim';
 import { MERCH_URL } from '../art/brands';
-import { loadSave, readSaveText, type SaveData } from '../sim/save';
+import { loadSave, rawSave, readSaveText, unreadableSave, type SaveData } from '../sim/save';
+import { deleteSlot, listSlots, readSlot, slotName, writeSlot, type SlotInfo } from '../sim/slots';
 import { BUILD } from './bugreport';
 import { IS_TOUCH } from '../config';
 import { PLAYTEST } from '../core/flags';
@@ -64,7 +65,7 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 
 export function showTitle(parent: HTMLElement): Promise<StartChoice> {
   return new Promise((resolve) => {
-    const saved = loadSave();
+    const saved = loadSave(), unreadable = unreadableSave();
     let map: MapId = 'appalachia';
     let mode: Mode = 'ponzi';
     const county = (id: MapId) => MAPS.find((m) => m.id === id);
@@ -87,7 +88,9 @@ export function showTitle(parent: HTMLElement): Promise<StartChoice> {
             <span class="aaa-btn-label">New city</span>
             <span class="aaa-btn-sub">Pick a county. Pave it.</span>
           </button>
+          ${!saved && unreadable ? `<div class="aaa-unreadable" role="alert">The city saved in this browser could not be read (${esc(unreadable)}). Nothing has been deleted: it is still stored, and a later version of the game may read it.</div>` : ''}
           <div class="aaa-links">
+            <button class="aaa-link" id="slots-open" hidden>Saved cities</button>
             <button class="aaa-link" id="import">Load a city file</button>
             <button class="aaa-link" id="paste-open">Paste a copied city</button>
             <a class="aaa-link" href="${MERCH_URL}" target="_blank" rel="noopener">Real Slop merch ↗</a>
@@ -98,6 +101,7 @@ export function showTitle(parent: HTMLElement): Promise<StartChoice> {
             <textarea id="paste-box" rows="4" spellcheck="false" placeholder="Paste here, then tap Load this city"></textarea>
             <button class="aaa-link" id="paste-go">Load this city</button>
           </div>
+          <div class="aaa-slots" id="slots" hidden></div>
           <div class="aaa-import-msg" role="status" hidden></div>
         </nav>
       </section>
@@ -125,6 +129,15 @@ export function showTitle(parent: HTMLElement): Promise<StartChoice> {
           <div class="aaa-step aaa-go-row">
             <label class="aaa-name"><span>Town name</span><input id="cityname" maxlength="28" value="${CITY_NAMES[map][0]}" /></label>
             <button class="aaa-go" id="go">Start paving</button>
+            <div class="aaa-keep" id="keep" role="alertdialog" aria-label="Keep the city you would resume?" hidden>
+              <p>A new city takes the place of the one you would resume${saved ? ` (<b>${esc(saved.city)}</b>, ${(saved.pop ?? 0).toLocaleString()} people)` : ''}. Keep it in Saved cities?</p>
+              <div class="aaa-keep-row">
+                <button class="aaa-btn is-primary" id="keep-yes"><span class="aaa-btn-label">Keep it, then start</span></button>
+                <button class="aaa-link" id="keep-no">Start without keeping it</button>
+                <button class="aaa-link" id="keep-cancel">Not yet</button>
+              </div>
+              <div class="aaa-keep-msg" role="status" hidden></div>
+            </div>
           </div>
         </div>
       </section>
@@ -191,9 +204,55 @@ export function showTitle(parent: HTMLElement): Promise<StartChoice> {
       leave();
       resolve({ map: d.map, mode: d.mode, cityName: d.city, restore: d, imported: true });
     });
+    // ---- saved cities (slots): a list to load from or delete from, newest first
+    const slotsBtn = el.querySelector('#slots-open') as HTMLButtonElement, slotsEl = el.querySelector('#slots') as HTMLElement;
+    let slots: SlotInfo[] = [];
+    const drawSlots = () => {
+      slotsBtn.hidden = !slots.length;
+      slotsBtn.textContent = `Saved cities (${slots.length})`;
+      if (!slots.length) slotsEl.hidden = true;
+      slotsEl.innerHTML = slots.map((s, i) => `<div class="aaa-slot" data-i="${i}">
+          <div class="aaa-slot-what"><b>${esc(s.name)}</b><small>${esc(s.city)} · ${esc(county(s.map as MapId)?.name ?? s.map)} · ${s.pop.toLocaleString()} people · day ${s.day} · saved ${ago(s.savedAt)}</small></div>
+          <button class="aaa-link" data-slot-load="${i}">Load</button>
+          <button class="aaa-link" data-slot-del="${i}" aria-label="Delete ${esc(s.name)}">Delete</button>
+        </div>`).join('');
+    };
+    const refreshSlots = () => listSlots().then((list) => { slots = list; drawSlots(); });
+    void refreshSlots();
+    slotsBtn.addEventListener('click', () => { slotsEl.hidden = !slotsEl.hidden; });
+    slotsEl.addEventListener('click', async (e) => {
+      const t = e.target as HTMLElement, load = t.closest<HTMLElement>('[data-slot-load]'), del = t.closest<HTMLElement>('[data-slot-del]');
+      if (load) {
+        const s = slots[Number(load.dataset.slotLoad)], got = s && await readSlot(s.name);
+        if (!got) { msg.textContent = 'That saved city could not be read. It has not been deleted.'; msg.hidden = false; return; }
+        leave();
+        // (like a loaded file: this browser's own city is only replaced once the loaded one is running and autosaves)
+        resolve({ map: got.save.map, mode: got.save.mode, cityName: got.save.city, restore: got.save, imported: true });
+      } else if (del) {
+        // two taps: the first asks, the second deletes
+        if (del.dataset.sure !== '1') { del.dataset.sure = '1'; del.textContent = 'Delete for good?'; return; }
+        const s = slots[Number(del.dataset.slotDel)];
+        if (s) await deleteSlot(s.name);
+        await refreshSlots();
+      }
+    });
+
+    // ---- Start paving: with a city to resume, ask first whether to keep it
+    const keep = el.querySelector('#keep') as HTMLElement, keepMsg = el.querySelector('.aaa-keep-msg') as HTMLElement;
+    const start = () => { leave(); resolve({ map, mode, cityName: name.value.trim() || CITY_NAMES[map][0] }); };
     el.querySelector('#go')!.addEventListener('click', () => {
-      leave();
-      resolve({ map, mode, cityName: name.value.trim() || CITY_NAMES[map][0] });
+      if (!saved) return start();
+      keep.hidden = false; keepMsg.hidden = true;
+      (el.querySelector('#keep-yes') as HTMLElement).focus();
+    });
+    el.querySelector('#keep-cancel')!.addEventListener('click', () => { keep.hidden = true; });
+    el.querySelector('#keep-no')!.addEventListener('click', start);
+    el.querySelector('#keep-yes')!.addEventListener('click', async () => {
+      const text = rawSave();
+      const ok = !!text && !!saved && await writeSlot(slotName(saved.city, saved.day, slots.map((s) => s.name)), text);
+      if (ok) return start();
+      keepMsg.textContent = 'This browser would not store it (private windows often will not). Go back and use Resume trip, then Settings, Save city file; or start without keeping it.';
+      keepMsg.hidden = false;
     });
   });
 }

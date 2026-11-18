@@ -31,6 +31,40 @@ Where the average step goes (before the fix):
 | Services | 0.04 | 1% |
 | Weather, zoning sync, communes, transit, districts, hooks | under 0.02 together | 0% |
 
+## 17 Nov 2026, later: the reference town as a phone would run it
+
+The look lane's frame timings on Low with the CPU slowed four times miss their target on the frames that run a simulation step (its `Performance/Low-phone-CPU-profile.md`). This is the same town with nothing drawn: `scripts/fixtures/refblock-town.json.gz`, 969 people, 143 buildings, 128 road pieces, 166 cars, 141 people on foot, 640 steps.
+
+```sh
+BASE_URL=http://127.0.0.1:5183 GPU=1 TOWN=ref node scripts/simperf.mjs               # as this PC runs it
+BASE_URL=http://127.0.0.1:5183 GPU=1 TOWN=ref THROTTLE=4 node scripts/simperf.mjs    # Chrome's CPU slowed four times
+BASE_URL=http://127.0.0.1:5183 GPU=1 TOWN=ref PROFILE=1 node scripts/simperf.mjs     # and which functions the time is in
+```
+
+| | This PC | Slowed four times |
+|---|---|---|
+| A step, on average | 1.32 ms | 6.52 ms |
+| Median step | 1.10 ms | 5.40 ms |
+| The 20 steps that end a day, on average | 6.3 ms | 28.6 ms |
+| The slowest of them | 18.0 ms | 45.5 ms |
+| Every other step, on average | 1.16 ms | 5.81 ms |
+| Their 99th percentile | 2.8 ms | 14.2 ms |
+| Share of one core at top speed (128 steps a second) | 17% | 83% |
+
+(Taken while another lane's software-rendered test was running on the machine, so the absolute figures are a little high. The shares are not affected.)
+
+What this says for a phone, on a town of under a thousand people:
+
+- **A hitch at the end of every game day.** One step in 32 costs 29 ms on average and up to 45, on top of the frame it lands in. At normal speed that is every 2.5 seconds; at top speed four times as often.
+- **Top speed has no room.** The simulation alone takes five sixths of a core at top speed, before anything is drawn.
+- **An ordinary step is 6 ms**, three quarters of it traffic: a third of a 60-a-second frame.
+
+Where the day's end goes (the profile, this PC, ms over 21 day ends): the services' daily pass 36 (its fields 8, wellbeing 4, coverage 4, the service-road graph 4), the sprawl meter 31 (18 of it finding the nearest road to each point it looks at), land value and levels 17 (11 of it the 140 m neighbour count), freight's deliveries for the day 16. A week's end adds the budget.
+
+Where an ordinary step goes inside traffic (590 ms over 672 steps): the main loop's own code 253, working out where every car is in the world 207 (`place` and `pathPointInto`, every car on every step whether it moved or not), sending trips out 28, checking the box at junctions 21.
+
+**What to do, in this order:** (1) make the day's end cheaper without changing a number it produces (the nearest-road search, the neighbour count, a spatial query that builds a new set on every call); (2) then spread what is left over the day's steps, each part on a step of its own, which changes the step things happen on and so needs its own before and after; (3) a car that has not moved keeps its place.
+
 ## Hot spots
 
 1. **A hitch every third day, in the sim's land value and levels pass** (`Sim.landValueAndLevels`). It runs for every zoned building in one step. On this town: 29 ms warm, and the step it lands in took 44 to 69 ms. At top speed that is a dropped frame or three every three quarters of a second.

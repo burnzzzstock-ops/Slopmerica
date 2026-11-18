@@ -179,6 +179,20 @@ export function loadSave(): SaveData | null {
   }
 }
 
+/**
+ * A city is stored in this browser and cannot be read: what is wrong with it in a few words, or null (nothing stored, or it
+ * reads fine, or its checkpoint does). The title screen says so, and nothing is deleted.
+ */
+export function unreadableSave(): string | null {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw || parse(raw) || parse(localStorage.getItem(CHECKPOINT))) return null;
+    return readSaveText(raw).problem ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** The save as readable text (for a bug report's city file), or null. */
 export function rawSave(): string | null {
   try {

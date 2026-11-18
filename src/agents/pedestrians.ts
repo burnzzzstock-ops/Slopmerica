@@ -11,12 +11,13 @@ import { armCrossing, sidewalkEnds } from '../roads/roadJunction';
 import { carriageHalf, ROAD_TYPES } from '../roads/roadTypes';
 import { WALK_TOP } from '../roads/roadSection'; // (display height only: the raised sidewalk)
 import { isZoned, type Bld, type Buildings } from '../sim/buildings';
+import { TUNING } from '../sim/tuning';
 import type { Terrain } from '../world/terrain';
 import { ARCHETYPES, PeopleRenderer } from './people';
 import type { Communes } from './communes';
 
 /** a person about to be added: add() gives them their number and their place in the draw pool */
-type NewPed = Omit<Ped, 'h' | 'id'>;
+type NewPed = Omit<Ped, 'h' | 'id' | 'look'>;
 
 /** The people system's fields that are not state: what it is wired to and what it draws with. */
 const PEOPLE_NOT_SAVED = new Set(['renderer', 'net', 'b', 'terrain', 'communes', 'rng', 'rnd', 'max', 'hip', 'merch', 'norm', 'group']);
@@ -30,7 +31,10 @@ export interface Ped {
   act?: PersonAction;
   /** where they were last drawn: x, y, z, heading (what a camera following them reads) */
   shown?: Float64Array;
+  /** their place in the people renderer, or -1: simulated, not drawn (out of the camera's range, or the preset's pool is full) */
   h: number;
+  /** what they look like: a number the renderer turns into clothes and build (rolled once, so they look the same whenever they are drawn) */
+  look: number;
   arch: number;
   kind: 'walk' | 'loiter' | 'commune' | 'protest' | 'wait';
   action: PersonAction;
@@ -228,9 +232,9 @@ export class Pedestrians {
 
   private nextId = 1;
   private add(p: NewPed) {
-    const h = this.renderer.add(p.arch, Math.floor(this.rnd() * 1e6));
-    if (h < 0) return;
-    this.peds.push({ ...p, h, id: this.nextId++ });
+    // Whether they exist does not wait on the renderer having room for them: draw() gives the ones near the camera a place.
+    // (It used to: a preset with a smaller pool had fewer people at the kerb, so its cars waited at fewer crossings.)
+    this.peds.push({ ...p, h: -1, look: Math.floor(this.rnd() * 1e6), id: this.nextId++ });
   }
 
   /** seconds of pedestrian time (for per-building departure spacing) */
@@ -239,9 +243,9 @@ export class Pedestrians {
   private lastOut = new Map<number, number>();
 
   /** People on their own, for tests and dev pages: real seconds at a speed, then drawn. The game calls step() and draw(). */
-  update(dtReal: number, simSpeed: number, cam: THREE.Vector3, camDist: number) {
-    if (dtReal * simSpeed > 0) this.step(dtReal * simSpeed, cam, camDist);
-    this.draw(1, dtReal);
+  update(dtReal: number, simSpeed: number, cam?: THREE.Vector3, camDist?: number) {
+    if (dtReal * simSpeed > 0) this.step(dtReal * simSpeed);
+    this.draw(1, dtReal, cam, camDist);
   }
   /** the people's own random stream, seeded from the county's seed */
   readonly rng = new Rng(0x9ed5);
@@ -257,17 +261,22 @@ export class Pedestrians {
   restore(j: Json | undefined, refs: Refs) {
     const d = j as { rng: number; v: Json } | undefined;
     if (!d || typeof d !== 'object' || !d.v) return;
-    for (const p of this.peds) this.renderer.remove(p.h);
+    for (const p of this.peds) if (p.h >= 0) this.renderer.remove(p.h);
     const part = decode<Record<string, unknown>>(d.v, refs);
     const self = this as unknown as Record<string, unknown>;
     for (const k of Object.keys(part)) self[k] = part[k];
     this.rng.state = d.rng;
-    for (const p of this.peds) p.h = this.renderer.add(p.arch, Math.floor(fx.float() * 1e6));
+    // (not drawn until draw() finds them near the camera; a save from before people had a look gets one now)
+    for (const p of this.peds) { p.h = -1; p.look ??= Math.floor(fx.float() * 1e6); }
   }
   private readonly rnd = () => this.rng.float();
 
-  /** One fixed step of `dt` game seconds. (The clocks below were written in real seconds at a speed; they run at the pace they had at top speed.) */
-  step(dt: number, cam: THREE.Vector3, camDist: number) {
+  /**
+   * One fixed step of `dt` game seconds. (The clocks below were written in real seconds at a speed; they run at the pace they had at top speed.)
+   * Nothing here knows where the camera is or which graphics preset is on: people are all over the town, as many as the town's size
+   * says (TUNING.people.max at most), and they hold cars at crossings whether or not anyone is looking. draw() decides who is shown.
+   */
+  step(dt: number) {
     const simSpeed = TOP_SPEED, dtReal = dt / TOP_SPEED;
     for (const p of this.peds) if (p.pose) p.pose0!.set(p.pose);
     this.clock += dtReal;
@@ -285,38 +294,35 @@ export class Pedestrians {
     }
     for (const k of this.onCrosswalk.keys()) if (!this.cwSince.has(k)) this.cwSince.set(k, this.walkClock);
     for (const k of [...this.cwSince.keys()]) if (!this.onCrosswalk.has(k)) { this.cwSince.delete(k); this.cwClear.set(k, this.walkClock); }
-    const near = camDist < 900;
-    const R = Math.min(520, camDist * 0.9 + 120);
-    // despawn far or expired
+    // gone home, or their commune or their street has gone
     for (let i = this.peds.length - 1; i >= 0; i--) {
       const p = this.peds[i];
       p.life -= dtReal * Math.max(0.5, simSpeed);
-      const far = Math.abs(p.x - cam.x) > R * 1.3 || Math.abs(p.z - cam.z) > R * 1.3;
       const communeGone = p.kind === 'commune' && this.communes.list.find((c) => c.id === p.communeId)?.state === 'gone';
       const segGone = p.kind !== 'commune' && p.kind !== 'loiter' && !this.net.segs.get(p.seg);
-      if (p.gone || far || !near || communeGone || segGone || (p.life <= 0 && !this.leave(p))) {
-        this.renderer.remove(p.h);
+      if (p.gone || communeGone || segGone || (p.life <= 0 && !this.leave(p))) {
+        if (p.h >= 0) this.renderer.remove(p.h);
         this.peds[i] = this.peds[this.peds.length - 1];
         this.peds.pop();
       }
     }
-    if (near) {
+    {
       this.spawnT -= dtReal;
       if (this.spawnT <= 0) {
         this.spawnT = 0.15;
-        // People out and about in proportion to the town: about 7% of residents
-        // near the camera, so a town of 200 shows a dozen or two, not a crowd.
+        // People out and about in proportion to the town: about 7% of residents,
+        // so a town of 200 has a dozen or two, not a crowd.
         // Commune members have their own budget (they live outside the town).
         // codex:policies begin -- Ban Bikes visibly reduces ambient walking
-        const townBudget = Math.floor(Math.min(this.max, 3 + this.population * 0.07) * clamp(this.outdoorMul * this.policyOutdoorMul, 0.1, 1.2));
+        const townBudget = Math.floor(Math.min(TUNING.people.max, 3 + this.population * 0.07) * clamp(this.outdoorMul * this.policyOutdoorMul, 0.1, 1.2));
         // codex:policies end
-        const communeBudget = Math.min(this.max, this.communes.list.filter((c) => c.state !== 'gone').length * 6);
+        const communeBudget = Math.min(TUNING.people.max, this.communes.list.filter((c) => c.state !== 'gone').length * 6);
         let town = 0, commune = 0;
         for (const p of this.peds) if (p.kind === 'commune') commune++; else town++;
         // a couple at a time: people trickle out rather than flood out
         for (let k = 0; k < 2 && (town < townBudget || commune < communeBudget); k++) {
           const n = this.peds.length;
-          this.trySpawn(cam, R, town < townBudget, commune < communeBudget);
+          this.trySpawn(town < townBudget, commune < communeBudget);
           if (this.peds.length > n) { if (this.peds[this.peds.length - 1].kind === 'commune') commune++; else town++; }
         }
       }
@@ -510,16 +516,22 @@ export class Pedestrians {
    * Put the people on screen, `alpha` of the way (0..1) from where each was a step ago to where they are now. The body turns toward
    * its heading over a moment of real time (`dtReal` seconds since the last draw). Changes nothing they do.
    */
-  draw(alpha: number, dtReal = 0) {
+  draw(alpha: number, dtReal = 0, cam?: THREE.Vector3, camDist = 0) {
     const a = Math.max(0, Math.min(1, alpha)), turn = dtReal > 0 ? 1 - Math.exp(-dtReal * 9) : 1;
+    // Who is shown: the people round where the camera is looking, from close enough to make them out (the range in which
+    // people used to exist at all), as far as the preset's pool goes. Without a camera (a test, a dev page): everyone there is room for.
+    const seen = !cam || camDist < 900, R = cam ? Math.min(520, camDist * 0.9 + 120) * 1.3 : Infinity;
     for (const p of this.peds) {
       const P = p.pose, P0 = p.pose0;
       if (!P || !P0) continue;
+      const inView = seen && (!cam || (Math.abs(P[0] - cam.x) <= R && Math.abs(P[2] - cam.z) <= R));
+      if (!inView && p.h >= 0) { this.renderer.remove(p.h); p.h = -1; }
+      else if (inView && p.h < 0) p.h = this.renderer.add(p.arch, p.look);   // (-1 again when the pool is full: tried again next frame)
       const S = (p.shown ??= new Float64Array(4));
       const fresh = S[1] === 0 && S[0] === 0 && S[2] === 0;
       if (a >= 1) { S[0] = P[0]; S[1] = P[1]; S[2] = P[2]; } else { S[0] = P0[0] + (P[0] - P0[0]) * a; S[1] = P0[1] + (P[1] - P0[1]) * a; S[2] = P0[2] + (P[2] - P0[2]) * a; }
       S[3] = fresh ? P[3] : angEase(S[3], P[3], turn);
-      this.renderer.set(p.h, S[0], S[1], S[2], S[3], p.act ?? p.action, a >= 1 ? P[4] : P0[4] + (P[4] - P0[4]) * a);
+      if (p.h >= 0) this.renderer.set(p.h, S[0], S[1], S[2], S[3], p.act ?? p.action, a >= 1 ? P[4] : P0[4] + (P[4] - P0[4]) * a);
     }
     this.renderer.flush();
   }
@@ -621,7 +633,7 @@ export class Pedestrians {
     return pick;
   }
 
-  private trySpawn(cam: THREE.Vector3, R: number, town = true, communeOk = true) {
+  private trySpawn(town = true, communeOk = true) {
     const r = communeOk && !town ? 0.18 : this.rnd();
     if (!town && r >= 0.2) return;
     // codex:transit begin - turn simulated boardings into small visible waiting crowds
@@ -631,8 +643,7 @@ export class Pedestrians {
       const stops = this.transitStops().filter((s) => {
         const seg = this.net.segs.get(s.seg);
         if (!seg) return false;
-        const p = seg.samp.pts[Math.min(seg.samp.pts.length - 1, Math.round((s.s / seg.length) * (seg.samp.pts.length - 1)))];
-        return Math.abs(p.x - cam.x) < R && Math.abs(p.z - cam.z) < R && (atStop.get(s.id) ?? 0) < Math.min(8, Math.ceil(s.riders / 8));
+        return (atStop.get(s.id) ?? 0) < Math.min(8, Math.ceil(s.riders / 8));
       });
       const stop = stops[Math.floor(this.rnd() * stops.length)];
       const seg = stop && this.net.segs.get(stop.seg);
@@ -652,7 +663,9 @@ export class Pedestrians {
     // codex:transit end
     // commune folks
     if (r < 0.2 && communeOk) {
-      const c = this.communes.list.find((c) => c.state !== 'gone' && Math.abs(c.x - cam.x) < R && Math.abs(c.z - cam.z) < R && this.peds.filter((p) => p.communeId === c.id).length < Math.min(24, c.members));
+      // (any commune with room, not the first in the list every time)
+      const camps = this.communes.list.filter((c) => c.state !== 'gone' && this.peds.filter((p) => p.communeId === c.id).length < Math.min(24, c.members));
+      const c = camps.length ? camps[Math.floor(this.rnd() * camps.length)] : undefined;
       if (c) {
         const a = this.rnd() * Math.PI * 2, d = this.rnd() * c.r * 0.7;
         const x = c.x + Math.cos(a) * d, z = c.z + Math.sin(a) * d;
@@ -670,7 +683,7 @@ export class Pedestrians {
     if (!town) return;
     // protesters on blocked segments
     if (r < 0.32) {
-      for (const seg of this.net.segsNear(cam.x - R, cam.z - R, cam.x + R, cam.z + R)) {
+      for (const seg of this.net.segs.values()) {
         if (seg.blocked <= 0 || !seg.name.startsWith('')) continue;
         const protestors = this.peds.filter((p) => p.kind === 'protest' && p.seg === seg.id).length;
         if (protestors > 14) continue;
@@ -687,7 +700,7 @@ export class Pedestrians {
     }
     // loiterers outside businesses
     if (r < 0.55) {
-      const list = this.b.near(cam.x, cam.z, R).filter((b) => b.state === 'active' && b.occ > 0 && (b.zone === 'comLow' || b.zone === 'comHigh' || b.zone === 'office' || b.zone === 'resHigh'));
+      const list = this.everyBuilding().filter((b) => b.state === 'active' && b.occ > 0 && (b.zone === 'comLow' || b.zone === 'comHigh' || b.zone === 'office' || b.zone === 'resHigh'));
       const bld = list.length ? this.pickBuilding(list) : null;
       if (bld) {
         const c = Math.cos(bld.yaw), s = Math.sin(bld.yaw);
@@ -705,7 +718,7 @@ export class Pedestrians {
     }
     // residents out in their yards: a beer on the lawn, on the phone, a smoke, the backyard hang
     if (r < 0.72) {
-      const yards = this.b.near(cam.x, cam.z, R).filter((b) => b.state === 'active' && b.zone === 'resLow' && b.occ > 0 && b.abandoned === undefined);
+      const yards = this.everyBuilding().filter((b) => b.state === 'active' && b.zone === 'resLow' && b.occ > 0 && b.abandoned === undefined);
       const bld = yards.length ? this.pickBuilding(yards) : null;
       if (bld) {
         const c = Math.cos(bld.yaw), s = Math.sin(bld.yaw);
@@ -730,7 +743,7 @@ export class Pedestrians {
       }
     }
     // sidewalk walkers walk out of a front door onto the sidewalk
-    const homes = this.b.near(cam.x, cam.z, R).filter((b) => b.state === 'active' && isZoned(b) && b.abandoned === undefined && b.occ > 0);
+    const homes = this.everyBuilding().filter((b) => b.state === 'active' && isZoned(b) && b.abandoned === undefined && b.occ > 0);
     const bld = homes.length ? this.pickBuilding(homes) : null;
     if (!bld) return;
     const seg: RSeg | undefined = this.net.segs.get(bld.seg);
@@ -746,7 +759,7 @@ export class Pedestrians {
     if (p.action === 'run') p.speed = 3;
     this.placeOnSidewalk(p as Ped);
     // a quarter walk with someone, side by side, in step-ish
-    if (p.action === 'walk' && (ROAD_TYPES[seg.type].sidewalk > 1.5) && this.rnd() < 0.25 && this.peds.length < this.max - 1) {
+    if (p.action === 'walk' && (ROAD_TYPES[seg.type].sidewalk > 1.5) && this.rnd() < 0.25 && this.peds.length < TUNING.people.max - 1) {
       const q: NewPed = { ...p, arch: this.archFor('walk', bld.brand), lat: -0.72, phase: p.phase + 0.45 + this.rnd() * 0.1, x: 0, y: 0, z: 0 };
       this.placeOnSidewalk(q as Ped);
       const dr = this.door(bld);
@@ -758,6 +771,9 @@ export class Pedestrians {
     this.goTo(p, dr.x, dr.z, p.x, p.z, false);
     this.add(p);
   }
+
+  /** every building in the county, in the order they were built (the same order on every machine and after every reload) */
+  private everyBuilding(): Bld[] { return [...this.b.list.values()]; }
 
   pick(ray: THREE.Raycaster): Ped | null {
     const h = this.renderer.pick(ray);

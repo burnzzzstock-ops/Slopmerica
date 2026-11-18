@@ -1248,7 +1248,7 @@ export class Game {
     this.traffic.step(h, this.hour, this.sim.population, this.sim.jobsFilled);
     P.lap('traffic');
     this.peds.population = this.sim.population;
-    this.peds.step(h, this.rts.target, this.rts.distance);
+    this.peds.step(h);
     P.lap('people');
     for (const s of EXT.systems) {
       if (!s.step) continue;
@@ -1299,7 +1299,7 @@ export class Game {
     this.parking.update(dt, this.hour, this.rts.target.x, this.rts.target.z, this.rts.distance, () => this.traffic.renderer.stats().active);
     P.lap('traffic');
     this.peds.renderer.updateLod(this.camera, this.q.peopleNear);
-    this.peds.draw(alpha, dt);
+    this.peds.draw(alpha, dt, this.rts.target, this.rts.distance);
     this.civic.update(dt);
     this.vaultScenery.update(dt);
     P.lap('people');

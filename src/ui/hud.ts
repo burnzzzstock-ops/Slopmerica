@@ -13,21 +13,22 @@ import { MAX_LEVEL } from '../contracts';
 import type { ToolId } from '../tools/tools';
 import { GRID_BLOCKS, type GridBlock } from '../tools/gridRoads';
 import { FeedPanel } from './feedPanel';
-import { courtText, emergencyToast } from './copy';
+import { courtText, emergencyToast, toastMs } from './copy';
 import { MERCH_URL, brandById } from '../art/brands';
 import { BUILD, cityFile, crumb, onCapturedError, openBugReport, saveFile, saveMessage } from './bugreport';
 import { FOV_MAX, FOV_MIN, IS_TOUCH } from '../config';
 import { PLAYTEST } from '../core/flags';
-import { uiIcon } from './icons';
+import { actLabel, uiIcon } from './icons';
 import { PhotoBar } from './photoBar';
 import { QUALITY, type Quality } from '../config';
 import { BANKRUPT_AT, BANKRUPT_WEEKS, CREDIT_LINE, LEDGER_LABEL, LOSS_LABEL, ONE_TIME, RECURRING, SPEEDS, Sim, UNLOCKS, usd, type DemandKey } from '../sim/sim';
-import { SERVICE_DEFS, overloadedServices, type EmergencyView } from '../sim/services';
+import { SERVICE_DEFS, overloadedServices, serviceLooks, type EmergencyView } from '../sim/services';
 import { MILESTONES, lockText, milestoneAt, nameUnlock, unlockNames, unlockPop } from '../sim/milestones';
 import { isZoned } from '../sim/buildings';
 import type { ViewMode } from '../render/overlays';
 import { ARCHETYPES } from '../agents/people';
-import { saveGame } from '../sim/save';
+import { saveGame, snapshot } from '../sim/save';
+import { listSlots, slotName, writeSlot } from '../sim/slots';
 import { VEHICLE_SPECS } from '../agents/vehicles';
 import { LANDMARK_EVENTS } from '../agents/parking';
 import { VISIT_PULL } from '../agents/traffic';
@@ -61,6 +62,9 @@ const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
 /** how close a landfill forecast is to biting: 0 none, 1 within two months, 2 a month, 3 a week, 4 already full */
 const soonness = (d: number | null) => (d === null ? 0 : d <= 0 ? 4 : d < 7 ? 3 : d < 30 ? 2 : 1);
 
+/** the day the first-steps card stops asking for a look at the Budget: the second weekly close has gone by (the owner's roadmap of 17 Nov) */
+const FIRST_STEPS_DAYS = 15;
+
 type PanelId = 'roads' | 'zones' | 'landmarks' | 'views' | 'budget' | 'communes' | 'help' | 'more' | `ext:${string}` | null;
 
 /** Phones get these in the toolbar; everything else lives in the More drawer. */
@@ -68,6 +72,10 @@ const PHONE_PRIMARY = ['inspect', 'roads', 'zones', 'ext:services', 'views', 'bu
 const DESK_PRIMARY = ['inspect', 'roads', 'zones', 'ext:services', 'landmarks', 'upgrade', 'bulldoze', 'views', 'budget', 'help', 'bug'];
 const BUILD_TOOLS = ['roads', 'zones', 'ext:services', 'landmarks'];
 const COMPACT = IS_TOUCH || (typeof window !== 'undefined' && window.innerWidth < 700);
+/** a touch readout longer than this many characters is given the badge's full width (shorter ones fit beside the buttons in two lines) */
+const WIDE_TIP = 60;
+/** The line a bus is running, or null for anything else on the road. Transit sends each leg out as a `cityBus` whose purpose is "running <line>". */
+const busLine = (c: { kind: string; purpose: string }): string | null => (c.kind === 'cityBus' && c.purpose.startsWith('running ') ? c.purpose.slice(8) : null);
 /** A tool's readout with its warnings moved up behind the first two facts (length, price), for a space that shows two lines. */
 function briefTip(text: string) {
   const parts = text.split(' · ');
@@ -101,6 +109,8 @@ export class Hud implements UiSink {
   private inspectorOpenedAt = 0;
   /** when a finger last lifted off the screen (performance.now()) */
   private lastTouchUpAt = 0;
+  /** a finger or the mouse is down on the inspector: it is not redrawn until the press ends */
+  private inspectorHeld = false;
   private toasts!: HTMLElement;
   private remeasureToasts = true;
   private tip!: HTMLElement;
@@ -168,6 +178,17 @@ export class Hud implements UiSink {
     this.root = document.createElement('div');
     this.root.className = 'hud';
     parent.appendChild(this.root);
+    // A press shows on the control the moment the pointer goes down (`.pressed` in style.css) and goes when it lifts, wherever
+    // that is. The control may have been redrawn by then: the class goes from whichever element took it.
+    let pressed: Element | null = null;
+    this.root.addEventListener('pointerdown', (e) => {
+      const b = (e.target as HTMLElement).closest?.('button, [role="button"]');
+      if (!b || (b as HTMLButtonElement).disabled) return;
+      pressed?.classList.remove('pressed');
+      (pressed = b).classList.add('pressed');
+    }, true);
+    const unpress = () => { pressed?.classList.remove('pressed'); pressed = null; };
+    for (const ev of ['pointerup', 'pointercancel', 'blur'] as const) window.addEventListener(ev, unpress, true);
     this.buildTop();
     this.feed = new FeedPanel(game, this.root, IS_TOUCH || window.innerWidth < 760);
     this.feed.onUnread = (n) => {
@@ -182,6 +203,14 @@ export class Hud implements UiSink {
     // soon after a finger lifted and the sheet opened is a deliberate press, so none reaches it (a click with no finger just before it, a script's, does).
     window.addEventListener('pointerup', (e) => { if (e.pointerType === 'touch') this.lastTouchUpAt = performance.now(); }, true);
     this.inspector.addEventListener('click', (e) => { const now = performance.now(); if (now - this.inspectorOpenedAt < 350 && now - this.lastTouchUpAt < 350) { e.stopPropagation(); e.preventDefault(); } }, true);
+    // The card of a building, car or lot is redrawn four times a second for its live numbers. A press that was still down at a redraw
+    // lost its button from under it and its click with it: Bulldoze held for 400 ms did nothing. So the card waits while it is pressed.
+    this.inspector.addEventListener('pointerdown', () => { this.inspectorHeld = true; });
+    // (after the click that the release itself delivers)
+    const letGo = () => { setTimeout(() => { this.inspectorHeld = false; }, 0); };
+    window.addEventListener('pointerup', letGo);
+    window.addEventListener('pointercancel', letGo);
+    window.addEventListener('blur', letGo);
     this.inspector.hidden = true;
     this.sideCards = this.mk('div', 'side-cards');
     this.toasts = this.mk('div', 'toasts');
@@ -231,7 +260,9 @@ export class Hud implements UiSink {
       this.closeDemand();
     }, true);
     window.addEventListener('resize', () => { if (this.demandKey) this.placeDemand(); const f = this.sub?.querySelector('#fov-v'); if (f) f.textContent = this.fovText(); });
-    this.actions.innerHTML = `<span class="ta-tip" id="ta-tip"></span><button id="ta-build" class="ta-build">🔨 Build</button><button id="ta-done" class="ta-done">${IS_TOUCH ? '✓ Done' : '✕ Stop'}</button><button id="ta-undo">↶ Undo</button>`;
+    this.actions.innerHTML = `<span class="ta-tip" id="ta-tip"></span><button id="ta-build" class="ta-build"></button><button id="ta-done" class="ta-done"></button><button id="ta-undo">${uiIcon('action', 'undo', '↶', 18)}<span>Undo</span></button>`;
+    this.badge('#ta-build', 'build', '🔨', 'Build');
+    this.badge('#ta-done', IS_TOUCH ? 'done' : 'stop', IS_TOUCH ? '✓' : '✕', IS_TOUCH ? 'Done' : 'Stop');
     this.actions.hidden = true;
     // phones: Done leaves the tool entirely (double-tap ends just the current
     // road); desktop: Stop ends the road being drawn and keeps the tool
@@ -256,7 +287,7 @@ export class Hud implements UiSink {
       lastCrash = now;
       this.root.querySelector('.crash-toast')?.remove();
       const el = this.mk('div', 'crash-toast');
-      el.innerHTML = `<span>Something broke behind the scenes.</span><button class="bug-primary">🐞 Report it</button><button class="ct-x" aria-label="Dismiss">✕</button>`;
+      el.innerHTML = `<span>Something broke behind the scenes.</span><button class="bug-primary">${uiIcon('action', 'report', '🐞', 18)} Report it</button><button class="ct-x" aria-label="Dismiss">✕</button>`;
       el.querySelector('.bug-primary')!.addEventListener('click', () => { el.remove(); this.reportBug(`Something broke (the game said: "${e.msg.slice(0, 120)}"). I was `); });
       el.querySelector('.ct-x')!.addEventListener('click', () => el.remove());
       setTimeout(() => el.remove(), 12000);
@@ -265,6 +296,8 @@ export class Hud implements UiSink {
     // badge and the cursor tip all follow it
     game.tools.onChange = () => {
       this.syncToolbar();
+      // (a tool in hand makes the Next card one line on a phone, the same as an open drawer does)
+      this.renderNextBar();
       if (this.panel && this.panel !== 'budget' && this.panel !== 'help' && this.panel !== 'more' && this.panel !== 'communes') this.renderPanel();
     };
     window.addEventListener('keydown', (e) => this.hotkey(e));
@@ -322,6 +355,14 @@ export class Hud implements UiSink {
     });
   }
 
+  /** A tool badge button's icon and words. It is asked for every frame, so it rewrites the button only when they change. */
+  private badge(sel: string, id: string, fallback: string, text: string) {
+    const b = this.actions.querySelector(sel) as HTMLElement, key = `${id}|${text}`;
+    if (b.dataset.k === key) return;
+    b.dataset.k = key;
+    b.innerHTML = `${uiIcon('action', id, fallback, 18)}<span>${esc(text)}</span>`;
+  }
+
   private mk(tag: string, cls: string, parent: HTMLElement = this.root) {
     const el = document.createElement(tag);
     el.className = cls;
@@ -343,14 +384,14 @@ export class Hud implements UiSink {
         <button data-speed="2" title="Speed 2 (2)">▶▶</button>
         <button data-speed="3" title="Speed 3 (3)">▶▶▶</button>
       </div>
-      <div class="tb-stat tb-popstat" role="button" tabindex="0" id="tb-popstat" aria-haspopup="dialog"><span class="tb-lbl">Pop</span><b id="tb-pop">0</b></div>
+      <div class="tb-stat tb-popstat" role="button" tabindex="0" id="tb-popstat" aria-haspopup="dialog"><span class="tb-lbl">Pop</span><span class="tb-ico">${uiIcon('meter', 'population', '👥', 16)}</span><b id="tb-pop">0</b></div>
       <div class="tb-stat tb-money" role="button" tabindex="0" id="tb-treasury"><span class="tb-lbl">Treasury</span><b id="tb-money">$0</b><i id="tb-net"></i><i id="tb-growth" class="tb-growth" hidden></i></div>
       <div class="tb-demand" role="group" aria-label="Demand">
         ${DEMAND_KEYS.map((k) => `<button class="dbar" data-dem="${k}" aria-haspopup="dialog" aria-expanded="false"><span class="dtrack"><span class="dfill" id="d-${k}" style="--c:var(--${k})"></span><em>${DEM[k].letter}</em></span></button>`).join('')}
       </div>
       <div class="tb-meters" role="button" tabindex="0" id="tb-meters" aria-haspopup="dialog" aria-label="Nature and sprawl: show what they mean">
-        <div class="meter" title="Nature remaining"><span>🌲</span><div class="mtrack"><div class="mfill nature" id="m-nature"></div></div><b id="m-nature-t"></b></div>
-        <div class="meter" title="Progress toward Endless Sprawl"><span>🏙️</span><div class="mtrack"><div class="mfill sprawl" id="m-sprawl"></div></div><b id="m-sprawl-t"></b></div>
+        <div class="meter" title="Nature remaining"><span>${uiIcon('meter', 'nature', '🌲', 16)}</span><div class="mtrack"><div class="mfill nature" id="m-nature"></div></div><b id="m-nature-t"></b></div>
+        <div class="meter" title="Progress toward Endless Sprawl"><span>${uiIcon('meter', 'sprawl', '🏙️', 16)}</span><div class="mtrack"><div class="mfill sprawl" id="m-sprawl"></div></div><b id="m-sprawl-t"></b></div>
       </div>
       <div class="tb-weather" id="tb-weather"></div>`;
     this.top.querySelectorAll<HTMLButtonElement>('[data-speed]').forEach((b) =>
@@ -502,7 +543,7 @@ export class Hud implements UiSink {
     const html = `<div class="crisis-head"><b>In the red: ${usd(s.money)}</b><button data-crisis="close" aria-label="Dismiss">✕</button></div>
       <p>${top.length ? `Recent spending: ${top.map(([l, v]) => `${esc(l)} ${usd(v)}`).join(' · ')}.` : ''} Every week: <b class="${fc.net < 0 ? 'neg' : 'pos'}">${fc.net >= 0 ? '+' : ''}${usd(fc.net)}</b>${worst ? ` (biggest: ${esc(worst.label)} ${usd(worst.amount)})` : ''}.</p>
       <p class="muted">Credit left ${usd(s.money + CREDIT_LINE)}. Bankrupt after ${BANKRUPT_WEEKS} weekly closes below ${usd(BANKRUPT_AT)}${s.bankruptWeeks ? ` (${s.bankruptWeeks}/${BANKRUPT_WEEKS})` : ''}. Raise taxes, take a loan, or let growth fees catch up.</p>
-      <div class="crisis-acts"><button class="chip on" data-crisis="budget">💰 Budget</button>${s.speed ? '<button class="chip" data-crisis="pause">❚❚ Pause</button>' : ''}</div>`;
+      <div class="crisis-acts"><button class="chip on" data-crisis="budget">${actLabel('budget', '💰 Budget')}</button>${s.speed ? `<button class="chip" data-crisis="pause">${actLabel('pause', '❚❚ Pause')}</button>` : ''}</div>`;
     if (html !== this.crisisHtml) { this.crisisHtml = html; this.crisis.innerHTML = html; }
     this.crisis.hidden = false;
   }
@@ -600,11 +641,11 @@ export class Hud implements UiSink {
     const g = this.game, s = g.sim, top = e.needs[0];
     const n = (v: number) => Math.round(v).toLocaleString();
     const plural = (v: number, one: string, many = `${one}s`) => `${n(v)} ${v === 1 ? one : many}`;
-    const fix = (x: EmergencyView['needs'][number]) => `<button class="chip on" data-em="fix:${x.cat}">${x.icon} Fix ${esc(x.label.toLowerCase())}</button>`;
-    const show = e.hot.length ? `<button class="chip" data-em="show">📍 Worst area${e.hot.length > 1 ? ` (${(this.hotIdx % e.hot.length) + 1}/${e.hot.length})` : ''}</button>` : '';
-    const clock = s.speed ? '<button class="chip" data-em="pause">❚❚ Pause</button>' : '<button class="chip" data-em="play">▶ Resume</button>';
+    const fix = (x: EmergencyView['needs'][number]) => `<button class="chip on" data-em="fix:${x.cat}">${actLabel(`fix:${x.cat}`, `${x.icon} Fix ${x.label.toLowerCase()}`)}</button>`;
+    const show = e.hot.length ? `<button class="chip" data-em="show">${actLabel('show', `📍 Worst area${e.hot.length > 1 ? ` (${(this.hotIdx % e.hot.length) + 1}/${e.hot.length})` : ''}`)}</button>` : '';
+    const clock = s.speed ? `<button class="chip" data-em="pause">${actLabel('pause', '❚❚ Pause')}</button>` : `<button class="chip" data-em="play">${actLabel('play', '▶ Resume')}</button>`;
     if (e.level === 'crit' && top) {
-      const head = `<div class="em-head"><b>🚨 ${esc(top.label)} emergency</b><span class="em-since">since ${esc(s.dateOf(e.crisis.since, false))}</span><button data-em="min" aria-label="${this.emergencyMin ? 'Expand' : 'Minimize'}">${this.emergencyMin ? '+' : '–'}</button></div>`;
+      const head = `<div class="em-head"><b>${uiIcon('status', 'emergency', '🚨', 18)} ${esc(top.label)} emergency</b><span class="em-since">since ${esc(s.dateOf(e.crisis.since, false))}</span><button data-em="min" aria-label="${this.emergencyMin ? 'Expand' : 'Minimize'}">${this.emergencyMin ? '+' : '–'}</button></div>`;
       if (this.emergencyMin) return `${head}<p class="em-lead">${e.atRisk ? `${plural(e.atRisk, 'building')} ${esc(top.failing)} · first empty ${etaText(top.eta)}` : `${plural(e.abandoned, 'building')} abandoned`}</p>`;
       const flow = s.popFlow(14);
       const lost = flow.causes.slice(0, 4).map((c) => `${esc(LOSS_LABEL[c.cause])} ${n(c.n)}`).join(' · ');
@@ -625,17 +666,17 @@ export class Hud implements UiSink {
     if (e.level === 'recovering') {
       const c = e.crisis;
       const still = e.needs.filter((x) => x.buildings >= 3);
-      return `<div class="em-head"><b>✅ Recovering${c.cause ? ` from the ${esc(c.cause)} emergency` : ''}</b><button data-em="close" aria-label="Dismiss">✕</button></div>
+      return `<div class="em-head"><b>${uiIcon('status', 'ok', '✅', 18)} Recovering${c.cause ? ` from the ${esc(c.cause)} emergency` : ''}</b><button data-em="close" aria-label="Dismiss">✕</button></div>
         <p class="em-lead">Buildings at risk <b>${n(c.peakAtRisk)} → ${n(e.atRisk)}</b>${c.peakTrash ? ` · trash piling up ${n(c.peakTrash)} → ${n(e.trash)}` : ''} · population ${n(c.lowPop)} at the low → <b>${n(s.population)}</b></p>
         ${still.length ? `<p>Still failing: ${still.map((x) => `${x.icon} ${plural(x.buildings, 'building')} ${esc(x.failing)}`).join(' · ')}.</p>` : ''}
         ${e.forecast ? `<p>${esc(e.forecast)}</p>` : ''}
         <div class="em-acts">${still[0] ? fix(still[0]) : ''}${still.length ? show : ''}</div>`;
     }
     // a warning: something to fix before it becomes an emergency
-    return `<div class="em-head"><b>⚠️ ${top ? `${plural(top.buildings, 'building')} ${esc(top.failing)}` : 'Coming up'}</b><button data-em="close" aria-label="Dismiss">✕</button></div>
+    return `<div class="em-head"><b>${uiIcon('status', 'warning', '⚠️', 18)} ${top ? `${plural(top.buildings, 'building')} ${esc(top.failing)}` : 'Coming up'}</b><button data-em="close" aria-label="Dismiss">✕</button></div>
       ${top ? `<p class="em-lead">Abandoned in ${etaText(top.eta)} unless fixed. Why: ${esc(top.why)}.</p>` : ''}
       ${e.forecast ? `<p>${esc(e.forecast)}</p>` : ''}
-      <div class="em-acts">${top ? fix(top) : e.forecast ? '<button class="chip on" data-em="fix:garbage">🗑️ Garbage</button>' : ''}${top ? show : ''}</div>`;
+      <div class="em-acts">${top ? fix(top) : e.forecast ? `<button class="chip on" data-em="fix:garbage">${actLabel('fix:garbage', '🗑️ Garbage')}</button>` : ''}${top ? show : ''}</div>`;
   }
 
   // ------------------------------------------------------------------ population explainer
@@ -674,7 +715,7 @@ export class Hud implements UiSink {
     const back = s.history.find((h) => h.day >= Math.floor(s.day) - 14);
     const trend = back ? s.population - back.pop : 0;
     const e = g.emergency?.();
-    const risk = e && e.atRisk && e.needs[0] ? `<p class="dp-next">⚠️ <b>${n(e.atRisk)} building${e.atRisk === 1 ? '' : 's'}</b>${e.residents ? ` (${n(e.residents)} people)` : ''} on the clock: ${esc(e.needs[0].failing)}, abandoned in ${etaText(e.needs[0].eta)}.</p><div class="dp-acts">${e.hot.length ? '<button class="dp-go" data-act="show">📍 Show me</button>' : ''}</div>` : '';
+    const risk = e && e.atRisk && e.needs[0] ? `<p class="dp-next">⚠️ <b>${n(e.atRisk)} building${e.atRisk === 1 ? '' : 's'}</b>${e.residents ? ` (${n(e.residents)} people)` : ''} on the clock: ${esc(e.needs[0].failing)}, abandoned in ${etaText(e.needs[0].eta)}.</p><div class="dp-acts">${e.hot.length ? `<button class="dp-go" data-act="show">${actLabel('show', '📍 Show me')}</button>` : ''}</div>` : '';
     const html = `
       <div class="dp-head"><b>Population</b><button class="dp-x" data-act="close" aria-label="Close">✕</button></div>
       <div class="dp-title" style="--c:var(--res)"><span class="dp-name">👥 Residents</span><span class="dp-val">${n(s.population)}</span><span class="dp-trend ${trend > 3 ? 'up' : trend < -3 ? 'down' : ''}">${back ? `${trend > 0 ? '▲' : trend < 0 ? '▼' : ''} ${signed(Math.round(trend))} in 14d` : 'new'}</span></div>
@@ -724,9 +765,9 @@ export class Hud implements UiSink {
     if (G.sprawl) goals.push(`🏙️ <b>${fine(G.sprawl)} Endless Sprawl</b> (${fine(s.sprawlPct)} now)`);
     const html = `
       <div class="dp-head"><b>Nature &amp; sprawl</b><button class="dp-x" data-act="close" aria-label="Close">✕</button></div>
-      <div class="dp-title" style="--c:var(--good)"><span class="dp-name">🌲 Nature left</span><span class="dp-val">${pct(s.naturePct)}</span></div>
+      <div class="dp-title" style="--c:var(--good)"><span class="dp-name">${uiIcon('meter', 'nature', '🌲', 18)} Nature left</span><span class="dp-val">${pct(s.naturePct)}</span></div>
       <p class="dp-status">The county's original trees still standing. Roads, buildings and terraforming cut them down, and they don't grow back.</p>
-      <div class="dp-title" style="--c:var(--slop)"><span class="dp-name">🏙️ Endless Sprawl</span><span class="dp-val">${pct(s.sprawlPct)}</span></div>
+      <div class="dp-title" style="--c:var(--slop)"><span class="dp-name">${uiIcon('meter', 'sprawl', '🏙️', 18)} Endless Sprawl</span><span class="dp-val">${pct(s.sprawlPct)}</span></div>
       <p class="dp-status">Your win meter. ${fine(s.coverage)} of buildable land is paved or built on; ${pct(s.maxedPct)} of buildings are maxed out. Pave 90% of it with 98% maxed to win: a long game, so aim for the steps below.</p>
       <div class="dp-title" style="--c:var(--accent, #ffd23f)"><span class="dp-name">🎯 Next goals</span></div>
       <ul class="dp-goals">${goals.map((x) => `<li>${x}</li>`).join('')}</ul>`;
@@ -870,7 +911,9 @@ export class Hud implements UiSink {
       { done: res, text: 'Zone homes along your street: paint the lots beside it.', act: 'zone:resLow', label: '🏡 Zone homes' },
       { done: home, text: 'Let builders finish the first home. Speed up while they work.', act: 'speed', label: '▶▶▶ Speed up' },
       { done: jobs, text: 'Give people jobs: zone shops or industry nearby.', act: 'zone:comLow', label: '🛒 Zone shops' },
-      { done: this.budgetSeen, text: 'Check the money: taxes in, upkeep out, and how long it lasts.', act: 'budget', label: '💰 Budget' },
+      // the last step is a look, not a job: it ends when the Budget is opened, or by itself once two weekly closes have gone by
+      // (a card that asked for it for the rest of the game was on every screen of the round 8 phone audit)
+      { done: this.budgetSeen || s.day >= FIRST_STEPS_DAYS, text: 'Check the money: taxes in, upkeep out, and how long it lasts.', act: 'budget', label: '💰 Budget' },
     ];
     const i = steps.findIndex((x) => !x.done);
     if (i < 0) { this.firstStepsDone = true; try { localStorage.setItem('slopmerica.firstSteps', '1'); } catch { /* not remembered */ } return null; }
@@ -931,7 +974,7 @@ export class Hud implements UiSink {
     // its button is left out when what it would open is already open
     const P = this.panel, act = a.act ?? '';
     this.nextBar.classList.toggle('act-open', compact && (act === 'road' ? P === 'roads' : act.startsWith('zone:') ? P === 'zones' && this.game.tools.zoneType === act.slice(5) : act === 'budget' ? P === 'budget' : false));
-    const html = `<span class="nb-step">${fs ? `<b>Step ${fs.n}/${fs.of}</b>` : '<b>Next</b>'} ${esc(a.text)}</span>${a.act ? `<button class="chip on" data-act="${a.act}">${esc(a.label ?? 'Go')}</button>` : ''}${unlock}<button class="nb-x" data-act="hide" aria-label="Hide until the next step" title="Hide until the next step">✕</button>`;
+    const html = `<span class="nb-step">${fs ? `<b>Step ${fs.n}/${fs.of}</b>` : '<b>Next</b>'} ${esc(a.text)}</span>${a.act ? `<button class="chip on" data-act="${a.act}">${actLabel(a.act, a.label ?? 'Go')}</button>` : ''}${unlock}<button class="nb-x" data-act="hide" aria-label="Hide until the next step" title="Hide until the next step">✕</button>`;
     if (this.nextBar.innerHTML !== html) this.nextBar.innerHTML = html;
     this.placeNextBar();
   }
@@ -1043,7 +1086,7 @@ export class Hud implements UiSink {
       ${down.length ? `<div class="dp-h">Holding back</div><ul>${down.map((p) => row(p, 'down')).join('')}</ul>` : ''}
       ${other.length ? `<div class="dp-h">Also</div><ul>${other.map((p) => row(p, 'na')).join('')}</ul>` : ''}
       ${base ? `<div class="dp-base">Starts from ${esc(base.text)} ${signed(Math.round(base.v ?? 0))}</div>` : ''}
-      ${acts.length ? `<div class="dp-acts">${acts.map(([id, label], i) => `<button class="${i ? 'chip' : 'dp-go'}" data-act="${id}">${label}</button>`).join('')}</div>` : ''}`;
+      ${acts.length ? `<div class="dp-acts">${acts.map(([id, label], i) => `<button class="${i ? 'chip' : 'dp-go'}" data-act="${id}">${actLabel(id, label)}</button>`).join('')}</div>` : ''}`;
     if (html === this.demandHtml) return;
     // keep keyboard focus on the same control across live refreshes
     const f = document.activeElement as HTMLElement | null;
@@ -1169,7 +1212,7 @@ export class Hud implements UiSink {
       // desktop: the building tools up front and a little larger, the rest
       // (land, transit, districts, terraforming, communes, the feed,
       // disasters) behind More: twenty small buttons were hard to scan
-      const hint: Record<string, string> = { inspect: 'Esc', zones: 'Z', upgrade: 'U', bulldoze: 'B' };
+      const hint: Record<string, string> = { inspect: 'Esc', zones: 'Z', upgrade: 'U', bulldoze: 'B', photo: 'P' };
       const primary = DESK_PRIMARY.map((id) => all.find((x) => x[0] === id)).filter(Boolean) as [string, string, string][];
       this.moreItems = all.filter((x) => !DESK_PRIMARY.includes(x[0]));
       this.bar.innerHTML = primary.map(btn).join('') + btn(['more', '<i class="more-dots"><b></b><b></b><b></b></i>', 'More']);
@@ -1274,10 +1317,12 @@ export class Hud implements UiSink {
     this.panel = p;
     this.sub.hidden = !p;
     this.sub.classList.remove('min');
-    if (!p) { if (this.game.tools.active === 'road' || this.game.tools.active === 'zone' || this.game.tools.active === 'dezone') this.game.tools.set('inspect'); this.syncToolbar(); this.placeNextBar(); return; }
+    // The Next card is looked at again now, not at its next refresh a second of frames away: on a phone it is one line beside
+    // a drawer, and the whole card sat on a newly opened drawer until then (and the one line stayed after the drawer had gone).
+    if (!p) { if (this.game.tools.active === 'road' || this.game.tools.active === 'zone' || this.game.tools.active === 'dezone') this.game.tools.set('inspect'); this.syncToolbar(); this.renderNextBar(); return; }
     this.renderPanel();
     this.syncToolbar();
-    this.placeNextBar();
+    this.renderNextBar();
   }
 
   private renderPanel() {
@@ -1406,14 +1451,15 @@ export class Hud implements UiSink {
           ${IS_TOUCH ? '' : `<button class="chip ${g.rts.edgeScroll ? 'on' : ''}" id="edge-toggle" aria-pressed="${g.rts.edgeScroll}">Edge scrolling: ${g.rts.edgeScroll ? 'on' : 'off'}</button>`}
           ${g.pendingQuality ? '<button class="chip on" id="quality-reload">Reload to finish applying</button>' : ''}
           ${IS_TOUCH ? '' : `<button class="chip ${g.resolutionMode === 'full' ? 'on' : ''}" id="res-toggle" title="Auto lowers the resolution when frames are slow; Always full keeps it sharp">Resolution: ${g.resolutionMode === 'full' ? 'always full' : 'auto'}</button>`}
-          <button class="chip ${emergencySpeed() !== 'off' ? 'on' : ''}" id="emergency-toggle" title="When a city-wide service emergency begins: slow the clock to normal speed, pause it, or keep going">🚨 Emergencies: ${EMERGENCY_SPEED_LABEL[emergencySpeed()]}</button>
-          <button class="chip ${g.audio.musicOn ? 'on' : ''}" id="music-toggle" aria-pressed="${g.audio.musicOn}">🎹 Music: ${g.audio.musicOn ? 'on' : 'off'}</button>
+          <button class="chip ${emergencySpeed() !== 'off' ? 'on' : ''}" id="emergency-toggle" title="When a city-wide service emergency begins: slow the clock to normal speed, pause it, or keep going">${uiIcon('status', 'emergency', '🚨', 18)} Emergencies: ${EMERGENCY_SPEED_LABEL[emergencySpeed()]}</button>
+          <button class="chip ${g.audio.musicOn ? 'on' : ''}" id="music-toggle" aria-pressed="${g.audio.musicOn}">${uiIcon('action', 'music', '🎹', 18)} Music: ${g.audio.musicOn ? 'on' : 'off'}</button>
           <label class="fov-ctl" for="music-range">Music volume <input type="range" id="music-range" min="5" max="100" step="5" value="${Math.round(g.audio.musicVolume * 100)}"></label>
-          <button class="chip ${g.audio.soundOn ? 'on' : ''}" id="sound-toggle" aria-pressed="${g.audio.soundOn}" title="Effects, ambience and the sound of the cars in the street">🔊 Sound: ${g.audio.soundOn ? 'on' : 'off'}</button>
+          <button class="chip ${g.audio.soundOn ? 'on' : ''}" id="sound-toggle" aria-pressed="${g.audio.soundOn}" title="Effects, ambience and the sound of the cars in the street">${uiIcon('action', 'sound', '🔊', 18)} Sound: ${g.audio.soundOn ? 'on' : 'off'}</button>
           <label class="fov-ctl" for="sound-range">Sound volume <input type="range" id="sound-range" min="5" max="100" step="5" value="${Math.round(g.audio.soundVolume * 100)}"></label>
           <label class="fov-ctl" for="fov-range">Field of view <input type="range" id="fov-range" min="${FOV_MIN}" max="${FOV_MAX}" step="1" value="${Math.round(g.camera.fov)}"><b id="fov-v">${this.fovText()}</b></label>
         </div>
         <small>Resolution and shadows change immediately. Reload applies scenery, traffic, and post-processing budgets.</small>
+        ${serviceLooks.get() ? `<div class="sp-row svc-look"><span class="ql" id="looks-label">Service buildings</span><span class="seg" role="radiogroup" aria-labelledby="looks-label">${(['vault', 'classic'] as const).map((l) => { const on = serviceLooks.get() === l; return `<button class="chip ${on ? 'on' : ''}" role="radio" aria-checked="${on}" data-look="${l}" ${l === 'vault' ? 'title="The Asset Vault\'s versions: the Very Clean Coal Plant, the County Water Tower, Copay Castle..."' : ''}>${l === 'vault' ? `${uiIcon('toolbar', 'ext:services', '🏛️', 18)} Asset Vault` : 'Classic'}</button>`; }).join('')}</span></div>` : ''}
         <div class="help">${IS_TOUCH ? `
           <div><b>Move</b> drag with one finger (two fingers while a tool is on)</div>
           <div><b>Zoom</b> pinch</div>
@@ -1431,12 +1477,19 @@ export class Hud implements UiSink {
           <div><b>Roads</b> click start, click end. Keeps chaining. Esc / right-click stops.</div>
           <div><b>Speed</b> Space pause · 1 2 3</div>
           <div><b>Tools</b> B bulldoze · U one more lane · Z zoning · Esc cancel</div>
-          <div><b>Interchanges</b> Roads → Interchanges · , and . rotate</div>${PLAYTEST ? `
+          <div><b>Interchanges</b> Roads → Interchanges · , and . rotate</div>
+          <div><b>Photo mode</b> P, or Photo under More · Esc leaves</div>${PLAYTEST ? `
           <div><b>Performance</b> F3 shows FPS, frame time, draw calls and triangles</div>` : ''}`}
         </div>
-        <div class="sp-row"><button class="chip" id="save-now">💾 Save now</button><button class="chip" id="save-file">📁 Save city file</button><button class="chip" id="new-city">🆕 New city</button><small>Autosaves every 30 seconds in this browser. A city file is a backup you keep: where downloads are blocked it is copied to the clipboard instead.</small></div>
-        <div class="sp-row"><button class="chip on" id="report-bug">🐞 Report a bug</button><small>${PLAYTEST ? 'Playtest build' : 'Build'} ${BUILD}</small></div>`;
+        <div class="sp-row"><button class="chip" id="save-now">${uiIcon('action', 'save', '💾', 18)} Save now</button><button class="chip" id="save-slot" title="Put this city away under its name and day. Find it on the title screen under Saved cities.">📌 Save to a slot</button><button class="chip" id="save-file">📁 Save city file</button><button class="chip" id="new-city">🆕 New city</button><small>Autosaves every 30 seconds in this browser. A city file is a backup you keep: where downloads are blocked it is copied to the clipboard instead.</small></div>
+        <div class="sp-row"><button class="chip on" id="report-bug">${uiIcon('action', 'report', '🐞', 18)} Report a bug</button><small>${PLAYTEST ? 'Playtest build' : 'Build'} ${BUILD}</small></div>`;
       this.sub.querySelector('#save-now')?.addEventListener('click', () => { const ok = saveGame(g); this.toast(ok ? 'Saved.' : 'Could not save in this browser', !ok); });
+      this.sub.querySelector('#save-slot')?.addEventListener('click', async () => {
+        const taken = (await listSlots()).map((x) => x.name), nameIt = slotName(g.cityName, g.sim.day, taken);
+        const ok = await writeSlot(nameIt, JSON.stringify(snapshot(g)));
+        crumb(`save to a slot: ${ok ? 'ok' : 'failed'}`);
+        this.toast(ok ? `Saved as "${nameIt}". It is on the title screen under Saved cities.` : 'This browser would not store a slot (private windows often will not). Use Save city file.', !ok);
+      });
       this.sub.querySelector('#save-file')?.addEventListener('click', async () => {
         const f = cityFile(g);
         const r = await saveFile(f.name, f.data);
@@ -1453,6 +1506,13 @@ export class Hud implements UiSink {
         this.toast(reload ? 'Graphics preset saved. Reload to apply all details.' : 'Graphics preset applied.');
       }));
       this.sub.querySelector('#quality-reload')?.addEventListener('click', () => location.reload());
+      // how the service buildings look: the ones standing change clothes at once (it was a row in the Services drawer, the tallest on a phone)
+      this.sub.querySelectorAll<HTMLButtonElement>('[data-look]').forEach((b) => b.addEventListener('click', () => {
+        const look = b.dataset.look === 'classic' ? 'classic' : 'vault';
+        serviceLooks.set(g, look);
+        crumb(`service buildings: ${look}`);
+        this.renderPanel();
+      }));
       this.sub.querySelector('#perf-toggle')?.addEventListener('click', () => { this.togglePerf(); this.renderPanel(); });
       this.sub.querySelector('#emergency-toggle')?.addEventListener('click', () => {
         const next: EmergencySpeed = ({ slow: 'pause', pause: 'off', off: 'slow' } as const)[emergencySpeed()];
@@ -1541,6 +1601,7 @@ export class Hud implements UiSink {
     else if (e.key.toLowerCase() === 'u') this.onTool('upgrade');
     else if (e.key.toLowerCase() === 'z') this.onTool('zones');
     else if (e.key.toLowerCase() === 'h') this.game.goHome();
+    else if (e.key.toLowerCase() === 'p') this.onTool('photo');
     else if (e.key === 'Escape' && this.demandKey) {
       const k = this.demandKey;
       this.closeDemand();
@@ -1600,13 +1661,13 @@ export class Hud implements UiSink {
       html = `<div class="in-kicker" style="--zc:${svc ? 'var(--off)' : '#ff3ea5'}">${svc ? 'CITY SERVICE' : 'LANDMARK'}</div>
         <h3>${esc(b.label)}</h3>
         <div class="in-stats">
-          <div><span>Status</span><b class="${off ? 'in-warn' : ''}">${b.state === 'building' ? `🚧 ${Math.round(b.progress * 100)}%` : off ? '🚧 Not connected' : 'Open'}</b></div>
+          <div><span>Status</span><b class="${off ? 'in-warn' : ''}">${b.state === 'building' ? `${uiIcon('status', 'building', '🚧', 18)} ${Math.round(b.progress * 100)}%` : off ? `${uiIcon('status', 'warning', '🚧', 18)} Not connected` : 'Open'}</b></div>
           <div><span>Road</span><b class="${off ? 'in-warn' : ''}">${off === 'noRoad' ? 'None' : off === 'noLink' ? 'No route to the highway' : 'Connected'}</b></div>
           ${!svc && !off && b.state === 'active' ? `<div><span>Visitors today</span><b>${g.traffic.visitorsToday(b).toLocaleString()}</b></div>` : ''}
         </div>
-        ${off ? `<p class="in-note in-warn" id="in-link">🚧 ${esc(g.roadLinkText?.(b) ?? '')}</p>` : ''}
+        ${off ? `<p class="in-note in-warn" id="in-link">${uiIcon('status', 'warning', '🚧', 18)} ${esc(g.roadLinkText?.(b) ?? '')}</p>` : ''}
         ${!svc && !off ? `<p class="in-note">${landmarkEffects(b.landmark)}</p>` : ''}
-        <div class="in-actions">${off ? '<button id="in-road">🛣️ Draw a road</button>' : ''}<button class="danger" id="in-bulldoze">💣 Bulldoze</button></div>`;
+        <div class="in-actions">${off ? `<button id="in-road">${uiIcon('toolbar', 'roads', '🛣️', 18)} Draw a road</button>` : ''}<button class="danger" id="in-bulldoze">${uiIcon('toolbar', 'bulldoze', '💣', 18)} Bulldoze</button></div>`;
     } else if (sel.kind === 'building' && isZoned(sel.b)) {
       const b = sel.b;
       const brand = brandById(b.brand);
@@ -1620,21 +1681,23 @@ export class Hud implements UiSink {
           <div><span>Level</span><b>${'★'.repeat(b.level)}${'☆'.repeat(Math.max(0, max - b.level))}</b></div>
           <div><span>${isRes ? 'Residents' : 'Workers'}</span><b>${b.occ}/${b.cap}</b></div>
           <div><span>Land value</span><b>${Math.round(b.lv)}</b></div>
-          <div><span>Status</span><b>${b.state === 'building' ? `🚧 ${Math.round(b.progress * 100)}%` : b.abandoned !== undefined ? '🏚️ Abandoned' : 'Open'}</b></div>
+          <div><span>Status</span><b>${b.state === 'building' ? `${uiIcon('status', 'building', '🚧', 18)} ${Math.round(b.progress * 100)}%` : b.abandoned !== undefined ? `${uiIcon('status', 'abandoned', '🏚️', 18)} Abandoned` : 'Open'}</b></div>
         </div>
         ${bind ? `<div class="in-bind"><span>Holding it back</span><b>${esc(bind)}</b></div>` : ''}
         ${b.level < max && b.state === 'active' ? `<div class="in-prog"><span style="width:${Math.round(b.levelProgress * 100)}%"></span></div><small>Leveling up with land value. Denser neighbors = more value.</small>` : ''}
         ${brand?.merch ? `<a class="in-merch" href="${MERCH_URL}" target="_blank" rel="noopener">Shop the real ${esc(brand.name)} at imaginesupply.co →</a>` : ''}
-        <div class="in-actions"><button class="danger" id="in-bulldoze">💣 Bulldoze</button></div>`;
+        <div class="in-actions"><button class="danger" id="in-bulldoze">${uiIcon('toolbar', 'bulldoze', '💣', 18)} Bulldoze</button></div>`;
     } else if (sel.kind === 'car') {
       const c = sel.c;
       const a = ARCHETYPES[c.driver % ARCHETYPES.length];
+      // a bus in service is its line, not whoever is at the wheel: the card is headed by the line and says where it stops next
+      const line = busLine(c);
       html = `<div class="in-kicker">${esc(VEHICLE_SPECS[c.kind].label)}</div>
-        <h3>${esc(a?.name ?? 'Driver')}</h3>
-        <p class="in-blurb">${esc(a?.bio ?? '')}</p>
+        <h3>${esc(line ?? a?.name ?? 'Driver')}</h3>
+        ${line ? '' : `<p class="in-blurb">${esc(a?.bio ?? '')}</p>`}
         <div class="in-stats">
-          <div><span>Doing</span><b>${esc(c.purpose)}</b></div>
-          <div><span>Headed to</span><b>${esc(c.dest)}</b></div>
+          ${line ? `<div><span>Driver</span><b>${esc(a?.name ?? 'Driver')}</b></div>` : `<div><span>Doing</span><b>${esc(c.purpose)}</b></div>`}
+          <div><span>${line ? 'Next stop' : 'Headed to'}</span><b>${esc(c.dest)}</b></div>
           <div><span>Speed</span><b>${Math.round(c.v * 3.6)} km/h</b></div>
           <div><span>Vibe</span><b>${c.crashed > 0 ? '💥 WRECKED' : c.drunk ? `🍺 BAC ${c.bac.toFixed(2)}` : c.reckless ? '😤 reckless' : '😐 fine'}${c.smoker ? ' 🚬' : ''}</b></div>
         </div>
@@ -1660,8 +1723,8 @@ export class Hud implements UiSink {
         <p class="in-blurb">Demands: “${esc(c.demand)}”</p>
         ${c.forever ? `<p class="in-warn">They've been here since 1969. They're never leaving. Build around them.</p>` : `<p class="in-note">Roads and zoning can't cross their land. <b>Pay off</b>: if they refuse, the money is gone and they dig in harder. <b>Sue</b>: 20 days in court; lose and they dig in.</p>`}
         <div class="in-actions">
-          <button id="in-bribe" ${c.forever || c.state !== 'active' ? 'disabled' : ''}>💸 Pay off ${money(g.communes.bribeCost(c))} <small>${Math.round(g.communes.bribeOdds(c) * 100)}%</small></button>
-          <button id="in-sue" ${c.forever || c.state !== 'active' ? 'disabled' : ''}>⚖️ Sue ${money(g.communes.suitCost(c))} <small>${Math.round(g.communes.suitOdds(c) * 100)}%</small></button>
+          <button id="in-bribe" ${c.forever || c.state !== 'active' ? 'disabled' : ''}>${uiIcon('action', 'bribe', '💸', 18)} Pay off ${money(g.communes.bribeCost(c))} <small>${Math.round(g.communes.bribeOdds(c) * 100)}%</small></button>
+          <button id="in-sue" ${c.forever || c.state !== 'active' ? 'disabled' : ''}>${uiIcon('action', 'court', '⚖️', 18)} Sue ${money(g.communes.suitCost(c))} <small>${Math.round(g.communes.suitOdds(c) * 100)}%</small></button>
         </div>`;
     } else if (sel.kind === 'lot') {
       const c = sel.cell, z = c.zone;
@@ -1671,7 +1734,7 @@ export class Hud implements UiSink {
       const st = g.lotStatus(c);
       html = `<div class="in-kicker">ZONED LOT · EMPTY</div><h3>${ZONE_ICON[z]} ${esc(ZONE_LABEL[z])}</h3>
         <p class="in-blurb"><b>${esc(st.primary)}</b></p>
-        <div class="in-actions">${st.demand ? `<button id="in-why">📊 ${DEM[st.demand.key].name} demand ${signed(st.demand.v)}: why?</button>` : ''}<button id="in-dezone">🧽 Dezone</button></div>`;
+        <div class="in-actions">${st.demand ? `<button id="in-why">📊 ${DEM[st.demand.key].name} demand ${signed(st.demand.v)}: why?</button>` : ''}<button id="in-dezone">${uiIcon('zone', 'none', '🧽', 18)} Dezone</button></div>`;
     } else if (sel.kind === 'road') {
       const s = sel.s;
       const t = ROAD_TYPES[s.type];
@@ -1686,7 +1749,7 @@ export class Hud implements UiSink {
           const q = g.quoteUpgrade([s], t.next);
           const short = q.net > g.sim.spendable();
           return `<button id="in-lane" class="one-more-lane" ${short ? 'disabled title="Not enough money"' : ''}>${uiIcon('toolbar', 'upgrade', '➕', 22)} ONE MORE LANE · ${money(q.net)}${q.grant > 0 ? ` <small>feds pay ${money(q.grant)}</small>` : ''}</button>`;
-        })() : '<button disabled>MAX LANES</button>'}${t.oneWay ? '<button id="in-flip" title="The arrows point the other way">⇅ Flip direction</button>' : ''}<button class="danger" id="in-bulldoze">💣 Bulldoze</button></div>`;
+        })() : '<button disabled>MAX LANES</button>'}${t.oneWay ? '<button id="in-flip" title="The arrows point the other way">⇅ Flip direction</button>' : ''}<button class="danger" id="in-bulldoze">${uiIcon('toolbar', 'bulldoze', '💣', 18)} Bulldoze</button></div>`;
     }
     let extra = '';
     for (const f of EXT.inspector) extra += f(sel, g) ?? '';
@@ -1703,7 +1766,7 @@ export class Hud implements UiSink {
       crumb(on ? 'stop following' : `follow ${target.kind}`);
       if (on) g.rts.follow(null);
       else if (g.rts.follow(target)) {
-        this.followName = sel.kind === 'car' ? `${ARCHETYPES[sel.c.driver % ARCHETYPES.length]?.name ?? 'a driver'} (${VEHICLE_SPECS[sel.c.kind].label})` : sel.kind === 'ped' ? ARCHETYPES[sel.p.arch]?.name ?? 'a citizen' : '';
+        this.followName = sel.kind === 'car' ? `${busLine(sel.c) ?? ARCHETYPES[sel.c.driver % ARCHETYPES.length]?.name ?? 'a driver'} (${VEHICLE_SPECS[sel.c.kind].label})` : sel.kind === 'ped' ? ARCHETYPES[sel.p.arch]?.name ?? 'a citizen' : '';
         // a phone's inspector is a sheet over the lower half of the screen: it goes away so the ride can be seen
         if (IS_TOUCH) { g.select(null); return; }
       }
@@ -1734,12 +1797,14 @@ export class Hud implements UiSink {
 
   // ------------------------------------------------------------------ transient UI
   toast(msg: string, bad = false) {
+    // it stays as long as it takes to read (ui/copy.ts), then fades for 0.6 s
+    const life = toastMs(msg);
     // the same message again while it's still showing: keep one, refreshed
     for (const el of this.toasts.children) {
       if (el.textContent !== msg || el.classList.contains('out')) continue;
       const t0 = el as HTMLElement & { _t?: number[] };
       t0._t?.forEach((h) => clearTimeout(h));
-      t0._t = [window.setTimeout(() => t0.classList.add('out'), 2600), window.setTimeout(() => t0.remove(), 3200)];
+      t0._t = [window.setTimeout(() => t0.classList.add('out'), life), window.setTimeout(() => t0.remove(), life + 600)];
       t0.classList.remove('again'); void t0.offsetWidth; t0.classList.add('again');
       return;
     }
@@ -1748,7 +1813,7 @@ export class Hud implements UiSink {
     t.className = 'toast' + (bad ? ' bad' : '');
     t.textContent = msg;
     this.toasts.appendChild(t);
-    t._t = [window.setTimeout(() => t.classList.add('out'), 2600), window.setTimeout(() => t.remove(), 3200)];
+    t._t = [window.setTimeout(() => t.classList.add('out'), life), window.setTimeout(() => t.remove(), life + 600)];
     while (this.toasts.children.length > 3) this.toasts.firstChild?.remove();
   }
 
@@ -1775,7 +1840,7 @@ export class Hud implements UiSink {
     const t = document.createElement('div');
     t.className = 'toast unlock milestone';
     const next = MILESTONES[i + 1];
-    t.innerHTML = `<span><b>🏅 ${esc(m.name)}</b> · ${m.pop.toLocaleString()} people${m.reward ? ` · <b class="pos">+${usd(m.reward)}</b> state grant` : ''}<small>${names.length ? `Unlocked: ${esc(names.join(', '))}` : esc(m.blurb)}</small>${next ? `<small>Next: ${esc(next.name)} at ${next.pop.toLocaleString()} people</small>` : ''}</span>${names.length ? '<button class="chip on">Open</button>' : ''}`;
+    t.innerHTML = `<span><b>${uiIcon('meter', 'milestone', '🏅', 18)} ${esc(m.name)}</b> · ${m.pop.toLocaleString()} people${m.reward ? ` · <b class="pos">+${usd(m.reward)}</b> state grant` : ''}<small>${names.length ? `Unlocked: ${esc(names.join(', '))}` : esc(m.blurb)}</small>${next ? `<small>Next: ${esc(next.name)} at ${next.pop.toLocaleString()} people</small>` : ''}</span>${names.length ? '<button class="chip on">Open</button>' : ''}`;
     t.querySelector('button')?.addEventListener('click', () => {
       const g = this.game;
       g.audio.play('click', 0.4);
@@ -1895,7 +1960,7 @@ export class Hud implements UiSink {
         const ri = this.game.renderInfo();
         this.perfEl.textContent = `${p.fps.toFixed(1)} fps · ${p.frameMs.toFixed(1)} ms frame · ${p.renderMs.toFixed(1)} ms work\n${p.calls.toLocaleString()} calls · ${p.triangles.toLocaleString()} tris · ${p.quality.toUpperCase()}${this.game.post.active ? '' : ' · no FX'}\nrender ${ri.buffer} of the screen's ${ri.screen} (${ri.share}%) · ${ri.mode === 'full' ? 'full res locked' : `auto ${Math.round(ri.dynamic * 100)}%`}\n${pf.top(5).map(([k, v]) => `${k} ${v.toFixed(1)}`).join(' · ')}${w ? `\nworst ${w.ms.toFixed(0)} ms: ${w.parts.slice(0, 3).map(([k, v]) => `${k} ${v}`).join(', ')}` : ''}`;
       }
-      if (this.game.selection && (this.game.selection.kind === 'car' || this.game.selection.kind === 'building' || this.game.selection.kind === 'lot')) this.renderInspector();
+      if (!this.inspectorHeld && this.game.selection && (this.game.selection.kind === 'car' || this.game.selection.kind === 'building' || this.game.selection.kind === 'lot')) this.renderInspector();
     }
     let tip = this.game.tools.tip;
     const t = this.game.tools;
@@ -1923,19 +1988,20 @@ export class Hud implements UiSink {
       const tipText = IS_TOUCH ? (this.touchDraw && tip ? briefTip(tip.text) : tip?.text ?? '') : badge;
       if (tipEl.textContent !== tipText) tipEl.textContent = tipText;
       tipEl.classList.toggle('clamp', this.touchDraw);
+      // With no finger down a long readout gets a row of its own across the badge, the buttons under it. Beside three buttons it
+      // was a column about 100 px wide: 214 px tall on a phone once the buttons had their drawn icons, 116 px before that.
+      tipEl.classList.toggle('wide', IS_TOUCH && !this.touchDraw && tipText.length > WIDE_TIP);
       tipEl.classList.toggle('bad', IS_TOUCH && !!tip?.bad);
       tipEl.classList.toggle('good', IS_TOUCH && !tip?.bad && !!tip?.good);
       tipEl.hidden = IS_TOUCH ? !tip : !badge;
       const done = this.actions.querySelector('#ta-done') as HTMLElement;
       done.hidden = IS_TOUCH ? false : !t.drawing && !placingLabel;
-      const doneLabel = IS_TOUCH ? '✓ Done' : placingLabel ? '✕ Cancel' : '✕ Stop';
-      if (done.textContent !== doneLabel) done.textContent = doneLabel;
+      this.badge('#ta-done', IS_TOUCH ? 'done' : 'stop', IS_TOUCH ? '✓' : '✕', IS_TOUCH ? 'Done' : placingLabel ? 'Cancel' : 'Stop');
       const build = this.actions.querySelector('#ta-build') as HTMLButtonElement;
       const plan = t.active === 'ext' ? t.extPending : t.pending ? { cost: t.pendingCost } : null;
       build.hidden = !plan;
       build.disabled = !plan || plan.cost === null;
-      const label = plan && plan.cost !== null ? `🔨 Build $${plan.cost.toLocaleString()}` : '🔨 Build';
-      if (build.textContent !== label) build.textContent = label;
+      this.badge('#ta-build', 'build', '🔨', plan && plan.cost !== null ? `Build $${plan.cost.toLocaleString()}` : 'Build');
       const undo = this.actions.querySelector('#ta-undo') as HTMLButtonElement;
       undo.hidden = t.active !== 'road' && t.active !== 'upgrade' && !placingLabel;
       undo.disabled = !this.game.canUndo;

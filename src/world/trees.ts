@@ -237,6 +237,7 @@ vCanopy = canopy;`)
         const cap = Math.max(200, Math.ceil((share[ki] * q.treeNearCap * 1.6) / VARIANTS));
         const im = new THREE.InstancedMesh(models[ki][v], nearMats[DECIDUOUS.has(kind) ? 1 : 0], share[ki] > 0 ? cap : 1);
         im.count = 0;
+        im.visible = false;
         im.castShadow = true;
         im.receiveShadow = true;
         im.frustumCulled = false;
@@ -326,6 +327,7 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
       const cap = Math.max(100, Math.ceil(share[ki] * q.treeFarCap * 1.3));
       const im = new THREE.InstancedMesh(g, farMat, share[ki] > 0 ? cap : 1);
       im.count = 0;
+      im.visible = false;
       im.frustumCulled = false;
       im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       im.setColorAt(0, new THREE.Color());
@@ -868,6 +870,8 @@ vTop = smoothstep(0.35, 1.0, uv.y);`);
     }
     const commit = (im: THREE.InstancedMesh, count: number) => {
       im.count = count;
+      im.visible = count > 0;
+      if (!count) return;
       im.instanceMatrix.clearUpdateRanges();
       im.instanceMatrix.addUpdateRange(0, Math.max(1, count) * 16);
       im.instanceMatrix.needsUpdate = true;

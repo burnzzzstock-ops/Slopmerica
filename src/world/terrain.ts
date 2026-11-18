@@ -11,6 +11,7 @@ import { hash2 } from '../core/rng';
 import type { MapData } from './maps';
 import { createGroundTextures } from './groundTextures';
 import { ForestFloor } from './forestFloor';
+import { withVisualRandom } from '../render/visualRandom';
 
 export const enum Paint {
   None = 0,
@@ -30,6 +31,8 @@ interface Chunk {
   cz: number;
   mesh: THREE.Mesh;
   lod: number;
+  coarseGeometry?: number;
+  coarseInstance?: number;
   geos: (THREE.BufferGeometry | null)[];
   minY: number;
   maxY: number;
@@ -92,6 +95,7 @@ export class Terrain {
   /** Increments when grading or ground paint changes near-surface scenery. */
   surfaceVersion = 0;
   private chunks: Chunk[] = [];
+  private coarseChunks: THREE.BatchedMesh;
   private dirty = new Set<number>();
   private texRows: [number, number] | null = null;
   private pal: Record<string, THREE.Color> = {};
@@ -121,6 +125,15 @@ export class Terrain {
     this.detail = createGroundTextures(renderer);
     this.material = this.makeMaterial();
 
+    // Coarse chunks share a material, vertex layout and index count. Submit
+    // them together while retaining the original bounds for per-chunk culling.
+    const side = CQ / LOD_STEPS[3] + 1, count = CN * CN;
+    this.coarseChunks = withVisualRandom(() => new THREE.BatchedMesh(count, count * (side * side + 4 * side),
+      count * (6 * (side - 1) ** 2 + 48 * (side - 1)), this.material));
+    this.coarseChunks.frustumCulled = false;
+    this.coarseChunks.sortObjects = false;
+    this.coarseChunks.receiveShadow = true;
+    this.group.add(this.coarseChunks);
     for (let cz = 0; cz < CN; cz++)
       for (let cx = 0; cx < CN; cx++) {
         const mesh = new THREE.Mesh(new THREE.BufferGeometry(), this.material);
@@ -651,8 +664,18 @@ if (uInfoOn > 0.0) {
     if (ch.lod === lod && ch.geos[lod]) return;
     if (!ch.geos[lod]) {
       ch.geos[lod] = this.buildChunk(ch, lod);
+      if (lod === 3) {
+        if (ch.coarseGeometry === undefined) {
+          ch.coarseGeometry = this.coarseChunks.addGeometry(ch.geos[lod]!);
+          ch.coarseInstance = this.coarseChunks.addInstance(ch.coarseGeometry);
+        } else {
+          this.coarseChunks.setGeometryAt(ch.coarseGeometry, ch.geos[lod]!);
+        }
+      }
       this.builtThisFrame++;
     }
+    this.coarseChunks.setVisibleAt(ch.coarseInstance!, lod === 3);
+    ch.mesh.visible = lod !== 3;
     ch.mesh.geometry = ch.geos[lod]!;
     ch.lod = lod;
   }

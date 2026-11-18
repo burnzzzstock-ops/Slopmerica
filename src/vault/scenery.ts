@@ -204,7 +204,6 @@ export class VaultScenery {
         m = new THREE.InstancedMesh(model.geometry, mat, Math.max(4, list.length * 2));
         m.castShadow = true;
         m.receiveShadow = true;
-        m.frustumCulled = false;
         this.group.add(m);
         this.meshes.set(key, m);
       }
@@ -216,6 +215,9 @@ export class VaultScenery {
       m.count = list.length;
       m.visible = true;
       m.instanceMatrix.needsUpdate = true;
+      // Placements stay fixed between uploads. Each camera can now reject
+      // whole furniture families using their updated instance bounds.
+      m.computeBoundingSphere();
     }
   }
 }

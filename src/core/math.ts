@@ -289,6 +289,17 @@ export class SpatialHash<T> {
       }
     return out;
   }
+  /** Is anything filed under a cell this box touches? When not, query() over the same box (or any box inside it) is empty; no set is built to find out. */
+  any(minX: number, minZ: number, maxX: number, maxZ: number): boolean {
+    const s = this.size;
+    for (let ix = Math.floor(minX / s); ix <= Math.floor(maxX / s); ix++)
+      for (let iz = Math.floor(minZ / s); iz <= Math.floor(maxZ / s); iz++) {
+        const arr = this.cells.get(this.key(ix, iz));
+        if (arr && arr.length) return true;
+      }
+    return false;
+  }
+
   clear() {
     this.cells.clear();
   }

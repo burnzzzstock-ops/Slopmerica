@@ -726,7 +726,9 @@ export class Sim {
       this.sprawlCursor = (i + 1) % n;
       const p = pts[i];
       const was = seen[i];
-      const now = this.b.at(p.x, p.z) || this.b.near(p.x, p.z, 10).some((b) => this.b.contains(b, p.x, p.z, 5)) || this.net.pickSeg(p.x, p.z, 5) ? 1 : 0;
+      // (most of the county is empty land: that is answered from the grids' own cells, with no list built. The questions are
+      //  the ones this always asked: a building here, or within 5 m of one whose middle is within 10 m, or a road within 5 m)
+      const now = (this.b.anyNear(p.x, p.z, 10) && (this.b.at(p.x, p.z) || this.b.near(p.x, p.z, 10).some((b) => this.b.contains(b, p.x, p.z, 5)))) || this.net.onRoad(p.x, p.z, 5) ? 1 : 0;
       if (now !== was) { seen[i] = now; this.sprawlCovered += now - was; }
     }
     this.coverage = n ? this.sprawlCovered / n : 0;

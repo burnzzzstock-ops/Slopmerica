@@ -14,6 +14,7 @@
 // range, a share of them by its tree density), built lazily one 64 m cell at a time (nothing at load), and rebuilt for the
 // cells a road, a lot or terraforming reshapes.
 import * as THREE from 'three';
+import { withVisualRandom } from '../render/visualRandom';
 import { HALF, HM_N, HM_STEP, Quality, WATER, WORLD } from '../config';
 import { hash2 } from '../core/rng';
 import type { MapData, MapId } from './maps';
@@ -65,7 +66,7 @@ const LOOKS: Record<MapId, Look> = {
 
 // ---------------------------------------------------------------------------------------------------- the two models
 /** a reed clump, 1 m tall: nine tapering blades leaning outward from the middle, in three segments (27 triangles) */
-function reedGeometry(): THREE.BufferGeometry {
+function reedGeometry(coarse = false): THREE.BufferGeometry {
   const pos: number[] = [], col: number[] = [], idx: number[] = [];
   const blades = 9;
   for (let k = 0; k < blades; k++) {
@@ -80,7 +81,7 @@ function reedGeometry(): THREE.BufferGeometry {
     const wx = -lz, wz = lx;
     const w0 = 0.04 + 0.022 * hash2(k, 11, 75);
     const base = pos.length / 3;
-    const rows: [number, number, number][] = [[0, w0, 0.42], [0.5, w0 * 0.72, 0.72], [1, 0, 1.0]];
+    const rows: [number, number, number][] = [[0, w0 * (coarse ? 1.22 : 1), 0.42], [0.5, w0 * 0.72, 0.72], [1, 0, 1.0]];
     for (const [t, w, shade] of rows) {
       // a blade bends over as it rises: the lean grows with the square of the height
       const off = lean * t * t * h;
@@ -93,7 +94,8 @@ function reedGeometry(): THREE.BufferGeometry {
         col.push(shade * 1.0, shade * 1.0, shade * 0.86);
       }
     }
-    idx.push(base, base + 1, base + 2, base + 1, base + 3, base + 2, base + 2, base + 3, base + 4);
+    if (coarse) idx.push(base, base + 1, base + 4);
+    else idx.push(base, base + 1, base + 2, base + 1, base + 3, base + 2, base + 2, base + 3, base + 4);
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -112,8 +114,8 @@ function reedGeometry(): THREE.BufferGeometry {
 }
 
 /** a stone: a rounded lump (icosahedron, detail 1, every vertex moved by a hash of where it is, so shared corners stay shared) */
-function rockGeometry(): THREE.BufferGeometry {
-  const g = new THREE.IcosahedronGeometry(1, 1);
+function rockGeometry(detail = 1): THREE.BufferGeometry {
+  const g = new THREE.IcosahedronGeometry(1, detail);
   const p = g.getAttribute('position') as THREE.BufferAttribute;
   const col: number[] = [];
   for (let i = 0; i < p.count; i++) {
@@ -137,6 +139,8 @@ export class Shore {
   private bins: (Bin | null)[] = new Array(GN * GN).fill(null);
   private reeds: THREE.InstancedMesh;
   private rocks: THREE.InstancedMesh;
+  private reedModels: THREE.BufferGeometry[];
+  private stoneModels: THREE.BufferGeometry[];
   private reedCap: number;
   private rockCap: number;
   private look: Look;
@@ -213,6 +217,8 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.9, 0.95), uSnow * 0.45 * s
         .replace('#include <lights_fragment_end>', cloudShadowChunk('vSWPos'));
     };
     this.rocks = new THREE.InstancedMesh(rockGeometry(), rockMat, this.rockCap);
+    this.reedModels = [this.reeds.geometry, withVisualRandom(() => reedGeometry(true))];
+    this.stoneModels = [this.rocks.geometry, withVisualRandom(() => rockGeometry(0))];
     for (const im of [this.reeds, this.rocks]) {
       im.count = 0;
       im.frustumCulled = false;
@@ -370,6 +376,11 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.9, 0.95), uSnow * 0.45 * s
   // ------------------------------------------------------------------------------------------------------ streaming
   update(time: number, focus: THREE.Vector3, camDist: number) {
     this.uTime.value = time;
+    // At overview scale each blade retains its base, tip and projected area.
+    // The twelve original stone corners retain the clump around each bank.
+    const lowerDetail = camDist - this.range > (this.reeds.geometry === this.reedModels[1] ? 420 : 520) ? 1 : 0;
+    this.reeds.geometry = this.reedModels[lowerDetail];
+    this.rocks.geometry = this.stoneModels[lowerDetail];
     // the camera hangs camDist from the focus, so the strip has to reach that far and a bit past it
     const R = Math.min(this.range, Math.max(90, camDist * 1.15 + 60));
     const moved = Math.hypot(focus.x - this.lastFocus.x, focus.z - this.lastFocus.z);

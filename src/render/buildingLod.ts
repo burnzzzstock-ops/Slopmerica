@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { clusteredShadowIndices } from './propShadowLod';
 import { T, tileNames, type Tile } from '../art';
 import { withVisualRandom } from './visualRandom';
 export { withVisualRandom as withBuildingLodRandom } from './visualRandom';
@@ -8,6 +9,30 @@ export function timeBuildingLod(build: () => void): number {
   const started = performance.now();
   withVisualRandom(build);
   return performance.now() - started;
+}
+
+/** Coarse depth maps only need the position of a wall or roof to a fraction
+ * of a texel. Preserve original representatives and the batch's attribute
+ * layout, including its indexed/non-indexed distinction. */
+export function coarseBuildingShadow(source: THREE.BufferGeometry) {
+  const position = source.getAttribute('position'), index = source.index;
+  const count = index?.count ?? position.count;
+  const faces = clusteredShadowIndices(source, 1.5);
+  if (faces.length < 3 || faces.length >= count * .8) return null;
+  const geometry = new THREE.BufferGeometry();
+  const vertices = index ? Array.from(new Set(faces)) : faces;
+  for (const [name, attr] of Object.entries(source.attributes)) {
+    const packed = new Float32Array(vertices.length * attr.itemSize);
+    for (let i = 0; i < vertices.length; i++) for (let k = 0; k < attr.itemSize; k++) {
+      packed[i * attr.itemSize + k] = attr.getComponent(vertices[i], k);
+    }
+    geometry.setAttribute(name, new THREE.BufferAttribute(packed, attr.itemSize));
+  }
+  if (index) {
+    const slots = new Map(vertices.map((id, slot) => [id, slot]));
+    geometry.setIndex(faces.map(id => slots.get(id)!));
+  }
+  return geometry;
 }
 
 let tiles: Tile[] | undefined;
@@ -115,7 +140,7 @@ export function buildingSilhouette(source: THREE.BufferGeometry): THREE.BufferGe
 /** Strip disconnected sub-pixel furnishings while retaining the exact wall,
  * roof and atlas vertices. Connected components preserve stepped silhouettes
  * and rooflines without inventing a replacement texture or material. */
-export function buildingLod(source: THREE.BufferGeometry): THREE.BufferGeometry | null {
+export function distantComponentIndices(source: THREE.BufferGeometry, minimumArea = 20): number[] | null {
   const position = source.getAttribute('position'), count = source.index?.count ?? position.count;
   if (count < 240) return null;
   const parent = new Int32Array(position.count);
@@ -149,12 +174,18 @@ export function buildingLod(source: THREE.BufferGeometry): THREE.BufferGeometry 
     box.getSize(size);
     const area = Math.max(size.x * size.y, size.x * size.z, size.y * size.z);
     if (area > largestArea) { largest = root; largestArea = area; }
-    if (area >= 20) keep.add(root);
+    if (area >= minimumArea) keep.add(root);
   }
   keep.add(largest);
   const indices: number[] = [];
   for (let i = 0; i < count; i += 3) if (keep.has(find(index(i)))) indices.push(index(i), index(i + 1), index(i + 2));
   if (indices.length > count * 0.85 || indices.length === 0) return null;
+  return indices;
+}
+
+export function buildingLod(source: THREE.BufferGeometry): THREE.BufferGeometry | null {
+  const indices = distantComponentIndices(source);
+  if (!indices) return null;
   // Preserve every attribute, including Kit's tile/night values and vertex AO.
   const geometry = new THREE.BufferGeometry();
   const remap = new Map<number, number>(), vertices: number[] = [], faces: number[] = [];

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { bindPropShadow } from '../render/propShadowLod';
 import { lerp, locate, norm, sub, V2 } from '../core/math';
 import type { RoadNetwork, RSeg } from './network';
 import { carriageHalf, ROAD_TYPES } from './roadTypes';
@@ -651,6 +652,11 @@ export class StreetDetails {
     }
     mesh.instanceMatrix.needsUpdate = true;
     mesh.castShadow = shadow;
+    if (shadow) {
+      let maxScale = 1;
+      for (const p of placements) maxScale = Math.max(maxScale, p.sx ?? 1, p.sy ?? 1, p.sz ?? 1);
+      bindPropShadow(mesh, maxScale);
+    }
     mesh.receiveShadow = shadow;
     mesh.renderOrder = renderOrder;
     mesh.computeBoundingSphere();

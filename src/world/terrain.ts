@@ -12,6 +12,7 @@ import type { MapData } from './maps';
 import { createGroundTextures } from './groundTextures';
 import { groveAlbedo, DISTANT_FOREST_LIGHT, ForestFloor } from './forestFloor';
 import { withVisualRandom } from '../render/visualRandom';
+import { batchGroundSurface } from '../render/groundSurfaceBatch';
 
 export const enum Paint {
   None = 0,
@@ -137,6 +138,8 @@ export class Terrain {
     for (let cz = 0; cz < CN; cz++)
       for (let cx = 0; cx < CN; cx++) {
         const mesh = new THREE.Mesh(new THREE.BufferGeometry(), this.material);
+        const worldBounds = new THREE.Box3();
+        mesh.intersectsFrustum = frustum => frustum.intersectsBox(worldBounds.copy(mesh.geometry.boundingBox!).applyMatrix4(mesh.matrixWorld));
         mesh.receiveShadow = true;
         const ch: Chunk = { cx, cz, mesh, lod: -1, geos: [null, null, null, null], minY: 0, maxY: 0, roads: 0 };
         this.chunks.push(ch);
@@ -658,7 +661,11 @@ if (uInfoOn > 0.0) {
       const dz = Math.max(minZ - cam.z, 0, cam.z - (minZ + size));
       const dy = Math.max(ch.minY - cam.y, 0, cam.y - ch.maxY);
       // chunks with roads keep full detail farther out (road cuts are narrow)
-      const d = Math.hypot(dx, dy * 0.7, dz) * (ch.roads ? 0.6 : 1);
+      // From street level keep fine road cuts. High above a chunk the
+      // camera sees their footprint shrink along both screen axes.
+      const overview = smoothstep(65, 275, dy);
+      const d = Math.hypot(dx, dy * (0.7 + 6 * overview), dz)
+        * (ch.roads ? 0.6 + 0.4 * overview : 1);
       const want = d < d0 ? 0 : d < d1 ? 1 : d < d2 ? 2 : 3;
       if (want === ch.lod) continue;
       if (ch.geos[want]) this.setLod(ch, want);
@@ -896,7 +903,7 @@ if (uInfoOn > 0.0) {
 
   /** Low-res landscape out to the horizon, blended into the map edges. The grid
    *  is fine along the rim (so it meets the terrain) and coarsens outward. */
-  private buildHorizon(): THREE.Mesh {
+  private buildHorizon(): THREE.Group {
     const R = HALF * 3.4;
     const side: number[] = [];
     for (let x = 0; x <= HALF; x += 32) side.push(x);
@@ -971,10 +978,12 @@ if (uInfoOn > 0.0) {
     geo.setAttribute('paintDelta', new THREE.BufferAttribute(new Float32Array(n * n * 4), 4));
     geo.setIndex(index);
     geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, this.material);
-    mesh.frustumCulled = false;
-    mesh.receiveShadow = true;
-    return mesh;
+    const group = new THREE.Group();
+    const ring = batchGroundSurface(geo, this.material, 1024);
+    ring.receiveShadow = true;
+    group.add(ring);
+    geo.dispose();
+    return group;
   }
 
   /** March a ray against the heightfield. */

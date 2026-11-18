@@ -14,7 +14,8 @@ The owner asked the interface session to review ASTRA's work. This is that revie
 ## Since this was written (18 Nov, later)
 
 - The simulation session reports that on integration at 879816b, which has the look lane's nine newer commits (to 7bc24ee), `golden-regression`, `roadsection` and `presetlight` pass again. `reflecttest` is still red on the same two checks. So C1 and two thirds of C2 below are answered; they are left as written for the record.
-- A1 (the cars never drawn) the simulation session has taken, since the cause it names is in `traffic.ts`.
+- A1 (the cars never drawn) is closed from the simulation's side (dd9db04): a trip takes a parked car's body only when it is the same model, so every car is drawn. The request to the look lane stands, to file a car by the kind of the body it drives: with that, a parked car of another model as long can drive away again.
+- A4 and A5 change shape (f032ab4): land value and level-ups now take turns over three days of steps, one or two a step, where they came as one batch every third day. So the music no longer dips on a beat every third day, and the 35 ms gate no longer picks one level-up out of a batch in id order. There are as many level-ups as before, and each still ducks the music whether it is heard or not, so the fix asked for in A4 (duck after the test of whether the sound is audible, or not at all for a level-up) stands.
 - D1's figures are in `REQUESTS_FABLE.md` as a request to the look lane.
 
 ## The short version

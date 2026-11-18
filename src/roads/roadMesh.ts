@@ -27,8 +27,8 @@ class Buf {
   uv: number[] = [];
   col: number[] = [];
   idx: number[] = [];
-  // Offsets of curb and bank-skirt quads that disappear below a coarse sun-map texel.
-  fineShadowQuads?: number[];
+  // Index offsets of the curb and bank-skirt triangles that are subpixel in coarse shadow maps.
+  fineShadowTris?: number[];
   get count() {
     return this.pos.length / 3;
   }
@@ -45,7 +45,7 @@ class Buf {
   /** Append another buffer's geometry (its indices shifted to follow this one's vertices). */
   absorb(o: Buf) {
     const at = this.count;
-    if (o.fineShadowQuads) for (const offset of o.fineShadowQuads) (this.fineShadowQuads ??= []).push(this.idx.length + offset);
+    if (o.fineShadowTris) for (const offset of o.fineShadowTris) (this.fineShadowTris ??= []).push(this.idx.length + offset);
     for (const v of o.pos) this.pos.push(v);
     for (const v of o.nor) this.nor.push(v);
     for (const v of o.uv) this.uv.push(v);
@@ -58,13 +58,22 @@ class Buf {
   }
   /** A quad wound so its front side faces (nx, ny, nz): the concrete is double-sided and lit by its normals, so the winding decides which side is the front */
   quadN(a: number, b: number, c: number, d: number, nx: number, ny: number, nz: number, fineShadow = false) {
-    if (fineShadow) (this.fineShadowQuads ??= []).push(this.idx.length);
+    if (fineShadow) (this.fineShadowTris ??= []).push(this.idx.length, this.idx.length + 3);
     const P = this.pos;
     const ux = P[b * 3] - P[a * 3], uy = P[b * 3 + 1] - P[a * 3 + 1], uz = P[b * 3 + 2] - P[a * 3 + 2];
     const vx = P[c * 3] - P[a * 3], vy = P[c * 3 + 1] - P[a * 3 + 1], vz = P[c * 3 + 2] - P[a * 3 + 2];
     const dot = (uy * vz - uz * vy) * nx + (uz * vx - ux * vz) * ny + (ux * vy - uy * vx) * nz;
     if (dot >= 0) this.idx.push(a, b, c, a, c, d);
     else this.idx.push(a, c, b, a, d, c);
+  }
+  triN(a: number, b: number, c: number, face: EdgeQuad) {
+    if (face.fine) (this.fineShadowTris ??= []).push(this.idx.length);
+    const p = this.pos, ia = a * 3, ib = b * 3, ic = c * 3;
+    const ux = p[ib] - p[ia], uy = p[ib + 1] - p[ia + 1], uz = p[ib + 2] - p[ia + 2];
+    const vx = p[ic] - p[ia], vy = p[ic + 1] - p[ia + 1], vz = p[ic + 2] - p[ia + 2];
+    const dot = (uy * vz - uz * vy) * face.nx + (uz * vx - ux * vz) * face.ny + (ux * vy - uy * vx) * face.nz;
+    if (dot >= 0) this.tri(a, b, c);
+    else this.tri(a, c, b);
   }
   /** Axis-aligned-ish box given center, half sizes and yaw. */
   box(cx: number, cy: number, cz: number, hx: number, hy: number, hz: number, yaw: number, color: [number, number, number]) {
@@ -94,39 +103,103 @@ interface EdgeQuad {
   begin: number; end: number; nx: number; ny: number; nz: number; fine: boolean;
 }
 
-/** Several consecutive curb faces may span the same plane. Keep the driveway
- * flares, curves and twisting banks by checking both edges of every removed
- * cross-section before extending the strip.
- */
-function emitRoadStrip(buf: Buf, faces: EdgeQuad[]) {
-  const pa = new THREE.Vector3(), pb = new THREE.Vector3(), pc = new THREE.Vector3(), pd = new THREE.Vector3();
-  function canSpan(first: number, last: number) {
-    const l = faces[first], r = faces[last];
-    if (r.end - l.begin > 24 || r.fine !== l.fine || faces[last - 1].d !== r.a || faces[last - 1].c !== r.b) return false;
-    pa.fromArray(buf.pos, l.a * 3);
-    pb.fromArray(buf.pos, l.b * 3).sub(pa);
-    pc.fromArray(buf.pos, r.d * 3).sub(pa);
-    pd.fromArray(buf.pos, r.c * 3).sub(pa);
-    const normal = pb.cross(pc);
-    if (Math.abs(normal.dot(pd)) > 0.012 * normal.length()) return false;
-    for (let i = first; i < last; i++) {
-      const q = faces[i], t = (q.end - l.begin) / (r.end - l.begin);
-      for (let edge = 0; edge < 2; edge++) {
-        const a = (edge ? l.b : l.a) * 3, b = (edge ? r.c : r.d) * 3, m = (edge ? q.c : q.d) * 3;
-        for (let k = 0; k < 3; k++) {
-          if (Math.abs(buf.pos[m + k] - (buf.pos[a + k] + t * (buf.pos[b + k] - buf.pos[a + k]))) > .012 ||
-              Math.abs(buf.nor[m + k] - (buf.nor[a + k] + t * (buf.nor[b + k] - buf.nor[a + k]))) > .015) return false;
-        }
+enum Ribbon {
+  LeftCurb, LeftFascia, LeftBank, LeftSkirt,
+  RightCurb, RightFascia, RightBank, RightSkirt,
+  Deck, Pavement, LeftWalk, LeftRamp, RightRamp, RightWalk, Count,
+}
+enum Edge {
+  LeftRoad, LeftCurb, LeftOuter, LeftFoot, LeftSkirt, LeftDeck, LeftWalk,
+  RightRoad, RightCurb, RightOuter, RightFoot, RightSkirt, RightDeck, RightWalk, Count,
+}
+// Each ribbon names its two longitudinal boundaries. Adjacent materials
+// have separate vertex attributes but meet on the same physical edge.
+const ribbonEdges: [Edge, Edge][] = [
+  [Edge.LeftRoad, Edge.LeftCurb], [Edge.LeftOuter, Edge.LeftDeck],
+  [Edge.LeftOuter, Edge.LeftFoot], [Edge.LeftFoot, Edge.LeftSkirt],
+  [Edge.RightRoad, Edge.RightCurb], [Edge.RightOuter, Edge.RightDeck],
+  [Edge.RightOuter, Edge.RightFoot], [Edge.RightFoot, Edge.RightSkirt],
+  [Edge.LeftDeck, Edge.RightDeck], [Edge.LeftRoad, Edge.RightRoad],
+  [Edge.LeftOuter, Edge.LeftWalk], [Edge.LeftWalk, Edge.LeftCurb],
+  [Edge.RightCurb, Edge.RightWalk], [Edge.RightWalk, Edge.RightOuter],
+];
+const uncurbedPavement: [Edge, Edge] = [Edge.LeftOuter, Edge.RightOuter];
+
+function canSpanRoad(buf: Buf, faces: EdgeQuad[], first: number, last: number, textured: boolean) {
+  const l = faces[first], r = faces[last], previous = faces[last - 1];
+  if (!r || r.end - l.begin > 24 || r.fine !== l.fine || previous.d !== r.a || previous.c !== r.b) return false;
+  const p = buf.pos, a = l.a * 3, b = l.b * 3, c = r.c * 3, d = r.d * 3;
+  const bx = p[b] - p[a], by = p[b + 1] - p[a + 1], bz = p[b + 2] - p[a + 2];
+  const cx = p[c] - p[a], cy = p[c + 1] - p[a + 1], cz = p[c + 2] - p[a + 2];
+  const dx = p[d] - p[a], dy = p[d + 1] - p[a + 1], dz = p[d + 2] - p[a + 2];
+  // Across a bend the two sides travel different distances. Limit shear on
+  // textured ribbons so changing the diagonal cannot move road markings.
+  if (textured && (cx - dx - bx) ** 2 + (cy - dy - by) ** 2 + (cz - dz - bz) ** 2 > .045 ** 2) return false;
+  const nx = by * dz - bz * dy, ny = bz * dx - bx * dz, nz = bx * dy - by * dx;
+  if (Math.abs(nx * cx + ny * cy + nz * cz) > .012 * Math.sqrt(nx * nx + ny * ny + nz * nz)) return false;
+  for (let i = first; i < last; i++) {
+    const q = faces[i], t = (q.end - l.begin) / (r.end - l.begin);
+    for (let edge = 0; edge < 2; edge++) {
+      const start = edge ? b : a, end = edge ? c : d, mid = (edge ? q.c : q.d) * 3;
+      for (let k = 0; k < 3; k++) {
+        if (Math.abs(p[mid + k] - lerp(p[start + k], p[end + k], t)) > .012 ||
+            Math.abs(buf.nor[mid + k] - lerp(buf.nor[start + k], buf.nor[end + k], t)) > .015 ||
+            (textured && Math.abs(buf.col[mid + k] - lerp(buf.col[start + k], buf.col[end + k], t)) > .001)) return false;
       }
     }
-    return true;
   }
-  for (let i = 0; i < faces.length;) {
-    let j = i;
-    while (j + 1 < faces.length && canSpan(i, j + 1)) j++;
-    const l = faces[i], r = faces[j];
-    buf.quadN(l.a, l.b, r.c, r.d, r.nx, r.ny, r.nz, l.fine);
-    i = j + 1;
+  return true;
+}
+
+/** Triangulate a span without skipping a station retained by its neighbour.
+ * Holding the opposite edge at its last vertex stitches the two polylines
+ * when they have different sampling densities. */
+function stitchRoadSpan(buf: Buf, textured: boolean, faces: EdgeQuad[], first: number, end: number, left: Uint8Array, right: Uint8Array) {
+  const start = faces[first], finish = faces[end - 1];
+  let l = first, r = first, a = start.a, b = start.b;
+  while (l < end || r < end) {
+    let nl = l + 1, nr = r + 1;
+    while (nl < end && !left[nl]) nl++;
+    while (nr < end && !right[nr]) nr++;
+    if (nl === nr) {
+      const c = faces[nr - 1].c, d = faces[nl - 1].d;
+      if (textured) { buf.tri(a, b, d); buf.tri(b, c, d); }
+      else buf.quadN(a, b, c, d, finish.nx, finish.ny, finish.nz, start.fine);
+      a = d; b = c; l = nl; r = nr;
+    } else if (nl < nr) {
+      const d = faces[nl - 1].d;
+      if (textured) buf.tri(a, b, d); else buf.triN(a, b, d, finish);
+      a = d; l = nl;
+    } else {
+      const c = faces[nr - 1].c;
+      if (textured) buf.tri(a, b, c); else buf.triN(a, b, c, finish);
+      b = c; r = nr;
+    }
+  }
+}
+
+function emitRoadRibbons(surf: Buf, conc: Buf, strips: EdgeQuad[][], rows: number, walk: boolean) {
+  const keep = Array.from({ length: Edge.Count }, () => new Uint8Array(rows));
+  const spans: [number, number][][] = strips.map(() => []);
+  for (let ribbon = 0; ribbon < strips.length; ribbon++) {
+    const faces = strips[ribbon], textured = ribbon >= Ribbon.Pavement;
+    const [left, right] = ribbon === Ribbon.Pavement && !walk ? uncurbedPavement : ribbonEdges[ribbon];
+    for (let first = 0; first < faces.length;) {
+      if (!faces[first]) { first++; continue; }
+      let last = first;
+      while (last + 1 < faces.length && canSpanRoad(textured ? surf : conc, faces, first, last + 1, textured)) last++;
+      const end = last + 1;
+      spans[ribbon].push([first, end]);
+      keep[left][first] = keep[left][end] = keep[right][first] = keep[right][end] = 1;
+      first = end;
+    }
+  }
+  for (let ribbon = 0; ribbon < strips.length; ribbon++) {
+    const textured = ribbon >= Ribbon.Pavement;
+    const [left, right] = ribbon === Ribbon.Pavement && !walk ? uncurbedPavement : ribbonEdges[ribbon];
+    for (const [first, end] of spans[ribbon]) {
+      stitchRoadSpan(textured ? surf : conc, textured, strips[ribbon], first, end, keep[left], keep[right]);
+    }
   }
 }
 
@@ -155,22 +228,22 @@ function upTri(b: Buf, a: number, c: number, d: number) {
 }
 
 /** Put the large casters first so each shadow cascade can use the same vertex buffers. */
-function partitionRoadShadowQuads(geometry: THREE.BufferGeometry, buffers: Buf[]) {
+function partitionRoadShadowTriangles(geometry: THREE.BufferGeometry, buffers: Buf[]) {
   const index = geometry.getIndex()!;
-  const fineCount = buffers.reduce((total, b) => total + (b.fineShadowQuads?.length ?? 0) * 6, 0);
+  const fineCount = buffers.reduce((total, b) => total + (b.fineShadowTris?.length ?? 0) * 3, 0);
   if (!fineCount) return;
   const coarseCount = index.count - fineCount;
   const indices = index.array.slice();
   let coarse = 0, fine = coarseCount, base = 0;
   for (const buffer of buffers) {
     let from = base;
-    for (const offset of buffer.fineShadowQuads ?? []) {
+    for (const offset of buffer.fineShadowTris ?? []) {
       const start = base + offset;
       indices.set(index.array.subarray(from, start), coarse);
       coarse += start - from;
-      indices.set(index.array.subarray(start, start + 6), fine);
-      fine += 6;
-      from = start + 6;
+      indices.set(index.array.subarray(start, start + 3), fine);
+      fine += 3;
+      from = start + 3;
     }
     base += buffer.idx.length;
     indices.set(index.array.subarray(from, base), coarse);
@@ -926,7 +999,7 @@ export class RoadRenderer {
     this.surfaceState.attach(this.crosswalkMesh.geometry);
     this.concMesh.geometry.dispose();
     this.concMesh.geometry = conc.length ? concat(conc, true, true) : new THREE.BufferGeometry();
-    if (conc.length) partitionRoadShadowQuads(this.concMesh.geometry, conc);
+    if (conc.length) partitionRoadShadowTriangles(this.concMesh.geometry, conc);
 
     const m = new THREE.Matrix4();
     const n = Math.min(lights.length, 4000);
@@ -1010,10 +1083,7 @@ export class RoadRenderer {
     interface SideIds { face: [number, number]; wedge: [number, number, number]; fascia: [number, number]; }
     interface Row { road: number[]; walkL: number[]; walkR: number[]; L: SideIds; R: SideIds; elevated: boolean; bl: number; br: number; }
     let prev: Row | undefined;
-    const strips: EdgeQuad[][] = Array.from({ length: 9 }, () => []);
-    const join = (a: number[], b: number[]) => {
-      for (let i = 0; i + 1 < a.length; i++) { surf.tri(a[i], a[i + 1], b[i]); surf.tri(a[i + 1], b[i + 1], b[i]); }
-    };
+    const strips: EdgeQuad[][] = Array.from({ length: Ribbon.Count }, () => []);
     const nodeA = this.net.nodes.get(seg.a), nodeB = this.net.nodes.get(seg.b);
     for (let k = 0; k < steps.length; k++) {
       const d = steps[k];
@@ -1069,14 +1139,17 @@ export class RoadRenderer {
         row.br = cv(hw, bottom, [0, -1, 0], CONCRETE);
       }
       if (prev) {
-        join(prev.road, row.road);
-        if (walk) { join(prev.walkL, row.walkL); join(prev.walkR, row.walkR); }
         const queue = (strip: number, a: number, b: number, c: number, endVertex: number, nx: number, ny: number, nz: number, fine = false) => {
-          strips[strip].push({ a, b, c, d: endVertex, begin: steps[k - 1], end: d, nx, ny, nz, fine });
+          strips[strip][k - 1] = { a, b, c, d: endVertex, begin: steps[k - 1], end: d, nx, ny, nz, fine };
         };
+        const pavement = (strip: number, left: number[], right: number[]) => {
+          for (let i = 0; i + 1 < left.length; i++) queue(strip + i, left[i], left[i + 1], right[i + 1], right[i], 0, 1, 0);
+        };
+        pavement(Ribbon.Pavement, prev.road, row.road);
+        if (walk) { pavement(Ribbon.LeftWalk, prev.walkL, row.walkL); pavement(Ribbon.RightRamp, prev.walkR, row.walkR); }
         for (const side of [-1, 1] as const) {
           const P = side < 0 ? prev.L : prev.R, S = side < 0 ? row.L : row.R;
-          const strip = side < 0 ? 0 : 4;
+          const strip = side < 0 ? Ribbon.LeftCurb : Ribbon.RightCurb;
           const out = { x: side * r.x, z: side * r.z };
           if (walk) queue(strip, P.face[0], P.face[1], S.face[1], S.face[0], -out.x, 0, -out.z, !elevated && !prev.elevated);
           if (elevated && prev.elevated) queue(strip + 1, P.fascia[0], P.fascia[1], S.fascia[1], S.fascia[0], out.x, 0, out.z);
@@ -1087,7 +1160,7 @@ export class RoadRenderer {
             queue(strip + 3, P.wedge[1], P.wedge[2], S.wedge[2], S.wedge[1], out.x, 0, out.z, true);
           }
         }
-        if (elevated && prev.elevated) queue(8, prev.bl, prev.br, row.br, row.bl, 0, -1, 0);
+        if (elevated && prev.elevated) queue(Ribbon.Deck, prev.bl, prev.br, row.br, row.bl, 0, -1, 0);
       }
       // where a real junction starts or ends the block, close the walk's raised end (the corner slabs come with the junction)
       if (walk && (k === 0 || k === steps.length - 1)) {
@@ -1105,7 +1178,7 @@ export class RoadRenderer {
       }
       prev = row;
     }
-    for (const strip of strips) if (strip.length) emitRoadStrip(conc, strip);
+    emitRoadRibbons(surf, conc, strips, steps.length, walk);
     // Pillars and lighting. Guardrails and median rails are instanced by StreetDetails.
     const yaw = (d: number) => {
       const F = RoadRenderer.frame(seg, d);

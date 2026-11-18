@@ -122,7 +122,7 @@ const pct = (x) => `${Math.round(x * 100)}%`;
     let spill = null;
     if (thru.length) {
       const b = thru[0];
-      let spills = 0, maxRoad = 0, heldBehind = 0, clearedAt = -1;
+      let spills = 0, maxRoad = 0, heldBehind = 0, heldOthers = 0, clearedAt = -1;
       tr.onDriveThruSpill = () => spills++;
       tr.grandOpening(b);
       for (let f = 0; f < 20 * 900 && clearedAt < 0; f++) {
@@ -133,11 +133,14 @@ const pct = (x) => `${Math.round(x * 100)}%`;
         // someone stopped in the lane behind a car waiting for room in the line
         for (const w of tr.cars.filter((c) => c.thruB === b && !c.thru && (c.thruWait ?? 0) > 0)) {
           const st = w.path[w.pi], q = tr.buckets.get(st.seg * 16 + (st.dir > 0 ? 0 : 8) + w.lane) ?? [], i = q.indexOf(w);
-          if (i > 0 && q[i - 1].v < 0.5 && w.s - w.len - q[i - 1].s < 8 && q[i - 1].thruB !== b) heldBehind++;
+          // (whoever it is: the next customer for the line is stopped in the lane as surely as someone driving past.
+          // Counting only the ones driving past, a run where everyone behind the line was a customer read as no one held:
+          // seed 1 on 18 Nov, seven cars waiting on the road and 0 counted)
+          if (i > 0 && q[i - 1].v < 0.5 && w.s - w.len - q[i - 1].s < 8) { heldBehind++; if (q[i - 1].thruB !== b) heldOthers++; }
         }
         if (f > 20 * 300 && s.onRoad === 0) clearedAt = f / 20;
       }
-      spill = { b: b.label, made, places: tr.thruStats().find((x) => x.b === b).places, maxRoad, heldBehind, spills, clearedAt };
+      spill = { b: b.label, made, places: tr.thruStats().find((x) => x.b === b).places, maxRoad, heldBehind, heldOthers, spills, clearedAt };
     }
     return { occ, pulledIn, backedOut, couldBack, didBack, lotsAt, spill, parked: P.count, cap: P.cap };
   }, { seed: SEED, center });
@@ -163,7 +166,7 @@ const pct = (x) => `${Math.round(x * 100)}%`;
     if (r.spill.made) console.log(`  (the block has no drive-thru: ${r.spill.made.was} on ${r.spill.made.road} is rebuilt as ${r.spill.b} for the grand opening)`);
     console.log(`  grand opening at ${r.spill.b}: ${r.spill.places} places in the lane, up to ${r.spill.maxRoad} cars waiting on the road, ${r.spill.spills} feed posts, clear after ${r.spill.clearedAt} s`);
     check(`a grand opening spills the drive-thru line onto the road (${r.spill.maxRoad} waiting on it)`, r.spill.maxRoad > 0);
-    check(`the spill holds the lane behind it (${r.spill.heldBehind} car-seconds held)`, r.spill.heldBehind > 0);
+    check(`the spill holds the lane behind it (${r.spill.heldBehind} car-seconds held, ${r.spill.heldOthers} of them drivers who were not going there)`, r.spill.heldBehind > 0);
     check(`the feed says so (${r.spill.spills})`, r.spill.spills > 0);
     check(`and the line clears (${r.spill.clearedAt} s)`, r.spill.clearedAt > 0);
   } else check('the block has a drive-thru', false);

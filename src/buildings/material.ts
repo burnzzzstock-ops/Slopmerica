@@ -3,6 +3,8 @@
 // screens, lamps) faded in by setBuildingNight().
 import * as THREE from 'three';
 import { atlasTextures } from '../art';
+import { finishClasses } from '../art/atlas';
+import { FINISH_PARS, FINISH_VERTEX, finishTexture, shadeFinish } from '../art/surfaceDetail';
 import { GLOW } from '../config';
 import { bindLamps, LAMP_PARS, lampAdd } from '../world/nightLights';
 import { atmo } from '../world/seasons';
@@ -49,17 +51,21 @@ export function buildingMaterial(): THREE.MeshStandardMaterial {
       metalness: 0.04,
     });
     material.name = 'slopmerica-buildings';
+    Object.assign(material, { defaultAttributeValues: { color: [1, 1, 1], uv: [0, 0], ambientVisibility: [1] } });
     // two sheets: the main atlas (u 0..1) and the satire sheet (u 2..3).
     // Both are sampled (no branch, so mip derivatives stay valid) and u picks.
     const { satMap, satEmissive } = atlasTextures();
     material.onBeforeCompile = (sh) => {
       sh.uniforms.satMap = { value: satMap };
       sh.uniforms.satEmi = { value: satEmissive };
+      sh.uniforms.tFinishClasses = { value: finishClasses() };
+      sh.uniforms.tFinish = { value: finishTexture() };
       bindLamps(sh);
       Object.assign(sh.uniforms, GLASS, { uGlassTop: atmo.uGlassTop, uGlassHor: atmo.uGlassHor, uGlassSun: atmo.uGlassSun, uFill: atmo.uFill });
       // the pools of light at night (world/nightLights.ts): lot paving and the foot of the walls
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vLampW;\nvarying float vLampH;')
+        .replace('#include <common>', '#include <common>\nattribute float ambientVisibility;\nvarying float vAmbientVisibility;\nvarying vec3 vLampW;\nvarying float vLampH, vFinishWear;')
+        .replace('#include <color_vertex>', '#include <color_vertex>\n' + FINISH_VERTEX)
         .replace('#include <project_vertex>', `#include <project_vertex>
 {
   vec4 lw = vec4(transformed, 1.0);
@@ -72,21 +78,24 @@ export function buildingMaterial(): THREE.MeshStandardMaterial {
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <lights_physical_fragment>', `${lampAdd('vLampW', 'clamp(1.0 - vLampH / 3.5, 0.0, 1.0)')}\n#include <lights_physical_fragment>`)
         .replace('#include <common>', `#include <common>\nvarying vec3 vLampW;\nvarying float vLampH;\n${LAMP_PARS}`)
-        .replace('#include <common>', '#include <common>\nuniform sampler2D satMap;\nuniform sampler2D satEmi;')
+        .replace('#include <common>', `#include <common>\nuniform sampler2D satMap, satEmi, tFinishClasses;\n${FINISH_PARS}`)
         .replace('#include <common>', '#include <common>\nuniform vec4 uGlass;\nuniform float uFillK;\nuniform vec3 uGlassTop, uGlassHor, uGlassSun, uFill;')
         .replace(
           '#include <map_fragment>',
-          `float glassK = 0.0;
+          `float glassK = 0.0, surfaceClass = 0.0;
 #ifdef USE_MAP
   // u picks the sheet and the glass strength: 0..1 main, 2..3 satire, 4..8 main + glass step (art/atlas.ts GLASS_U)
   float uBand = floor(vMapUv.x);
   vec2 tUv = vec2(vMapUv.x - uBand, vMapUv.y);
   float satK = step(1.5, uBand) * step(uBand, 2.5);
+  surfaceClass = floor(texture2D(tFinishClasses, tUv).r * 255.0 + 0.5) * (1.0 - satK);
   glassK = step(3.5, uBand) * (uBand - 3.0) * 0.25;
   vec4 sampledDiffuseColor = mix(texture2D(map, tUv), texture2D(satMap, tUv), satK);
   diffuseColor *= sampledDiffuseColor;
 #endif`,
         )
+        .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + shadeFinish('vLampW', 'vLampH', 'surfaceClass'))
+        .replace('#include <aomap_fragment>', '#include <aomap_fragment>\nreflectedLight.indirectDiffuse *= vAmbientVisibility * finishAO;')
         .replace(
           '#include <emissivemap_fragment>',
           `#ifdef USE_EMISSIVEMAP
@@ -101,7 +110,7 @@ export function buildingMaterial(): THREE.MeshStandardMaterial {
           '#include <opaque_fragment>',
           `vec3 gN = transformDirectionByInverseViewMatrix(normal, viewMatrix);
 #ifndef USE_ENVMAP
-  outgoingLight += diffuseColor.rgb * uFill * (uFillK * RECIPROCAL_PI * (1.0 - gN.y * gN.y));
+  outgoingLight += diffuseColor.rgb * uFill * (uFillK * RECIPROCAL_PI * (1.0 - gN.y * gN.y)) * vAmbientVisibility * finishAO;
 #endif
 if (glassK > 0.0) {
   vec3 gV = normalize(cameraPosition - vLampW);

@@ -6,6 +6,9 @@
 import * as THREE from 'three';
 import { HALF, HM_N, HM_STEP, WATER, WORLD } from '../config';
 import type { Terrain } from './terrain';
+import type { WorldFields } from '../contracts';
+import { riverFlowTexture, WaterPollution, WATER_POLLUTION_RANGE } from './waterFields';
+import { RiverFire } from './riverFire';
 
 /**
  * Planar reflection for the water plane (high quality). A mirrored camera
@@ -29,6 +32,11 @@ export class WaterReflection {
   private size = new THREE.Vector2();
   private up = new THREE.Vector3();
   private vis: boolean[] = [];
+  private lastEye = new THREE.Vector3();
+  private lastOrientation = new THREE.Quaternion();
+  private lastProjection = new THREE.Matrix4();
+  private lastPlaneY = NaN;
+  private lastRefresh = -Infinity;
   private bias = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
   enabled = true;
 
@@ -37,6 +45,8 @@ export class WaterReflection {
     this.rt.texture.generateMipmaps = false;
     if (terrain) this.buildWaterBounds(terrain);
   }
+
+  setScale(scale: number) { this.scale = Math.max(.1, Math.min(1, scale)); this.lastRefresh = -Infinity; }
 
   /**
    * Whether planar reflections can affect a visible water fragment. The shader
@@ -61,13 +71,29 @@ export class WaterReflection {
   }
 
   /** Returns true when the reflection target was refreshed this frame. */
-  render(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, hide: THREE.Object3D[]): boolean {
-    if (!this.shouldRender(camera)) return false;
+  render(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, hide: THREE.Object3D[], seconds?: number): boolean {
+    if (!this.shouldRender(camera)) {
+      this.lastRefresh = -Infinity;
+      return false;
+    }
     renderer.getDrawingBufferSize(this.size);
-    const w = Math.max(64, Math.min(1400, Math.floor(this.size.x * this.scale))), h = Math.max(64, Math.floor((w * this.size.y) / Math.max(1, this.size.x)));
-    if (this.rt.width !== w || this.rt.height !== h) this.rt.setSize(w, h);
+    const limit = this.scale >= 1 ? renderer.capabilities.maxTextureSize : 1400;
+    const w = Math.max(64, Math.min(limit, Math.floor(this.size.x * this.scale)));
+    const h = Math.max(64, Math.min(renderer.capabilities.maxTextureSize, Math.floor((w * this.size.y) / Math.max(1, this.size.x))));
     // Mirror about the current water height, including a hurricane surge.
     const planeY = hide[0]?.position.y ?? WATER;
+    const resized = this.rt.width !== w || this.rt.height !== h;
+    // Ripples, rain and specular highlights are evaluated afresh by the main
+    // water shader. On a stationary camera only moving scenery needs a new
+    // mirror image. Refresh it at 30 Hz; refresh every moving-camera frame.
+    const angularTolerance = Math.tan(THREE.MathUtils.degToRad(camera.fov) * 0.5) * 0.25 / h;
+    const positionTolerance = Math.max(1, Math.abs(camera.position.y - planeY)) * angularTolerance;
+    if (seconds !== undefined && seconds >= this.lastRefresh && seconds - this.lastRefresh < 1 / 30 - 1e-6 &&
+        !resized && planeY === this.lastPlaneY &&
+        this.lastEye.distanceToSquared(camera.position) <= positionTolerance ** 2 &&
+        1 - Math.abs(this.lastOrientation.dot(camera.quaternion)) <= angularTolerance ** 2 / 8 &&
+        this.lastProjection.equals(camera.projectionMatrix)) return false;
+    if (resized) this.rt.setSize(w, h);
     const c = this.cam;
     c.copy(camera, false);
     camera.getWorldDirection(this.t);
@@ -103,13 +129,22 @@ export class WaterReflection {
     }
     const prevTarget = renderer.getRenderTarget();
     const prevShadow = renderer.shadowMap.autoUpdate;
-    renderer.shadowMap.autoUpdate = false;
-    renderer.setRenderTarget(this.rt);
-    renderer.clear();
-    renderer.render(scene, c);
-    renderer.setRenderTarget(prevTarget);
-    renderer.shadowMap.autoUpdate = prevShadow;
-    for (let i = 0; i < hide.length; i++) hide[i].visible = vis[i];
+    this.lastRefresh = -Infinity;
+    try {
+      renderer.shadowMap.autoUpdate = false;
+      renderer.setRenderTarget(this.rt);
+      renderer.clear();
+      renderer.render(scene, c);
+    } finally {
+      renderer.setRenderTarget(prevTarget);
+      renderer.shadowMap.autoUpdate = prevShadow;
+      for (let i = 0; i < hide.length; i++) hide[i].visible = vis[i];
+    }
+    this.lastEye.copy(camera.position);
+    this.lastOrientation.copy(camera.quaternion);
+    this.lastProjection.copy(camera.projectionMatrix);
+    this.lastPlaneY = planeY;
+    this.lastRefresh = seconds ?? -Infinity;
     return true;
   }
 
@@ -212,7 +247,34 @@ function inlandMask(terrain: Terrain, hasSea: boolean): THREE.DataTexture {
   return tex;
 }
 
-export function createWater(terrain: Terrain, colors: { shallow: number; deep: number; murk: number }, reflect = false, mapId = 'appalachia') {
+function waterGeometry(segments: number) {
+  // A tessellated county surface carries the sub-metre river relief. The
+  // uninhabited ocean beyond it uses coarse strips instead of a giant grid.
+  // Shared boundary subdivisions keep raised river inlets watertight.
+  const geo = new THREE.PlaneGeometry(WORLD, WORLD, segments, segments);
+  geo.rotateX(-Math.PI / 2);
+  const positions = Array.from(geo.attributes.position.array);
+  const indices = Array.from(geo.index!.array);
+  for (const [x0, z0, x1, z1] of [
+    [-HALF, -HALF, HALF, -HALF], [HALF, -HALF, HALF, HALF],
+    [HALF, HALF, -HALF, HALF], [-HALF, HALF, -HALF, -HALF],
+  ]) for (let i = 0; i < segments; i++) {
+    const ax = x0 + (x1 - x0) * i / segments, az = z0 + (z1 - z0) * i / segments;
+    const bx = x0 + (x1 - x0) * (i + 1) / segments, bz = z0 + (z1 - z0) * (i + 1) / segments;
+    const base = positions.length / 3;
+    positions.push(ax, 0, az, ax * 8, 0, az * 8, bx * 8, 0, bz * 8, bx, 0, bz);
+    indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
+  }
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setIndex(indices);
+  // This shader builds normals from waves; unused grid UV/normal arrays need
+  // not be padded for the horizon vertices.
+  geo.deleteAttribute('normal');
+  geo.deleteAttribute('uv');
+  return geo;
+}
+
+export function createWater(terrain: Terrain, colors: { shallow: number; deep: number; murk: number }, reflect: boolean | number = false, mapId = 'appalachia') {
   const uniforms = THREE.UniformsUtils.merge([
     THREE.UniformsLib.fog,
     {
@@ -221,7 +283,16 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
       uShallow: { value: new THREE.Color(colors.shallow) },
       uDeep: { value: new THREE.Color(colors.deep) },
       uMurk: { value: new THREE.Color(colors.murk) },
-      uPollution: { value: 0 },
+      uPollution: { value: 0 }, // explicit diagnostic override; normal Game uses the spatial field
+      uPollutionField: { value: null as THREE.Texture | null },
+      uFlow: { value: null as THREE.Texture | null },
+      uSceneColor: { value: null as THREE.Texture | null },
+      uSceneDepth: { value: null as THREE.Texture | null },
+      uRefractionOn: { value: 0 },
+      // Tannic bayous keep their body color even over Florida's bright, shallow bed.
+      uInAbsorption: { value: new THREE.Vector3().fromArray(mapId === 'florida' ? [1.6, .95, 1.3] : [.70, .38, .50]) },
+      uViewport: { value: new THREE.Vector2(1, 1) },
+      uCameraRange: { value: new THREE.Vector2(.1, 12000) },
       uSunDir: { value: new THREE.Vector3(0.3, 0.8, 0.2) },
       uSunColor: { value: new THREE.Color(1, 0.95, 0.85) },
       uSky: { value: new THREE.Color(0x9fc4e8) },
@@ -244,7 +315,10 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
       uFlash: { value: 0 },
     },
   ]);
-  const reflection = reflect ? new WaterReflection(0.5, terrain) : undefined;
+  let reflection = reflect ? new WaterReflection(typeof reflect === 'number' ? reflect : .5, terrain) : undefined;
+  const pollution = new WaterPollution();
+  uniforms.uPollutionField.value = pollution.texture;
+  uniforms.uFlow.value = riverFlowTexture(terrain);
   uniforms.uInland.value = inlandMask(terrain, mapId !== 'appalachia');
   if (reflection) {
     uniforms.uRefl.value = reflection.rt.texture;
@@ -262,10 +336,18 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
       #include <common>
       #include <fog_pars_vertex>
       varying vec3 vW;
+      varying float vViewDepth;
+      uniform sampler2D uFlow, uHeight;
       void main() {
         vec4 w = modelMatrix * vec4(position, 1.0);
+        vec2 uv = (w.xz + ${HALF.toFixed(1)}) / ${WORLD.toFixed(1)};
+        float inside = step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
+        vec2 huv = uv * ${((HM_N - 1) / HM_N).toFixed(8)} + ${(0.5 / HM_N).toFixed(8)};
+        float bed = texture2D(uHeight, clamp(huv, 0.0, 1.0)).r;
+        w.y += texture2D(uFlow, clamp(uv, 0.0, 1.0)).b * smoothstep(.4, 3.0, w.y - bed) * inside;
         vW = w.xyz;
         vec4 mvPosition = viewMatrix * w;
+        vViewDepth = -mvPosition.z;
         gl_Position = projectionMatrix * mvPosition;
         #include <fog_vertex>
       }
@@ -275,11 +357,19 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
       #include <fog_pars_fragment>
       uniform float uTime, uPollution, uNight, uRain, uWindAmp, uReflOn;
       uniform float uIce, uLevel, uLight, uMoonLight, uFlash;
-      uniform sampler2D uHeight, uRefl, uInland;
+      uniform sampler2D uHeight, uRefl, uInland, uFlow, uPollutionField;
+      uniform sampler2D uSceneColor, uSceneDepth;
+      uniform float uRefractionOn;
+      uniform vec3 uInAbsorption;
+      uniform vec2 uViewport, uCameraRange;
       uniform vec3 uInShallow, uInDeep;
       uniform mat4 uReflMat;
       uniform vec3 uShallow, uDeep, uMurk, uSunDir, uSunColor, uSky, uSkyTop, uMoonDir;
       varying vec3 vW;
+      varying float vViewDepth;
+      float sceneDistance(float d) {
+        return uCameraRange.x * uCameraRange.y / (uCameraRange.y - d * (uCameraRange.y - uCameraRange.x));
+      }
       float h1(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
       float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
         return mix(mix(h1(i),h1(i+vec2(1,0)),f.x), mix(h1(i+vec2(0,1)),h1(i+vec2(1,1)),f.x), f.y); }
@@ -309,7 +399,7 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
         vec2 huv = clamp(uv * ${((HM_N - 1) / HM_N).toFixed(8)} + ${(0.5 / HM_N).toFixed(8)}, 0.0, 1.0);
         float ground = texture2D(uHeight, huv).r;
         float outsideDepth = 30.0;
-        float depth = mix(outsideDepth, ${WATER.toFixed(1)} + uLevel - ground, inside);
+        float depth = mix(outsideDepth, vW.y - ground, inside);
         if (depth < -0.02) discard;
         float camD = length(cameraPosition - vW);
         // widen the sampling footprint and calm the normals with distance so
@@ -317,7 +407,9 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
         float e = 0.8 + camD * 0.004;
         float inl0 = inside * texture2D(uInland, clamp(uv, 0.0, 1.0)).r;
         float amp = 2.2 * uWindAmp * (1.0 - 0.85 * smoothstep(250.0, 2600.0, camD)) * (1.0 - 0.55 * inl0);
-        float c0 = wave(vW.xz), cx = wave(vW.xz + vec2(e,0.0)), cz = wave(vW.xz + vec2(0.0,e));
+        vec4 flow = texture2D(uFlow, clamp(uv, 0.0, 1.0)) * inside;
+        vec2 flowing = vW.xz - flow.rg * uTime * (.45 + uWindAmp * .15) * flow.a;
+        float c0 = wave(flowing), cx = wave(flowing + vec2(e,0.0)), cz = wave(flowing + vec2(0.0,e));
         vec3 n = normalize(vec3((c0-cx)*amp*0.8/e, 1.0, (c0-cz)*amp*0.8/e));
         if (uRain > 0.01 && camD < 400.0) {
           float k = uRain * (1.0 - smoothstep(120.0, 400.0, camD));
@@ -330,7 +422,13 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
         // open sea vs rivers / lakes / bayous (tea-dark, mirror-calm)
         float inland = inside * texture2D(uInland, clamp(uv, 0.0, 1.0)).r;
         vec3 base = mix(mix(uShallow, uDeep, dT), mix(uInShallow, uInDeep, smoothstep(0.0, 4.0, depth)), inland);
-        base = mix(base, uMurk, uPollution);
+        // Severity bands are presentation styling, not chemical classifications.
+        float pollution = max(uPollution, texture2D(uPollutionField, clamp(uv, 0.0, 1.0)).r * ${WATER_POLLUTION_RANGE.toFixed(1)} * inside);
+        float dirty = smoothstep(.08, .7, pollution);
+        vec3 sediment = mix(uMurk, vec3(.24, .125, .045), .5);
+        vec3 polluted = mix(sediment, vec3(.11, .22, .035), smoothstep(.65, 1.3, pollution));
+        polluted = mix(polluted, vec3(.48, .13, .018), smoothstep(1.5, 2.5, pollution));
+        base = mix(base, polluted, dirty * .88);
         // sky reflection: horizon haze to zenith blue along the reflected ray
         vec3 rd = reflect(-viewDir, n);
         vec3 skyR = mix(uSky, uSkyTop, smoothstep(0.02, 0.6, rd.y)) * mix(1.0, 0.28, uNight);
@@ -355,6 +453,24 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
           refl = mix(skyR, tex, inView);
           rk = 0.82;
         }
+        // Beer-Lambert absorption uses the actual opaque scene depth when a
+        // refraction copy is available; the terrain depth remains the cheap fallback.
+        float path = max(0.0, depth) / max(.25, abs(viewDir.y));
+        vec3 absorption = mix(vec3(.42, .19, .10), uInAbsorption, inland) + pollution * vec3(.18, .14, .2);
+        vec3 transmission = exp(-absorption * path);
+        if (uRefractionOn > .5) {
+          vec2 suv = gl_FragCoord.xy / uViewport;
+          vec2 refracted = clamp(suv + n.xz * .012 * (1.0 - exp(-depth * .3)), vec2(.001), vec2(.999));
+          float sceneD = sceneDistance(textureLod(uSceneDepth, refracted, 0.0).r);
+          // A distorted sample that crosses foreground land must not drag it under water.
+          if (sceneD < vViewDepth + .05) {
+            refracted = suv;
+            sceneD = sceneDistance(textureLod(uSceneDepth, suv, 0.0).r);
+          }
+          path = min(path, max(0.0, sceneD - vViewDepth));
+          transmission = exp(-absorption * path);
+          base = textureLod(uSceneColor, refracted, 0.0).rgb * transmission + base * (1.0 - transmission);
+        }
         vec3 col = mix(base, refl, clamp(fres * 1.1, 0.0, rk));
         vec3 h = normalize(uSunDir + viewDir);
         float spec = pow(max(dot(n, h), 0.0), mix(420.0, 80.0, smoothstep(300.0, 3000.0, camD))) * (1.0 - uNight);
@@ -364,14 +480,19 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
         col += vec3(0.72, 0.8, 1.0) * pow(max(dot(n, hm), 0.0), 140.0) * uMoonLight * 5.0 * step(0.0, uMoonDir.y) * uNight;
         // surf: foam lines rolling in over the shallows (bigger on open coast)
         float shore = (1.0 - smoothstep(0.0, 2.2, depth)) * (1.0 - inland * 0.85);
-        float roll = sin(depth * 5.5 - uTime * 1.6 + vn(vW.xz * 0.05) * 6.0);
+        // Dividing depth by its screen gradient keeps a contour ribbon readable
+        // on both steep banks and shallow beaches, without a white polygon rim.
+        float contour = max(fwidth(depth), .018);
+        float roll = sin(depth * 5.5 - uTime * 1.6 + vn(flowing * 0.05) * 6.0);
         float surf = smoothstep(0.55, 0.95, roll) * shore * smoothstep(0.02, 0.25, depth) * (0.4 + 0.6 * vn(vW.xz * 0.2 + uTime * 0.2));
         // the lap line at the edge: broken up, and mostly a coastal thing (rivers and ponds
         // get a dark wet margin instead of a white rim; playtest 5: "angular bright shorelines")
         float edge = (1.0 - smoothstep(0.0, 0.45, depth)) * smoothstep(0.3, 0.75, vn(vW.xz*0.5 + uTime*0.3)) * smoothstep(0.25, 0.6, vn(vW.xz * 0.06)) * (1.0 - inland * 0.8);
         col *= 1.0 - 0.3 * inland * (1.0 - smoothstep(0.0, 0.8, depth));
-        float foam = max(edge, surf * uWindAmp);
-        col = mix(col, vec3(0.86) * mix(1.0, 0.16, uNight), foam * 0.6 * (1.0 - uPollution*0.5));
+        float riverLap = (1.0 - smoothstep(.06 + contour, .22 + contour * 2.0, depth)) * smoothstep(.015, .08, depth);
+        riverLap *= smoothstep(.55, .85, vn(flowing * .22)) * inland * .32;
+        float foam = max(max(edge, riverLap), surf * uWindAmp);
+        col = mix(col, vec3(0.86) * mix(1.0, 0.16, uNight), foam * .6 * (1.0 - min(1.0, pollution) * .5));
         // winter ice creeping in from the banks
         float ice = 0.0;
         if (uIce > 0.001) {
@@ -384,6 +505,10 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
         col += vec3(0.55, 0.6, 0.85) * uFlash * (0.25 + fres);
         // (river and pond water is thin at the bank: the bottom shows through it, not an opaque green lip)
         float alpha = mix(mix(0.5, 0.95, smoothstep(0.0, 3.5, depth)), mix(0.34, 0.97, smoothstep(0.0, 1.9, depth)), inland);
+        // Without a color copy, alpha transmission still gives the riverbed a
+        // depth- and pollution-dependent absorption rather than a constant lip.
+        alpha = mix(alpha, 1.0 - dot(transmission, vec3(.2126, .7152, .0722)) * .65, .65);
+        if (uRefractionOn > .5) alpha = 1.0;
         alpha = max(alpha, foam*0.8);
         alpha = mix(alpha, 0.97, ice);
         // melt into the bank: the visible edge follows the smooth depth contour, not the
@@ -400,11 +525,33 @@ export function createWater(terrain: Terrain, colors: { shallow: number; deep: n
       }
     `,
   });
-  const geo = new THREE.PlaneGeometry(WORLD * 8, WORLD * 8, 1, 1);
-  geo.rotateX(-Math.PI / 2);
+  const geo = waterGeometry(reflect ? 256 : 128);
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.y = WATER;
   mesh.renderOrder = 2;
   mesh.frustumCulled = false;
-  return { mesh, mat, reflection };
+  const fire = new RiverFire(terrain, uniforms.uTime, uniforms.uNight, uniforms.uLevel);
+  mesh.add(fire.mesh);
+  return { mesh, mat, pollution, fire,
+    get reflection() { return reflection; },
+    setQuality(name: 'low' | 'medium' | 'high' | 'ultra') {
+      const scale = name === 'low' ? 0 : name === 'medium' ? .25 : name === 'high' ? .5 : 1;
+      if (!scale) { reflection?.rt.dispose(); reflection = undefined; }
+      else if (!reflection) reflection = new WaterReflection(scale, terrain);
+      else reflection.setScale(scale);
+      uniforms.uRefl.value = reflection?.rt.texture ?? null;
+      uniforms.uReflMat.value = reflection?.texMat ?? uniforms.uReflMat.value;
+      uniforms.uReflOn.value = reflection ? 1 : 0;
+      const segments = scale ? 256 : 128;
+      if ((mesh.geometry as THREE.PlaneGeometry).parameters.widthSegments !== segments) {
+        mesh.geometry.dispose(); mesh.geometry = waterGeometry(segments);
+      }
+    },
+    updateFields(fields: WorldFields) { if (pollution.update(fields)) fire.update(fields); },
+    dispose() {
+      mesh.geometry.dispose(); mat.dispose(); reflection?.rt.dispose(); pollution.dispose(); fire.dispose();
+      (uniforms.uFlow.value as THREE.Texture).dispose();
+      (uniforms.uInland.value as THREE.Texture).dispose();
+    },
+  };
 }

@@ -4,10 +4,12 @@
 // (embers, 08:45), and that the town stays readable (mean brightness).
 // Exits nonzero on failure. `--shots` saves the frames to /tmp.
 import { launch } from './lib/browser.mjs';
+import { seededInit, seededRandom, testSeed } from './refblock.mjs';
 const base = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const shots = process.argv.includes('--shots');
 const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 900, height: 500 } });
+await page.addInitScript(seededInit, { seed: testSeed(), rng: seededRandom.toString() });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));
 await page.addInitScript(() => { localStorage.setItem('slopmerica.quality', 'high'); localStorage.setItem('slopmerica.onboarded', '1'); });
@@ -24,10 +26,17 @@ await page.evaluate(() => {
   d.zone(S.x - 70, S.z + 90, 60, 'resLow'); d.zone(S.x + 70, S.z + 90, 60, 'comLow');
   g.sim.demand.res = 80; g.sim.demand.com = 80;
   d.run(30);
+  g.sim.speed = 0;
   window.__S = S;
 });
 const stats = async (setup) => {
   await page.evaluate(setup);
+  await page.evaluate(() => {
+    // Hour jumps need the current sky bake even inside the live PMREM throttle.
+    const g = window.__game;
+    g.env.envT = -Infinity;
+    g.frame(0);
+  });
   const png = (await page.screenshot()).toString('base64');
   return page.evaluate(async (png) => {
     const im = await new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.src = 'data:image/png;base64,' + png; });

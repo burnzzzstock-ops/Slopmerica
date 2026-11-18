@@ -1,0 +1,19 @@
+{
+  "sourceCommit": "9fd06ea77233f63ef84938927949060104123cb5",
+  "sourceFixture": "refblock-town.json",
+  "seed": 1776,
+  "population": 1056,
+  "day": 216.8799999999961,
+  "sha256": "f1250766125c54e6fe6319d4aac196da2f17ddbddc1762a953fb5fe521944b69",
+  "generation": "Loaded the reference save, restored its original day, set the same growthMul=3 accelerator used by the reference-fixture generator, and used public debug road/zone plus service placement APIs. Advanced through debug.run(1) until real simulation population reached 1,000. Saved with debug.save and the normal save slot.",
+  "roadsRelativeToCentre": [
+    [-240,380,240,380],
+    [-240,480,240,480],
+    [190,230,190,520]
+  ],
+  "zoningRelativeToCentre": { "x":0,"z":410,"radius":280,"zone":"resHigh" },
+  "placedServices": ["coalPlant","wellTower","wellTower","treatmentPlant","landfill","clinic","school","fireStation","sheriff","park"],
+  "servicePlacement": "First legal findSpot on sixteen angles at radii 350, 450, 550, 650, 750 from the reference centre. Actual positions are preserved in the save.",
+  "rejectedRoadsRelativeToCentre": [[0,300,0,520],[-190,230,-190,520]],
+  "rejectedRoadReason": "The normal road planner rejected the steep grade."
+}

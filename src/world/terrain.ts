@@ -10,6 +10,7 @@ import { bindAtmos, CLOUD_GLSL, cloudShadowChunk } from './atmos';
 import { hash2 } from '../core/rng';
 import type { MapData } from './maps';
 import { createGroundTextures } from './groundTextures';
+import { ForestFloor } from './forestFloor';
 
 export const enum Paint {
   None = 0,
@@ -87,6 +88,7 @@ export class Terrain {
   readonly heightTex: THREE.DataTexture;
   readonly material: THREE.MeshStandardMaterial;
   readonly detail: THREE.DataArrayTexture;
+  readonly forestFloor = new ForestFloor();
   /** Increments when grading or ground paint changes near-surface scenery. */
   surfaceVersion = 0;
   private chunks: Chunk[] = [];
@@ -136,6 +138,8 @@ export class Terrain {
     const detail = this.detail;
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.tDetail = { value: detail };
+      sh.uniforms.tForestFloor = { value: this.forestFloor.texture };
+      sh.uniforms.tClearedForest = { value: this.forestFloor.clearedTexture };
       sh.uniforms.tInfo = INFO_OVERLAY.tex;
       sh.uniforms.uInfoOn = INFO_OVERLAY.on;
       sh.uniforms.tLand = LAND_MASK.tex;
@@ -143,8 +147,8 @@ export class Terrain {
       bindAtmos(sh);
       bindLamps(sh);
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute vec4 mats;\nvarying vec4 vMats;\nvarying vec3 vWPos;')
-        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvMats = mats;\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+        .replace('#include <common>', '#include <common>\nattribute vec4 mats;\nattribute vec4 paintDelta;\nvarying vec4 vMats;\nvarying vec4 vPaintDelta;\nvarying vec3 vWPos;')
+        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvMats = mats;\nvPaintDelta = paintDelta;\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <lights_physical_fragment>', `${lampAdd('vWPos')}\n#include <lights_physical_fragment>`)
         .replace('#include <common>', `#include <common>\n${LAMP_PARS}`);
@@ -154,7 +158,11 @@ export class Terrain {
           `#include <common>
 precision highp sampler2DArray;
 uniform sampler2DArray tDetail;
+uniform sampler2D tForestFloor;
+uniform sampler2D tClearedForest;
+float gCanopy;
 varying vec4 vMats;
+varying vec4 vPaintDelta;
 varying vec3 vWPos;
 float th(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 float tn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
@@ -209,6 +217,20 @@ uniform float uLandOn;`,
   // MSAA evaluates edge pixels at the pixel center, extrapolating varyings;
   // keep the weights sane so silhouettes cannot blow up to HDR sparkles
   vec4 mm = max(vMats, vec4(0.0));
+  // A painted soil edge crosses the 4 m vertex grid. Move its interpolation
+  // weight with world-space noise, correcting both albedo and detail weights.
+  // Pure grass and soil retain their exact original colour and material.
+  float painted = clamp(vPaintDelta.a, 0.0, 1.0);
+  if (painted > 0.001 && painted < 0.999) {
+    float footprint = length(fwidth(vWPos.xz));
+    float fine = 1.0 - smoothstep(0.6, 1.6, footprint * 0.65);
+    float noise = (tn(vWPos.xz * 0.18) - 0.5) * 0.68
+                + (tn(vWPos.xz * 0.65 + vec2(19.7, 7.1)) - 0.5) * 0.32 * fine;
+    float blended = clamp(painted + noise * 2.8 * painted * (1.0 - painted), 0.0, 1.0);
+    vec3 colour = max(vec3(0.0), vColor.rgb + vPaintDelta.rgb * (blended / painted - 1.0));
+    diffuseColor.rgb *= colour / max(vColor.rgb, vec3(0.0001));
+    mm.y = max(0.0, mm.y + 2.0 * (blended - painted));
+  }
   vec4 w = mm / max(0.5, dot(mm, vec4(1.0)));
   float dist = length(vWPos - cameraPosition);
   float fadeNear = 1.0 - smoothstep(140.0, 700.0, dist);
@@ -240,6 +262,32 @@ uniform float uLandOn;`,
   diffuseColor.rgb *= 0.88 + macro * 0.22;
   // seasons: grass browns in winter, NorCal hills green up in the rainy season
   diffuseColor.rgb *= mix(vec3(1.0), uGrassTint, w.x);
+  // Live crowns shelter a darker, less saturated needle-and-moss floor.
+  // Understory albedo is 35–45% darker in linear light, before ambient AO.
+  // Changing the terrain beneath trees preserves their rich crown shading.
+  vec2 forestUv = vWPos.xz / ${WORLD.toFixed(1)} + 0.5;
+  // Keep the actual crown footprint. Open ground receives no forest tint.
+  vec2 floorMask = vec2(texture(tForestFloor, forestUv).r, texture(tClearedForest, forestUv).r);
+  float county = 1.0 - smoothstep(${HALF.toFixed(1)} - 24.0, ${HALF.toFixed(1)}, max(abs(vWPos.x), abs(vWPos.z)));
+  // Material weights are grass/dirt/rock/sand. Paved paint contributes rock;
+  // only a predominantly vegetated or earthen surface receives understory.
+  float soil = county * smoothstep(0.45, 0.75, w.x + w.y) * smoothstep(0.02, 0.3, vWPos.y);
+  float crownNoise = tn(vWPos.xz * 0.092);
+  gCanopy = smoothstep(0.35, 0.70, floorMask.r) * soil;
+  float groundLuma = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+  vec3 understory = mix(diffuseColor.rgb, vec3(groundLuma), 0.38);
+  understory *= mix(vec3(0.91, 0.98, 1.02), vec3(1.03, 0.97, 0.83), crownNoise);
+  understory *= groundLuma * mix(0.55, 0.65, crownNoise) / max(0.001, dot(understory, vec3(0.2126, 0.7152, 0.0722)));
+  diffuseColor.rgb = mix(diffuseColor.rgb, understory, gCanopy);
+  float cleared = smoothstep(0.04, 0.65, floorMask.g) * soil * (1.0 - 0.75 * gCanopy);
+  if (cleared > 0.005) {
+    vec3 litter = mix(vec3(0.072, 0.042, 0.020), vec3(0.16, 0.10, 0.048), tn(vWPos.xz * 0.32));
+    // Faded slivers of logging slash in the exposed soil, resolved only
+    // within street view to keep subpixel marks off distant hills.
+    float slash = smoothstep(0.73, 0.88, tn(vec2(vWPos.x + 0.62*vWPos.z, vWPos.z - 0.62*vWPos.x) * vec2(0.8, 4.2)));
+    litter += vec3(0.10, 0.065, 0.024) * slash * fadeFine;
+    diffuseColor.rgb = mix(diffuseColor.rgb, litter, cleared * 0.85);
+  }
   // wildflowers: a Golden Coast superbloom, phlox and daisies in the hollers,
   // tickseed in the Florida grass. Dots up close, a haze of color from afar.
   if (uFlowers > 0.003) {
@@ -292,6 +340,7 @@ uniform float uLandOn;`,
   }
 }`,
         )
+        .replace('#include <aomap_fragment>', '#include <aomap_fragment>\nreflectedLight.indirectDiffuse *= mix(1.0, 0.52, gCanopy * (1.0 - gSnow));')
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.45, uWet * 0.7 * (1.0 - gSnow));\nroughnessFactor = mix(roughnessFactor, 0.06, gPuddle);\nroughnessFactor = mix(roughnessFactor, 0.5, gShoreWet * 0.65);')
         .replace(
           '#include <opaque_fragment>',
@@ -609,7 +658,8 @@ if (uInfoOn > 0.0) {
   }
 
   // ---------------------------------------------------------------- meshes
-  private shade(i: number, j: number, col: THREE.Color, mats: number[], lod = 0) {
+  private shade(i: number, j: number, col: THREE.Color, mats: number[], lod = 0, paintDelta?: number[]) {
+    if (paintDelta) paintDelta.fill(0);
     const id = j * HM_N + i;
     const h = this.heights[id];
     const P = this.pal;
@@ -666,7 +716,17 @@ if (uInfoOn > 0.0) {
       col.lerp(P.rock, rk);
       rock += rk * 2.5;
       const p = this.paint[id];
-      if (p === Paint.Dirt) { col.lerp(tmpA.setHex(0x86705a), 0.7); dirt += 2; }
+      if (p === Paint.Dirt) {
+        tmpA.setHex(0x86705a);
+        if (paintDelta) {
+          paintDelta[0] = (tmpA.r - col.r) * 0.7;
+          paintDelta[1] = (tmpA.g - col.g) * 0.7;
+          paintDelta[2] = (tmpA.b - col.b) * 0.7;
+          paintDelta[3] = 1;
+        }
+        col.lerp(tmpA, 0.7);
+        dirt += 2;
+      }
       else if (p === Paint.Lawn) {
         // a watered lawn: greener than the land around it but from the same palette,
         // mottled, and blended over the lot's edge cells instead of a hard green slab
@@ -681,7 +741,9 @@ if (uInfoOn > 0.0) {
     }
     // per-vertex speckle (+-5% at full detail; on the coarse levels each vertex covers a bigger square, so it eases off
     // with distance instead of turning into a chequerboard of 16 or 32 m tiles)
-    col.multiplyScalar(0.99 + (r - 0.5) * 0.1 * VERTEX_SPECKLE[lod]);
+    const speckle = 0.99 + (r - 0.5) * 0.1 * VERTEX_SPECKLE[lod];
+    col.multiplyScalar(speckle);
+    if (paintDelta) for (let channel = 0; channel < 3; channel++) paintDelta[channel] *= speckle;
     mats[0] = Math.max(0, grass);
     mats[1] = dirt;
     mats[2] = rock;
@@ -696,9 +758,11 @@ if (uInfoOn > 0.0) {
     const nor = new Float32Array(count * 3);
     const colr = new Float32Array(count * 3);
     const mats = new Float32Array(count * 4);
+    const paintDelta = new Float32Array(count * 4);
     const H = this.heights;
     const col = new THREE.Color();
     const m = [0, 0, 0, 0];
+    const paint = [0, 0, 0, 0];
     let minY = Infinity, maxY = -Infinity;
     for (let jj = 0; jj < n; jj++)
       for (let ii = 0; ii < n; ii++) {
@@ -738,11 +802,12 @@ if (uInfoOn > 0.0) {
         nor[k * 3] = nx / l;
         nor[k * 3 + 1] = 1 / l;
         nor[k * 3 + 2] = nz / l;
-        this.shade(i, j, col, m, lod);
+        this.shade(i, j, col, m, lod, paint);
         colr[k * 3] = col.r;
         colr[k * 3 + 1] = col.g;
         colr[k * 3 + 2] = col.b;
         mats.set(m, k * 4);
+        paintDelta.set(paint, k * 4);
       }
     const edges: number[][] = [[], [], [], []];
     for (let t = 0; t < n; t++) {
@@ -763,6 +828,7 @@ if (uInfoOn > 0.0) {
         nor.copyWithin(o * 3, k * 3, k * 3 + 3);
         colr.copyWithin(o * 3, k * 3, k * 3 + 3);
         mats.copyWithin(o * 4, k * 4, k * 4 + 4);
+        paintDelta.copyWithin(o * 4, k * 4, k * 4 + 4);
         row.push(o++);
       }
       skirtIdx.push(row);
@@ -785,6 +851,7 @@ if (uInfoOn > 0.0) {
     geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(colr, 3));
     geo.setAttribute('mats', new THREE.BufferAttribute(mats, 4));
+    geo.setAttribute('paintDelta', new THREE.BufferAttribute(paintDelta, 4));
     geo.setIndex(count > 65535 ? new THREE.Uint32BufferAttribute(index, 1) : new THREE.Uint16BufferAttribute(index, 1));
     ch.minY = minY;
     ch.maxY = maxY;
@@ -868,6 +935,7 @@ if (uInfoOn > 0.0) {
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(colr, 3));
     geo.setAttribute('mats', new THREE.BufferAttribute(mats, 4));
+    geo.setAttribute('paintDelta', new THREE.BufferAttribute(new Float32Array(n * n * 4), 4));
     geo.setIndex(index);
     geo.computeVertexNormals();
     const mesh = new THREE.Mesh(geo, this.material);

@@ -4,6 +4,7 @@ import { APT_NAMES, MEGABLOCK_NAMES, RESI_TOWER_NAMES, MIDRISE_NAMES } from '../
 import { M, S, rgb, WHITE, mulRGB } from './mesh';
 import { GenCtx, lotPad, parkingLot, dumpster, tree, shrub, car, monumentSign, wallSign, acUnit, mats, patch, fence } from './props';
 import { FAC, FLOOR, WALL, ROOF, block, roofJunk, balconies, neonBlade, capFloors } from './blocks';
+import { towerForm, towerShaft, towerPodium, setback, fitPlate, shoulderHeight } from './towerForm';
 
 function aptName(g: GenCtx) {
   const i = g.rng.int(0, APT_NAMES.length - 1);
@@ -117,25 +118,41 @@ function midrise(g: GenCtx) {
 // ------------------------------------------------------------------ L4 tower
 function tower(g: GenCtx) {
   const { mb, rng, W, D } = g;
+  const form = towerForm(rng.state, W, D);
   lotPad(g, mats.concrete());
-  const pod = W >= 16 && D >= 16 ? 2 : 1;
+  const pod = form.kind % 2 ? 3 : 2;
   const P = pod * FLOOR.shop;
   const fh = FLOOR.tower;
-  const floors = capFloors(rng.int(14, 22) + (W >= 24 ? 4 : 0), fh, W, D, P, 7);
+  const floors = capFloors(rng.int(14, 22) + (W >= 24 ? 4 : 0), fh, W, D, (W >= 16 && D >= 16 ? 2 : 1) * FLOOR.shop, 7);
   const H = P + floors * fh;
   const x0 = -W / 2 + 0.8, x1 = W / 2 - 0.8, zf = D / 2 - 1.5, zb = -D / 2 + 0.8;
-  block(g, x0, x1, zb, zf, 0, P, FAC.storefront(rng), { side: WALL.concrete(0xb0aca4), roof: ROOF.gravel() });
+  towerPodium(mb, { x0, x1, z0: zb, z1: zf }, P, FAC.storefront(rng), FAC.aptBrick(undefined, 0xb8a28b));
   // point tower centered on the podium
   const tw = Math.min(W - 3, 22), td = Math.min(D - 3, 18);
   const tx0 = -tw / 2, tx1 = tw / 2, tz1 = zf - (D - td) / 2 + 0.6, tz0 = tz1 - td;
   const glass = rng.chance(0.5);
   const fac = glass ? FAC.towerResi(rng) : FAC.midrise(rng, 0xf4f0ea);
-  block(g, tx0, tx1, tz0, tz1, P, H, fac, { parapet: 1.2, cap: WALL.concrete(0xd8d4cc) });
+  const original = { x0: tx0, x1: tx1, z0: tz0, z1: tz1 };
+  const shaft = towerShaft({ x0, x1, z0: zb, z1: zf }, form);
+  const crown = glass ? setback(shaft, form) : shaft;
+  if (glass) {
+    const shoulder = P + Math.round(floors * shoulderHeight(form)) * fh;
+    block(g, shaft.x0, shaft.x1, shaft.z0, shaft.z1, P, shoulder, fac);
+    block(g, crown.x0, crown.x1, crown.z0, crown.z1, shoulder, H, fac, { parapet: 1.2, cap: WALL.concrete(0xd8d4cc) });
+  } else {
+    block(g, shaft.x0, shaft.x1, shaft.z0, shaft.z1, P, H, fac, { parapet: 1.2, cap: WALL.concrete(0xd8d4cc) });
+    mb.push().translate((shaft.x0 + shaft.x1) / 2, 0, (shaft.z0 + shaft.z1) / 2)
+      .scale((shaft.x1 - shaft.x0) / tw, 1, (shaft.z1 - shaft.z0) / td)
+      .translate(0, 0, -(tz0 + tz1) / 2);
+  }
   if (!glass) balconies(g, tx0 + 0.2, tx1 - 0.2, tz1, P + fh, Math.min(floors - 1, 14), fh * 1, 3.2, { rail: M('plain', 2, 2, 0x9fb8c4, { ao: false }), depth: 1.2, every: 2 });
+  if (!glass) mb.pop();
   // mechanical penthouse + crown
-  mb.boxC(0, (tz0 + tz1) / 2, tw * 0.5, td * 0.5, H, 4, { side: WALL.concrete(0x9a9690), top: ROOF.flat() });
+  fitPlate(mb, original, crown);
+  mb.boxC(0, (tz0 + tz1) / 2, tw * (form.kind === 3 ? 0.72 : 0.5), td * (form.kind === 3 ? 0.32 : 0.5), H, 4, { side: M('grille', 4, 4, 0x9a9690), top: ROOF.flat() });
   if (rng.chance(0.5)) mb.box(tx0, tx1, H + 1.2, H + 2.2, tz0, tz1, { side: M('plain', 2, 2, 0xe8e4dc), top: null });
   roofJunk(g, tx0, tx1, tz0, tz1, H, 0.4, { masts: 2 });
+  mb.pop();
   mb.decal('+z', 0, P - 1.4, zf + 0.25, Math.min(10, W * 0.5), 1.1, S('apt:' + rng.int(0, APT_NAMES.length - 1)), 0.05);
   for (let x = -W / 2 + 3; x < W / 2 - 1; x += 7) tree(g, x, D / 2 - 0.7, 0.55);
   g.label = rng.pick(RESI_TOWER_NAMES);

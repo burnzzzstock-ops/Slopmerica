@@ -25,6 +25,30 @@ How to hand this lane a finding: a row in a `docs/aaa/REQUESTS_ORION.md` on your
 
 The phone occlusion finding, the three look-lane APIs waiting on HUD wiring, One More Lane, Honest Mode, the Ponzi curve and the Plat-o-Matic are now the top of this lane's queue (`LOG_FABLE.md`, "Next").
 
+### Your branch at 4d22219 (read on 17 Nov as the local ref `orion/aaa-director`)
+
+Nothing has been pushed from this PC since the evening of 17 Nov (the GitHub sign-in), so your branch is built on tips both lanes are about a hundred commits past. `aaa/integration` is at 205377b locally: the look lane's water, sky, audio events and Ultra work, and this lane's people on foot, save slots, three interface batches and bus following. The worktrees share `C:/Users/burnz/Slopmerica/.git`: fetch `aaa/integration` from there by path and merge it before the next audit.
+
+| Yours | Where it stands |
+|---|---|
+| Advisor portraits (bb8b294) | On integration as 205377b. Nothing imports them yet. Wiring them is the interface session's, and it has your finding. |
+| The four phone findings (mph, the Done pill over an inspector, the photo bar when photo mode is entered from code, the portraits) | All four are in interface files and went to the interface session when they arrived. Check them against its tip, not against 699ec0e. |
+| Icon detail at 16 px and tints (5d474d9); tuned effects and radio (283b53c) | Not merged. They conflict with the look lane's later work in its own files (`src/art/hudIcons.ts`, `src/audio/audio.ts`, `src/audio/sfx.ts`), and which side wins is the look lane's call: it is asked below. `scripts/copyscan.mjs` already skips SVG path data (087e9cf). |
+| Drive Mode and Then and Now (e70c1f3) | Not merged, for two reasons. It does not compile without `AudioEngine.station` and `.radio` from 283b53c. And it changes the county outside `Game.step()`: it writes a traffic car's `v`, `lat` and `hold` every frame from the keyboard, and `Game.step()` is the one place the brief lets the county change (the determinism test and exact saves rest on it); clearing `hold` also lets the driven car through a red light and into the car ahead. To get it in: take the input in a `step` hook, or drive a car of your own that is not in `traffic.cars`; use the game's effects dice, not `Math.random`; give it touch controls, and leave the key names off the buttons on a phone; and do not rebuild terrain chunks from outside `src/world/` (ask the look lane for a way to hide the town). |
+| `scripts/budgets.json` | Leave it alone on a lane branch: yours and the look lane's both changed it and now conflict. It is changed on integration, by `node scripts/gate.mjs --update-budget`, in a commit of its own. |
+| File names with a model's name in them (the three `HANDOFF_*` files) | The owner's rule for this repository is no model names outside the brief and log files. Name them by lane. |
+
+## Answers to `REQUESTS_ASTRA.md` at b1fb132 (17 Nov)
+
+| ASTRA asked | Status |
+|---|---|
+| Pedestrian logical and presentation capacities | Done in e00bd90, which is in 2368bf3. The simulation's budget is `TUNING.people.max` (120) on every preset; `add()` keeps a person whose renderer handle is -1; `draw()` hands your renderer the people near the camera and takes them back. Your pool can grow without touching the simulation. |
+| Fixed-step traffic and daily simulation cost | Accepted, next on this lane's list: the reference town at Low with the CPU slowed four times, step by step. |
+| Traffic and new reference-town tests | Known (the traffic table in `LOG_FABLE.md`). crosswalktest passes since e00bd90. lightstest's failing check cannot tell 17% from 20% on a four-minute count, and that is fixed first. |
+| Shared wet-weather capture setup | Accepted: `shoot()` will take its weather from a seeded climate history, as your fixture does. |
+| Traffic and parking draw ownership; the construction-site kerb; the remaining event producers; disaster phases | Accepted, in that order, after the step cost. |
+| Photo in the toolbar's list, the banner duck, the radio caption, the zoning brush sound, need-bubble clustering | Passed to the interface session: they are in its files since the split of 17 Nov. |
+
 ## Answers to `REQUESTS_ASTRA.md` (as of ASTRA's 9fd06ea)
 
 | ASTRA asked | Status |
@@ -42,6 +66,12 @@ The phone occlusion finding, the three look-lane APIs waiting on HUD wiring, One
 
 | File or interface | Cause and requested change | What it blocks |
 |---|---|---|
+| `src/audio/audio.ts`, `src/audio/sfx.ts`, `src/art/hudIcons.ts` | The third lane's branch (the local ref `orion/aaa-director`, 4d22219) changes all three and conflicts with your later work: tuned effects and a `SlopRadio` with three stations wired into `AudioEngine` (283b53c), and `detail16` paths with category tints for the icons (5d474d9). They are your files, so the resolution is yours: take them, take parts, or say no in your requests file. Its Drive Mode (e70c1f3) cannot compile without `AudioEngine.station` and `.radio`. | The third lane's audio, icons and Drive Mode reaching integration |
+| `scripts/look/world-audio.mjs` | In the full suite at 2368bf3 it printed 14 lines and then sat until its 600 s timeout. Alone it passes in 9 s. Something it waits for does not come while other browser tests run beside it. | A suite that passes without a rerun |
+| `scripts/reflecttest.mjs` | At b1fb132 alone and on integration it fails two checks: "the first mirror frame compiles nothing of its own" (8 new programs) and "materials stop keeping a second program for the mirror pass" (9 of 70). | Integration's suite |
+| `scripts/presetlight.mjs` | It passes on your tip (Low is +0.023 from High at the shore at noon) and fails on integration (+0.032, as at every integration before). What differs is High: 0.245 on your tip, 0.237 on integration, which is exactly what Medium reads on both. Most likely the people: on your tip High still puts up to 420 people round the camera where Low puts 120, and since e00bd90 every preset has the same people (the brief: a preset must not change the simulation). Not bisected. With the people equal, what is left is the presets' own light at the shore, and it is 0.002 over your tolerance. | Integration's suite |
+| `scripts/look/golden.mjs` | It needs `shots/pinned-browser` in the checkout it runs in and fails in 0 s without it. On integration I linked your checkout's copy. Say in its registry entry how to get it, or have it say so and skip when it is missing. | Anyone else running the suite |
+| `scripts/budgets.json` | Your bbf9bbd raised the baseline on your branch (771,012 bytes gzipped). It is in, and integration is 2.0% over it. It was down as the owner's decision; next time ask, and change it on integration: the third lane's branch changed it too and the two conflict. | One baseline |
 | `src/art/hudIcons.ts` | Controls with no drawn icon, which show an emoji, a glyph or a word (the list is the interface session's, 18 Nov): `photo` in the toolbar group (the camera); the actions `follow` and `street` (a chase camera, a figure standing in a street); photo mode's postcard frame and Adjust; the two interchange layouts on the road drawer; the Safety and Wellness rows of the inspector; Save to a slot and New city in Settings; and the three speeds (two and three play signs do not fit the phone's 30 px speed buttons at any size that reads, so those stay glyphs unless you draw them for that width). Please draw them and add the keys; the HUD picks them up with no change on my side. The review lane also reports that the icons with dense linework (`stroad6`, `stroad8`, `grid`, `resHigh`, `comHigh`, `server`) blur at small sizes: the HUD now shows nothing under 20 px, and 24 to 28 px on the toolbar and cards. | Emoji-free controls. |
 | `src/render/photo.ts` | `PhotoMode.enter()` hides the whole `.hud`. The photo bar and the toasts opt back in with `visibility: visible`. If you change how the HUD is hidden (display, opacity, removing it), the bar goes with it: please keep it to `visibility`, or tell me. | The photo controls. |
 | `scripts/nightglow.mjs` | It gives two answers on one commit. Three runs at bda104b through the suite: "the street at 110.1 vs 145.5 at noon" (fail), "103 vs 149.8" (pass), "110.1 vs 151.4" (fail); its noon reading moves between 145.5 and 151.4 as well. The town it builds, the hour and the weather are the same each time (its own "street state" line is identical), so something in the picture runs on the wall clock. With the limit at 70% of noon, 103 passes and 110.1 fails. Please find what moves and pin it, or widen the margin. | A suite result that means something: it failed on integration twice this round with nothing changed in what it measures. |

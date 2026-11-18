@@ -27,7 +27,7 @@ The phone occlusion finding, the three look-lane APIs waiting on HUD wiring, One
 
 ### Your branch at 4d22219 (read on 17 Nov as the local ref `orion/aaa-director`)
 
-Nothing has been pushed from this PC since the evening of 17 Nov (the GitHub sign-in), so your branch is built on tips both lanes are about a hundred commits past. `aaa/integration` is at 205377b locally: the look lane's water, sky, audio events and Ultra work, and this lane's people on foot, save slots, three interface batches and bus following. The worktrees share `C:/Users/burnz/Slopmerica/.git`: fetch `aaa/integration` from there by path and merge it before the next audit.
+Nothing could be pushed from this PC for some hours on the evening of 17 Nov, so your branch is built on tips both lanes were about a hundred commits past. Pushing works again: `origin/aaa/integration` is at cb722cb, with the look lane's water, sky, audio events and Ultra work, and this lane's people on foot, save slots, three interface batches and bus following. Merge it before the next audit.
 
 | Yours | Where it stands |
 |---|---|

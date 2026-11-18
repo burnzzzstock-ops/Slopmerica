@@ -3,7 +3,9 @@
 // is a sheet over the half of the screen the driving panel goes on) and starts driving; the camera's "Following a car"
 // pill is not shown while driving; the driving panel is inside the screen and its four buttons are 44 px tall, without
 // "(H)" or "(Esc)"; Exit stops driving, and the card does not come back. On a desktop the key hints are there, the card
-// stays beside the map, and Esc leaves Drive Mode without opening the pause menu. Exits nonzero on failure.
+// stays beside the map, and Esc leaves Drive Mode without opening the pause menu. Drive Mode's script is loaded on demand:
+// before the first press it is not among the page's files and window.__drive says it is not active; the first press is not
+// lost, and V after it leaves and enters at once. Exits nonzero on failure.
 //
 //   BASE_URL=http://127.0.0.1:5173 node scripts/drivefit.mjs
 import { launch } from './lib/browser.mjs';
@@ -40,16 +42,24 @@ for (const who of ['phone', 'desktop']) {
     g.select({ kind: 'car', c });
   });
   await frames();
+  const idle = await page.evaluate(() => ({ active: window.__drive.active, carId: window.__drive.carId, thenNow: window.__thenNow.active, hud: !!document.querySelector('#slop-drive-hud') }));
+  check(`${who}: before it is used, window.__drive answers without the script (active ${idle.active}, carId ${idle.carId})`, idle.active === false && idle.carId === null && idle.thenNow === false && !idle.hud, idle);
   await page.waitForTimeout(700);   // (a card that has just opened under a finger does not take a tap for a moment)
   const card = await buttons('.inspector [data-drive-car], .inspector [data-then-now]');
   if (phone) check(`phone: a car's card has Drive and Then and Now at ${card.map((b) => b.h).join(' and ')} px tall, with no key hints ("${card.map((b) => b.says).join('", "')}")`, card.length === 2 && card.every((b) => b.h >= 44 && !/\([A-Z][a-z]*\)/.test(b.says)), card);
   else check(`desktop: the card's buttons keep their key hints ("${card.map((b) => b.says).join('", "')}")`, card.length === 2 && /\(V\)/.test(card[0].says) && /\(N\)/.test(card[1].says), card);
 
+  // The first use brings Drive Mode's script in (src/tools/driveModeImpl.ts, loaded on demand): the press is kept and acted
+  // on when it has arrived.
+  const loaded0 = await page.evaluate(() => performance.getEntriesByType('resource').some((r) => /driveModeImpl/.test(r.name)));
+  const t0 = Date.now();
   await press('.inspector [data-drive-car]');
+  const began = await page.waitForFunction(() => window.__drive.active === true, null, { timeout: 20000 }).then(() => true, () => false);
+  const took = Date.now() - t0;
   await frames(20);
   let s = await state();
   const panel = await buttons('#slop-drive-hud button');
-  check(`${who}: Drive on the card starts Drive Mode`, s.driving && s.following && !!s.panel, s);
+  check(`${who}: the first press of Drive is not lost: the script was not loaded before it (${loaded0 ? 'it was' : 'it was not'}), and driving began ${took} ms after it`, !loaded0 && began && s.driving && s.following && !!s.panel, { loaded0, began, took, ...s });
   if (phone) {
     check('phone: the card is put away, and the "Following a car" pill is not shown while driving', !s.card && !s.pill, s);
     check(`phone: the driving panel is inside the screen (${s.panel?.left} to ${s.panel?.right} px, ${s.panel?.top} to ${s.panel?.bottom}), its buttons ${panel.map((b) => b.h).join(', ')} px tall`, !!s.panel && s.panel.left >= 0 && s.panel.right <= W && s.panel.top >= 0 && s.panel.bottom <= H && panel.length === 4 && panel.every((b) => b.h >= 44 && b.left >= 0 && b.right <= W), { panel: s.panel, buttons: panel });
@@ -66,6 +76,13 @@ for (const who of ['phone', 'desktop']) {
     await frames(20);
     s = await state();
     check('desktop: Esc leaves Drive Mode and does not open the pause menu', !s.driving && !s.panel && !s.pause, s);
+    await page.keyboard.press('v');
+    await frames(4);
+    const on = (await state()).driving;
+    await page.keyboard.press('v');
+    await frames(4);
+    const off = (await state()).driving;
+    check('desktop: with the script in, V enters at once and V again leaves', on === true && off === false, { on, off });
   }
   check(`${who}: no page errors`, errs.length === 0, errs.slice(0, 3));
   await ctx.close();

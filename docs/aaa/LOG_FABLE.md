@@ -40,7 +40,7 @@ Windows 11, 32 cores, RTX 5090, Node 24.22, Chrome 157 (system Chrome; no Playwr
 
 ## State of the work (17 Nov 2026)
 
-`aaa/integration` is pushed at 75892a6 (18 Nov) and then fast-forwarded with this lane's test and harness commits: the look lane's 56c44e1, the interface session's 91a17a5, and this lane's bulldozer undo, land value in turns and traffic fixes; **212 of 214**, under "Test results", the two left being reflecttest (the look lane's) and landmarktest. `claude/aaa-play` is pushed at the commit this file is in. Everything below is committed. The registry has 307 entries on integration (31 gate, 15 smoke, 169 full, 92 measure), the look lane's among them.
+**`main` is this tree since 18 Nov** (the owner: "tie up all the branches and push to main so can test all of the upgrades"): every lane's branch is in it, the review lane's with Drive Mode included, 213 of 215. `aaa/integration` was pushed at 75892a6 (18 Nov) and then fast-forwarded with this lane's test and harness commits: the look lane's 56c44e1, the interface session's 91a17a5, and this lane's bulldozer undo, land value in turns and traffic fixes; **212 of 214**, under "Test results", the two left being reflecttest (the look lane's) and landmarktest. `claude/aaa-play` is pushed at the commit this file is in. Everything below is committed. The registry has 307 entries on integration (31 gate, 15 smoke, 169 full, 92 measure), the look lane's among them.
 
 | Item | State |
 |---|---|
@@ -193,6 +193,14 @@ None of these thresholds was loosened. They are what the traffic does on a town 
 ### Integration at 556917f (the HUD wiring), `--gpu`, seed 1
 
 119 of 128. The nine: hud-icon-art (Photo had no drawn icon; fixed in 5c44154), reflecttest (slowed by my own work running beside the suite; passes alone), nightglow (the coin toss above), photo-reflection and presetlight (the look lane's, failing before), carsolid, crosswalktest, lightstest and landmarktest (the traffic table above).
+
+### Integration at 9966b5c: every lane's branch, the review lane's included, `--gpu`, seed 1. This is what `main` is.
+
+**213 of 215**, in 35 minutes. Gate: all four steps; the build is 2,552 kB, 806 kB gzipped, 4.6% over the budget's baseline (the limit is 5%: Drive Mode and the radio are 23 kB of it, loaded at the start). The two: reflecttest (the look lane's) and landmarktest (17 of 29 seated).
+
+The review lane's branch (`orion/aaa-director`, 4d22219) merged with six conflicts, all against the look lane's later work: integration's side kept for the HUD icons, one hunk of the sound effects, the size baseline and two screenshots; both sides kept in `src/audio/audio.ts` (the look lane's score, and the radio with its station beside it). Checked by hand on a desktop and at 390 px: V takes a car (16.9 m/s), two seconds of W and D take it to 29.2 m/s and 2.5 m across the road, the radio button changes the station, Exit puts the camera and the station back, N opens Then and Now and its button closes it, no page errors.
+
+`main` was fast-forwarded twice on 18 Nov at the owner's word (`DECISIONS_FABLE.md`): to 39acf36 before this merge, and to this tree after its suite.
 
 ### Integration at 75892a6 (the look lane's 56c44e1; this lane to af068df; the interface session's sixth batch, 9 commits to 91a17a5), `--gpu`, seed 1
 

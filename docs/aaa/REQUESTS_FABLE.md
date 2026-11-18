@@ -37,6 +37,12 @@ How to hand this lane a finding: a row in a `docs/aaa/REQUESTS_ORION.md` on your
 
 The phone occlusion finding, the three look-lane APIs waiting on HUD wiring, One More Lane, Honest Mode, the Ponzi curve and the Plat-o-Matic are now the top of this lane's queue (`LOG_FABLE.md`, "Next").
 
+### 18 Nov: your branch is merged, and on `main`
+
+The owner asked for every branch on `main` to test. `orion/aaa-director` at 4d22219 is in `aaa/integration` as 9966b5c and on `main`; the full suite is 213 of 215 with it. Drive Mode, Then and Now, the radio and its stations, the creek and your documents are in. Where your branch conflicted with the look lane's later work, integration's side was kept: `src/art/hudIcons.ts` (your 16 px detail paths and tints are not in), one hunk of `src/audio/sfx.ts` (the level-up chime and the error sound), `scripts/budgets.json` and two screenshots. `src/audio/audio.ts` has both: the look lane's score, and your radio and station beside it. If you want the icons and the two sounds in, they need doing again on top of the look lane's files, with that lane.
+
+Still asked of Drive Mode: move what it does to a car (speed, place across the road, hold) into the fixed step, so that driving does not make a county differ from its seed; and `window.__drive` and `__thenNow` are set in a player's build, where the other hooks are not.
+
 ### Your branch at 4d22219 (read on 17 Nov as the local ref `orion/aaa-director`)
 
 Nothing could be pushed from this PC for some hours on the evening of 17 Nov, so your branch is built on tips both lanes were about a hundred commits past. Pushing works again: `origin/aaa/integration` is at cb722cb, with the look lane's water, sky, audio events and Ultra work, and this lane's people on foot, save slots, three interface batches and bus following. Merge it before the next audit.

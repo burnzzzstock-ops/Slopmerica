@@ -88,6 +88,47 @@ class Buf {
   }
 }
 
+interface EdgeQuad {
+  a: number; b: number; c: number; d: number;
+  begin: number; end: number; nx: number; ny: number; nz: number; fine: boolean;
+}
+
+/** Several consecutive curb faces may span the same plane. Keep the driveway
+ * flares, curves and twisting banks by checking both edges of every removed
+ * cross-section before extending the strip.
+ */
+function emitRoadStrip(buf: Buf, faces: EdgeQuad[]) {
+  const pa = new THREE.Vector3(), pb = new THREE.Vector3(), pc = new THREE.Vector3(), pd = new THREE.Vector3();
+  function canSpan(first: number, last: number) {
+    const l = faces[first], r = faces[last];
+    if (r.end - l.begin > 24 || r.fine !== l.fine || faces[last - 1].d !== r.a || faces[last - 1].c !== r.b) return false;
+    pa.fromArray(buf.pos, l.a * 3);
+    pb.fromArray(buf.pos, l.b * 3).sub(pa);
+    pc.fromArray(buf.pos, r.d * 3).sub(pa);
+    pd.fromArray(buf.pos, r.c * 3).sub(pa);
+    const normal = pb.cross(pc);
+    if (Math.abs(normal.dot(pd)) > 0.012 * normal.length()) return false;
+    for (let i = first; i < last; i++) {
+      const q = faces[i], t = (q.end - l.begin) / (r.end - l.begin);
+      for (let edge = 0; edge < 2; edge++) {
+        const a = (edge ? l.b : l.a) * 3, b = (edge ? r.c : r.d) * 3, m = (edge ? q.c : q.d) * 3;
+        for (let k = 0; k < 3; k++) {
+          if (Math.abs(buf.pos[m + k] - (buf.pos[a + k] + t * (buf.pos[b + k] - buf.pos[a + k]))) > .012 ||
+              Math.abs(buf.nor[m + k] - (buf.nor[a + k] + t * (buf.nor[b + k] - buf.nor[a + k]))) > .015) return false;
+        }
+      }
+    }
+    return true;
+  }
+  for (let i = 0; i < faces.length;) {
+    let j = i;
+    while (j + 1 < faces.length && canSpan(i, j + 1)) j++;
+    const l = faces[i], r = faces[j];
+    buf.quadN(l.a, l.b, r.c, r.d, r.nx, r.ny, r.nz, l.fine);
+    i = j + 1;
+  }
+}
+
 /** The points (and their heights) with any that sit within a centimetre of the one before dropped. */
 /** A street lamp: foot position, and the yaw that swings its arm (local -z) over the road. */
 type Lamp = { x: number; y: number; z: number; yaw: number };
@@ -950,6 +991,7 @@ export class RoadRenderer {
     interface SideIds { face: [number, number]; wedge: [number, number, number]; fascia: [number, number]; }
     interface Row { road: number[]; walkL: number[]; walkR: number[]; L: SideIds; R: SideIds; elevated: boolean; bl: number; br: number; }
     let prev: Row | undefined;
+    const strips: EdgeQuad[][] = Array.from({ length: 9 }, () => []);
     const join = (a: number[], b: number[]) => {
       for (let i = 0; i + 1 < a.length; i++) { surf.tri(a[i], a[i + 1], b[i]); surf.tri(a[i + 1], b[i + 1], b[i]); }
     };
@@ -1010,19 +1052,23 @@ export class RoadRenderer {
       if (prev) {
         join(prev.road, row.road);
         if (walk) { join(prev.walkL, row.walkL); join(prev.walkR, row.walkR); }
+        const queue = (strip: number, a: number, b: number, c: number, endVertex: number, nx: number, ny: number, nz: number, fine = false) => {
+          strips[strip].push({ a, b, c, d: endVertex, begin: steps[k - 1], end: d, nx, ny, nz, fine });
+        };
         for (const side of [-1, 1] as const) {
           const P = side < 0 ? prev.L : prev.R, S = side < 0 ? row.L : row.R;
+          const strip = side < 0 ? 0 : 4;
           const out = { x: side * r.x, z: side * r.z };
-          if (walk) conc.quadN(P.face[0], P.face[1], S.face[1], S.face[0], -out.x, 0, -out.z, !elevated && !prev.elevated);
-          if (elevated && prev.elevated) conc.quadN(P.fascia[0], P.fascia[1], S.fascia[1], S.fascia[0], out.x, 0, out.z);
+          if (walk) queue(strip, P.face[0], P.face[1], S.face[1], S.face[0], -out.x, 0, -out.z, !elevated && !prev.elevated);
+          if (elevated && prev.elevated) queue(strip + 1, P.fascia[0], P.fascia[1], S.fascia[1], S.fascia[0], out.x, 0, out.z);
           if (!elevated && !prev.elevated) {
             const nw = [conc.nor[S.wedge[0] * 3], conc.nor[S.wedge[0] * 3 + 1], conc.nor[S.wedge[0] * 3 + 2]];
             const shallow = [P, S].every(row => conc.pos[row.wedge[0] * 3 + 1] - conc.pos[row.wedge[1] * 3 + 1] < 0.5);
-            conc.quadN(P.wedge[0], P.wedge[1], S.wedge[1], S.wedge[0], nw[0], nw[1], nw[2], shallow);
-            conc.quadN(P.wedge[1], P.wedge[2], S.wedge[2], S.wedge[1], out.x, 0, out.z, true);
+            queue(strip + 2, P.wedge[0], P.wedge[1], S.wedge[1], S.wedge[0], nw[0], nw[1], nw[2], shallow);
+            queue(strip + 3, P.wedge[1], P.wedge[2], S.wedge[2], S.wedge[1], out.x, 0, out.z, true);
           }
         }
-        if (elevated && prev.elevated) conc.quadN(prev.bl, prev.br, row.br, row.bl, 0, -1, 0);
+        if (elevated && prev.elevated) queue(8, prev.bl, prev.br, row.br, row.bl, 0, -1, 0);
       }
       // where a real junction starts or ends the block, close the walk's raised end (the corner slabs come with the junction)
       if (walk && (k === 0 || k === steps.length - 1)) {
@@ -1040,6 +1086,7 @@ export class RoadRenderer {
       }
       prev = row;
     }
+    for (const strip of strips) if (strip.length) emitRoadStrip(conc, strip);
     // Pillars and lighting. Guardrails and median rails are instanced by StreetDetails.
     const yaw = (d: number) => {
       const F = RoadRenderer.frame(seg, d);

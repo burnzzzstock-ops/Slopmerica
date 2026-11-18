@@ -1656,6 +1656,15 @@ export class Hud implements UiSink {
   // ------------------------------------------------------------------ inspector
   select(sel: Selection) {
     if (!sel) { this.inspector.hidden = true; this.layoutCards(); return; }
+    // A phone's inspector is a sheet over the lower half of the screen. A card that opens while a tool is in hand (the worst
+    // area of an emergency, a commune in a road's way, a site picked from a list) puts the tool and its drawer away: the tool's
+    // Done badge stayed up over the card and its toolbar button stayed lit, with the map under the sheet still taking strokes.
+    if (window.innerWidth <= 760 && this.game.tools.active !== 'inspect') {
+      crumb(`a card opened with ${this.game.tools.active} in hand: tool put away`);
+      this.game.tools.finishExt();
+      this.openPanel(null);
+      this.game.tools.set('inspect');
+    }
     if (this.inspector.hidden) this.inspectorOpenedAt = performance.now();
     this.inspector.hidden = false;
     queueMicrotask(() => this.layoutCards());

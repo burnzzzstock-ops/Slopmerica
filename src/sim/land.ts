@@ -63,7 +63,7 @@ function buy(g: Game, t: number): boolean {
   refresh(g);
   g.audio.play('build');
   g.toast(`Bought a new tile of ${g.cityName} for ${money(price)}. Go sprawl on it.`);
-  g.feed.push('zoned', {});
+  g.feed.push('zoned', { at: { x: -HALF + (i + 0.5) * TILE, z: -HALF + (j + 0.5) * TILE } });
   return true;
 }
 
@@ -219,7 +219,10 @@ registerPanel({
       for (let i = 0; i < LAND_N; i++) {
         const t = idx(i, j);
         const cls = L.owned[t] ? 'own' : buyable(i, j) ? (t === L.selected ? 'sale sel' : 'sale') : 'no';
-        cells.push(`<button class="land-cell ${cls}" data-t="${t}" ${cls === 'no' ? 'disabled' : ''}>${t === L.start ? '★' : cls.startsWith('sale') ? '$' : ''}</button>`);
+        // each tile says where it is and what it is: the map is 64 buttons that otherwise show a $, a star or nothing
+        const at = `Row ${j + 1}, column ${i + 1}`;
+        const name = cls === 'own' ? `${at}: yours${t === L.start ? ', where the town started' : ''}` : cls === 'no' ? `${at}: not next to your land` : `${at}: for sale${cls === 'sale sel' ? ', picked' : ''}`;
+        cells.push(`<button class="land-cell ${cls}" data-t="${t}" aria-label="${name}"${cls === 'no' ? '' : cls === 'own' ? '' : ` aria-pressed="${cls === 'sale sel'}"`} ${cls === 'no' ? 'disabled' : ''}>${t === L.start ? '★' : cls.startsWith('sale') ? '$' : ''}</button>`);
       }
     const sel = L.selected >= 0 && buyable(L.selected % LAND_N, Math.floor(L.selected / LAND_N));
     el.innerHTML = `

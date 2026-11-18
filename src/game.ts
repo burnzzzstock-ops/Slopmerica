@@ -32,7 +32,7 @@ import { AudioEngine } from './audio/audio';
 import { WorldSoundSources } from './audio/worldSources';
 import { bindWorldAudio } from './audio/events';
 import type { SoundscapeMix } from './audio/ambience';
-import { COUNTY_ROAD, RoadNetwork, RSeg, Plan } from './roads/network';
+import { COUNTY_ROAD, RoadNetwork, RSeg, Plan, segMiddle } from './roads/network';
 import { RoadRenderer } from './roads/roadMesh';
 import { ROAD_TYPES, RoadTypeId } from './roads/roadTypes';
 import { Zoning, type ZCell } from './zones/zoning';
@@ -560,12 +560,12 @@ export class Game {
     this.sim.events.on('disaster', event => this.audio.disaster(event));
     this.buildings.onComplete = ((orig) => (b: Bld) => {
       orig?.(b);
-      if (b.zone !== 'resLow' && b.zone !== 'resHigh' && fx.float() < 0.35) this.feed.push('buildingOpened', { building: b.label, brand: brandName(b.brand) });
+      if (b.zone !== 'resLow' && b.zone !== 'resHigh' && fx.float() < 0.35) this.feed.push('buildingOpened', { building: b.label, brand: brandName(b.brand), at: { x: b.x, z: b.z } });
       this.traffic.grandOpening(b); // a new drive-thru: the town lines up (traffic pass)
     })(this.buildings.onComplete);
     this.buildings.onLevel = ((orig) => (b: Bld) => {
       orig?.(b); // (a system's own, e.g. the College's first graduates)
-      if (fx.float() < 0.25) this.feed.push('buildingLeveled', { building: b.label, brand: brandName(b.brand), count: b.level });
+      if (fx.float() < 0.25) this.feed.push('buildingLeveled', { building: b.label, brand: brandName(b.brand), count: b.level, at: { x: b.x, z: b.z } });
       if (this.near(b.x, b.z, 400)) this.particles.emit('confetti', b.x, b.y + b.model.height, b.z, { count: 20, spread: 4 });
       this.sim.events.emit('levelUp', { bldId: b.id, level: b.level });
     })(this.buildings.onLevel);
@@ -574,7 +574,7 @@ export class Game {
     this.buildings.onDemolish = (b, reason) => {
       this.sim.events.emit('demolished', { bldId: b.id, x: b.x, z: b.z, w: 2 * b.hw, d: 2 * b.hd, height: b.model.height, cause: demolishCause(reason) });
       this.traffic.forget(b);
-      if (reason === 'road' && fx.float() < 0.6) this.feed.push('buildingDemolished', { building: b.label });
+      if (reason === 'road' && fx.float() < 0.6) this.feed.push('buildingDemolished', { building: b.label, at: { x: b.x, z: b.z } });
       if (this.selection?.kind === 'building' && this.selection.b === b) this.select(null);
       // the people who lived there are gone too (abandoned homes were already counted)
       if ((b.zone === 'resLow' || b.zone === 'resHigh') && b.abandoned === undefined && b.occ > 0)
@@ -593,7 +593,7 @@ export class Game {
     this.sim.events.on('ending', () => this.ui.ending('sprawl'));
     this.traffic.onCrash = (cars, seg, drunk, severity, x, z) => {
       this.sim.events.emit('crash', { x, z, severity, segId: seg?.id ?? -1 });
-      this.feed.push(drunk ? 'drunkCrash' : 'crash', { road: seg?.name });
+      this.feed.push(drunk ? 'drunkCrash' : 'crash', { road: seg?.name, at: { x, z } });
       const c = cars[0];
       if (c && this.near(c.x, c.z, 450)) {
         this.floatText(drunk ? '💥🍺 DUI' : '💥 WRECK', new THREE.Vector3(c.x, c.y + 2, c.z), '#ff8a3a');
@@ -603,8 +603,8 @@ export class Game {
     this.net.onBuilt = (segIds) => this.sim.events.emit('roadBuilt', { segIds });
     this.net.onLaneAdded = (seg, lanes) => this.sim.events.emit('laneAdded', { segId: seg.id, lanes });
     this.net.onTreesCut = (x, z, r, count) => this.sim.events.emit('treesCleared', { x, z, r, count, cause: 'road' });
-    this.traffic.onJam = (seg) => this.feed.push('trafficJam', { road: seg.name });
-    this.traffic.onDriveThruSpill = (b, seg) => this.feed.push('driveThruLine', { brand: brandName(b.brand) || b.label, road: seg?.name });
+    this.traffic.onJam = (seg) => this.feed.push('trafficJam', { road: seg.name, at: segMiddle(seg) });
+    this.traffic.onDriveThruSpill = (b, seg) => this.feed.push('driveThruLine', { brand: brandName(b.brand) || b.label, road: seg?.name, at: { x: b.x, z: b.z } });
     this.traffic.onEmit = (kind, x, y, z, n) => this.particles.emit(kind, x, y, z, { count: n, spread: kind === 'cigarette' ? 0.2 : 1.5 });
     this.post.look && (this.weather.look = this.post.look);
     this.weather.onThunder = (delay, dist) => {
@@ -641,12 +641,12 @@ export class Game {
     if (razed) this.toast(`${razed} building${razed === 1 ? '' : 's'} bulldozed for the road`);
     const t = ROAD_TYPES[segs[0].type];
     const kind: FeedEventKind = t.id === 'highway' ? 'highwayBuilt' : t.centerTurn ? 'stroadBuilt' : plan.bridgeLen > 10 ? 'bridgeBuilt' : 'roadBuilt';
-    if (fx.float() < (kind === 'roadBuilt' ? 0.25 : 0.7)) this.feed.push(kind, { road: segs[0].name, amount: plan.cost });
+    if (fx.float() < (kind === 'roadBuilt' ? 0.25 : 0.7)) this.feed.push(kind, { road: segs[0].name, amount: plan.cost, at: segMiddle(segs[0]) });
     // communes hate roads near them
     for (const c of this.communes.list) {
       if (c.state !== 'active') continue;
       const s = segs[0].samp.pts[0];
-      if (Math.hypot(c.x - s.x, c.z - s.z) < 260 && fx.float() < 0.5) this.feed.push('communeProtest', { commune: c.name, road: segs[0].name });
+      if (Math.hypot(c.x - s.x, c.z - s.z) < 260 && fx.float() < 0.5) this.feed.push('communeProtest', { commune: c.name, road: segs[0].name, at: { x: c.x, z: c.z } });
     }
     return razed;
   }
@@ -766,7 +766,7 @@ export class Game {
   }
 
   onLaneAdded(segs: RSeg[], to: RoadTypeId) {
-    this.feed.push('laneAdded', { road: segs[0]?.name, count: ROAD_TYPES[to].lanesPerDir * (ROAD_TYPES[to].oneWay ? 1 : 2) });
+    this.feed.push('laneAdded', { road: segs[0]?.name, count: ROAD_TYPES[to].lanesPerDir * (ROAD_TYPES[to].oneWay ? 1 : 2), ...(segs[0] ? { at: segMiddle(segs[0]) } : {}) });
   }
 
   // ------------------------------------------------------------------ tool helpers
@@ -847,7 +847,7 @@ export class Game {
     this.trees.recordCuts();
     const b = this.buildings.placeLandmark(id, spot.x, spot.z, spot.yaw);
     this.pushUndo({ kind: 'place', bldId: b.id, refund: cost, label: name, trees: this.trees.takeCuts() });
-    this.feed.push('buildingOpened', { building: b.label, brand: name });
+    this.feed.push('buildingOpened', { building: b.label, brand: name, at: { x: b.x, z: b.z } });
     this.audio.playAt(id === 'slopCannon' ? 'cannon' : 'build', spot.x, spot.z);
     // it can go down before its road, but it does nothing until one links it to the network
     const off = this.linkProblem?.(b);
@@ -863,11 +863,11 @@ export class Game {
     this.sim.spend(cost, 'Commune payoff', 'communes');
     if (this.dice.float() < this.communes.bribeOdds(c)) {
       c.state = 'leaving';
-      this.feed.push('communeBribed', { commune: c.name, amount: cost });
+      this.feed.push('communeBribed', { commune: c.name, amount: cost, at: { x: c.x, z: c.z } });
       this.toast(`${c.name} took the money and left in a cloud of patchouli.`);
     } else {
       c.stubborn = Math.min(1, c.stubborn + 0.12);
-      this.feed.push('communeProtest', { commune: c.name });
+      this.feed.push('communeProtest', { commune: c.name, at: { x: c.x, z: c.z } });
       this.toast(`${c.name} spent your $${cost.toLocaleString()} on kombucha and stayed.`, true);
     }
   }
@@ -881,7 +881,7 @@ export class Game {
     c.state = 'suing';
     c.suitDays = this.sim.day + 20;
     c.suitOdds = this.communes.suitOdds(c);
-    this.feed.push('communeSued', { commune: c.name, amount: cost });
+    this.feed.push('communeSued', { commune: c.name, amount: cost, at: { x: c.x, z: c.z } });
   }
 
   private communeTick() {
@@ -892,7 +892,7 @@ export class Game {
           c.state = 'leaving';
           // the commune lost the county's suit (the feed's lines for it say so; its buy-out
           // lines, posted here before, thanked them for $0)
-          this.feed.push('communeLawsuitLost', { commune: c.name });
+          this.feed.push('communeLawsuitLost', { commune: c.name, at: { x: c.x, z: c.z } });
           this.ui.banner('Lawsuit won', `${c.name} has been evicted. The drum circle moves on.`);
         } else {
           c.state = 'active';
@@ -909,9 +909,9 @@ export class Game {
           segs.sort((a, b) => Math.hypot(a.samp.pts[0].x - c.x, a.samp.pts[0].z - c.z) - Math.hypot(b.samp.pts[0].x - c.x, b.samp.pts[0].z - c.z));
           const s = segs[0];
           s.blocked = 30;
-          this.feed.push('communeProtest', { commune: c.name, road: s.name });
+          this.feed.push('communeProtest', { commune: c.name, road: s.name, at: segMiddle(s) });
         }
-        if (c.forever && fx.float() < 0.3) this.feed.push('communeForever', { commune: c.name });
+        if (c.forever && fx.float() < 0.3) this.feed.push('communeForever', { commune: c.name, at: { x: c.x, z: c.z } });
       }
     }
   }

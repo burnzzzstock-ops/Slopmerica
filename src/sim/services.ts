@@ -995,7 +995,7 @@ function landfillWarnings(g: Game, f: Bld, d: SvcDef, fs: FS, served: number) {
     fs.full = true;
     fs.warned = 100;
     S.graphDirty = true; // it stops covering: its buildings go to the next facility in reach, if any
-    post(g, 'landfillFull', { building: f.label }, 1);
+    post(g, 'landfillFull', { building: f.label, at: { x: f.x, z: f.z } }, 1);
     // the rest of the garbage system may already handle the whole town (playtest: a full site read as an
     // emergency while another one took all the trash)
     const others = facilities(g).filter((o) => o.id !== f.id && o.def.collect && !fsOf(o).full).reduce((a, o) => a + (o.def.collect ?? 0), 0);
@@ -1078,7 +1078,7 @@ function fires(g: Game, zoned: ZB[]) {
       if (fire < 0.3) for (const n of g.buildings.near(b.x, b.z, 22)) if (n !== b && isZoned(n) && S.rng.float() < 0.18) igniteBuilding(g, n);
       if (bs.burning <= 0) {
         S.counts.burned++;
-        post(g, 'buildingBurned', { building: b.label }, 0.8);
+        post(g, 'buildingBurned', { building: b.label, at: { x: b.x, z: b.z } }, 0.8);
         g.terrain.paintCircle(b.x, b.z, Math.min(b.hw, b.hd) + 2, Paint.Scorched);
         g.particles.emit('smoke', b.x, b.y + 4, b.z, { count: 40, spread: b.hw });
         g.buildings.demolish(b, 'fire');
@@ -1100,7 +1100,7 @@ export function igniteBuilding(g: Game, b: Bld) {
   if (bs.burning > 0) return;
   bs.burning = 3;
   S.counts.fires++;
-  post(g, 'buildingFire', { building: b.label }, 0.5);
+  post(g, 'buildingFire', { building: b.label, at: { x: b.x, z: b.z } }, 0.5);
   const hit = reachOf(g, b, S.covT.fire);
   const st = hit && g.buildings.list.get(hit.o);
   if (st) dispatchFrom(g, st, b, 'responding to a fire', b.label);
@@ -1186,7 +1186,7 @@ function consequences(g: Game, zoned: ZB[]) {
       if (bs.bad >= ABANDON_DAYS) {
         // its residents leave with it: book them to what emptied it (setAbandoned zeroes occ)
         if (isRes(b) && b.occ > 0) loseToNeeds(g, b, bs, td);
-        g.buildings.setAbandoned(b, true); bs.ok = 0; newlyAbandoned++; post(g, 'abandoned', { building: b.label }, 0.3);
+        g.buildings.setAbandoned(b, true); bs.ok = 0; newlyAbandoned++; post(g, 'abandoned', { building: b.label, at: { x: b.x, z: b.z } }, 0.3);
       }
     } else {
       c.abandoned++;
@@ -1737,10 +1737,11 @@ function clusterIcons(raw: ProblemItem[], cell: number): ProblemItem[] {
   return merged;
 }
 
-/** What a merged bubble stands for (hovering it says this). */
+/** What a merged bubble stands for (hovering it says this). One left with a single building by the open view's filter still says it. */
 function clusterText(it: ProblemItem): string {
-  const parts = (Object.entries(it.mix ?? {}) as [Problem, number][]).sort((a, b) => b[1] - a[1]).map(([p, n]) => `${n} ${PROBLEM_WORDS[p]}`);
-  return `${it.n} buildings with problems here: ${parts.join(', ')}. Zoom in to see each one.`;
+  const n = it.n ?? 1;
+  const parts = (Object.entries(it.mix ?? { [it.p]: n }) as [Problem, number][]).sort((a, b) => b[1] - a[1]).map(([p, c]) => `${c} ${PROBLEM_WORDS[p]}`);
+  return `${n} building${n === 1 ? '' : 's'} with problems here: ${parts.join(', ')}. Zoom in to see each one.`;
 }
 
 // ---------------------------------------------------------------- info views
@@ -2068,7 +2069,7 @@ export function placeService(g: Game, id: SvcId, x: number, z: number, yaw?: num
   g.audio.play('build');
   g.particles.emit('dust', b.x, b.y + 2, b.z, { count: 40, spread: b.hw });
   g.floatText(`✅ ${d.name}`, new THREE.Vector3(b.x, b.y + d.height, b.z), '#9dff3c');
-  post(g, 'serviceBuilt', { building: d.name }, 0.6);
+  post(g, 'serviceBuilt', { building: d.name, at: { x: b.x, z: b.z } }, 0.6);
   if (linkProblem(g, b)) g.toast(`🚧 ${d.name} is built, but its road doesn't join the rest of your roads (no route to the highway): it only serves the buildings on that road. Connect it to your streets (🛣️ Roads).`, true);
   return b;
 }
@@ -2395,7 +2396,9 @@ registerSystem({
     S.icons = new ProblemIcons(g.scene);
     g.problemAt = (cx, cy) => {
       const hit = S.icons?.pick(g.camera, g.renderer.domElement.getBoundingClientRect(), cx, cy);
-      return hit ? { id: hit.id, text: (hit.n ?? 1) > 1 ? clusterText(hit) : problemText(g, hit.id) } : null;
+      // (a merged bubble has an id below zero; the bubbles' own filter for the open view can leave it standing for one building,
+      // and it is still not a building to look up)
+      return hit ? { id: hit.id, text: hit.id < 0 || (hit.n ?? 1) > 1 ? clusterText(hit) : problemText(g, hit.id) } : null;
     };
     g.emergency = () => S.emergency;
     g.net.events.on('changed', () => { S.graphDirty = true; S.compDirty = true; });

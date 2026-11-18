@@ -640,6 +640,7 @@ export function postFor(kind: FeedEventKind, ctx: FeedContext, rnd: () => number
     note: noteKinds.includes(kind) && clamp(rnd()) < 0.24 ? pick(notes, rnd) : undefined,
     replies: postReplies(kind, rnd),
     ...engagement(persona, kind, rnd),
+    ...(ctx.at && Number.isFinite(ctx.at.x) && Number.isFinite(ctx.at.z) ? { at: { x: ctx.at.x, z: ctx.at.z } } : {}),
   };
 }
 

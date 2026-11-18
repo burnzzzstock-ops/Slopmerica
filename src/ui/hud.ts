@@ -28,6 +28,8 @@ import { isZoned } from '../sim/buildings';
 import type { ViewMode } from '../render/overlays';
 import { ARCHETYPES } from '../agents/people';
 import { saveGame, snapshot } from '../sim/save';
+import { advisorPortraitHTML } from '../art/advisors';
+import { TITLE_OPEN } from './title';
 import { listSlots, slotName, writeSlot } from '../sim/slots';
 import { VEHICLE_SPECS } from '../agents/vehicles';
 import { LANDMARK_EVENTS } from '../agents/parking';
@@ -119,6 +121,11 @@ export class Hud implements UiSink {
   private perfVisible = false;
   private floats: { el: HTMLElement; p: THREE.Vector3; t: number }[] = [];
   private panel: PanelId = null;
+  /** the step card as last written */
+  private nextHtml = '';
+  /** the pause menu while it is up (ui/pauseMenu.ts, loaded when first asked for) */
+  private menu: { close(): void } | null = null;
+  private menuAsked = false;
   private demandPop!: HTMLElement;
   private meterPop: HTMLElement | null = null;
   /** tools unlocked this session and not used yet (their cards say NEW) */
@@ -347,8 +354,8 @@ export class Hud implements UiSink {
     if (seen) return;
     const el = this.mk('div', 'onboard');
     el.innerHTML = `
-      <div class="ob-kicker">A MESSAGE FROM CHAD, ECONOMIC DEVELOPMENT</div>
-      <h3>Welcome, Commissioner.</h3>
+      <div class="ob-head">${advisorPortraitHTML('chad', 64)}<div><div class="ob-kicker">A MESSAGE FROM CHAD, ECONOMIC DEVELOPMENT</div>
+      <h3>Welcome, Commissioner.</h3></div></div>
       <ol>
         <li><b>Roads</b>: draw one off <em>Old County Road</em>. ${IS_TOUCH ? 'Drag your finger to draw. Two fingers move the map.' : 'Click to start, click to end.'} Stroads are the American way (and the dearest to maintain: short gravel and two-lane streets pay for themselves sooner).</li>
         <li><b>Zoning</b>: paint green (homes), blue (shops) and yellow (industry) along it. Watch the R C I O bars.</li>
@@ -997,8 +1004,12 @@ export class Hud implements UiSink {
     // its button is left out when what it would open is already open
     const P = this.panel, act = a.act ?? '';
     this.nextBar.classList.toggle('act-open', compact && (act === 'road' ? P === 'roads' : act.startsWith('zone:') ? P === 'zones' && this.game.tools.zoneType === act.slice(5) : act === 'budget' ? P === 'budget' : false));
-    const html = `<span class="nb-step">${fs ? `<b>Step ${fs.n}/${fs.of}</b>` : '<b>Next</b>'} ${esc(a.text)}</span>${a.act ? `<button class="chip on" data-act="${a.act}">${actLabel(a.act, a.label ?? 'Go')}</button>` : ''}${unlock}<button class="nb-x" data-act="hide" aria-label="Hide until the next step" title="Hide until the next step">✕</button>`;
-    if (this.nextBar.innerHTML !== html) this.nextBar.innerHTML = html;
+    // the first steps are Chad's, as the welcome card was. Not on a phone: beside his face the words take a line more, and
+    // the card is 79 px over the map where it was 63
+    const html = `${fs && window.innerWidth > 760 ? advisorPortraitHTML('chad', 30) : ''}<span class="nb-step">${fs ? `<b>Step ${fs.n}/${fs.of}</b>` : '<b>Next</b>'} ${esc(a.text)}</span>${a.act ? `<button class="chip on" data-act="${a.act}">${actLabel(a.act, a.label ?? 'Go')}</button>` : ''}${unlock}<button class="nb-x" data-act="hide" aria-label="Hide until the next step" title="Hide until the next step">✕</button>`;
+    // (compared with what was last written, not with what the page hands back: the page rewrites a picture's tag, so the
+    // card would be drawn afresh four times a second, picture and all, and lose a press on its button)
+    if (this.nextHtml !== html) { this.nextHtml = html; this.nextBar.innerHTML = html; }
     this.placeNextBar();
   }
 
@@ -1319,6 +1330,36 @@ export class Hud implements UiSink {
     this.refreshPanelLive();
   }
 
+  /**
+   * The pause menu: Resume, Save, Load, Settings, Quit to title. Esc opens it when nothing else is open. The game waits from this
+   * call on (not from when the menu's script has arrived), and goes on at the speed it had when the menu closes.
+   */
+  openMenu() {
+    if (this.menu || this.menuAsked || this.endingUp()) return;
+    const g = this.game, speed = g.sim.speed;
+    this.menuAsked = true;
+    g.sim.speed = 0;
+    this.refreshTop();
+    void import('./pauseMenu').then((m) => {
+      this.menuAsked = false;
+      // (the menu puts the game back to the speed it finds, so hand it the one from before the wait)
+      g.sim.speed = speed;
+      this.menu = m.openPauseMenu(this.root, g, {
+        save: () => saveGame(g),
+        crumb,
+        settings: () => { if (this.panel !== 'help') this.onTool('help'); },
+        quit: () => { location.hash = ''; location.reload(); },
+        load: () => {
+          try { sessionStorage.setItem(TITLE_OPEN, 'slots'); } catch { /* the title opens as usual */ }
+          location.hash = '';
+          location.reload();
+        },
+        closed: () => { this.menu = null; this.refreshTop(); },
+      });
+      this.refreshTop();
+    }).catch(() => { this.menuAsked = false; g.sim.speed = speed; this.refreshTop(); });
+  }
+
   /** Open the playtest bug report sheet. */
   reportBug(prefill?: string) {
     openBugReport(this.root, this.game, { prefill });
@@ -1513,6 +1554,7 @@ export class Hud implements UiSink {
           <div><b>Roads</b> click start, click end. Keeps chaining. Esc / right-click stops.</div>
           <div><b>Speed</b> Space pause · 1 2 3</div>
           <div><b>Tools</b> B bulldoze · U one more lane · Z zoning · Esc cancel</div>
+          <div><b>Menu</b> Esc, with nothing else open</div>
           <div><b>Interchanges</b> Roads → Interchanges · , and . rotate</div>
           <div><b>Photo mode</b> P, or Photo under More · Esc leaves</div>${PLAYTEST ? `
           <div><b>Performance</b> F3 shows FPS, frame time, draw calls and triangles</div>` : ''}`}
@@ -1648,7 +1690,15 @@ export class Hud implements UiSink {
     } else if (e.key === 'Escape' && this.popPop && !this.popPop.hidden) {
       this.closePop();
       (this.top.querySelector('#tb-popstat') as HTMLElement | null)?.focus();
-    } else if (e.key === 'Escape') { this.openPanel(null); this.game.tools.set('inspect'); this.select(null); }
+    } else if (e.key === 'Escape') {
+      // Esc closes what is open: a drawer, the tool in hand, a card. With none of those it lets go of a followed car, and
+      // with nothing at all to put away it opens the pause menu. (The camera lets go of a follow on Esc itself, and hears
+      // the key first: the pill, which is up until the next frame, says that this press was for the follow.)
+      const g = this.game;
+      if (this.panel || g.tools.active !== 'inspect' || !this.inspector.hidden) { this.openPanel(null); g.tools.set('inspect'); this.select(null); }
+      else if (g.rts.following || !this.followPill.hidden) { crumb('stop following (Esc)'); g.rts.follow(null); }
+      else this.openMenu();
+    }
     this.refreshTop();
   }
 

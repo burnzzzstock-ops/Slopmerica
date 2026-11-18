@@ -1196,7 +1196,10 @@ export class Traffic {
       const seg0 = this.net.segs.get(st0.seg)!;
       // (the cars on that road and way, indexed once a step: not a scan of every car per try)
       const near = this.onSegDir().get(st0.seg * 2 + (st0.dir > 0 ? 0 : 1)) ?? [];
-      const busyAt = (s: number) => near.some((c) => !c.junction && c.crashed !== -1 && c.path[c.pi].seg === st0.seg && c.path[c.pi].dir === st0.dir && Math.abs(c.s - s) < 9);
+      // (a place is taken when a vehicle's body, front bumper back to rear, would be within 4 m of this one's: for two cars
+      // that is about the 9 m between bumpers it always was; behind a 16 m semi it is 20, where 9 put a van 4 m inside its trailer)
+      const myLen = VEHICLE_SPECS[kind].length;
+      const busyAt = (s: number) => near.some((c) => !c.junction && c.crashed !== -1 && c.path[c.pi].seg === st0.seg && c.path[c.pi].dir === st0.dir && c.s - c.len - 4 < s && s - myLen - 4 < c.s);
       let ok = false;
       // (its whole body on the road, out of the junctions at both ends and behind the far one's stop line: from a
       // driveway by a junction it joined inside the box, where cars turning through swept over it; AUDIT_ROUND8_SIM.md #8)

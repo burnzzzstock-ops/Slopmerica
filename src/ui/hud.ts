@@ -121,6 +121,8 @@ export class Hud implements UiSink {
   private perfVisible = false;
   private floats: { el: HTMLElement; p: THREE.Vector3; t: number }[] = [];
   private panel: PanelId = null;
+  /** the selected car the view is travelling with, and where it was a frame ago */
+  private carAt: { id: number; x: number; z: number } | null = null;
   /** the step card as last written */
   private nextHtml = '';
   /** the pause menu while it is up (ui/pauseMenu.ts, loaded when first asked for) */
@@ -2137,7 +2139,14 @@ export class Hud implements UiSink {
     // follow selected car
     const sel = this.game.selection;
     const riding = this.game.rts.following;
-    if (!riding && sel?.kind === 'car' && sel.c.crashed !== -1 && this.game.rts.distance < 200) this.game.rts.setView(sel.c.x, sel.c.z, this.game.rts.distance);
+    if (!riding && sel?.kind === 'car' && sel.c.crashed !== -1 && this.game.rts.distance < 200) {
+      // The view is brought to the car once, then slid by as far as the car moves. It was a setView on every frame, and the
+      // camera's setView now also ends a zoom in progress: with a car's card open the wheel and the pinch did next to nothing.
+      const at = this.carAt;
+      if (at && at.id === sel.c.id) this.game.rts.nudge(sel.c.x - at.x, sel.c.z - at.z);
+      else this.game.rts.setView(sel.c.x, sel.c.z, this.game.rts.distance);
+      this.carAt = { id: sel.c.id, x: sel.c.x, z: sel.c.z };
+    } else this.carAt = null;
     // the follow camera: a pill says who it is riding with, and a tap on it lets go (so does moving the camera, or the
     // subject driving off the map). A tool in hand lets go too: nobody draws a road from a moving car.
     if (riding && this.game.tools.active !== 'inspect') this.game.rts.follow(null);

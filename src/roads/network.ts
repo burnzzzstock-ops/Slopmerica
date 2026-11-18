@@ -99,6 +99,12 @@ const unf32 = (s: string) => Array.from(new Float32Array(fromBase64(s).buffer));
 const MAX_PIECE = 110; // long strokes are split into pieces this long
 const BRIDGE_DECK = WATER + 5.5;
 
+/** The middle of a road, along its length: where news about it happened. */
+export function segMiddle(seg: RSeg): { x: number; z: number } {
+  const p = seg.samp.pts[seg.samp.pts.length >> 1];
+  return { x: p.x, z: p.z };
+}
+
 export class RoadNetwork {
   nodes = new Map<number, RNode>();
   segs = new Map<number, RSeg>();

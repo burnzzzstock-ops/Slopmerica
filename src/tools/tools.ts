@@ -584,7 +584,9 @@ export class Tools implements PointerHandlers {
   }
 
   private paint(p: THREE.Vector3) {
-    this.game.zones.paint(p.x, p.z, this.brushRadius(), this.active === 'dezone' ? null : this.zoneType);
+    const n = this.game.zones.paint(p.x, p.z, this.brushRadius(), this.active === 'dezone' ? null : this.zoneType);
+    // the brush is heard while it changes lots, and not while it passes over land it leaves as it was
+    if (n > 0) this.game.audio.zonePaint(p.x, p.z, n);
   }
 
   /** builders' appetite for a zone right now, and whether it's enough to build */

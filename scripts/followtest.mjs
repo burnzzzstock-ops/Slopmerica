@@ -42,6 +42,11 @@ for (const phone of [false, true]) {
     await frames(12);
     const before = await state();
     check(`${who}: a ${kind}'s inspector has a Follow button ("${before.button}")`, /Follow$/.test(before.button ?? '') && before.following === null && before.pill === null, before);
+    if (kind === 'car') {
+      // its speed is in miles an hour, the car's own speed (m/s) times 2.23694, as the card is drawn now
+      const sp = await page.evaluate((id) => { const g = window.__game, c = g.traffic.cars.find((x) => x.id === id); g.ui.renderInspector(); const row = [...document.querySelectorAll('.inspector .in-stats div')].find((d) => d.querySelector('span')?.textContent === 'Speed'); return { says: row?.querySelector('b')?.textContent ?? null, mph: Math.round(c.v * 2.23694), ms: Math.round(c.v * 10) / 10 }; }, id);
+      check(`${who}: the car's card gives its speed in miles an hour ("${sp.says}" at ${sp.ms} m/s)`, sp.says === `${sp.mph} mph` && sp.mph > 0, sp);
+    }
     // (a phone's inspector ignores a tap in the first 350 ms after it opens, so the tap that opened it cannot press a button)
     if (phone) await page.waitForTimeout(450);
     await (phone ? page.tap('#in-follow') : page.click('#in-follow'));

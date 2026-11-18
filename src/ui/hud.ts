@@ -65,7 +65,7 @@ const soonness = (d: number | null) => (d === null ? 0 : d <= 0 ? 4 : d < 7 ? 3 
 /** the day the first-steps card stops asking for a look at the Budget: the second weekly close has gone by (the owner's roadmap of 17 Nov) */
 const FIRST_STEPS_DAYS = 15;
 
-type PanelId = 'roads' | 'zones' | 'landmarks' | 'views' | 'budget' | 'communes' | 'help' | 'more' | `ext:${string}` | null;
+type PanelId = 'roads' | 'zones' | 'landmarks' | 'views' | 'budget' | 'stats' | 'communes' | 'help' | 'more' | `ext:${string}` | null;
 
 /** Phones get these in the toolbar; everything else lives in the More drawer. */
 const PHONE_PRIMARY = ['inspect', 'roads', 'zones', 'ext:services', 'views', 'bulldoze'];
@@ -159,6 +159,10 @@ export class Hud implements UiSink {
   /** the follow camera's pill, who it names, and the subject it was last drawn for */
   private followPill!: HTMLButtonElement;
   private followName = '';
+  /** riding a bus: the car of the leg whose card is open (the card moves to the next leg's car as it sets off), or null */
+  private busCar: number | null = null;
+  /** riding a bus: where on its line the pill last said it was */
+  private busSaid = '';
   private followKey = '';
   /** the weather badge as last written (it is rewritten only when it changes: an SVG swapped every frame cannot be tapped) */
   private wxHtml = '';
@@ -169,6 +173,8 @@ export class Hud implements UiSink {
   /** a finger is down on the map with a drawing tool in hand */
   private touchDraw = false;
   private budgetSeen = false;
+  /** the open Statistics drawer's own redraw (it does nothing until the county has a new day to show) */
+  private statsDraw: (() => void) | null = null;
   private firstStepsDone = (() => { try { return localStorage.getItem('slopmerica.firstSteps') === '1'; } catch { return false; } })();
   private nextStepT = -99;
   private domT = 0;
@@ -279,6 +285,9 @@ export class Hud implements UiSink {
     this.actions.querySelector('#ta-undo')!.addEventListener('click', () => game.undo());
     game.feed = this.feed;
     game.ui = this;
+    // The radio's ad is a jingle with no voice: its words are a caption, up when the jingle starts and for as long as they
+    // take to read. It stays out of a bug report's recent actions, which it would fill in a quarter of an hour.
+    game.audio.onRadioAd = (text) => this.toast(`📻 ${text}`, false, false);
     // playtest: when something throws, offer the report right there
     let lastCrash = -1e9;
     onCapturedError((e) => {
@@ -298,7 +307,7 @@ export class Hud implements UiSink {
       this.syncToolbar();
       // (a tool in hand makes the Next card one line on a phone, the same as an open drawer does)
       this.renderNextBar();
-      if (this.panel && this.panel !== 'budget' && this.panel !== 'help' && this.panel !== 'more' && this.panel !== 'communes') this.renderPanel();
+      if (this.panel && this.panel !== 'budget' && this.panel !== 'stats' && this.panel !== 'help' && this.panel !== 'more' && this.panel !== 'communes') this.renderPanel();
     };
     window.addEventListener('keydown', (e) => this.hotkey(e));
     game.renderer.domElement.addEventListener('pointermove', (e) => {
@@ -499,7 +508,8 @@ export class Hud implements UiSink {
 
   /** update the open panel's live numbers without re-rendering it (keeps focus and scroll) */
   private refreshPanelLive() {
-    if (this.panel === 'budget') {
+    if (this.panel === 'stats') this.statsDraw?.();
+    else if (this.panel === 'budget') {
       const live = this.sub.querySelector('.budget-live') as HTMLElement | null, rules = this.sub.querySelector('.bg-rules') as HTMLElement | null;
       if (live) {
         const open = [...live.querySelectorAll('details')].map((d) => d.open);
@@ -922,6 +932,19 @@ export class Hud implements UiSink {
 
   private isFollowing(t: ViewTarget) { const f = this.game.rts.following; return !!f && f.kind === t.kind && f.id === t.id; }
   /** The inspector's Follow button for a car or a person: the camera rides with them until it is let go. */
+  /** What Follow rides for a car: the bus it is driving a leg for, so that the ride lasts across the line's stops, or the car itself. */
+  private rideOf(c: { id: number }): ViewTarget {
+    const bus = this.game.fields.busOf(c.id);
+    return bus !== null ? { kind: 'bus', id: bus } : { kind: 'car', id: c.id };
+  }
+
+  /** Where a bus is on its line, for the pill: "at stop 2 of 3", "next stop 3 of 3", or on its way home. */
+  private busWhere(id: number): string {
+    const b = this.game.fields.bus(id);
+    if (!b) return '';
+    return b.returning ? 'going back to the depot' : b.atStop !== null ? `at stop ${b.atStop} of ${b.stops}` : b.nextStop !== null ? `next stop ${b.nextStop} of ${b.stops}` : '';
+  }
+
   private followButton(t: ViewTarget) {
     const cam = uiIcon('action', 'follow', '🎥', 20);
     return this.isFollowing(t) ? `<button id="in-follow" class="on">${cam} Stop following</button>` : `<button id="in-follow">${cam} Follow</button>`;
@@ -1183,6 +1206,7 @@ export class Hud implements UiSink {
       ['bulldoze', '💣', 'Bulldoze'],
       ['landmarks', '💥', 'Landmarks'],
       ['views', '🗺️', 'Info Views'],
+      ['photo', '📷', 'Photo'],
       ['budget', '💰', 'Budget'],
       ['communes', '☮️', 'Communes'],
       ['feed', '𝕏', 'Feed'],
@@ -1190,13 +1214,15 @@ export class Hud implements UiSink {
       // testers get the bug button on the toolbar; everyone else reports from Settings
       ...(PLAYTEST ? [['bug', '🐞', 'Report bug'] as [string, string, string]] : []),
     ];
-    // extension panels slot in by `order` (core buttons sit at 10, 20, 30, ...)
-    const withOrder = items.map((it, i) => ({ it, o: (i + 1) * 10 }));
+    // Extension panels slot in by `order` (core buttons sit at 10, 20, 30, ...). Photo joined the list late and takes the half
+    // step after Info Views, so every other button keeps the ten the extension panels' order numbers were written against.
+    let ten = 0;
+    const withOrder = items.map((it) => ({ it, o: it[0] === 'photo' ? ten * 10 + 5 : ++ten * 10 }));
     for (const ep of EXT.panels) withOrder.push({ it: [`ext:${ep.id}`, ep.icon, ep.label], o: ep.order ?? 65 });
-    // Photo sits after Info Views. It is added here and not in the list above because the look lane's icon test
-    // (scripts/look/hud-icons.mjs) reads that list and wants drawn art for every id in it, and Photo has none yet
-    // (asked for in docs/aaa/REQUESTS_FABLE.md). When it has, this line moves up into the list.
-    withOrder.push({ it: ['photo', '📷', 'Photo'], o: (items.findIndex((x) => x[0] === 'views') + 1) * 10 + 5 });
+    // Statistics sits after Budget. It is added here and not in the list above because the look lane's icon test
+    // (scripts/look/hud-icons.mjs) reads that list and wants drawn art for every id in it, and Statistics has none yet.
+    // When it has, it moves up into the list as Photo did.
+    withOrder.push({ it: ['stats', '📈', 'Statistics'], o: (withOrder.find((x) => x.it[0] === 'budget')?.o ?? 80) + 5 });
     withOrder.sort((a, b) => a.o - b.o);
     const all = withOrder.map((x) => x.it);
     const btn = ([id, icon, label]: [string, string, string]) => `<button class="tbtn" data-t="${id}" title="${label}"><span class="ti">${uiIcon('toolbar', id, icon, 24)}</span><span class="tl">${label}</span>${id === 'feed' || id === 'more' ? '<i id="feed-badge" class="badge" hidden></i>' : ''}</button>`;
@@ -1332,6 +1358,16 @@ export class Hud implements UiSink {
       const ep = EXT.panels.find((x) => `ext:${x.id}` === p);
       this.sub.innerHTML = '';
       ep?.render(this.sub, g, () => this.renderPanel());
+      return;
+    }
+    if (p === 'stats') {
+      // The charts are loaded when the drawer is first opened (ui/statsPanel.ts): the main script does not carry them.
+      this.sub.innerHTML = `<div class="sp-title">Statistics <small>The county over time. ${IS_TOUCH ? 'Slide a finger' : 'Move the mouse'} across a chart to read a day.</small></div><div class="stats"><p class="st-empty">Drawing the charts…</p></div>`;
+      const body = this.sub.querySelector('.stats') as HTMLElement;
+      this.statsDraw = null;
+      import('./statsPanel')
+        .then((m) => { if (this.panel === 'stats' && body.isConnected) this.statsDraw = m.drawStats(body, g); })
+        .catch(() => { body.innerHTML = '<p class="st-empty">The charts could not be loaded.</p>'; });
       return;
     }
     if (p === 'more') {
@@ -1624,6 +1660,15 @@ export class Hud implements UiSink {
   // ------------------------------------------------------------------ inspector
   select(sel: Selection) {
     if (!sel) { this.inspector.hidden = true; this.layoutCards(); return; }
+    // A phone's inspector is a sheet over the lower half of the screen. A card that opens while a tool is in hand (the worst
+    // area of an emergency, a commune in a road's way, a site picked from a list) puts the tool and its drawer away: the tool's
+    // Done badge stayed up over the card and its toolbar button stayed lit, with the map under the sheet still taking strokes.
+    if (window.innerWidth <= 760 && this.game.tools.active !== 'inspect') {
+      crumb(`a card opened with ${this.game.tools.active} in hand: tool put away`);
+      this.game.tools.finishExt();
+      this.openPanel(null);
+      this.game.tools.set('inspect');
+    }
     if (this.inspector.hidden) this.inspectorOpenedAt = performance.now();
     this.inspector.hidden = false;
     queueMicrotask(() => this.layoutCards());
@@ -1698,10 +1743,10 @@ export class Hud implements UiSink {
         <div class="in-stats">
           ${line ? `<div><span>Driver</span><b>${esc(a?.name ?? 'Driver')}</b></div>` : `<div><span>Doing</span><b>${esc(c.purpose)}</b></div>`}
           <div><span>${line ? 'Next stop' : 'Headed to'}</span><b>${esc(c.dest)}</b></div>
-          <div><span>Speed</span><b>${Math.round(c.v * 3.6)} km/h</b></div>
+          <div><span>Speed</span><b>${Math.round(c.v * 2.23694)} mph</b></div>
           <div><span>Vibe</span><b>${c.crashed > 0 ? '💥 WRECKED' : c.drunk ? `🍺 BAC ${c.bac.toFixed(2)}` : c.reckless ? '😤 reckless' : '😐 fine'}${c.smoker ? ' 🚬' : ''}</b></div>
         </div>
-        <div class="in-actions">${this.followButton({ kind: 'car', id: c.id })}</div>`;
+        <div class="in-actions">${this.followButton(this.rideOf(c))}</div>`;
     } else if (sel.kind === 'ped') {
       const p = sel.p;
       const a = ARCHETYPES[p.arch];
@@ -1760,13 +1805,16 @@ export class Hud implements UiSink {
     this.inspector.innerHTML = `<button class="in-close" id="in-close" aria-label="Close">×</button>${html}`;
     this.inspector.querySelector('#in-close')?.addEventListener('click', () => g.select(null));
     this.inspector.querySelector('#in-follow')?.addEventListener('click', () => {
-      const target: ViewTarget | null = sel.kind === 'car' ? { kind: 'car', id: sel.c.id } : sel.kind === 'ped' ? { kind: 'person', id: sel.p.id } : null;
+      const target: ViewTarget | null = sel.kind === 'car' ? this.rideOf(sel.c) : sel.kind === 'ped' ? { kind: 'person', id: sel.p.id } : null;
       if (!target) return;
       const on = this.isFollowing(target);
       crumb(on ? 'stop following' : `follow ${target.kind}`);
       if (on) g.rts.follow(null);
       else if (g.rts.follow(target)) {
-        this.followName = sel.kind === 'car' ? `${busLine(sel.c) ?? ARCHETYPES[sel.c.driver % ARCHETYPES.length]?.name ?? 'a driver'} (${VEHICLE_SPECS[sel.c.kind].label})` : sel.kind === 'ped' ? ARCHETYPES[sel.p.arch]?.name ?? 'a citizen' : '';
+        // (a bus in service is named by its line alone: the pill has where it is on the line to say as well)
+        this.followName = target.kind === 'bus' ? g.fields.bus(target.id)?.line ?? 'a bus' : sel.kind === 'car' ? `${busLine(sel.c) ?? ARCHETYPES[sel.c.driver % ARCHETYPES.length]?.name ?? 'a driver'} (${VEHICLE_SPECS[sel.c.kind].label})` : sel.kind === 'ped' ? ARCHETYPES[sel.p.arch]?.name ?? 'a citizen' : '';
+        // (a bus is ridden across its stops, a new car driving each leg: the card open on this leg's car follows it to the next)
+        this.busCar = target.kind === 'bus' && sel.kind === 'car' ? sel.c.id : null;
         // a phone's inspector is a sheet over the lower half of the screen: it goes away so the ride can be seen
         if (IS_TOUCH) { g.select(null); return; }
       }
@@ -1796,7 +1844,7 @@ export class Hud implements UiSink {
   }
 
   // ------------------------------------------------------------------ transient UI
-  toast(msg: string, bad = false) {
+  toast(msg: string, bad = false, log = true) {
     // it stays as long as it takes to read (ui/copy.ts), then fades for 0.6 s
     const life = toastMs(msg);
     // the same message again while it's still showing: keep one, refreshed
@@ -1808,7 +1856,7 @@ export class Hud implements UiSink {
       t0.classList.remove('again'); void t0.offsetWidth; t0.classList.add('again');
       return;
     }
-    crumb(`${bad ? 'warning' : 'toast'}: ${msg}`);
+    if (log) crumb(`${bad ? 'warning' : 'toast'}: ${msg}`);
     const t = document.createElement('div') as HTMLDivElement & { _t?: number[] };
     t.className = 'toast' + (bad ? ' bad' : '');
     t.textContent = msg;
@@ -1865,6 +1913,8 @@ export class Hud implements UiSink {
     b.className = 'banner';
     b.innerHTML = `<b>${esc(title)}</b><span>${esc(sub)}</span>`;
     this.root.appendChild(b);
+    // the music and the street step back while it is up (the audio engine holds them down for 1.6 s, then lets them return)
+    this.game.audio.duck();
     setTimeout(() => b.classList.add('out'), 3200);
     setTimeout(() => b.remove(), 4000);
   }
@@ -2045,9 +2095,21 @@ export class Hud implements UiSink {
     if (key !== this.followKey) {
       this.followKey = key;
       this.followPill.hidden = !riding;
-      if (riding) this.followPill.innerHTML = `<span>${uiIcon('action', 'follow', '🎥', 20)} Following <b>${esc(this.followName || (riding.kind === 'car' ? 'a car' : riding.kind === 'person' ? 'a citizen' : 'a building'))}</b></span><small>${IS_TOUCH ? 'tap to let go' : 'click or Esc to let go'}</small>`;
-      else this.followName = '';
+      if (riding) this.followPill.innerHTML = `<span>${uiIcon('action', 'follow', '🎥', 20)} Following <b>${esc(this.followName || (riding.kind === 'car' ? 'a car' : riding.kind === 'person' ? 'a citizen' : riding.kind === 'bus' ? 'a bus' : 'a building'))}</b><i class="fp-where"></i></span><small>${IS_TOUCH ? 'tap to let go' : 'click or Esc to let go'}</small>`;
+      else { this.followName = ''; this.busCar = null; }
+      this.busSaid = '';
       if (sel && (sel.kind === 'car' || sel.kind === 'ped')) this.renderInspector();
+    }
+    // A bus ridden across its stops: the pill says where on its line it is, and on the desktop the card that was open on the
+    // last leg's car moves to the next leg's as it sets off (the game does not put a card away when its car has arrived).
+    if (riding?.kind === 'bus') {
+      const where = this.busWhere(riding.id);
+      if (where !== this.busSaid) { this.busSaid = where; const el = this.followPill.querySelector('.fp-where'); if (el) el.textContent = where; }
+      const now = this.game.fields.bus(riding.id)?.carId ?? null;
+      if (now !== null && this.busCar !== null && now !== this.busCar && sel?.kind === 'car' && sel.c.id === this.busCar) {
+        const next = this.game.traffic.cars.find((c) => c.id === now);
+        if (next) { this.busCar = now; this.game.select({ kind: 'car', c: next }); }
+      }
     }
   }
 }

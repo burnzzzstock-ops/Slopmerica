@@ -3,7 +3,7 @@
 // frame, Save and Save 4K reach the photo API with the right values; a real capture gives a PNG; Done and Esc bring the HUD
 // back. Adjust has a Focus slider, which is what brings the blur back after Street level has set the focus to 60 m (the blur
 // fades out under 240 m and is gone under 80), and on a preset with no post-processing a line says blur and focus do not
-// show; on the desktop P opens photo mode. Exits nonzero on failure.
+// show; on the desktop P opens photo mode; photo mode begun from code has the bar too. Exits nonzero on failure.
 //
 //   BASE_URL=http://127.0.0.1:5173 node scripts/phototest.mjs
 import { launch } from './lib/browser.mjs';
@@ -102,6 +102,18 @@ for (const [who, opts] of [['desktop', { viewport: { width: 1280, height: 720 } 
     check(`${who}: P opens photo mode`, s.active && s.bar?.vis === 'visible', s);
     await press('[data-pb="exit"]');
   }
+  // photo mode begun from code, as an extension or a script would: the bar is up all the same, and goes when photo mode does
+  await page.evaluate(() => window.__game.photo.enter());
+  await page.waitForTimeout(150);
+  await frames(2);
+  s = await state();
+  check(`${who}: game.photo.enter() from code brings the bar up too (photo mode ${s.active ? 'on' : 'off'}, bar ${s.bar?.vis ?? 'not there'})`, s.active && s.bar?.vis === 'visible' && s.toolbar === 'hidden', s);
+  const done = await page.evaluate(() => { const b = document.querySelector('.photo-bar [data-pb="exit"]'); return !!b && b.offsetParent !== null && getComputedStyle(b).visibility === 'visible'; });
+  await page.evaluate(() => window.__game.photo.exit());
+  await page.waitForTimeout(150);
+  await frames(2);
+  s = await state();
+  check(`${who}: it has its Done, and game.photo.exit() from code takes the bar away`, done && !s.active && s.bar === null && s.toolbar === 'visible', { done, ...s });
   check(`${who}: no page errors`, errs.length === 0, errs.slice(0, 3));
   await ctx.close();
 }

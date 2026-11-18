@@ -1407,6 +1407,11 @@ a {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* a post's age stays whole when a long handle is cut short beside it */
+.xage {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
 .xbadge {
   display: inline-grid;
   place-items: center;

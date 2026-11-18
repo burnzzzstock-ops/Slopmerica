@@ -65,6 +65,23 @@ Where an ordinary step goes inside traffic (590 ms over 672 steps): the main loo
 
 **What to do, in this order:** (1) make the day's end cheaper without changing a number it produces (the nearest-road search, the neighbour count, a spatial query that builds a new set on every call); (2) then spread what is left over the day's steps, each part on a step of its own, which changes the step things happen on and so needs its own before and after; (3) a car that has not moved keeps its place.
 
+### What has been done about it
+
+- **b4559eb, the sprawl meter:** empty land is answered from the spatial grids' own cells, and the road question stops at the first road. Identical county on both towns (45 and 30 days, every fingerprint). The meter's time over 21 day ends went from 29.2 to 20.4 ms on the reference town and from 50.1 to 36.5 on the Florida town. A first try that only shortened the road search gained nothing: the time was in building a set for every lookup, not in measuring distances. Measure with `PROFILE=1` before believing a guess.
+
+### The big town's day end is mostly drawing work
+
+On the Florida town (14,440 people) a day-ending step is 28 ms on average on this PC and 90 to 170 at worst. The profile of 21 of them (580 ms):
+
+| Part | ms | What it is |
+|---|---|---|
+| Land value and levels | 221 | 114 of it is `levelUp`, and nearly all of that is making the levelled-up building's new model on the spot |
+| The services' daily pass | 201 | simulation work |
+| Making building models, in all (`modelFor`) | 136 | the generator (52), then the far-away outline for it (`buildingSilhouette`, 68, of which 58 is one function, `overlap`, in `src/render/buildingLod.ts`) |
+| The sprawl meter | 37 | after the fix above |
+
+So a quarter of the big town's day end is not simulation at all: it is a model being generated and outlined inside the fixed step, because the step is where the building levelled up. The same kind of work shows in ordinary steps on the reference town: a new car's model variant (`quantize`, `src/agents/models/vehicleKit.ts`) when a trip is sent out, and terrain chunks rebuilt (`shade`, `buildChunk`, `src/world/terrain.ts`) when a lot is painted. None of it changes the county, so all of it can wait for a frame with time to spare. It is asked of the look lane in `REQUESTS_FABLE.md`.
+
 ## Hot spots
 
 1. **A hitch every third day, in the sim's land value and levels pass** (`Sim.landValueAndLevels`). It runs for every zoned building in one step. On this town: 29 ms warm, and the step it lands in took 44 to 69 ms. At top speed that is a dropped frame or three every three quarters of a second.

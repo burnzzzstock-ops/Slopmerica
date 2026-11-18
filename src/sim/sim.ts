@@ -14,6 +14,8 @@ import { HALF, WATER } from '../config';
 import { MILESTONES, unlockNames } from './milestones';
 
 export const DAY_SECONDS = 2.5;
+/** the share of the county's sample points the sprawl meter looks at in a game day */
+const SPRAWL_SHARE_A_DAY = 0.2;
 /** the vacancy reason of a shop with bare shelves (freight.ts): it's still a shop, short of goods */
 export const NO_GOODS = 'No goods to sell';
 export const SPEEDS = [0, 1, 2, 4];
@@ -455,10 +457,17 @@ export class Sim {
     if (this.ended) return;
     const days = h / DAY_SECONDS;
     if (days <= 0) return;
+    const dayWas = this.day;
     this.day += days;
     this.net.day = this.day;
     this.b.day = this.day;
     this.b.tickConstruction(days, this.weatherBuildMul * (this.mode === 'speedrun' ? 1.6 : 1));
+    // the sprawl meter looks at a fifth of the county's sample points a day, a few of them every step (it used to look at
+    // the day's fifth all at once, in the step that ends the day, which is the step with every other daily job in it)
+    this.sweepSprawl(SPRAWL_SHARE_A_DAY * days);
+    // land value and level-ups, every third day, at noon of the day they used to end: the pass looks round every building
+    // in the county, and at the day's end it landed on top of every other daily job
+    if (Math.floor((this.day + 0.5) / 3) > Math.floor((dayWas + 0.5) / 3)) this.landValueAndLevels(3);
     const whole = Math.floor(this.day);
     while (this.lastWhole < whole) {
       this.lastWhole++;
@@ -610,12 +619,11 @@ export class Sim {
       void dem;
     }
 
-    // ---- land value + level ups every 3 days
-    if (d % 3 === 0) this.landValueAndLevels(3);
+    // (land value and level-ups run at noon every third day: step())
 
     // ---- stats
-    // a fifth of the county's sample points a day (the whole sweep in one frame was a ~14 ms hitch)
-    this.updateSprawl(0.2);
+    // (the meter's sample points are looked at a few every step: sweepSprawl)
+    this.sprawlReading();
     this.naturePct = this.trees.naturePct;
     this.checkMilestones();
     this.events.emit('day', d);
@@ -715,7 +723,8 @@ export class Sim {
   private sprawlCursor = 0;
 
   /** Re-check a share of the sample points (1 = all of them) and update the meter. */
-  private updateSprawl(share = 1) {
+  /** Look at the next `share` of the county's sample points: is each built on, or paved? */
+  private sweepSprawl(share: number) {
     const pts = this.buildable, n = pts.length;
     // the first sweep (a new game or a load) covers everything, so the meter never dips
     const first = !this.sprawlSeen;
@@ -726,9 +735,16 @@ export class Sim {
       this.sprawlCursor = (i + 1) % n;
       const p = pts[i];
       const was = seen[i];
-      const now = this.b.at(p.x, p.z) || this.b.near(p.x, p.z, 10).some((b) => this.b.contains(b, p.x, p.z, 5)) || this.net.pickSeg(p.x, p.z, 5) ? 1 : 0;
+      // (most of the county is empty land: that is answered from the grids' own cells, with no list built. The questions are
+      //  the ones this always asked: a building here, or within 5 m of one whose middle is within 10 m, or a road within 5 m)
+      const now = (this.b.anyNear(p.x, p.z, 10) && (this.b.at(p.x, p.z) || this.b.near(p.x, p.z, 10).some((b) => this.b.contains(b, p.x, p.z, 5)))) || this.net.onRoad(p.x, p.z, 5) ? 1 : 0;
       if (now !== was) { seen[i] = now; this.sprawlCovered += now - was; }
     }
+  }
+
+  /** The meter's reading, once a day, from what the sweeps have seen. */
+  private sprawlReading() {
+    const n = this.buildable.length;
     this.coverage = n ? this.sprawlCovered / n : 0;
     const c = this.b.counts();
     this.maxedPct = c.total ? c.maxed / c.total : 0;

@@ -60,7 +60,8 @@ export async function runFrames(browser, phone) {
   try {
     const renderer = await preflight(browser, true);
     const qualities = phone ? ['low'] : selection('PRESETS', presets);
-    const sizes = phone ? ['390x844'] : selection('SIZES', ['1920x1080', '2560x1440']);
+    const sizes = phone ? ['390x844'] : selection('SIZES',
+      ['1920x1080', '2560x1440', '3840x2160'], ['1920x1080', '2560x1440']);
     const maps = selection('SCENES', scenes);
     const rates = phone ? selection('RATES', ['4', '6']).map(Number) : [1];
     const enforce = process.argv.includes('--enforce');

@@ -15,6 +15,8 @@ import { createWater } from '../world/water';
 import { Environment } from '../world/sky';
 import { RTSCamera } from '../render/camera';
 import { WeatherSystem } from '../world/weather';
+import { Climate } from '../sim/climate';
+import { DAY_SECONDS } from '../sim/sim';
 import { dateLabel, seasonOf } from '../world/seasons';
 import { PostFX } from '../render/post';
 import { Particles } from '../render/particles';
@@ -69,6 +71,7 @@ class Lab {
   readonly water: ReturnType<typeof createWater>;
   readonly env: Environment;
   readonly weather: WeatherSystem;
+  readonly climate = new Climate(this.mapId, num('seed', 1776));
   readonly post: PostFX;
   readonly particles: Particles;
   readonly audio = new AudioEngine();
@@ -110,7 +113,7 @@ class Lab {
     this.trees = new Trees(this.terrain, this.map, this.q, this.renderer);
     this.scene.add(this.trees.group);
     this.env = new Environment(this.scene, this.map.def, this.q, this.q.name === 'high' ? this.renderer : undefined);
-    this.weather = new WeatherSystem({ scene: this.scene, renderer: this.renderer, env: this.env, terrain: this.terrain, trees: this.trees, water: this.water, quality: this.q, mapId: this.mapId });
+    this.weather = new WeatherSystem({ scene: this.scene, renderer: this.renderer, env: this.env, terrain: this.terrain, trees: this.trees, water: this.water, quality: this.q, mapId: this.mapId, climate: this.climate, requestWeather: (kind, days) => this.forceWeather(kind, days) });
     this.post = new PostFX(this.renderer, this.scene, this.camera, this.q);
     this.particles = new Particles(this.scene, this.q);
     this.particles.pxH = this.renderer.getDrawingBufferSize(new THREE.Vector2()).y;
@@ -124,8 +127,10 @@ class Lab {
     this.start = startView(this.terrain, this.map);
     this.setCam(P.cam ?? 'start');
 
-    this.time.dayOfYear = num('day', 30);
+    this.time.dayOfYear = ((num('day', 30) % 365) + 365) % 365;
+    this.time.day = this.time.dayOfYear;
     this.time.hour = num('hour', 15.5);
+    this.weather.force('clear', 20);
     this.env.lightPollution = num('lp', 0);
     if (P.moon !== undefined) this.env.moonPhaseOverride = num('moon', 0.5);
     this.post.tiltShift = P.tilt === '1';
@@ -139,6 +144,17 @@ class Lab {
       this.particles.pxH = this.renderer.getDrawingBufferSize(new THREE.Vector2()).y;
     });
     window.addEventListener('pointerdown', () => this.audio.unlock(), { once: true });
+  }
+
+  private forceWeather(kind: WeatherKind, days: number) {
+    this.climate.force(kind, this.time.day, Math.max(.001, days));
+    this.refreshClimate();
+  }
+
+  private refreshClimate() {
+    this.climate.step(0, this.time.day, this.time.hour, 0);
+    // Temperature reads the newly forced intensity on this second zero-time step.
+    this.climate.step(0, this.time.day, this.time.hour, 0);
   }
 
   setCam(name: string) {
@@ -155,7 +171,10 @@ class Lab {
 
   /** Apply settings in one go (used by the UI and by screenshot scripts). */
   set(o: { day?: number; hour?: number; weather?: WeatherKind | 'auto'; cam?: string; lp?: number; moon?: number | null; tilt?: boolean; city?: number; play?: boolean }) {
-    if (o.day !== undefined) this.time.dayOfYear = ((o.day % 365) + 365) % 365;
+    if (o.day !== undefined) {
+      this.time.dayOfYear = ((o.day % 365) + 365) % 365;
+      this.time.day = this.time.year * 365 + this.time.dayOfYear;
+    }
     if (o.hour !== undefined) this.time.hour = ((o.hour % 24) + 24) % 24;
     if (o.weather) {
       if (o.weather === 'auto') this.weather.force('clear', 0.05);
@@ -167,6 +186,7 @@ class Lab {
     if (o.tilt !== undefined) this.post.tiltShift = o.tilt;
     if (o.city !== undefined) this.city = o.city;
     if (o.play !== undefined) this.playing = o.play;
+    this.refreshClimate();
     return this.weather.debug();
   }
 
@@ -217,10 +237,11 @@ class Lab {
     const spd = this.playing ? this.daysPerSec * 360 : 0; // weather spells run in game days (360 s each at 1x)
     if (this.playing) {
       this.time.day += dt * this.daysPerSec;
-      this.time.dayOfYear = (this.time.dayOfYear + dt * this.daysPerSec) % 365;
+      this.time.dayOfYear = this.time.day % 365;
       this.time.year = Math.floor(this.time.day / 365);
     }
     this.time.hour = (this.time.hour + dt * this.hoursPerSec) % 24;
+    this.climate.step(this.playing ? dt * this.daysPerSec * DAY_SECONDS : 0, this.time.day, this.time.hour, this.playing ? this.daysPerSec * DAY_SECONDS : 0);
     this.rts.update(dt);
     this.env.hour = this.time.hour;
     const nearWant = THREE.MathUtils.clamp(this.rts.distance * 0.008, 1, 10);
@@ -281,7 +302,7 @@ class Lab {
 
   readout() {
     const d = this.time.dayOfYear;
-    return `${dateLabel(d)} (day ${d.toFixed(0)}, ${seasonOf(d)}) · ${fmtHour(this.time.hour)}\n${this.weather.debug()}\nfx ${JSON.stringify(this.weather.effects(), (_k, v) => (typeof v === 'number' ? +v.toFixed(2) : v))}\nsun ${this.env.sunElevation.toFixed(1)}° · moon ${(this.env.moonPhase * 100).toFixed(0)}% · ${this.fps.toFixed(0)} fps · ${this.q.name}`;
+    return `${dateLabel(d)} (day ${d.toFixed(0)}, ${seasonOf(d)}) · ${fmtHour(this.time.hour)}\n${this.weather.debug()}\nfx ${JSON.stringify(this.climate.effects(), (_k, v) => (typeof v === 'number' ? +v.toFixed(2) : v))}\nsun ${this.env.sunElevation.toFixed(1)}° · moon ${(this.env.moonPhase * 100).toFixed(0)}% · ${this.fps.toFixed(0)} fps · ${this.q.name}`;
   }
 }
 

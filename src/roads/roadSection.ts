@@ -26,8 +26,8 @@ export const WALK_TOP = SURF_LIFT + CURB_REVEAL;
 export const GUTTER = 0.3;
 /** graded ground sits this far under seg.hs beside a road (terrain.gradeRoad's target) */
 export const GROUND_BELOW = 0.35;
-/** lateral run of the earth bank from the walk's edge down to the graded ground */
-export const VERGE_RUN = 0.8;
+/** minimum lateral run of the earth bank from the walk's edge to the graded ground */
+export const VERGE_RUN = 1.4;
 /** the curb's height where a driveway crosses it */
 export const DRIVE_LIP = 0.012;
 /** driveway: the ramp's flat part is DRIVE_FLAT either side of its centre, then it flares out over DRIVE_FLARE more */
@@ -102,6 +102,11 @@ export const STOP_GAP = 0.6;
 /** lateral position of the curb face (the road's edge for a road without sidewalks) */
 export function curbOffset(t: RoadType): number {
   return t.sidewalk > 0 ? carriageHalf(t) + GUTTER : t.width / 2;
+}
+
+/** Drawn dead-end bulb radius, shared with surface-state sampling. */
+export function endCapRadius(t: RoadType): number {
+  return t.width / 2 * (t.id === 'twoLane' || t.id === 'gravel' ? 1.55 : 1.0);
 }
 
 /** how far into the walk a driveway's ramp reaches from the curb */

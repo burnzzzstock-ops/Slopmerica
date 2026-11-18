@@ -1,6 +1,11 @@
 // Original 24-unit cut-paper signs. The cream rim survives a dark toolbar and the
 // ink contour survives a light drawer. Every control keeps its own accessible text.
 const INK = '#111111', CREAM = '#efe6cf', LIME = '#c6f432', RED = '#b3202a';
+export const HUD_ICON_ACCENTS = Object.freeze({
+  residential: '#4bd66f', commercial: '#3aa0ff', industry: '#ffc93a', office: '#b26bff',
+  power: '#ffd84a', water: '#4cc3ff', waste: '#c89d54', danger: RED, alert: '#ff5a52',
+} as const);
+export type HudIconAccent = keyof typeof HUD_ICON_ACCENTS;
 const disc = (x: number, y: number, r: number) =>
   `M${x-r} ${y}a${r} ${r} 0 1 0 ${2*r} 0a${r} ${r} 0 1 0 ${-2*r} 0Z`;
 const stamp = (outline: string, detail = '', fill = CREAM, outside = '') => ({ outline, detail, fill, outside });
@@ -18,6 +23,7 @@ const art = {
   communes: stamp(disc(12, 12, 9), 'M12 4v16m0-8-6 5m6-5 6 5', LIME),
   feed: stamp('M3 4h16q2 0 2 2v10H10l-6 5v-5H2V6z', 'M6 8h11M6 12h8'),
   settings: stamp('M10 2h4l1 3 3-1 3 3-2 3 3 1v4l-3 1 1 3-3 2-3-2-1 3H9l-1-3-3 1-2-3 2-3-3-1V9l3-1-1-3 3-2 3 2z', disc(12, 12, 3)),
+  photo: stamp('M3 7h4l2-3h6l2 3h4v14H3z', disc(12,14,4)+'M5 10h2m11 0h1'),
   bug: stamp('M8 6 7 3l3 2h4l3-2-1 3q4 3 2 10-1 5-6 5t-6-5Q4 9 8 6z', 'M7 9h10m-5 1v8', RED, 'M6 11l-3-1m3 5-3 1m15-5 3-1m-3 5 3 1'),
   more: stamp('M3 6h18v12H3z', disc(7,12,1)+disc(12,12,1)+disc(17,12,1)),
   services: stamp('M2 9l10-6 10 6-1 2H3zm2 10h16l1 2H3zM5 11h3v8H5zm6 0h3v8h-3zm6 0h3v8h-3z'),
@@ -39,12 +45,12 @@ const art = {
   freeform: stamp('M2 17q1-8 6-8 3 0 5 3 3 3 6-6l3 1q-3 14-10 9-4-5-5-2l-2 5z'),
   grid: stamp('M3 3h18v18H3z', 'M9 4v16m6-16v16M4 9h16M4 15h16'),
   // Zoning and map views
-  resLow: stamp('M2 11l10-8 10 8-3 1v9H5v-9z', 'M10 20v-7h5v7', LIME),
-  resHigh: stamp('M4 20V7l8-4 7 2v15h2v1H3z', 'M8 9v2m4-3v2m4-2v2m-8 4v2m4-3v2m2 6v-5h3v5', LIME),
-  comLow: stamp('M3 4h3l2 3h14l-3 9H9L5 7H3z'+disc(10,20,1.5)+disc(17,20,1.5), 'M10 11h8'),
-  comHigh: stamp('M4 4h16l2 6-2 2v9H4v-9l-2-2z', 'M3 10h18m-12-5-1 4m7-4 1 4M7 14h5v5H7zm8 0h3v7'),
-  industry: stamp('M3 21V9l6 4V8l6 4V3h4l2 18z', 'M7 17h2m3 0h2m3 0h1'),
-  office: stamp('M5 4h14v12l3 4H2l3-4z', 'M7 7h10v7H7zm-1 10h12'),
+  resLow: stamp('M2 11l10-8 10 8-3 1v9H5v-9z', 'M10 20v-7h5v7', HUD_ICON_ACCENTS.residential),
+  resHigh: stamp('M4 20V7l8-4 7 2v15h2v1H3z', 'M8 9v2m4-3v2m4-2v2m-8 4v2m4-3v2m2 6v-5h3v5', HUD_ICON_ACCENTS.residential),
+  comLow: stamp('M3 4h3l2 3h14l-3 9H9L5 7H3z'+disc(10,20,1.5)+disc(17,20,1.5), 'M10 11h8', HUD_ICON_ACCENTS.commercial),
+  comHigh: stamp('M4 4h16l2 6-2 2v9H4v-9l-2-2z', 'M3 10h18m-12-5-1 4m7-4 1 4M7 14h5v5H7zm8 0h3v7', HUD_ICON_ACCENTS.commercial),
+  industry: stamp('M3 21V9l6 4V8l6 4V3h4l2 18z', 'M7 17h2m3 0h2m3 0h1', HUD_ICON_ACCENTS.industry),
+  office: stamp('M5 4h14v12l3 4H2l3-4z', 'M7 7h10v7H7zm-1 10h12', HUD_ICON_ACCENTS.office),
   dezone: stamp('M2 13l10-10 9 8-10 10H8z', 'M6 10l8 7', RED),
   normal: stamp(disc(12,12,9), 'M7 5l1 4 4 1-1 4-4 1-1 3m11-12-3 4 4 2-1 5', LIME),
   traffic: stamp('M7 2h10v17h-3v3h-4v-3H7z', disc(12,6,1.4)+disc(12,11,1.4)+disc(12,16,1.4)),
@@ -53,19 +59,19 @@ const art = {
   pollution: stamp('M3 21l1-12h5l1 12zm10-2 1-8h5l1 8zM7 6q-2-4 3-3 3-3 6 0 5-1 5 3-1 2-6 1z'),
   noise: stamp('M3 10h4l7-6v16l-7-6H3z', '', CREAM, 'M17 9q3 3 0 6m2-10q6 7 0 14'),
   // Utility badges and service cards
-  power: stamp('M12 2h8l-6 8h6L8 22l2-9H4z', '', LIME),
-  water: stamp('M9 3h7v3h-2v3h5l2 3v5h-5v-4H9v3H3V9h7V6H8z', '', CREAM, 'M16 19q2-5 4 0 0 3-2 3t-2-3z'),
-  sewage: stamp('M3 3h7v8h5v-3h6v8h-3v3H8l-4-4V7H3z', 'M5 7h5m6 8h4m-9 6h5'),
-  garbage: stamp('M3 6h5l1-3h6l1 3h5v3h-2l-1 12H6L5 9H3z', 'M6 9h12m-8 3v6m4-6v6'),
+  power: stamp('M12 2h8l-6 8h6L8 22l2-9H4z', '', HUD_ICON_ACCENTS.power),
+  water: stamp('M9 3h7v3h-2v3h5l2 3v5h-5v-4H9v3H3V9h7V6H8z', '', HUD_ICON_ACCENTS.water, 'M16 19q2-5 4 0 0 3-2 3t-2-3z'),
+  sewage: stamp('M3 3h7v8h5v-3h6v8h-3v3H8l-4-4V7H3z', 'M5 7h5m6 8h4m-9 6h5', HUD_ICON_ACCENTS.waste),
+  garbage: stamp('M3 6h5l1-3h6l1 3h5v3h-2l-1 12H6L5 9H3z', 'M6 9h12m-8 3v6m4-6v6', HUD_ICON_ACCENTS.waste),
   fire: stamp('M11 2q7 4 5 10l3-4q6 8-1 13H7Q1 18 4 12l4-6q-1 6 2 6 3-3 1-10z', 'M10 18q0-2 3-4-1 4 1 5', RED),
   police: stamp('M3 5l6-1 3-2 3 2 6 1-1 8q-1 5-8 9-7-4-8-9z', 'M12 7l1 3 3 1-2 2v3l-2-2-3 2 1-3-2-2 3-1z'),
   health: stamp('M3 7h5V5q0-2 2-2h4q2 0 2 2v2h5v14H3z', 'M9 7V6h6v1m-3 4v7m-4-4h8'),
   education: stamp('M2 9l10-6 10 6-4 2v6l-6 4-6-4v-6z', 'M3 9l9 5 9-5m0 1v6'),
   parks: stamp('M9 21v-5q-5 1-6-3-1-4 3-6 1-5 6-4 5-1 6 3 6 3 3 8-2 3-7 2v5z', 'M12 16V9m0 4 3-2', LIME),
-  solar: stamp('M5 4h17l-4 13h-5v3h4v1H5v-2h5v-2H2z', 'M4 10h15M10 5l-3 11m9-11-3 11', LIME),
-  nuclear: stamp('M6 3h12l-2 7q0 6 5 11H3q5-6 5-11z', 'M6 5h12m-5 3v3m-4 6 2-3m5 3-2-3'),
-  tower: stamp('M3 8l9-6 9 6-2 1v5l-3 3 2 5h-3l-2-5h-2l-2 5H6l2-6-3-2V9z', 'M5 8h14m-12 5h10'),
-  treatment: stamp('M3 6q0-3 8-3t8 3v7l3 2v4q0 2-6 2t-6-2v-3q-7-1-7-4z', 'M4 7q7 4 14 0m-6 9q4 2 8 0'),
+  solar: stamp('M5 4h17l-4 13h-5v3h4v1H5v-2h5v-2H2z', 'M4 10h15M10 5l-3 11m9-11-3 11', HUD_ICON_ACCENTS.power),
+  nuclear: stamp('M6 3h12l-2 7q0 6 5 11H3q5-6 5-11z', 'M6 5h12m-5 3v3m-4 6 2-3m5 3-2-3', HUD_ICON_ACCENTS.power),
+  tower: stamp('M3 8l9-6 9 6-2 1v5l-3 3 2 5h-3l-2-5h-2l-2 5H6l2-6-3-2V9z', 'M5 8h14m-12 5h10', HUD_ICON_ACCENTS.water),
+  treatment: stamp('M3 6q0-3 8-3t8 3v7l3 2v4q0 2-6 2t-6-2v-3q-7-1-7-4z', 'M4 7q7 4 14 0m-6 9q4 2 8 0', HUD_ICON_ACCENTS.waste),
   clinic: stamp('M3 3h3v6q0 4 4 4t4-4V3h3v6q0 6-6 7 0 3 4 3t4-4l-2-1q-1-4 2-4t3 4l-1 2q0 6-6 6t-7-6Q3 14 3 9z'),
   school: stamp('M3 11h5V7l4-4 4 4v4h5v10H3z', 'M10 20v-6h4v6m-2-12v2M5 14v2m14-2v2'),
   // Landmarks, parks and policies
@@ -101,7 +107,7 @@ const art = {
   // Inspector states have redundant shape, internal mark and colour codes.
   ok: stamp(disc(12,12,9), 'M6 12l4 4 8-9', LIME),
   missing: stamp('M8 3h8l5 5v8l-5 5H8l-5-5V8z', 'M8 8l8 8m0-8-8 8', RED),
-  warning: stamp('M11 3q1-1 2 0l9 17H2z', 'M12 9v5m0 3h.1', LIME),
+  warning: stamp('M11 3q1-1 2 0l9 17H2z', 'M12 9v5m0 3h.1', HUD_ICON_ACCENTS.alert),
   building: stamp('M3 6h18v8h-2v7h-3v-7H8v7H5v-7H3z', 'M5 12l4-5m2 5 4-5m2 5 3-4'),
   abandoned: stamp('M2 11l8-8 5 4 2-2 5 7-3 1v8H6L5 12z', 'M8 13l8 4m-7 0 6-5', RED),
   emergency: stamp('M4 17h2l1-8q1-5 5-5t5 5l1 8h2l1 4H3z', 'M5 17h14m-9-8 1-2', RED),
@@ -114,6 +120,8 @@ const art = {
   music: stamp('M3 4h18v16H3z', 'M4 13h16M7 5v7m5-7v7m5-7v7M8 14v5m7-5v5'),
   save: stamp('M3 3h15l3 3v15H3z', 'M7 4v6h10V4M7 21v-7h10v7'),
   folder: stamp('M2 6h7l3 3h9v11H2z', 'M3 11h16'),
+  follow: stamp('M3 11h10v9H3zM13 13l8-3v11l-8-3z', disc(8,15.5,2), CREAM, 'M3 8q0-4 4-4h10m-3-2 3 2-3 3'),
+  street: stamp(disc(12,4.5,2.5)+'M9 9h6l2 6h-3v7h-2v-7h-1v7H9v-7H7z', 'M12 10v3', CREAM, 'M5 11 3 21m16-10 2 10'),
   pin: stamp('M12 22Q3 12 4 8q1-6 8-6 8 0 8 7 0 4-8 13z', disc(12,9,2.5), RED),
   residents: stamp(disc(9,7,3)+disc(17,8,2.3)+'M2 20q0-8 7-8t7 8zm15-7q5-1 5 6h-4z'),
   medal: stamp('M3 3h6l3 5 3-5h6l-6 9q5 7-3 10-8-2-5-9z', disc(12,16,2)),
@@ -133,13 +141,31 @@ const art = {
 export type HudIconName = keyof typeof art;
 export const HUD_ICON_NAMES = Object.freeze(Object.keys(art) as HudIconName[]);
 
+// At 16–18 px, separate broad marks survive rasterisation better than rows of
+// narrow lanes or windows. The large drawings retain their original detail.
+const smallArt: Partial<Record<HudIconName, { outline?: string; detail: string }>> = {
+  stroad4: { detail: 'M12 6v12' },
+  stroad6: { detail: 'M9 6 8 18m7-12 1 12' },
+  stroad8: { detail: 'M7 6 6 18m6-12v12m5-12 1 12' },
+  grid: { detail: 'M12 5v14M5 12h14' },
+  resHigh: { detail: 'M8 9h7m-7 5h7' },
+  comHigh: { detail: 'M4 10h16m-8 4v6' },
+  server: { detail: 'M5 12h14M7 7h3m-3 10h3' },
+  treatment: { outline: 'M3 7q0-4 9-4t9 4v11q0 3-9 3t-9-3z', detail: 'M4 8q8 5 16 0' },
+  music: { detail: 'M4 13h16M9 5v7m6-7v7' },
+  building: { detail: 'M5 12l5-5m4 5 5-5' },
+  photo: { detail: disc(12,14,4) },
+  follow: { detail: '' },
+  street: { detail: '' },
+};
+
 /** Keys mirror data-t/data-more, data-zone, data-road, data-mode, data-view,
  * data-svc and data-lm. Inspector rows compose a utility icon and a status icon. */
 export const HUD_CONTROLS = {
   toolbar: {
     inspect: 'inspect', roads: 'roads', zones: 'zones', upgrade: 'upgrade', bulldoze: 'bulldoze',
     landmarks: 'landmarks', views: 'views', budget: 'budget', communes: 'communes', feed: 'feed',
-    help: 'settings', bug: 'bug', more: 'more', 'ext:services': 'services', 'ext:land': 'land',
+    help: 'settings', photo: 'photo', bug: 'bug', more: 'more', 'ext:services': 'services', 'ext:land': 'land',
     'ext:transit': 'transit', 'ext:districts': 'districts', 'ext:terraform': 'terraform', 'ext:disasters': 'disasters',
   },
   road: { gravel: 'gravel', twoLane: 'roads', oneWay1: 'oneWay1', oneWay2: 'oneWay2', stroad4: 'stroad4', stroad6: 'stroad6', stroad8: 'stroad8', highway: 'highway' },
@@ -178,22 +204,30 @@ export const HUD_CONTROLS = {
   weather: { clear: 'sun', cloudy: 'cloud', rain: 'rain', storm: 'storm', snow: 'snow', blizzard: 'blizzard', fog: 'fog', heatwave: 'heatwave', hurricane: 'hurricane', wildfireSmoke: 'fire' },
   action: {
     build: 'hammer', done: 'ok', stop: 'missing', undo: 'undo', pause: 'pause', play: 'play', music: 'music', sound: 'sound',
-    save: 'save', file: 'folder', show: 'pin', report: 'bug', court: 'scales', bribe: 'budget', unlock: 'medal',
+    save: 'save', file: 'folder', follow: 'follow', street: 'street', show: 'pin', report: 'bug', court: 'scales', bribe: 'budget', unlock: 'medal',
   },
   meter: { nature: 'pine', sprawl: 'resHigh', population: 'residents', milestone: 'medal' },
 } as const satisfies Record<string, Record<string, HudIconName>>;
 
+/** A shared silhouette can belong to different service categories. */
+export const HUD_CONTROL_ACCENTS: Partial<Record<keyof typeof HUD_CONTROLS, Readonly<Record<string, HudIconAccent>>>> = {
+  facility: { gasPeaker: 'power', coalPlant: 'power', incinerator: 'waste' },
+  landmark: { slopCannon: 'danger', propaneParadise: 'power' },
+  policy: { waterRationing: 'water' },
+};
+
 /** Decorative inline SVG. Put the accessible name on the control or adjacent status text. */
-export function hudIcon(name: HudIconName, size = 24): string {
-  const { outline, detail, fill, outside } = art[name];
+export function hudIcon(name: HudIconName, size = 24, accent?: HudIconAccent): string {
   const px = Number.isFinite(size) ? Math.max(1, Math.min(512, size)) : 24;
+  const { outline, detail, fill: baseFill, outside } = px <= 18 ? { ...art[name], ...smallArt[name] } : art[name];
+  const fill = accent ? HUD_ICON_ACCENTS[accent] : baseFill;
   const fringe = outside ? `<path d="${outside}" fill="none" stroke="${CREAM}" stroke-width="3.5"/><path d="${outside}" fill="none" stroke="${INK}" stroke-width="1.6"/>` : '';
-  const mark = detail ? `<path d="${detail}" fill="none" stroke="${fill === RED ? CREAM : INK}" stroke-width="1.75"/>` : '';
+  const mark = detail ? `<path d="${detail}" fill="none" stroke="${fill === RED ? CREAM : INK}" stroke-width="${px <= 18 && smallArt[name] ? 2.1 : 1.75}"/>` : '';
   return `<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" width="${px}" height="${px}" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">${fringe}<path d="${outline}" fill="${CREAM}" stroke="${CREAM}" stroke-width="3.5"/><path d="${outline}" fill="${fill}" stroke="${INK}" stroke-width="1.6"/>${mark}</svg>`;
 }
 
 /** Dynamic extension and drawer IDs can use the same mapping as typed core buttons. */
 export function hudIconFor(group: keyof typeof HUD_CONTROLS, id: string, size = 24): string {
   const icons: Readonly<Record<string, HudIconName>> = HUD_CONTROLS[group];
-  return Object.prototype.hasOwnProperty.call(icons, id) ? hudIcon(icons[id], size) : '';
+  return Object.prototype.hasOwnProperty.call(icons, id) ? hudIcon(icons[id], size, HUD_CONTROL_ACCENTS[group]?.[id]) : '';
 }

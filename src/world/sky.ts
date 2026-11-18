@@ -10,6 +10,7 @@ import type { MapDef } from './maps';
 import type { Quality } from '../config';
 import { atmo, latitudeOf } from './seasons';
 import { ATMOS } from './atmos';
+import { installAerialPerspective, type AerialUniforms } from '../render/aerialPerspective';
 
 const DEG = Math.PI / 180;
 
@@ -55,6 +56,8 @@ function patchFogChunks() {
   C.fog_pars_fragment = /* glsl */ `
 #ifdef USE_FOG
   uniform vec3 fogColor;
+  uniform vec3 aerialSunDirection, aerialSunTint;
+  uniform sampler2D aerialPollution;
   varying float vFogDepth;
   varying vec3 vFogWorld;
   uniform float fogNear;
@@ -85,7 +88,18 @@ function patchFogChunks() {
   #else
     float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );
   #endif
-  gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );
+  vec3 airRay = vFogWorld - cameraPosition;
+  float airDistance = length(airRay);
+  float sunForward = pow(max(dot(airRay / max(airDistance, .001), aerialSunDirection), 0.0), 8.0);
+  vec3 airTint = fogColor + aerialSunTint * sunForward * .2;
+  // Local industrial dust hugs the ground and follows the real pollution grid.
+  vec2 airUV = (vFogWorld.xz + 3072.0) / 6144.0;
+  float airInside = step(0.0, airUV.x) * step(airUV.x, 1.0) * step(0.0, airUV.y) * step(airUV.y, 1.0);
+  float airDirty = textureLod(aerialPollution, clamp(airUV, 0.0, 1.0), 0.0).r * 4.0 * airInside;
+  float dust = 1.0 - exp(-airDirty * .00016 * airDistance * exp(-max(vFogWorld.y, 0.0) / 90.0));
+  fogFactor = 1.0 - (1.0 - fogFactor) * (1.0 - dust);
+  airTint = mix(airTint, vec3(.29, .22, .13) * max(.15, dot(fogColor, vec3(.2126, .7152, .0722)) * 2.5), min(.5, dust));
+  gl_FragColor.rgb = mix( gl_FragColor.rgb, airTint, fogFactor );
 #endif`;
 }
 patchFogChunks();
@@ -313,6 +327,10 @@ export class Environment {
   /** 0 day .. 1 full night */
   night = 0;
   lightPollution = 0;
+  /** Read-only county smog share from WorldFields, independent of weather smoke. */
+  smog = 0;
+  private aerial: AerialUniforms;
+  set pollutionTexture(texture: THREE.Texture) { this.aerial.aerialPollution.value = texture; }
   // ---- weather inputs (written by WeatherSystem)
   overcast = 0;
   /** distance haze multiplier (1 = the map's normal haze) */
@@ -377,6 +395,7 @@ export class Environment {
   private envT = 0;
 
   constructor(private scene: THREE.Scene, private def: MapDef, q: Quality, private renderer?: THREE.WebGLRenderer) {
+    this.aerial = installAerialPerspective(scene);
     this.lat = latitudeOf(def.id);
     // the map's haze, pushed toward blue so distance reads as air, not fog
     this.fogDay = new THREE.Color(def.sky.fog).lerp(C_HAZE_BLUE, 0.42);
@@ -389,9 +408,9 @@ export class Environment {
     // came out darker there, most of all at dusk (mean luma of the reference block, scripts/presetlight.mjs: Medium at
     // dusk 0.23 against 0.31 on High, at noon 0.41 against 0.47, on a moonless night 0.22 against 0.25). Low already
     // matched at noon and at night (its own exposure lift), so it is raised only with the sun low. Lighting constants only.
-    this.hemiScale = renderer ? 0.5 : q.post ? 1.7 : 1;
-    this.hemiDusk = renderer ? 0.5 : q.post ? 1.7 : 1.5;
-    this.nightBoost = renderer ? 2 : q.post ? 2 : 1;
+    this.hemiScale = renderer ? 0.5 : q.post ? 1.7 : 1.3;
+    this.hemiDusk = renderer ? 0.5 : q.post ? 1.7 : 1.9;
+    this.nightBoost = 2;
 
     this.skyU = THREE.UniformsUtils.merge([
       THREE.UniformsLib.fog,
@@ -559,9 +578,11 @@ export class Environment {
     const moonUp = THREE.MathUtils.smoothstep(moonElev, -3, 12);
     addScaled(this.zenith, this.tmp.setRGB(0.012, 0.02, 0.045), illum * moonUp * this.night * clear);
     addScaled(this.horizon, this.tmp.setRGB(0.02, 0.028, 0.05), illum * moonUp * this.night * clear);
-    const lp = this.lightPollution;
+    const smog = THREE.MathUtils.clamp(this.smog, 0, 1);
+    const lp = THREE.MathUtils.clamp(this.lightPollution, 0, 1);
     addScaled(this.horizon, C_LP, lp * this.night * 0.2);
-    addScaled(this.zenith, C_LP, lp * this.night * 0.035);
+    addScaled(this.zenith, C_LP, lp * this.night * 0.055);
+    addScaled(this.horizon, C_LP, lp * this.night * .08);
 
     // ---- weather tints
     const lumH = this.horizon.r * 0.3 + this.horizon.g * 0.59 + this.horizon.b * 0.11;
@@ -582,6 +603,11 @@ export class Environment {
       // bleached, baking sky: cream haze at the horizon, washed-out blue overhead
       this.horizon.lerp(this.tmp.copy(C_HEAT_H).multiplyScalar(Math.max(lumH, 0.2) * 1.2), this.haze * 0.7);
       this.zenith.lerp(this.tmp.copy(C_HEAT_Z).multiplyScalar(Math.max(lumH, 0.2) * 1.1), this.haze * 0.45);
+    }
+    if (smog > 0) {
+      const day = .1 + daylight * .9;
+      this.horizon.lerp(this.tmp.setRGB(.37, .27, .14).multiplyScalar(day), smog * .85);
+      this.zenith.lerp(this.tmp.setRGB(.24, .18, .105).multiplyScalar(day), smog * .82);
     }
     if (this.whiteout > 0) this.horizon.lerp(this.tmp.copy(C_WHITEOUT).multiplyScalar(Math.max(lumH, 0.06) * 1.05), this.whiteout * 0.75);
     if (this.mist > 0) this.horizon.lerp(this.tmp.copy(C_MIST).multiplyScalar(Math.max(lumH, 0.05)), Math.min(1, this.mist * 0.2));
@@ -652,10 +678,12 @@ export class Environment {
 
     // ---- fog: matches the horizon so the far world melts into the sky
     this.fog.color.copy(this.horizon);
-    this.fog.density = this.def.sky.fogDensity * this.fogMul * (1 + this.haze * 0.6);
-    this.fog.mist = this.mist;
-    this.fog.mistHeight = this.mistHeight;
+    this.fog.density = this.def.sky.fogDensity * this.fogMul * (1 + this.haze * .6 + smog * 1.4);
+    this.fog.mist = this.mist + smog * .45;
+    this.fog.mistHeight = THREE.MathUtils.lerp(this.mistHeight, 110, smog * .65);
     this.fog.pack();
+    this.aerial.aerialSunDirection.value.copy(this.sunDir);
+    this.aerial.aerialSunTint.value.copy(this.sunColor).multiplyScalar(daylight * clear * (.5 + smog * .5));
 
     // ---- sky dome uniforms
     const u = this.skyU;
@@ -670,12 +698,12 @@ export class Environment {
     u.uMoonBright.value = (0.6 + 2.2 * this.night) * moonUp * (1 - oc * 0.9) * (1 - this.smoke * 0.6);
     const cover = ATMOS.uCloudCover.value;
     const starVis = THREE.MathUtils.smoothstep(this.night, 0.55, 1) * (1 - cover) ** 2 * (1 - this.smoke) * (1 - Math.min(1, this.mist * 0.15));
-    u.uStars.value = starVis * (1 - lp) ** 2;
+    u.uStars.value = starVis * (1 - lp) ** 3 * (1 - smog * .7);
     u.uFlash.value = this.flash;
     u.uHorizonFog.value = 0.05 + Math.min(0.25, this.mist * 0.03 + oc * 0.04 + this.smoke * 0.1 + this.whiteout * 0.12);
 
     this.starU.uTime.value = this.time;
-    this.starU.uVis.value = starVis;
+    this.starU.uVis.value = starVis * (1 - lp * .35) * (1 - smog * .6);
     this.starU.uLimit.value = lp * 0.8;
 
     // what wet ground reflects
@@ -695,7 +723,7 @@ export class Environment {
   private refreshEnv(day: number) {
     if (!this.pmrem || !this.envScene || !this.renderer) return;
     const now = performance.now();
-    const key = `${Math.round(this.hour * 5)}|${Math.round(this.dayOfYear / 8)}|${Math.round(this.overcast * 12)}|${Math.round(this.smoke * 8)}|${Math.round(this.whiteout * 6)}|${Math.round(this.storm * 6)}|${Math.round(this.snowCover * 5)}`;
+    const key = `${Math.round(this.hour * 5)}|${Math.round(this.dayOfYear / 8)}|${Math.round(this.overcast * 12)}|${Math.round(this.smoke * 8)}|${Math.round(this.whiteout * 6)}|${Math.round(this.storm * 6)}|${Math.round(this.snowCover * 5)}|${Math.round(this.smog * 16)}|${Math.round(this.lightPollution * 12)}`;
     if (key === this.envKey || now - this.envT < 1200) return;
     this.envKey = key;
     this.envT = now;

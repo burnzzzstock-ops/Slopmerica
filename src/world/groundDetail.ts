@@ -1,5 +1,5 @@
-// Camera-local ground cover rendered with three procedural instanced meshes.
-// Each map uses an alpha-card plant layer and two solid detail families.
+// Camera-local ground cover rendered with three biome families and an optional
+// clear-cut wood layer. All four share the same total instance budget.
 // Placement is deterministic, but only the patch around the camera target is
 // kept on the GPU.
 import * as THREE from 'three';
@@ -13,6 +13,7 @@ import type { RoadNetwork, RSeg } from '../roads/network';
 import type { ZCell, Zoning } from '../zones/zoning';
 import type { MapData, MapId } from './maps';
 import { Paint, type Terrain } from './terrain';
+import { withVisualRandom } from '../render/visualRandom';
 
 export interface GroundDetailSources {
   roads: RoadNetwork;
@@ -225,7 +226,8 @@ function addShellRipples(d: GeoData) {
 
 function makeGroundGeometry(map: MapId, kind: number): THREE.BufferGeometry {
   const d: GeoData = { pos: [], colors: [], uv: [] };
-  if (kind === 0) addCards(d, map === 'florida');
+  if (kind === 3) addWood(d);
+  else if (kind === 0) addCards(d, map === 'florida');
   else if (kind === 1) {
     if (map === 'florida') addMarshPlant(d);
     else { addBoulder(d, -0.24, 0, 0.72); addBoulder(d, 0.65, 0.22, 0.38); }
@@ -271,7 +273,7 @@ function makeBladeTexture(map: MapId): THREE.CanvasTexture {
   return tex;
 }
 
-/** Three draw calls and a fixed instance budget, independent of county size. */
+/** Three biome draws, one optional cut-edge draw, and a fixed shared budget. */
 export class GroundDetail {
   readonly group = new THREE.Group();
   readonly speciesNames: readonly [string, string, string];
@@ -298,6 +300,7 @@ export class GroundDetail {
   private radius: number;
   private spacing: number;
   private hideDistance: number;
+  private woodCapacity: number;
   private profile: DetailProfile;
   private bladeTexture: THREE.CanvasTexture;
   private lastPatchX = Number.NaN;
@@ -313,6 +316,7 @@ export class GroundDetail {
     this.profile = PROFILES[map.def.id];
     this.speciesNames = this.profile.names;
     this.maxInstances = q.name === 'ultra' ? 3600 : q.name === 'high' ? 2600 : q.name === 'medium' ? 1600 : 900;
+    this.woodCapacity = Math.min(256, Math.ceil(this.maxInstances * 0.15));
     this.radius = q.groundRadius;
     this.spacing = q.name === 'ultra' ? 8 : q.name === 'high' ? 8.5 : q.name === 'medium' ? 9.5 : 10.5;
     this.hideDistance = q.name === 'ultra' ? 1450 : q.name === 'high' ? 1150 : q.name === 'medium' ? 920 : 760;
@@ -321,22 +325,29 @@ export class GroundDetail {
     this.uniforms.uFadeFar.value = this.radius;
     this.uniforms.uSnowLine.value = this.profile.snowLine;
 
-    for (let kind = 0; kind < 3; kind++) {
-      this.scratchMatrices.push(new Float32Array(this.maxInstances * 16));
-      this.scratchColors.push(new Float32Array(this.maxInstances * 3));
-      const flex = kind === 0 || (map.def.id === 'florida' && kind === 1);
-      const mat = this.makeMaterial(kind, flex);
-      const mesh = new THREE.InstancedMesh(makeGroundGeometry(map.def.id, kind), mat, this.maxInstances);
-      mesh.count = 0;
-      mesh.castShadow = false;
-      mesh.receiveShadow = true;
-      mesh.frustumCulled = false;
-      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      mesh.setColorAt(0, new THREE.Color(1, 1, 1));
-      mesh.instanceColor!.setUsage(THREE.DynamicDrawUsage);
-      this.meshes.push(mesh);
-      this.materials.push(mat);
-      this.group.add(mesh);
+    for (let kind = 0; kind < 4; kind++) {
+      const capacity = kind === 3 ? this.woodCapacity : this.maxInstances;
+      this.scratchMatrices.push(new Float32Array(capacity * 16));
+      this.scratchColors.push(new Float32Array(capacity * 3));
+      const create = () => {
+        const flex = kind === 0 || (map.def.id === 'florida' && kind === 1);
+        const mat = this.makeMaterial(kind, flex);
+        const mesh = new THREE.InstancedMesh(makeGroundGeometry(map.def.id, kind), mat, capacity);
+        mesh.name = kind === 3 ? 'clear-cut stump and slash' : this.profile.names[kind];
+        mesh.count = 0;
+        mesh.visible = kind !== 3;
+        mesh.castShadow = false;
+        mesh.receiveShadow = true;
+        mesh.frustumCulled = false;
+        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        mesh.setColorAt(0, new THREE.Color(1, 1, 1));
+        mesh.instanceColor!.setUsage(THREE.DynamicDrawUsage);
+        this.meshes.push(mesh);
+        this.materials.push(mat);
+        this.group.add(mesh);
+      };
+      if (kind === 3) withVisualRandom(create);
+      else create();
     }
     this.unsub.push(sources.roads.events.on('changed', () => { this.roadRevision++; this.dirty = true; }));
   }
@@ -397,7 +408,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.92, 0.96), gdSnow * 0.88);`
     const patchX = Math.floor(focus.x / (this.spacing * 2));
     const patchZ = Math.floor(focus.z / (this.spacing * 2));
     const communeStamp = this.sources.communes.list.reduce((n, c) => n + (c.state === 'gone' ? 0 : c.id * 17), 0);
-    const stamp = this.terrain.surfaceVersion * 31 + this.sources.zones.version * 17 + this.sources.buildings.list.size * 7 + communeStamp + this.roadRevision;
+    const stamp = this.terrain.surfaceVersion * 31 + this.sources.zones.version * 17 + this.sources.buildings.list.size * 7 + communeStamp + this.roadRevision + this.terrain.forestFloor.version * 43;
     const committedChanged = patchX !== this.lastPatchX || patchZ !== this.lastPatchZ || weather.season !== this.lastSeason || stamp !== this.lastStamp;
     const pendingChanged = !!this.refill && (patchX !== this.refill.patchX || patchZ !== this.refill.patchZ || weather.season !== this.refill.season || stamp !== this.refill.stamp);
     if (this.refill && (this.dirty || pendingChanged)) this.refill = null;
@@ -434,7 +445,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.92, 0.96), gdSnow * 0.88);`
       communes: this.sources.communes.list,
       roadI: 0, zoneI: 0, buildingI: 0, communeI: 0,
       gx: gx0, gx0, gx1, gz: gz0, gz1, r2: this.radius * this.radius,
-      counts: [0, 0, 0], total: 0, cpuMs: 0,
+      counts: [0, 0, 0, 0], total: 0, cpuMs: 0,
     };
   }
 
@@ -483,12 +494,21 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.92, 0.96), gdSnow * 0.88);`
     if ((x - job.cx) ** 2 + (z - job.cz) ** 2 > job.r2 || !this.terrain.inBounds(x, z, 3)) return;
     const y = this.terrain.h(x, z);
     if (y < WATER + 0.12 || this.terrain.slope(x, z) > 0.62 || this.terrain.paintAt(x, z) !== Paint.None) return;
+    if (this.masked(x, z, job.masks)) return;
     const cover = this.terrain.coverAt(x, z);
-    const density = this.densityAt(this.terrain.map.def.id, job.season, y, cover);
-    if (hash2(gx, gz, 71) > density || this.masked(x, z, job.masks)) return;
-    const kind = this.kindAt(this.terrain.map.def.id, job.season, x, z, y, cover, hash2(gx, gz, 89));
+    const cleared = this.terrain.forestFloor.clearedAt(x, z);
+    const edge = THREE.MathUtils.smoothstep(cleared, 0.04, 0.30) * (1 - THREE.MathUtils.smoothstep(cleared, 0.75, 1));
+    let kind: number;
+    if (hash2(gx, gz, 71) < edge * 0.78) {
+      kind = 3;
+    } else {
+      const density = this.densityAt(this.terrain.map.def.id, job.season, y, cover) * (1 - cleared * 0.9);
+      if (hash2(gx, gz, 71) > density) return;
+      kind = this.kindAt(this.terrain.map.def.id, job.season, x, z, y, cover, hash2(gx, gz, 89));
+    }
+    const capacity = kind === 3 ? this.woodCapacity : this.maxInstances;
     const slot = job.counts[kind]++;
-    if (slot >= this.maxInstances) { job.counts[kind]--; return; }
+    if (slot >= capacity) { job.counts[kind]--; return; }
 
     const e = this.scratchMatrices[kind];
     const o = slot * 16;
@@ -504,7 +524,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.92, 0.96), gdSnow * 0.88);`
     e[o + 8] = s * sx; e[o + 9] = 0; e[o + 10] = c * sx; e[o + 11] = 0;
     e[o + 12] = x; e[o + 13] = y - 0.04; e[o + 14] = z; e[o + 15] = 1;
 
-    tmpColor.setHex(this.profile.colors[job.season][kind]);
+    tmpColor.setHex(kind === 3 ? 0x7b6043 : this.profile.colors[job.season][kind]);
     tmpColor.offsetHSL((hash2(gx, gz, 113) - 0.5) * 0.035, (rnd - 0.5) * 0.08, (rnd - 0.5) * 0.14);
     const ca = this.scratchColors[kind];
     ca[slot * 3] = tmpColor.r; ca[slot * 3 + 1] = tmpColor.g; ca[slot * 3 + 2] = tmpColor.b;
@@ -517,6 +537,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.92, 0.96), gdSnow * 0.88);`
       (this.meshes[i].instanceMatrix.array as Float32Array).set(this.scratchMatrices[i].subarray(0, count * 16), 0);
       this.meshes[i].instanceColor!.array.set(this.scratchColors[i].subarray(0, count * 3), 0);
       this.commit(this.meshes[i], count);
+      if (i === 3) this.meshes[i].visible = count > 0;
     }
     this.visibleInstances = job.total;
     this.lastPatchX = job.patchX;

@@ -22,6 +22,7 @@ import { civicOverlay } from './civicOverlay';
 import { buildLandmark, LANDMARK_FOOTPRINT, setLandmarkMap } from './landmarks';
 import { buildBillboard } from './billboard';
 import { brandFits } from './archetypes';
+import { stretchTowerCrown, towerBrandScale } from './towerIdentity';
 
 export { buildingMaterial, setBuildingNight } from './material';
 
@@ -141,9 +142,14 @@ export function generateBuilding(spec: LotSpec): BuildingModel {
   const brand = spec.brand && brandFits(zone, level, w, d, spec.brand) ? spec.brand : undefined;
   const key = `${zone}|${level}|${w}x${d}|${variant}|${brand ?? ''}${style ? '|' + style : ''}`;
   const hit = cacheGet(key);
-  if (hit) return copy(hit);
   const norm: LotSpec = { ...spec, zone, level, widthCells: w, depthCells: d, brand };
-  return copy(run(key, mix(zone, level, w, d, variant, brand ?? ''), norm, w * CELL, d * CELL, GEN[zone], true));
+  const model = copy(hit ?? run(key, mix(zone, level, w, d, variant, brand ?? ''), norm, w * CELL, d * CELL, GEN[zone], true));
+  // A retired brand can share the fallback's content without making its tower
+  // an exact twin of the next retired brand. Keep the canonical cache untouched.
+  if (spec.brand && !brand && level >= 4 && (zone === 'office' || zone === 'comHigh' || zone === 'resHigh')) {
+    stretchTowerCrown(model, towerBrandScale(spec.brand));
+  }
+  return model;
 }
 
 /**

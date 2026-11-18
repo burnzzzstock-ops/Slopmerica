@@ -53,32 +53,16 @@ export interface ZCell {
   bld: number; // building id occupying it, 0 = none
 }
 
-/**
- * A lot cell. Two looks: with the zoning tool out (`soft`) an even wash that thins toward the edge, with no line round it,
- * so waiting lots read as land in a zone and not as a grid of tiles (the planting beds below say where a lot ends);
- * with the tool in, a solid rim and a light fill, so each cell reads as a lot with edges. Zoned cells take their zone's
- * colour through the instance tint.
- */
-function cellTexture(soft: boolean): THREE.Texture {
+/** Thin lot boundaries over a 30% fill. The material dims idle lots separately. */
+function cellTexture(): THREE.Texture {
   const c = document.createElement('canvas');
   c.width = c.height = 64;
   const x = c.getContext('2d')!;
-  x.fillStyle = soft ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.42)';
+  x.fillStyle = 'rgba(255,255,255,0.30)';
   x.fillRect(0, 0, 64, 64);
-  if (soft) {
-    x.globalCompositeOperation = 'destination-out';
-    for (const [x0, y0, x1, y1, w, h] of [[0, 0, 0, 22, 64, 22], [0, 64, 0, 42, 64, 22], [0, 0, 22, 0, 22, 64], [64, 0, 42, 0, 22, 64]] as const) {
-      const gr = x.createLinearGradient(x0, y0, x1, y1);
-      gr.addColorStop(0, 'rgba(0,0,0,1)');
-      gr.addColorStop(1, 'rgba(0,0,0,0)');
-      x.fillStyle = gr;
-      x.fillRect(x0 === 64 ? 42 : x0, y0 === 64 ? 42 : y0, w, h);
-    }
-  } else {
-    x.strokeStyle = 'rgba(255,255,255,1)';
-    x.lineWidth = 6;
-    x.strokeRect(3, 3, 58, 58);
-  }
+  x.strokeStyle = 'rgba(255,255,255,1)';
+  x.lineWidth = 2;
+  x.strokeRect(1, 1, 62, 62);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
@@ -160,8 +144,7 @@ export class Zoning {
   private dirtySegs = new Set<number>();
   private revalidate = new Set<number>();
   private overlayMesh: THREE.InstancedMesh;
-  private tileSoft = cellTexture(true);
-  private tileCrisp = cellTexture(false);
+  private tile = cellTexture();
   /** planting beds and verges along the edges of unbuilt zoned land (one merged mesh) */
   private bedMesh: THREE.Mesh;
   private bedDirty = true;
@@ -188,7 +171,7 @@ export class Zoning {
   constructor(private net: RoadNetwork, private terrain: Terrain, scene: THREE.Scene) {
     const g = new THREE.PlaneGeometry(CELL - 0.7, CELL - 0.7);
     g.rotateX(-Math.PI / 2);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, map: this.tileSoft, transparent: true, opacity: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, map: this.tile, transparent: true, opacity: 0.2, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
     this.overlayMesh = new THREE.InstancedMesh(g, mat, this.capacity);
     this.overlayMesh.count = 0;
     this.overlayMesh.renderOrder = 3;
@@ -572,7 +555,7 @@ export class Zoning {
 
   /**
    * Planting beds and verges along the edges of unbuilt zoned land, where the next lot is not the same zone (or is a
-   * building, or is the road): what says where a lot ends now that the idle tile has no rim. One merged, terrain-following mesh.
+   * building, or is the road). One merged, terrain-following mesh.
    */
   private rebuildBeds() {
     this.bedDirty = false;
@@ -663,11 +646,9 @@ export class Zoning {
       n++;
     }
     this.overlayMesh.count = n;
-    // outside the zoning tool, empty zoned lots are only a hint: at 0.3 the town
-    // read as a spreadsheet of coloured squares from every camera
+    // The active tool keeps the texture's 30% fill. Idle lots remain a faint hint.
     const om = this.overlayMesh.material as THREE.MeshBasicMaterial;
-    om.opacity = this.overlayOn ? 0.85 : 0.2;
-    om.map = this.overlayOn ? this.tileCrisp : this.tileSoft;
+    om.opacity = this.overlayOn ? 1 : 0.2;
     this.overlayMesh.instanceMatrix.needsUpdate = true;
     if (this.overlayMesh.instanceColor) this.overlayMesh.instanceColor.needsUpdate = true;
   }

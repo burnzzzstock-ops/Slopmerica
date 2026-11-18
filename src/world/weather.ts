@@ -1,17 +1,15 @@
-// Four seasons and weather. Each map has its own climate (Appalachian snow,
-// NorCal marine fog + fire season + green winters, Florida afternoon storms and
-// hurricanes, and one freak snowflake). A weather "spell" lasts a few days and
-// blends in smoothly; it drives clouds and their shadows, sky/fog/ground mist,
-// GPU rain, snow and ash, lightning, fireflies, snow cover, wet ground, river
-// ice, storm surge, the post-processing grade and gameplay multipliers.
+// Weather presentation follows the saved simulation climate. Visual easing
+// drives clouds, fog, precipitation, lightning, surface effects and grading.
+// Weather selection, timing and gameplay effects belong to the source.
 // Nothing here allocates per frame.
 import * as THREE from 'three';
-import type { GameTime, Season, WeatherEffects, WeatherKind } from '../contracts';
+import type { GameTime, Season, WeatherKind } from '../contracts';
 import type { MapId } from './maps';
 import type { Environment } from './sky';
 import type { Terrain } from './terrain';
 import type { Trees } from './trees';
 import type { Quality } from '../config';
+import type { Climate } from '../sim/climate';
 import type { PostLook } from '../render/post';
 import { HALF, WATER, WORLD, GLOW, nightLift } from '../config';
 import { ATMOS } from './atmos';
@@ -20,6 +18,8 @@ import { LAMPS, LAMP_PARS } from './nightLights';
 import { applySeasonUniforms, atmo, ATMOS_EXTRA, newSeasonLook, sampleSeason, seasonOf, temperatureC, YEAR } from './seasons';
 
 export { seasonOf } from './seasons';
+
+export type WeatherClimate = Readonly<Pick<Climate, 'kind' | 'intensity' | 'wet' | 'snowCover' | 'wind' | 'season' | 'temperature' | 'spell' | 'spellDays'>>;
 
 export interface AtmosphereContext {
   scene: THREE.Scene;
@@ -30,6 +30,9 @@ export interface AtmosphereContext {
   water: { mesh: THREE.Mesh; mat: THREE.ShaderMaterial };
   quality: Quality;
   mapId: MapId;
+  climate?: WeatherClimate;
+  /** The owning scene applies legacy override durations to its own clock. */
+  requestWeather?: (kind: WeatherKind, days: number) => void;
 }
 
 interface Look {
@@ -74,41 +77,6 @@ const LOOKS: Record<WeatherKind, Look> = {
 };
 const LOOK_KEYS = Object.keys(LOOKS.clear) as (keyof Look)[];
 
-const FX: Record<WeatherKind, WeatherEffects> = {
-  clear: { speedMul: 1, crashMul: 1, buildMul: 1, demandMul: 1, outdoorPeopleMul: 1 },
-  cloudy: { speedMul: 1, crashMul: 1, buildMul: 1, demandMul: 1, outdoorPeopleMul: 0.9 },
-  rain: { speedMul: 0.88, crashMul: 1.5, buildMul: 0.85, demandMul: 0.98, outdoorPeopleMul: 0.5 },
-  storm: { speedMul: 0.8, crashMul: 2, buildMul: 0.6, demandMul: 0.95, outdoorPeopleMul: 0.25 },
-  snow: { speedMul: 0.75, crashMul: 2.2, buildMul: 0.6, demandMul: 0.95, outdoorPeopleMul: 0.5 },
-  blizzard: { speedMul: 0.55, crashMul: 3.5, buildMul: 0.2, demandMul: 0.9, outdoorPeopleMul: 0.1 },
-  fog: { speedMul: 0.82, crashMul: 1.9, buildMul: 1, demandMul: 1, outdoorPeopleMul: 0.8 },
-  heatwave: { speedMul: 0.95, crashMul: 1.2, buildMul: 0.8, demandMul: 0.98, outdoorPeopleMul: 0.35 },
-  hurricane: { speedMul: 0.5, crashMul: 3.5, buildMul: 0.1, demandMul: 0.85, outdoorPeopleMul: 0.05 },
-  wildfireSmoke: { speedMul: 0.9, crashMul: 1.3, buildMul: 0.8, demandMul: 0.96, outdoorPeopleMul: 0.3 },
-};
-
-type Table = Partial<Record<WeatherKind, number>>;
-const CLIMATE: Record<MapId, Record<Season, Table>> = {
-  appalachia: {
-    spring: { clear: 0.34, cloudy: 0.26, rain: 0.24, storm: 0.08, fog: 0.08 },
-    summer: { clear: 0.42, cloudy: 0.16, storm: 0.2, rain: 0.1, heatwave: 0.08, fog: 0.04 },
-    fall: { clear: 0.42, cloudy: 0.24, rain: 0.18, fog: 0.16 },
-    winter: { cloudy: 0.28, snow: 0.34, blizzard: 0.07, clear: 0.2, fog: 0.11 },
-  },
-  norcal: {
-    spring: { clear: 0.5, cloudy: 0.18, rain: 0.14, fog: 0.18 },
-    summer: { clear: 0.42, fog: 0.3, heatwave: 0.16, wildfireSmoke: 0.12 },
-    fall: { clear: 0.42, wildfireSmoke: 0.2, heatwave: 0.14, fog: 0.12, cloudy: 0.12 },
-    winter: { rain: 0.36, storm: 0.1, cloudy: 0.26, clear: 0.2, fog: 0.06, snow: 0.02 }, // snow: peaks only, rarely
-  },
-  florida: {
-    spring: { clear: 0.55, cloudy: 0.2, storm: 0.15, rain: 0.1 },
-    summer: { storm: 0.34, clear: 0.3, rain: 0.15, heatwave: 0.16, hurricane: 0.05 },
-    fall: { clear: 0.4, storm: 0.15, rain: 0.15, hurricane: 0.08, cloudy: 0.22 },
-    winter: { clear: 0.6, cloudy: 0.25, fog: 0.1, rain: 0.05, snow: 0.006 }, // "snow" = the one-flake joke
-  },
-};
-
 /** Grass color multipliers through the year (day 0 = Mar 20). */
 const GRASS: Record<MapId, [number, number, number, number][]> = {
   // green by the Mar 20 start, ochre in fall, dormant tan through the winter
@@ -118,25 +86,7 @@ const GRASS: Record<MapId, [number, number, number, number][]> = {
   florida: [[0, 1, 1.02, 0.98], [150, 1, 1.04, 1], [280, 0.97, 0.96, 0.9], [340, 0.96, 0.95, 0.9], [365, 1, 1.02, 0.98]],
 };
 
-function pick(t: Table, r: number): WeatherKind {
-  let s = 0;
-  for (const k in t) s += t[k as WeatherKind] ?? 0;
-  let x = r * s;
-  for (const k in t) {
-    x -= t[k as WeatherKind] ?? 0;
-    if (x <= 0) return k as WeatherKind;
-  }
-  return 'clear';
-}
-
 const C_SODIUM = new THREE.Color(0xff9a4a);
-
-/** weather days (the day/night clock, 360 s at ▶) per calendar day (2.5 s at ▶) */
-const CAL_PER_WDAY = 360 / 2.5;
-/** a spell shows for at least this many real seconds at the current speed, so top speed doesn't strobe */
-const SPELL_MIN_REAL = 12;
-
-const isWet = (k: WeatherKind) => k === 'rain' || k === 'storm' || k === 'snow' || k === 'blizzard' || k === 'hurricane';
 
 /** Florida's "snow" is a single flake: everything else about the day stays cloudy. */
 const isFlakeJoke = (map: MapId, kind: WeatherKind) => map === 'florida' && (kind === 'snow' || kind === 'blizzard');
@@ -377,21 +327,8 @@ export class WeatherSystem {
   private clouds: CloudLayer;
   private cur: Look = L({});
   private target: Look = L({});
-  private gameDays = 0;
-  private spellEnd = 0.6;
-  private spellStart = 0;
-  // Spells are timed in calendar days (the weather clock follows the day/night
-  // cycle, about 360 s a day, while the calendar runs a day every 2.5 s: a
-  // spell of three weather days used to be a year of rain, or summer snow).
-  /** ease in and out (weather days): a sixth of a short spell, 0.18 at most */
-  private ease = 0.18;
-  private spdNow = 1;
-  /** the spell's calendar length (weather days), before the on-screen floor */
-  private spellCal = 0;
-  private spellForced = false;
-  private strength = 0.8;
+  private observedSpell = -1;
   private realT = 0;
-  private windAngle = 0.46;
   private windDir = new THREE.Vector2(0.9, 0.45).normalize();
   private cloudOff = new THREE.Vector2(Math.random() * 10, Math.random() * 10);
   private visDay = NaN;
@@ -405,7 +342,6 @@ export class WeatherSystem {
   private focusY = 0;
   private snowLo = 0;
   private snowPeak = 100;
-  private fx: WeatherEffects = { speedMul: 1, crashMul: 1, buildMul: 1, demandMul: 1, outdoorPeopleMul: 1 };
 
   // lightning
   private flash = 0;
@@ -548,9 +484,7 @@ export class WeatherSystem {
     this.boltU = (this.bolt.material as THREE.ShaderMaterial).uniforms;
     this.boltGlowU = (this.boltGlow.material as THREE.ShaderMaterial).uniforms;
 
-    // start the county on a nice couple of weeks
-    this.kind = 'clear';
-    this.spellEnd = this.spellCal = (10 + Math.random() * 15) / CAL_PER_WDAY;
+    this.syncClimate();
   }
 
   private addFx<T extends THREE.Mesh>(m: T, order: number) {
@@ -572,66 +506,51 @@ export class WeatherSystem {
     this.snowLo = this.ctx.mapId === 'norcal' ? pct(0.8) : pct(0.02) - 6;
   }
 
-  // ---------------------------------------------------------------- spells
-  private pickKind(): WeatherKind {
-    const one = () => {
-      let kind = pick(CLIMATE[this.ctx.mapId][this.season], Math.random());
-      // temperature decides rain vs snow in the hollers
-      if (this.ctx.mapId === 'appalachia') {
-        if (kind === 'rain' && this.temperature < 0.5) kind = 'snow';
-        else if ((kind === 'snow' || kind === 'blizzard') && this.temperature > 5) kind = 'rain';
-      }
-      return kind;
-    };
-    // wet weather breaks between spells (back-to-back rain spells read as a month of rain)
-    let kind = one();
-    for (let i = 0; i < 4 && isWet(kind) && isWet(this.kind); i++) kind = one();
-    return isWet(kind) && isWet(this.kind) ? 'cloudy' : kind;
+  /** Copy authoritative state without advancing its clock or random stream. */
+  private syncClimate() {
+    const source = this.ctx.climate;
+    if (!source) return;
+    const changed = source.spell !== this.observedSpell || source.season !== this.season;
+    this.kind = source.kind;
+    this.intensity = source.intensity;
+    this.season = source.season;
+    this.temperature = source.temperature;
+    this.wet = source.wet;
+    this.snowCover = source.snowCover;
+    this.wind.set(source.wind.x, source.wind.y);
+    this.observedSpell = source.spell;
+    if (changed) {
+      this.nextStrike = 1 + Math.random() * 2.5;
+      if (this.started) this.onChange?.(this.kind, this.season);
+      else this.pendingNotify = true;
+    }
   }
 
-  private startSpell(kind: WeatherKind, days: number, forced: boolean) {
-    const changed = kind !== this.kind;
-    this.kind = kind;
-    this.spellStart = this.gameDays;
-    // on the calendar: fair spells last one to a few weeks, rain and snow a few days, storms a day or two
-    // (forced spells keep their weather-day length)
-    if (!forced) {
-      const cal = kind === 'clear' ? 5 + Math.random() * 20 : kind === 'storm' || kind === 'hurricane' || kind === 'blizzard' ? 1 + Math.random() * 2 : 2 + Math.random() * 6;
-      this.spellCal = cal / CAL_PER_WDAY;
-      days = Math.max(this.spellCal, (SPELL_MIN_REAL * Math.max(1, this.spdNow)) / 360);
+  /** Debug / UI override. The owning scene changes its authoritative climate. */
+  force(kind: WeatherKind, days = 3) {
+    if (this.ctx.climate) {
+      this.ctx.requestWeather?.(kind, days);
+      this.syncClimate();
+      return;
     }
-    this.spellForced = forced;
-    this.spellEnd = this.gameDays + days;
-    this.ease = Math.min(0.18, days / 6);
-    this.strength = forced ? 1 : kind === 'clear' ? 1 : 0.55 + Math.random() * 0.45;
+    // An unbound preview can hold an explicit look without a weather clock.
+    this.kind = kind;
+    this.intensity = 1;
     this.nextStrike = 1 + Math.random() * 2.5;
-    if (!(changed || forced)) return;
-    // before the first update we don't know the season yet; announce once we do
     if (this.started) this.onChange?.(kind, this.season);
     else this.pendingNotify = true;
   }
 
-  /** Debug / UI override: force a weather kind for N game days. */
-  force(kind: WeatherKind, days = 3) {
-    this.startSpell(kind, days, true);
-    // skip the slow ease-in so the button feels instant
-    this.spellStart = this.gameDays - this.ease;
-  }
-
   /** Jump every visual straight to the current state (after a calendar scrub or a scripted change). */
   settle() {
-    this.spellStart = Math.min(this.spellStart, this.gameDays - this.ease);
-    this.intensity = this.strength;
+    this.syncClimate();
     this.computeTarget(this.ctx.env.hour);
     const c = this.cur, t = this.target;
     for (const key of LOOK_KEYS) {
       if (key === 'tint') for (let i = 0; i < 3; i++) c.tint[i] = t.tint[i];
       else c[key] = t[key];
     }
-    this.wet = c.rain > 0.05 ? 1 : 0;
-    this.puddles = c.rain > 0.2 ? 0.8 : 0;
-    const floor = this.snowFloor();
-    this.snowCover = this.ctx.mapId === 'florida' ? 0 : Math.max(floor, c.snow > 0.3 ? 0.7 : 0);
+    this.puddles = c.rain > 0.2 ? this.wet * 0.8 : 0;
     this.surge = c.surge;
     this.ice = this.iceTarget();
   }
@@ -642,13 +561,7 @@ export class WeatherSystem {
     const ctx = this.ctx, env = ctx.env, map = ctx.mapId;
     this.realT += dt;
     const dDays = (dt * spd) / 360;
-    this.gameDays += dDays;
-    if (spd > 0 && spd !== this.spdNow) {
-      this.spdNow = spd;
-      // a spell begun at another speed keeps to the calendar at this one (slowing down from
-      // top speed doesn't leave three weeks of rain on the clock)
-      if (!this.spellForced) this.spellEnd = Math.max(this.spellStart + Math.max(this.spellCal, (SPELL_MIN_REAL * spd) / 360), this.gameDays + this.ease);
-    }
+    this.syncClimate();
 
     // calendar, smoothed so an integer day counter never steps the colors
     const doy = ((time.dayOfYear % YEAR) + YEAR) % YEAR;
@@ -669,20 +582,13 @@ export class WeatherSystem {
     applySeasonUniforms(this.seasonal);
     atmo.uTime.value = this.realT;
     const c = this.cur;
-    this.temperature = temperatureC(map, this.visDay, env.hour) - c.rain * 2 + c.haze * 7 - c.snow * 3;
-    const s = seasonOf(doy);
-    if (s !== this.season) {
-      this.season = s;
-      if (this.started) this.onChange?.(this.kind, s);
+    if (!this.ctx.climate) {
+      this.season = seasonOf(doy);
+      this.temperature = temperatureC(map, this.visDay, env.hour);
     }
-    if (!this.started && this.pendingNotify) this.onChange?.(this.kind, s);
+    if (!this.started && this.pendingNotify) this.onChange?.(this.kind, this.season);
     this.started = true;
     this.pendingNotify = false;
-
-    // next spell, and its ease in/out
-    if (this.gameDays >= this.spellEnd) this.startSpell(this.pickKind(), 0, false);
-    const into = (this.gameDays - this.spellStart) / this.ease, left = (this.spellEnd - this.gameDays) / this.ease;
-    this.intensity = Math.max(0, Math.min(1, into, left)) * this.strength;
 
     // blend every look parameter toward the target (game time, with a real-time floor)
     this.computeTarget(env.hour);
@@ -696,25 +602,11 @@ export class WeatherSystem {
       }
     }
 
-    // ground: wetness, snowpack, river ice, surge
-    const wantWet = c.rain > 0.05 ? 1 : c.mist > 3 ? 0.35 : 0;
-    this.wet += (wantWet - this.wet) * (1 - Math.exp(-(dDays / (wantWet > this.wet ? 0.08 : 0.5) + (wantWet > this.wet ? dt / 20 : 0))));
-    if (c.haze > 0.3) this.wet = Math.max(0, this.wet - dDays * 3);
+    // Visual surface responses use the source wetness, snow and temperature.
     if (c.rain > 0.2 && this.wet > 0.6) this.puddles = Math.min(1, this.puddles + (dDays / 0.1 + dt / 16) * c.rain);
     else this.puddles = Math.max(0, this.puddles - (dDays / 0.4 + dt / 50));
     atmo.uPuddle.value = this.puddles;
     atmo.uRain.value = Math.min(1, c.rain);
-    const mountainSnow = map === 'norcal' && this.season === 'winter' ? c.rain * 0.8 : 0;
-    const snowing = map === 'florida' ? 0 : Math.max(c.snow, mountainSnow);
-    if (snowing > 0.05) this.snowCover = Math.min(1, this.snowCover + (dDays * 1.8 + dt / 25) * snowing);
-    else {
-      const melt = this.season === 'winter' ? 0.2 : this.season === 'fall' ? 1 : 3;
-      this.snowCover = Math.max(0, this.snowCover - dDays * melt * (1 + c.rain * 2));
-    }
-    // the hollers keep a winter snowpack of their own between storms
-    const floor = this.snowFloor();
-    if (this.snowCover < floor) this.snowCover += (floor - this.snowCover) * (1 - Math.exp(-(dDays / 0.5 + dt / 60)));
-    if (map === 'florida') this.snowCover = 0;
     this.ice += (this.iceTarget() - this.ice) * Math.min(1, dt * 0.05 + dDays * 2);
     this.surge += (c.surge - this.surge) * Math.min(1, dt * 0.08 + dDays * 3);
 
@@ -727,10 +619,9 @@ export class WeatherSystem {
     if (map === 'norcal') line = Math.max(line, this.snowLo);
     ATMOS.uSnowLine.value = map === 'florida' ? 1e5 : line;
     ATMOS.uWet.value = this.wet;
-    ATMOS.uWind.value = c.wind;
+    ATMOS.uWind.value = this.wind.length() / 0.9;
     // clouds drift with the wind
-    this.windAngle += (Math.sin(this.realT * 0.05) * 0.02 + (c.storm > 0.3 ? 0.08 : 0)) * dt;
-    this.windDir.set(Math.cos(this.windAngle), Math.sin(this.windAngle));
+    this.windDir.copy(this.wind).normalize();
     const windSpeed = 0.0000009 * (0.6 + c.wind);
     this.cloudOff.x += this.windDir.x * windSpeed * dt * (1 + spd * 3);
     this.cloudOff.y += this.windDir.y * windSpeed * dt * (1 + spd * 3);
@@ -758,9 +649,6 @@ export class WeatherSystem {
     env.flash = this.flash;
     // clouds at night: moonlit by a bright moon, dark on a moonless night, sodium-orange over a big city
     this.cloudLook(c, this.flash);
-
-    // surface breeze for smoke and particles (m/s)
-    this.wind.copy(this.windDir).multiplyScalar(0.9 * c.wind);
 
     // precipitation, ash, fireflies and the Florida flake
     this.updatePrecip(dt, camera, camDist);
@@ -886,15 +774,9 @@ export class WeatherSystem {
     this.fireflies = ff * THREE.MathUtils.smoothstep(this.ctx.env.night, 0.4, 0.8) * (1 - Math.min(1, t.rain * 2 + Math.max(0, t.wind - 1) * 0.5)) * THREE.MathUtils.clamp(this.ctx.trees.naturePct * 1.2, 0, 1);
   }
 
-  private snowFloor() {
-    if (this.ctx.mapId !== 'appalachia') return 0;
-    return this.seasonal.snowClimate * (this.temperature < 3 ? 1 : 0.4);
-  }
-
   private iceTarget() {
     if (this.ctx.mapId !== 'appalachia') return 0;
-    // daily mean (9am sits on the mean of the diurnal curve), colder when it snows
-    const t = temperatureC('appalachia', this.visDay, 9) - this.cur.snow * 3;
+    const t = this.temperature;
     return THREE.MathUtils.clamp((1.5 - t) / 6, 0, 1);
   }
 
@@ -1118,22 +1000,6 @@ export class WeatherSystem {
       u.uSpin.value = ft * 6;
       u.uOpacity.value = this.flakeAmt * Math.min(1, ft * 8) * Math.min(1, (1 - ft) * 8);
     }
-  }
-
-  /** Gameplay multipliers for the sim (1 = neutral). Returns a reused object. */
-  effects(): WeatherEffects {
-    const f = FX[this.kind];
-    const t = isFlakeJoke(this.ctx.mapId, this.kind) ? 0 : this.intensity;
-    const out = this.fx;
-    out.speedMul = 1 + (f.speedMul - 1) * t;
-    out.crashMul = 1 + (f.crashMul - 1) * t;
-    out.buildMul = 1 + (f.buildMul - 1) * t;
-    out.demandMul = 1 + (f.demandMul - 1) * t;
-    out.outdoorPeopleMul = 1 + (f.outdoorPeopleMul - 1) * t;
-    // lingering snow and ice on the roads
-    out.speedMul *= 1 - this.snowCover * 0.2;
-    out.crashMul *= 1 + this.snowCover * 0.6 + (this.temperature < 0 ? this.wet * 0.6 : 0);
-    return out;
   }
 
   /** One-line state for dev pages. */

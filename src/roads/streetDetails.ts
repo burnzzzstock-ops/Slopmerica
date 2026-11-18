@@ -593,7 +593,22 @@ export class StreetDetails {
       const u0 = slot.x / canvas.width, u1 = (slot.x + cellW) / canvas.width;
       const v0 = 1 - (slot.y + cellH) / canvas.height, v1 = 1 - slot.y / canvas.height;
       uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
-      idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      if (p.horizontal) {
+        idx.push(base, base + 2, base + 1, base, base + 3, base + 2);
+      } else {
+        idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+        if (p.kind === 'street') {
+          // Each face has its own upright UVs. A DoubleSide quad shows the
+          // front's lettering backwards when approached from the other street.
+          for (const q of corners) {
+            pos.push(q[0], q[1], q[2]);
+            nor.push(-zz.x, 0, -zz.z);
+          }
+          uv.push(u1, v0, u0, v0, u0, v1, u1, v1);
+          const back = base + 4;
+          idx.push(back, back + 2, back + 1, back, back + 3, back + 2);
+        }
+      }
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -603,7 +618,7 @@ export class StreetDetails {
     geometry.computeBoundingSphere();
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
-    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.22, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -6, toneMapped: false });
+    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.22, side: THREE.FrontSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -6, toneMapped: false });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.renderOrder = 5;
     mesh.userData.ownedStreetDetail = true;

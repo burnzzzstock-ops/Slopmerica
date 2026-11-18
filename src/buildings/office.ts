@@ -6,6 +6,8 @@ import { GenCtx, lotPad, parkingLot, car, tree, shrub, wallSign, poleSign, dish,
 import { FAC, FLOOR, WALL, ROOF, block, roofJunk, capFloors } from './blocks';
 import { signTile as sign } from './comLow';
 import { pickArch } from './archetypes';
+import { towerForm, towerShaft, towerPodium, setback, fitPlate, shoulderHeight } from './towerForm';
+import { civicCornice } from './civicCornice';
 
 function pickBrand(g: GenCtx, arch: Archetype): Brand {
   const given = brandById(g.spec.brand);
@@ -108,6 +110,7 @@ function campus(g: GenCtx, b: Brand) {
 // ------------------------------------------------------------------ L4/L5 towers
 function tower(g: GenCtx, b: Brand, mega: boolean) {
   const { mb, rng, W, D } = g;
+  const form = towerForm(rng.state, W, D);
   lotPad(g, mats.concrete());
   const hq = b.id === 'slopHQ';
   const fh = FLOOR.glass;
@@ -115,32 +118,37 @@ function tower(g: GenCtx, b: Brand, mega: boolean) {
   const floors = capFloors(mega ? rng.int(38, 48) + (big ? 8 : 0) : rng.int(16, 26), fh, W, D, 6, mega ? 8 : 6.5);
   const x0 = -W / 2 + 0.8, x1 = W / 2 - 0.8, z0 = -D / 2 + 0.8, z1 = D / 2 - (D >= 16 ? 3 : 1);
   const fac = hq ? FAC.glassB(rng) : rng.pick([FAC.glassA(rng), FAC.glassB(rng), FAC.glassC(rng), FAC.officeBand(rng)]);
-  // lobby
-  const lobby = 6;
-  mb.box(x0, x1, 0, lobby, z0, z1, { f: M('glassPlain', 3, 3), side: M('stone', 3, 3, 0xd8d4cc), top: null });
-  // shaft in 2-3 tapering stages
+  const lobby = (form.kind % 2 ? 3 : 2) * FLOOR.shop;
+  towerPodium(mb, { x0, x1, z0, z1 }, lobby, FAC.storefront(), FAC.aptBrick(undefined, 0xc6b29a));
+  if (!hq && form.kind === 4 && W >= 16) civicCornice(mb, x0, x1, lobby + 0.02, z1 - 0.08);
+  // Broad lobby, shoulders at different heights, then a recessed crown.
   const stages = mega ? 3 : 2;
-  let y = lobby, a0 = x0, a1 = x1, c0 = z0, c1 = z1;
   const perStage = Math.ceil(floors / stages);
+  const shaftH = perStage * fh * (stages - 0.2) + 6 - lobby;
+  let y = lobby, plate = towerShaft({ x0, x1, z0, z1 }, form);
+  if (hq) plate = { x0: plate.x0 + 0.12, x1: plate.x1 - 0.12, z0: plate.z0 + 0.12, z1: plate.z1 - 0.12 };
+  let original = { x0, x1, z0, z1 };
   for (let s = 0; s < stages; s++) {
-    const y1 = y + perStage * fh * (s === stages - 1 ? 0.8 : 1);
+    const fraction = stages === 2 ? shoulderHeight(form) : s === 0 ? shoulderHeight(form) * 0.72 : 0.72 + form.kind * 0.025;
+    const y1 = s === stages - 1 ? lobby + shaftH : lobby + Math.round(shaftH * fraction / fh) * fh;
+    const { x0: a0, x1: a1, z0: c0, z1: c1 } = plate;
     block(g, a0, a1, c0, c1, y, y1, fac, { roof: ROOF.flat(0x6a6a6a) });
     // lime edge strips on SLOP HQ
     if (hq) for (const [ex, ez] of [[a0, c1], [a1, c1], [a0, c0], [a1, c0]]) mb.box(ex - 0.12, ex + 0.12, y, y1, ez - 0.12, ez + 0.12, S('neonLime'));
     y = y1;
     // setbacks only while the floor plate stays deep enough
-    const plate = Math.min(a1 - a0, c1 - c0);
-    const ins = plate > 8 ? Math.min(plate * 0.12, 2.5) : 0;
-    a0 += ins;
-    a1 -= ins;
-    c0 += ins;
-    c1 -= ins;
+    plate = setback(plate, form, s === stages - 1 ? 0.65 : 1);
+    // Keep the equipment's original sampling footprint, including on infill.
+    const narrow = Math.min(original.x1 - original.x0, original.z1 - original.z0);
+    const ins = narrow > 8 ? Math.min(narrow * 0.12, 2.5) : 0;
+    original = { x0: original.x0 + ins, x1: original.x1 - ins, z0: original.z0 + ins, z1: original.z1 - ins };
   }
+  const { x0: a0, x1: a1, z0: c0, z1: c1 } = plate;
   // crown: signs on all four sides
   const cw = a1 - a0, cd = c1 - c0;
   const crownTile = hq ? 'lm:slopHQ' : sign(b);
   const ch = hq ? Math.min(cw, cd) * 0.5 : Math.min(cw, 12) / 4;
-  const crownMat = M('plain', 2, 2, 0x111111);
+  const crownMat = M('grille', 4, 4, 0x4b5157);
   mb.box(a0, a1, y, y + ch + 0.6, c0, c1, { side: crownMat, top: ROOF.flat(0x444444) });
   const sw = hq ? cw * 0.95 : Math.min(cw - 1, 12);
   const shh = hq ? ch : sw / 4;
@@ -157,7 +165,11 @@ function tower(g: GenCtx, b: Brand, mega: boolean) {
     mb.lathe((a0 + a1) / 2, (c0 + c1) / 2, [[0.8, y], [0.2, y + 18]], 6, M('metal', 2, 2, 0xc8ccd0));
     mb.boxC((a0 + a1) / 2, (c0 + c1) / 2, 0.6, 0.6, y + 18, 0.6, S('neonRed'));
     if (hq) g.em.push({ kind: 'sparkle', pos: [(a0 + a1) / 2, y + 2, c1] });
-  } else roofJunk(g, a0, a1, c0, c1, y, 0.3, { masts: 1 });
+  } else {
+    fitPlate(mb, original, plate);
+    roofJunk(g, original.x0, original.x1, original.z0, original.z1, y, 0.3, { masts: 1 });
+    mb.pop();
+  }
   // entrance plaza
   if (D >= 16) {
     patch(g, -W / 2 + 0.5, W / 2 - 0.5, z1, D / 2 - 0.3, M('concretePad', 4, 4, 0xe0dcd0), 0.12);

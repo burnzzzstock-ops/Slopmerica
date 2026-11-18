@@ -17,10 +17,20 @@ import { Environment } from './world/sky';
 import { WeatherSystem } from './world/weather';
 import { PointerHandlers, RTSCamera } from './render/camera';
 import { PostFX } from './render/post';
+import { WaterRefraction } from './render/refraction';
+import { applySmogLook } from './render/aerialPerspective';
+import { GodRays } from './render/godRays';
 import { PhotoMode } from './render/photo';
+import { BuildingFinishes } from './buildings/finishState';
 import { applyLowGrade, lowExposure } from './render/lowGrade';
+import { installGradeLite } from './render/gradeLite';
+import { CascadeShadows } from './render/cascadeShadows';
 import { Particles } from './render/particles';
+import { ConstructionEffects } from './render/constructionEffects';
 import { AudioEngine } from './audio/audio';
+import { WorldSoundSources } from './audio/worldSources';
+import { bindWorldAudio } from './audio/events';
+import type { SoundscapeMix } from './audio/ambience';
 import { COUNTY_ROAD, RoadNetwork, RSeg, Plan } from './roads/network';
 import { RoadRenderer } from './roads/roadMesh';
 import { ROAD_TYPES, RoadTypeId } from './roads/roadTypes';
@@ -150,10 +160,14 @@ export class Game {
   readonly rts: RTSCamera;
   readonly terrain: Terrain;
   readonly photo = new PhotoMode(this);
+  private readonly finishes = new BuildingFinishes();
   readonly trees: Trees;
   readonly groundDetail: GroundDetail;
   readonly env: Environment;
+  readonly shadows: CascadeShadows;
   readonly water: ReturnType<typeof createWater>;
+  readonly waterRefraction: WaterRefraction;
+  readonly godRays: GodRays;
   readonly weather: WeatherSystem;
   /** the weather the simulation runs on (seeded, saved, in game time); `weather` above is the sky, which follows it */
   readonly climate: Climate;
@@ -161,9 +175,9 @@ export class Game {
   seed: number;
   /** the valley's ground as generated, before anything was built on it (a save keeps only where today's ground differs) */
   readonly pristine: Float32Array;
-  private skySpell = -1;
   readonly post: PostFX;
   readonly particles: Particles;
+  readonly constructionEffects: ConstructionEffects;
   readonly audio = new AudioEngine();
   readonly net: RoadNetwork;
   readonly roads: RoadRenderer;
@@ -210,6 +224,12 @@ export class Game {
   private raf = 0;
   private waterT = 0;
   private waterNear = 0;
+  private soundMix: SoundscapeMix = {
+    zoom: 0, nature: 1, water: 0, surf: 0, pollution: 0, traffic: 0, construction: 0, people: 0,
+    night: 0, weather: 'clear', weatherIntensity: 0, season: 'spring',
+  };
+  private soundTreeSample = { x: NaN, z: NaN, count: 0 };
+  private worldSoundSources = new WorldSoundSources();
   private ray = new THREE.Raycaster();
   private nightWas = false;
   /** pools of light from street lamps, shopfronts, entrances and yards after dark */
@@ -262,6 +282,7 @@ export class Game {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, presetPixelRatio(this.q.name)));
     this.renderer.setSize(container.clientWidth, container.clientHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    installGradeLite(this.renderer);
     this.renderer.toneMappingExposure = 0.95;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = this.q.shadows;
@@ -278,19 +299,36 @@ export class Game {
     this.terrain = new Terrain(this.map, this.renderer, this.q);
     this.scene.add(this.terrain.group);
     lap('terrain');
-    this.water = createWater(this.terrain, this.map.def.water, this.q.name === 'high' || this.q.name === 'ultra', opts.map);
+    this.water = createWater(this.terrain, this.map.def.water, this.q.name === 'low' ? false : this.q.name === 'medium' ? .25 : this.q.name === 'high' ? .5 : 1, opts.map);
     this.scene.add(this.water.mesh);
     this.trees = new Trees(this.terrain, this.map, this.q, this.renderer);
     this.terrain.onReshape = (a, b, c, d) => this.trees.resettle(a, b, c, d);
     this.scene.add(this.trees.group);
     lap('trees');
     this.env = new Environment(this.scene, this.map.def, this.q, this.q.name === 'high' || this.q.name === 'ultra' ? this.renderer : undefined);
+    this.shadows = new CascadeShadows(this.scene, this.camera, this.env.sun, this.q);
     this.env.hour = this.hour;
+    this.env.pollutionTexture = this.water.pollution.texture;
     this.seed = (opts.restore?.seed ?? opts.seed ?? seedPick() ?? Math.floor(Math.random() * 2 ** 31)) >>> 0;
     this.climate = new Climate(opts.map, streamSeed(this.seed, 'climate'));
     this.dice.state = streamSeed(this.seed, 'county');
-    this.weather = new WeatherSystem({ scene: this.scene, renderer: this.renderer, env: this.env, terrain: this.terrain, trees: this.trees, water: this.water, quality: this.q, mapId: opts.map });
+    this.weather = new WeatherSystem({
+      scene: this.scene, renderer: this.renderer, env: this.env, terrain: this.terrain,
+      trees: this.trees, water: this.water, quality: this.q, mapId: opts.map,
+      climate: this.climate,
+      requestWeather: (kind, days) => {
+        // Keep the existing public override duration in 360-second sky days.
+        this.climate.force(kind, this.sim.day, Math.max(.001, days * (360 / DAY_SECONDS)));
+        this.climate.step(0, this.sim.day, this.hour, 0);
+        // Temperature reads intensity before the first step refreshes it.
+        this.climate.step(0, this.sim.day, this.hour, 0);
+      },
+    });
     this.post = new PostFX(this.renderer, this.scene, this.camera, this.q);
+    this.waterRefraction = new WaterRefraction(this.renderer, this.scene, this.water.mesh, this.q.name);
+    this.post.scenePass = this.waterRefraction.render;
+    this.godRays = new GodRays(this.renderer, this.env, this.q.name);
+    this.post.afterComposite = this.godRays.render;
     this.particles = new Particles(this.scene, this.q);
     this.particles.pxH = this.renderer.getDrawingBufferSize(new THREE.Vector2()).y;
     this.audio.mapId = opts.map;
@@ -343,6 +381,8 @@ export class Game {
 
     this.traffic = new Traffic(this.scene, this.net, this.buildings, this.q.maxCars);
     this.traffic.rng.state = streamSeed(this.seed, 'traffic');
+    this.audio.reverseState = (handle, id) => id === undefined ? this.traffic.renderer.isReversing(handle) : this.traffic.renderer.isCarReversing(id, handle);
+    this.audio.carDrawn = id => this.traffic.renderer.isCarDrawn(id);
     this.traffic.groundAt = (x, z) => this.terrain.h(x, z);
     // look pass: the vehicle renderer throws dust off gravel roads (it asks what the road under a car is, twice a second at most)
     this.traffic.renderer.surfaceAt = (x, z) => (this.net.pickSeg(x, z, 3)?.seg.type === 'gravel' ? 'gravel' : 'paved');
@@ -360,12 +400,13 @@ export class Game {
     // crosswalks: people wait for a gap (or the walk phase), cars stop for people on them
     this.traffic.crosswalkWalkers = (node, seg) => this.peds.crosswalkWalkers(node, seg);
     this.peds.canCross = (node, segs, secs, impatient) => this.traffic.canCross(node, segs, secs, impatient);
-    // Civic Foundry street furniture, street trees and bus shelters (streamed in; low quality skips it)
+    // Streamed civic furniture and shelters, with vertex-coloured LOD2 on Low.
     this.civic = new CivicLayer(this);
     this.civic.load();
     this.vaultScenery = new VaultScenery(this);
     this.overlays = new Overlays(this);
     this.fields = makeFields(this);
+    this.roads.setConditionProvider(id => this.fields.roadCondition(id));
     this.tools = new Tools(this);
 
     this.rts = new RTSCamera(this.camera, this.renderer.domElement, this.terrain, this.tools as PointerHandlers, this.fields.poseOf);
@@ -394,6 +435,8 @@ export class Game {
     });
 
     this.wireEvents();
+    this.constructionEffects = new ConstructionEffects(this);
+    this.onFrame.push(dt => this.constructionEffects.update(dt));
     this.net.events.on('segSplit', ({ old, into }) => this.followSplit(old, into));
     // extension systems (transit, services, ...): init before a save restores their data
     for (const s of EXT.systems) s.init?.(this);
@@ -511,11 +554,12 @@ export class Game {
   }
 
   private wireEvents() {
+    bindWorldAudio(this);
+    this.sim.events.on('disaster', event => this.audio.disaster(event));
     this.buildings.onComplete = ((orig) => (b: Bld) => {
       orig?.(b);
       if (b.zone !== 'resLow' && b.zone !== 'resHigh' && fx.float() < 0.35) this.feed.push('buildingOpened', { building: b.label, brand: brandName(b.brand) });
       this.traffic.grandOpening(b); // a new drive-thru: the town lines up (traffic pass)
-      if (this.near(b.x, b.z, 500)) this.audio.play('build', 0.3);
     })(this.buildings.onComplete);
     this.buildings.onLevel = ((orig) => (b: Bld) => {
       orig?.(b); // (a system's own, e.g. the College's first graduates)
@@ -550,7 +594,6 @@ export class Game {
       this.feed.push(drunk ? 'drunkCrash' : 'crash', { road: seg?.name });
       const c = cars[0];
       if (c && this.near(c.x, c.z, 450)) {
-        this.audio.play('crash', 0.8);
         this.floatText(drunk ? '💥🍺 DUI' : '💥 WRECK', new THREE.Vector3(c.x, c.y + 2, c.z), '#ff8a3a');
       }
     };
@@ -574,14 +617,8 @@ export class Game {
       else if (kind !== this.lastSkyKind) this.feed.push('weatherChange');
       this.lastSkyKind = kind;
     };
-    // weather.force(kind, days) is what scripts, dev pages and the playtest buttons call. It sets the simulation's weather
-    // (days are the sky's own: 360 game seconds each), and the sky follows that like any other spell.
-    this.skyForce = this.weather.force.bind(this.weather);
-    this.weather.force = (kind, days = 3) => this.climate.force(kind, this.sim.day, days * (360 / DAY_SECONDS));
   }
   private lastSkyKind = 'clear';
-  private skyForce: WeatherSystem['force'] = () => {};
-  private skyEnd = -1;
   private lastSeason = 'spring';
 
   near(x: number, z: number, r: number) {
@@ -601,7 +638,6 @@ export class Game {
     if (quiet) return razed;
     if (razed) this.toast(`${razed} building${razed === 1 ? '' : 's'} bulldozed for the road`);
     const t = ROAD_TYPES[segs[0].type];
-    this.audio.play('build', 0.6);
     const kind: FeedEventKind = t.id === 'highway' ? 'highwayBuilt' : t.centerTurn ? 'stroadBuilt' : plan.bridgeLen > 10 ? 'bridgeBuilt' : 'roadBuilt';
     if (fx.float() < (kind === 'roadBuilt' ? 0.25 : 0.7)) this.feed.push(kind, { road: segs[0].name, amount: plan.cost });
     // communes hate roads near them
@@ -679,7 +715,7 @@ export class Game {
     this.sim.refund(refund, `Undo: ${a.label}`);
     crumb(`undo ${a.label}`);
     this.tools.cancel();
-    this.audio.play('bulldoze', 0.6);
+    if (a.kind !== 'place') this.audio.play('bulldoze', 0.6);
     this.toast(`Undone: ${a.label}, ${usd(refund)} back${refund < a.refund ? ' (part of it was already bulldozed)' : ''}${'trees' in a && a.trees?.length ? ', trees replanted' : ''}.`);
     return true;
   }
@@ -721,13 +757,13 @@ export class Game {
   /** Bulldoze one road segment (20% salvage, like the map tool). */
   bulldozeRoad(seg: RSeg) {
     if (!this.net.segs.has(seg.id)) return;
+    const soundAt = seg.samp.pts[Math.floor(seg.samp.pts.length / 2)];
     this.net.removeSeg(seg.id);
     this.sim.refund(Math.round(seg.length * ROAD_TYPES[seg.type].costPerM * 0.2), `Bulldozed ${seg.name} (20% back)`);
-    this.audio.play('bulldoze');
+    this.audio.playAt('bulldoze', soundAt.x, soundAt.z);
   }
 
   onLaneAdded(segs: RSeg[], to: RoadTypeId) {
-    this.audio.play('build');
     this.feed.push('laneAdded', { road: segs[0]?.name, count: ROAD_TYPES[to].lanesPerDir * (ROAD_TYPES[to].oneWay ? 1 : 2) });
   }
 
@@ -748,7 +784,6 @@ export class Game {
     const b = this.buildings.at(p.x, p.z);
     if (!b) return false;
     this.buildings.demolish(b, 'bulldozed');
-    this.audio.play('bulldoze');
     this.particles.emit('dust', b.x, b.y + 2, b.z, { count: 50, spread: b.hw });
     return true;
   }
@@ -811,7 +846,7 @@ export class Game {
     const b = this.buildings.placeLandmark(id, spot.x, spot.z, spot.yaw);
     this.pushUndo({ kind: 'place', bldId: b.id, refund: cost, label: name, trees: this.trees.takeCuts() });
     this.feed.push('buildingOpened', { building: b.label, brand: name });
-    this.audio.play(id === 'slopCannon' ? 'cannon' : 'build');
+    this.audio.playAt(id === 'slopCannon' ? 'cannon' : 'build', spot.x, spot.z);
     // it can go down before its road, but it does nothing until one links it to the network
     const off = this.linkProblem?.(b);
     if (off) this.toast(`🚧 ${name} is built, but ${off === 'noRoad' ? 'no road reaches it' : "its road doesn't join the rest of your roads"}. It does nothing until it's connected to the road network: draw a road to it (🛣️ Roads).`, true);
@@ -882,7 +917,8 @@ export class Game {
   // ------------------------------------------------------------------ selection
   inspect(p: THREE.Vector3, e: PointerEvent) {
     this.ray.setFromCamera(this.ndc(e.clientX, e.clientY), this.camera);
-    const car = this.traffic.pick(this.ray);
+    const drawnCarId = this.traffic.renderer.pickCarId(this.ray);
+    const car = drawnCarId === null ? this.traffic.pick(this.ray) : this.traffic.cars.find(c => c.id === drawnCarId);
     if (car) return this.select({ kind: 'car', c: car });
     const ped = this.peds.pick(this.ray);
     if (ped) return this.select({ kind: 'ped', p: ped });
@@ -943,6 +979,10 @@ export class Game {
     saveQuality(name);
     this.pendingQuality = name === this.q.name ? null : name;
     this.post.setQuality(next);
+    this.water.setQuality(next.name);
+    this.waterRefraction.setQuality(next.name);
+    this.godRays.setQuality(next.name);
+    this.shadows.setQuality(next);
     this.perf.quality = name;
     this.renderer.shadowMap.enabled = next.shadows;
     this.env.sun.castShadow = next.shadows;
@@ -1219,9 +1259,9 @@ export class Game {
   }
 
   frame(dt: number, render = true) {
+    if (this.photo.active) { if (render) this.photo.frame(dt); return; }
     const P = this.prof;
     P.begin();
-    if (this.photo.active) { if (render) this.photo.frame(dt); return; }
     this.time += dt;
     const spd = SPEEDS[this.sim.speed];
     this.rts.update(dt);
@@ -1234,16 +1274,12 @@ export class Game {
       this.camera.near = nearWant;
       this.camera.updateProjectionMatrix();
     }
+    this.env.smog = this.fields.smog();
     this.env.update(0, this.rts.target, this.rts.distance, this.camera.position);
     P.lap('camera+sky');
     const t = this.sim.time(this.hour);
-    // the sky shows the simulation's weather: each new spell is handed to it (a little long, so it never rolls one of its own)
-    // (again if the sky has wandered off: it must never roll a spell of its own)
-    if (this.climate.spell !== this.skySpell || this.weather.kind !== this.climate.kind) {
-      this.skySpell = this.climate.spell;
-      this.skyForce(this.climate.kind, (Math.max(1, this.climate.daysLeft(this.sim.day)) * 1.5 + 10) / (360 / DAY_SECONDS));
-    }
     this.weather.update(dt, t, this.camera, spd, this.rts.distance);
+    applySmogLook(this.post.look, this.env.smog, this.env.night);
     this.groundDetail.update(this.time, this.rts.target, this.rts.distance, {
       season: this.weather.season, snowCover: this.weather.snowCover, wind: this.weather.wind,
     });
@@ -1257,13 +1293,14 @@ export class Game {
     P.lap('zones+roads');
     // moving things are drawn between their last two steps (smooth at any frame rate), or where they are after stepping by hand
     const alpha = this.snap ? 1 : this.owed / STEP_SECONDS;
+    this.traffic.renderer.observeTraffic(this.traffic.cars, this.camera, alpha, this.pendingQuality ?? this.q.name);
     this.traffic.draw(alpha, dt, this.rts.target);
     this.parkView.setFromProjectionMatrix(this.parkMat.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
     this.parking.update(dt, this.hour, this.rts.target.x, this.rts.target.z, this.rts.distance, () => this.traffic.renderer.stats().active);
     P.lap('traffic');
+    this.peds.renderer.updateLod(this.camera, this.q.peopleNear);
     this.peds.draw(alpha, dt, this.rts.target, this.rts.distance);
     this.civic.update(dt);
-    this.peds.renderer.updateLod(this.camera, this.q.peopleNear);
     this.vaultScenery.update(dt);
     P.lap('people');
     this.communes.update(dt, this.env.night, this.time, this.camera.position);
@@ -1352,37 +1389,77 @@ export class Game {
     wu.uSky.value.copy(this.env.fog.color);
     wu.uSunColor.value.copy(this.env.sunColor);
     wu.uSkyTop.value.copy(this.env.hemi.color).multiplyScalar(0.55 * (1 - n * 0.9)).lerp(this.env.fog.color, this.env.overcast * 0.8);
-    this.roads.setWet(this.weather.wet);
+    this.roads.setWet(this.weather.wet, (this.pendingQuality ?? this.q.name) === 'ultra');
     this.post.aoRadius = THREE.MathUtils.clamp(this.rts.distance * 0.011, 2.2, 16);
-    wu.uPollution.value = Math.min(0.7, (1 - this.sim.naturePct) * 0.6 + this.buildings.counts().active / 4000);
+    this.water.updateFields(this.fields);
 
-    // water around the view, for the creek (sampled twice a second)
+    // Camera-local soundscape inputs, sampled twice a second into one reused mix.
     this.waterT -= dt;
     if (this.waterT <= 0) {
       this.waterT = 0.5;
       const T = this.rts.target, r = Math.max(60, this.rts.distance * 0.35);
-      let wet = 0;
-      for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) if (this.terrain.h(T.x + i * r / 2, T.z + j * r / 2) < WATER) wet++;
+      let wet = 0, shore = 0;
+      for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
+        const x = T.x + i * r / 2, z = T.z + j * r / 2, h = this.terrain.h(x, z);
+        if (h < WATER) wet++;
+        if (Math.abs(h - WATER) < 6) shore += this.map.sand?.(x, z) ?? 0;
+      }
       this.waterNear = Math.min(1, wet / 6);
+      const mix = this.soundMix;
+      mix.water = this.waterNear;
+      mix.surf = this.map.def.id === 'appalachia' ? 0 : Math.min(1, shore / 4) * Math.min(1, wet / 3);
+      mix.nature = this.fields.naturePct();
+      mix.pollution = this.fields.pollutionAt(T.x, T.z);
+      const treeX = Math.round(T.x / 32) * 32, treeZ = Math.round(T.z / 32) * 32;
+      const treeCount = this.trees.countIn(treeX, treeZ, 200), previousTrees = this.soundTreeSample;
+      mix.habitat = Math.min(1, treeCount / 160);
+      mix.clearing = previousTrees.x === treeX && previousTrees.z === treeZ ? Math.min(1, Math.max(0, previousTrees.count - treeCount) / 12) : 0;
+      previousTrees.x = treeX; previousTrees.z = treeZ; previousTrees.count = treeCount;
+      let cars = 0, people = 0, construction = 0;
+      for (const car of this.traffic.cars) {
+        if (!this.traffic.renderer.isCarDrawn(car.id) || car.crashed !== 0) continue;
+        const dx = car.x - T.x, dz = car.z - T.z;
+        cars += Math.max(0, 1 - (dx * dx + dz * dz) / 40000);
+      }
+      for (const person of this.peds.peds) {
+        if (person.gone) continue;
+        const dx = person.x - T.x, dz = person.z - T.z;
+        people += Math.max(0, 1 - (dx * dx + dz * dz) / 40000);
+      }
+      for (const building of this.buildings.list.values()) {
+        if (building.state !== 'building') continue;
+        const dx = building.x - T.x, dz = building.z - T.z;
+        construction += Math.max(0, 1 - (dx * dx + dz * dz) / 40000);
+      }
+      mix.traffic = Math.min(1, cars / 24);
+      mix.people = Math.min(1, people / 35);
+      mix.construction = Math.min(1, construction / 8);
+      mix.population = this.sim.population;
+      mix.moneyTrouble = Number.isFinite(this.sim.money) ? THREE.MathUtils.clamp((5000 - this.sim.money) / 15000, 0, 1) : 0;
+      mix.flowEma = this.traffic.flowEma;
+      mix.disaster = this.weather.kind === 'hurricane' ? this.weather.intensity : 0;
+      mix.sources = this.ambientLife.soundSources(this.camera);
     }
-    this.audio.update(dt, {
-      zoom: Math.min(1, this.rts.distance / 1500), nature: this.sim.naturePct, water: this.waterNear, traffic: Math.min(1, this.traffic.count / 400),
-      construction: Math.min(1, this.buildings.counts().building / 20), people: Math.min(1, this.peds.peds.length / 150), night: n,
-      weather: this.weather.kind, weatherIntensity: this.weather.intensity, season: this.weather.season,
-    });
+    this.soundMix.zoom = Math.min(1, this.rts.distance / 1500);
+    this.soundMix.night = n; this.soundMix.speed = spd;
+    this.soundMix.weather = this.weather.kind; this.soundMix.weatherIntensity = this.weather.intensity; this.soundMix.season = this.weather.season;
+    this.audio.update(dt, this.soundMix);
     // street sound follows the real cars near the camera (src/audio/streetAudio.ts); re-picks its voices 4x a second
     this.audio.street(dt, this.traffic.cars, this.rts, this.weather.wet, spd);
+    this.audio.world(dt, this.worldSoundSources.sample(this, dt), spd);
     P.lap('lighting+audio');
     if (render) {
       this.applyPendingRatio();
       this.renderer.info.reset();
+      this.finishes.update(this);
       wu.uReflOn.value = this.water.reflection?.shouldRender(this.camera) ? 1 : 0;
       // Low quality renders straight to the canvas: the grade's exposure (the weather's dimming or brightening, times the night lift)
       // rides on the tone map, since there is no grade pass to apply it. (Low used to take only the night lift, so a storm or a
       // heat wave exposed like a clear day.)
       this.renderer.toneMappingExposure = 0.95 * (this.post.active ? 1 : lowExposure(this.env, this.post.look));
-      // ... and its tint rides on the two lights that carry the ambient and the key (render/lowGrade.ts)
-      if (!this.post.active) applyLowGrade(this.env, this.post.look);
+      // Low applies the same look in each material's canvas tone-map chunk.
+      if (!this.post.active) applyLowGrade(this.env, this.post.look, this.renderer);
+      else this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
       this.post.render(n, this.rts.distance);
       P.lap('render');
       if (this.blackChecks.length && performance.now() >= this.blackChecks[0] && !document.hidden) {
@@ -1392,8 +1469,10 @@ export class Game {
       // A mirror pass before the main pass can bind a shadow sampler before
       // three.js has created its shadow texture. Reuse the previous reflection
       // for this frame and refresh it after the main scene has rendered.
-      this.water.reflection?.render(this.renderer, this.scene, this.camera, [this.water.mesh]);
+      this.water.reflection?.render(this.renderer, this.scene, this.camera, [this.water.mesh], this.time);
       P.lap('water reflection');
+      this.roads.renderReflection(this.renderer, this.scene, this.camera, this.time);
+      P.lap('road reflection');
       this.perf.calls = this.renderer.info.render.calls;
       this.perf.triangles = this.renderer.info.render.triangles;
     }

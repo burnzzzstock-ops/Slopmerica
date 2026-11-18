@@ -7,7 +7,7 @@ import { MAX_LEVEL, type BuildingModel, type LandmarkId, type ZoneType } from '.
 import { closestOnSampled, SpatialHash, V2 } from '../core/math';
 import { fx, Rng } from '../core/rng';
 import { buildingMaterial, generateBuilding, generateLandmark, landmarkFootprint, setArtMap, variantsFor } from '../buildings/generator';
-import { generateConstruction, kitMaterial } from '../buildings/kitGenerator';
+import { kitMaterial } from '../buildings/kitGenerator';
 import { applyAtmosphere } from '../world/seasons';
 import type { MapId } from '../world/maps';
 import { BRANDS, type Brand } from '../art/brands';
@@ -17,6 +17,10 @@ import type { Trees } from '../world/trees';
 import type { ZCell, Zoning } from '../zones/zoning';
 import type { RoadNetwork } from '../roads/network';
 import { ROAD_TYPES } from '../roads/roadTypes';
+import { buildingLod, buildingSilhouette, timeBuildingLod, withBuildingLodRandom } from '../render/buildingLod';
+import { BuildingClip, addBuildingClipAttribute, constructionHeight } from '../render/buildingClip';
+import { constructionFrame } from '../render/constructionFrame';
+import { scaledTowerModel, towerInstanceScale } from '../render/towerScale';
 
 /** a building as saved (see Buildings.serialize) */
 export type BldRow = [string, string, number, number, number, number, number, number, number, string, number, number, number, number, number?, number?, number?, number?, number?, number?, number[]?, number?, string?];
@@ -76,12 +80,25 @@ export interface Bld {
  */
 class Batch {
   readonly mesh: THREE.BatchedMesh;
+  readonly clip: BuildingClip;
   private maxVerts: number;
   private maxIndices: number;
   private maxInst: number;
   usedVerts = 0;
   private usedIndices = 0;
   private count = 0;
+  private lods = new Map<number, { far: number; silhouette: number; center: THREE.Vector3 }>();
+  private instances = new Map<number, { original: number; written: number; far: boolean; verticalScale: number }>();
+  private lodMatrix = new THREE.Matrix4();
+  private lodPoint = new THREE.Vector3();
+  private shadowPass = false;
+  private owners = new Map<number, number>();
+  private removed = new Map<number, { geometry: number; matrix: THREE.Matrix4; color: THREE.Vector4; clip: number }>();
+  private ghosts: { handle: number; matrix: THREE.Matrix4; age: number }[] = [];
+  lodEnabled = true;
+  lodVerts = 0;
+  lodBuildMs = 0;
+  farInstances = 0;
   constructor(scene: THREE.Scene, material: THREE.Material, verts: number, inst: number) {
     this.maxVerts = this.maxIndices = verts;
     this.maxInst = inst;
@@ -91,19 +108,59 @@ class Batch {
     this.mesh.perObjectFrustumCulled = true;
     this.mesh.sortObjects = false;
     this.mesh.frustumCulled = false;
+    this.clip = new BuildingClip(inst);
+    this.clip.bind(material);
+    this.mesh.customDepthMaterial = withBuildingLodRandom(() => new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }));
+    this.mesh.customDistanceMaterial = withBuildingLodRandom(() => new THREE.MeshDistanceMaterial());
+    this.clip.bind(this.mesh.customDepthMaterial);
+    this.clip.bind(this.mesh.customDistanceMaterial);
+    const render = this.mesh.onBeforeRender;
+    this.mesh.onBeforeRender = (renderer, scene, camera, geometry, material, group) => {
+      this.clip.activate();
+      if (!this.shadowPass) this.updateLod(camera, false);
+      render.call(this.mesh, renderer, scene, camera, geometry, material, group);
+    };
+    const shadow = this.mesh.onBeforeShadow;
+    this.mesh.onBeforeShadow = (renderer, object, camera, shadowCamera, geometry, material, group) => {
+      this.clip.activate();
+      this.updateLod(camera, true);
+      this.shadowPass = true;
+      try { shadow.call(this.mesh, renderer, object, camera, shadowCamera, geometry, material, group); }
+      finally { this.shadowPass = false; }
+    };
     scene.add(this.mesh);
   }
-  addGeometry(g: THREE.BufferGeometry): number {
+  addGeometry(g: THREE.BufferGeometry, allowLod = true): number {
+    addBuildingClipAttribute(g);
+    // Imported vault geometry predates the baked ambient-visibility channel.
+    if (!g.hasAttribute('ambientVisibility')) {
+      g.setAttribute('ambientVisibility', new THREE.BufferAttribute(new Float32Array(g.getAttribute('position').count).fill(1), 1));
+    }
     const n = g.getAttribute('position').count;
     const ni = g.getIndex()?.count ?? n;
     if (this.usedVerts + n > this.maxVerts || this.usedIndices + ni > this.maxIndices) {
       if (this.usedVerts + n > this.maxVerts) this.maxVerts = Math.ceil((this.maxVerts + n) * 1.6);
       if (this.usedIndices + ni > this.maxIndices) this.maxIndices = Math.ceil((this.maxIndices + ni) * 1.6);
-      this.mesh.setGeometrySize(this.maxVerts, this.maxIndices);
+      withBuildingLodRandom(() => this.mesh.setGeometrySize(this.maxVerts, this.maxIndices));
     }
     this.usedVerts += n;
     this.usedIndices += ni;
-    return this.mesh.addGeometry(g);
+    const id = this.mesh.addGeometry(g);
+    if (allowLod) {
+      this.lodBuildMs += timeBuildingLod(() => {
+        const far = buildingLod(g);
+        if (far) {
+          g.computeBoundingBox();
+          const farId = this.addGeometry(far, false);
+          const coarse = buildingSilhouette(far), silhouette = coarse ? this.addGeometry(coarse, false) : farId;
+          this.lods.set(id, { far: farId, silhouette, center: g.boundingBox!.getCenter(new THREE.Vector3()) });
+          this.lodVerts += far.getAttribute('position').count;
+          if (coarse) { this.lodVerts += coarse.getAttribute('position').count; coarse.dispose(); }
+          far.dispose();
+        }
+      });
+    }
+    return id;
   }
   addInstance(geoId: number): number {
     if (this.count + 8 > this.maxInst) {
@@ -111,11 +168,97 @@ class Batch {
       this.mesh.setInstanceCount(this.maxInst);
     }
     this.count++;
-    return this.mesh.addInstance(geoId);
+    const id = this.mesh.addInstance(geoId);
+    this.clip.set(id, null);
+    this.instances.set(id, { original: geoId, written: geoId, far: false, verticalScale: 1 });
+    return id;
+  }
+  setVerticalScale(id: number, scale: number) {
+    const state = this.instances.get(id);
+    if (state) state.verticalScale = scale;
   }
   deleteInstance(i: number) {
+    const owner = this.owners.get(i);
+    const state = this.instances.get(i);
+    if (owner !== undefined && state) {
+      const current = this.mesh.getGeometryIdAt(i);
+      const geometry = current === state.written ? state.original : current;
+      const matrix = new THREE.Matrix4();
+      const color = new THREE.Vector4();
+      this.mesh.getMatrixAt(i, matrix);
+      this.mesh.getColorAt(i, color);
+      this.removed.set(owner, { geometry, matrix, color, clip: this.clip.get(i) });
+      if (this.removed.size > 16) this.removed.delete(this.removed.keys().next().value!);
+    }
+    this.owners.delete(i);
     this.mesh.deleteInstance(i);
+    this.clip.set(i, null);
+    this.instances.delete(i);
     this.count--;
+  }
+  own(handle: number, buildingId: number) {
+    this.owners.set(handle, buildingId);
+  }
+  beginDemolition(buildingId: number) {
+    const removed = this.removed.get(buildingId);
+    if (!removed) return false;
+    this.removed.delete(buildingId);
+    if (this.ghosts.length >= 16) {
+      this.deleteInstance(this.ghosts.shift()!.handle);
+    }
+    const handle = this.addInstance(removed.geometry);
+    this.mesh.setMatrixAt(handle, removed.matrix);
+    this.mesh.setColorAt(handle, removed.color);
+    this.clip.set(handle, removed.clip);
+    this.ghosts.push({ handle, matrix: removed.matrix, age: 0 });
+    return true;
+  }
+  updateGhosts(dt: number) {
+    for (let i = this.ghosts.length - 1; i >= 0; i--) {
+      const ghost = this.ghosts[i];
+      ghost.age += Math.max(0, dt);
+      if (ghost.age >= 0.65) {
+        this.deleteInstance(ghost.handle);
+        this.ghosts.splice(i, 1);
+        continue;
+      }
+      const t = ghost.age / 0.65;
+      const collapse = t * t;
+      this.lodMatrix.copy(ghost.matrix);
+      this.lodMatrix.scale(this.lodPoint.set(1 - collapse * 0.08, 1 - collapse, 1 - collapse * 0.08));
+      this.mesh.setMatrixAt(ghost.handle, this.lodMatrix);
+    }
+  }
+  private updateLod(camera: THREE.Camera, shadow: boolean) {
+    const perspective = camera as THREE.PerspectiveCamera;
+    const fovScale = perspective.isPerspectiveCamera ? Math.tan(THREE.MathUtils.degToRad(perspective.fov) * 0.5) / Math.tan(THREE.MathUtils.degToRad(50) * 0.5) : 1;
+    let farCount = 0;
+    for (const [id, state] of this.instances) {
+      const current = this.mesh.getGeometryIdAt(id);
+      // Level-ups and restyles assign a new source geometry to the same handle.
+      if (current !== state.written) { state.original = current; state.far = false; }
+      const lod = this.lods.get(state.original);
+      let useFar = false, coarse = false;
+      if (this.lodEnabled && lod) {
+        this.mesh.getMatrixAt(id, this.lodMatrix);
+        this.lodPoint.copy(lod.center).applyMatrix4(this.lodMatrix);
+        const distance = camera.position.distanceTo(this.lodPoint) * fovScale;
+        // Construction and its separate scaffolds stay exact. A shadow's
+        // sub-pixel furniture can disappear earlier than the visible facade.
+        const collapsing = this.ghosts.some(ghost => ghost.handle === id);
+        const growing = this.clip.active(id) || collapsing || Math.abs(this.lodMatrix.elements[5] - state.verticalScale) > 0.001;
+        useFar = !growing && distance > (shadow ? 300 : state.far ? 700 : 850);
+        // Atlas repeats must stay exact in the visible scene. Coalesced wall
+        // quads are silhouettes for the shadow pass only, never facade LODs.
+        coarse = useFar && shadow;
+        if (!shadow) state.far = useFar;
+      }
+      const desired = useFar ? coarse ? lod!.silhouette : lod!.far : state.original;
+      if (current !== desired) this.mesh.setGeometryIdAt(id, desired);
+      state.written = desired;
+      if (useFar) farCount++;
+    }
+    if (!shadow) this.farInstances = farCount;
   }
 }
 
@@ -333,14 +476,13 @@ export class Buildings {
   }
 
   private constructionFor(w: number, d: number, height: number) {
-    const buckets = [8, 16, 32, 64, 128, 192];
-    const h = buckets.find((x) => height <= x) ?? 256;
+    const h = Math.ceil(height / 3.4) * 3.4;
     const key = `construction|${w}|${d}|${h}`;
     let e = this.geoIds.get(key);
     if (!e) {
-      const geometry = generateConstruction(w, d, h, w * 97 + d * 193 + h);
+      const geometry = withBuildingLodRandom(() => constructionFrame(w, d, h, w * 97 + d * 193 + h));
       const model: BuildingModel = { geometry, height: h, label: 'Construction', emitters: [] };
-      e = { id: this.kit.addGeometry(geometry), model };
+      e = { id: this.kit.addGeometry(geometry, false), model };
       this.geoIds.set(key, e);
     }
     return { id: e.id, height: h };
@@ -349,6 +491,24 @@ export class Buildings {
   /** Vertices uploaded to the atlas-building batch (perf budget checks). */
   get usedVerts() {
     return this.main.usedVerts;
+  }
+  /** Render-only diagnostics and A/B switch; neither touches simulation data. */
+  setLodEnabled(enabled: boolean) { this.main.lodEnabled = this.kit.lodEnabled = enabled; }
+  lodStats() {
+    return { far: this.main.farInstances + this.kit.farInstances, addedVertices: this.main.lodVerts + this.kit.lodVerts,
+      uploadedVertices: this.main.usedVerts + this.kit.usedVerts, buildMs: this.main.lodBuildMs + this.kit.lodBuildMs };
+  }
+
+  /** Render-only remnants: the simulation has already removed the building. */
+  beginDemolition(buildingId: number) {
+    const main = this.main.beginDemolition(buildingId);
+    const kit = this.kit.beginDemolition(buildingId);
+    return main || kit;
+  }
+
+  updateVisuals(dt: number) {
+    this.main.updateGhosts(dt);
+    this.kit.updateGhosts(dt);
   }
 
   /** The batch a building's own instance lives in. */
@@ -363,7 +523,9 @@ export class Buildings {
   private tint = new THREE.Color();
 
   private placeInstance(b: Bld, geoId: number) {
-    b.inst = this.batchOf(b).addInstance(geoId);
+    const batch = this.batchOf(b);
+    b.inst = batch.addInstance(geoId);
+    batch.own(b.inst, b.id);
     b.buildInst = -1;
     b.buildH = 1;
     if (b.state === 'building') {
@@ -371,7 +533,7 @@ export class Buildings {
       b.buildInst = this.kit.addInstance(build.id);
       b.buildH = build.height;
     }
-    this.writeMatrix(b, b.state === 'building' ? 0.04 : 1);
+    this.writeMatrix(b, b.state === 'building' ? easeGrow(b.progress) : 1);
   }
 
   private dropScaffold(b: Bld) {
@@ -381,16 +543,36 @@ export class Buildings {
     }
   }
 
+  private towerModels = new WeakMap<Bld, { model: BuildingModel; scale: number }>();
+
+  private towerScale(b: Bld): number {
+    const previous = this.towerModels.get(b);
+    if (previous?.model === b.model) return previous.scale;
+    const tower = b.level >= 4 && b.model.height > 35 &&
+      (b.zone === 'office' || b.zone === 'comHigh' || b.zone === 'resHigh');
+    if (!tower) return 1;
+    const scale = towerInstanceScale(b.id);
+    b.model = scaledTowerModel(b.model, scale);
+    this.towerModels.set(b, { model: b.model, scale });
+    return scale;
+  }
+
   private writeMatrix(b: Bld, grow: number) {
+    const verticalScale = this.towerScale(b);
     this.q.setFromAxisAngle(this.v.set(0, 1, 0), b.yaw);
-    this.s.set(1, Math.max(0.02, grow), 1);
+    this.s.set(1, verticalScale, 1);
     this.m4.compose(this.v.set(b.x, b.y, b.z), this.q, this.s);
-    this.batchOf(b).mesh.setMatrixAt(b.inst, this.m4);
+    const batch = this.batchOf(b);
+    batch.mesh.setMatrixAt(b.inst, this.m4);
+    batch.setVerticalScale(b.inst, verticalScale);
+    const height = grow >= 1 ? null : constructionHeight(b.model.height, grow);
+    batch.clip.set(b.inst, height === null ? null : height / verticalScale);
     if (b.buildInst >= 0) {
-      const constructionGrow = Math.max(0.18, grow) * (b.model.height / Math.max(1, b.buildH));
-      this.s.set(1, constructionGrow, 1);
+      const scale = b.model.height / Math.max(1, b.buildH);
+      this.s.set(1, scale, 1);
       this.m4.compose(this.v.set(b.x, b.y, b.z), this.q, this.s);
       this.kit.mesh.setMatrixAt(b.buildInst, this.m4);
+      this.kit.clip.set(b.buildInst, height === null ? null : height / scale);
     }
   }
 
@@ -717,9 +899,7 @@ export class Buildings {
         minZ = Math.min(minZ, cz - sd / 2 - 0.42);
         maxZ = Math.max(maxZ, cz + sd / 2 + 1.61);
 
-        const bodyGrow = b.progress <= 0 ? 0.04 : easeGrow(b.progress);
-        const constructionGrow = Math.max(0.18, bodyGrow);
-        let constructionTop = b.model.height * constructionGrow;
+        let constructionTop = b.model.height;
         if (b.buildH >= 14) {
           const boom = Math.min(34, sw + 12);
           const craneReach = sw / 2 + 1.3 + boom * 0.72;
@@ -727,7 +907,7 @@ export class Buildings {
           maxX = Math.max(maxX, craneReach);
           constructionTop *= 1 + Math.min(12, b.buildH * 0.25) / b.buildH;
         }
-        h = Math.max(b.model.height * bodyGrow, constructionTop);
+        h = constructionTop;
       }
       inv.compose(new THREE.Vector3(b.x, b.y, b.z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), b.yaw), new THREE.Vector3(1, 1, 1)).invert();
       r.copy(ray).applyMatrix4(inv);
@@ -775,7 +955,7 @@ export class Buildings {
     const build = this.constructionFor(b.w, b.d, b.model.height);
     b.buildInst = this.kit.addInstance(build.id);
     b.buildH = build.height;
-    this.writeMatrix(b, b.progress);
+    this.writeMatrix(b, easeGrow(b.progress));
     this.onLevel?.(b);
   }
 

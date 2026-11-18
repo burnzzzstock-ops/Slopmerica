@@ -1258,7 +1258,14 @@ export class Traffic {
     // a car parked at the building backs out of its stall (drawn only: the trip is the same)
     if (oB && this.parking) {
       const p = this.parking.take(oB, kind);
-      if (p) { if (car.h >= 0) this.renderer.remove(car.h); car.h = p.h; car.fromSpot = p.spot; }
+      if (p) {
+        // the parked car is this trip's car, body and all, when it is the same model. One of another model as long gives
+        // up its stall to this trip's own body: the renderer keeps every body under the model it was made as, and a trip
+        // driving another model's body was filed under the wrong one and never drawn, for the whole trip (measured by the
+        // review of 18 Nov: it left a hole in the traffic that other cars queued behind)
+        if (p.kind === kind) { if (car.h >= 0) this.renderer.remove(car.h); car.h = p.h; } else this.renderer.remove(p.h);
+        car.fromSpot = p.spot;
+      }
     }
     if (dB) {
       car.destB = dB;

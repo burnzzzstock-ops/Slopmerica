@@ -53,11 +53,22 @@ const pct = (x) => `${Math.round(x * 100)}%`;
     // 0.4 m), and how many of them backed out of its stall: every one should
     const lots = P.lots, launch0 = tr.launch;
     let couldBack = 0, didBack = 0;
+    // and the body each of them drives off in: the renderer keeps a body under the model it was made as, and a trip
+    // simulated as one model in another model's body was never drawn at all
+    let bodies = 0, wrongBody = 0, fromOther = 0;
+    const wrong = [];
     tr.launch = function (...a) {
       const oB = a[2], len = VEHICLE_SPECS[a[4]]?.length ?? 0;
-      const could = !!oB && !!lots.get(oB)?.taken.some((p) => p && p !== 'held' && Math.abs(VEHICLE_SPECS[p.kind].length - len) <= 0.4);
+      const there = oB ? (lots.get(oB)?.taken ?? []).filter((p) => p && p !== 'held' && Math.abs(VEHICLE_SPECS[p.kind].length - len) <= 0.4) : [];
+      const could = there.length > 0;
       const c = launch0.apply(this, a);
       if (c && could) { couldBack++; if (c.fromSpot) didBack++; }
+      if (c && c.fromSpot && c.h >= 0) {
+        bodies++;
+        if (!there.some((p) => p.kind === c.kind)) fromOther++;   // (no parked car of its own model: it took another's stall)
+        const body = tr.renderer.slots?.[c.h]?.kind;
+        if (body !== undefined && body !== c.kind) { wrongBody++; if (wrong.length < 4) wrong.push(`${c.kind}#${c.id} in a ${body}'s body`); }
+      }
       return c;
     };
     const lotsAt = [...g.buildings.list.values()].filter((b) => P.parkedAt(b).spots > 0).map((b) => `${b.label} (${P.parkedAt(b).spots})`);
@@ -142,7 +153,7 @@ const pct = (x) => `${Math.round(x * 100)}%`;
       }
       spill = { b: b.label, made, places: tr.thruStats().find((x) => x.b === b).places, maxRoad, heldBehind, heldOthers, spills, clearedAt };
     }
-    return { occ, pulledIn, backedOut, couldBack, didBack, lotsAt, spill, parked: P.count, cap: P.cap };
+    return { occ, pulledIn, backedOut, couldBack, didBack, lotsAt, spill, parked: P.count, cap: P.cap, bodies, wrongBody, fromOther, wrong, slots: Array.isArray(tr.renderer.slots) };
   }, { seed: SEED, center });
   const row = (h) => Object.entries(r.occ[h]).map(([k, v]) => `${k} ${pct(v.share)} of ${v.spots}${v.want !== undefined ? ` (its curves: ${pct(v.want)})` : ''}`).join(', ');
   for (const h of Object.keys(r.occ).sort((a, b) => a - b)) console.log(`  ${String(h).padStart(4)}:00  ${row(h)}`);
@@ -161,6 +172,7 @@ const pct = (x) => `${Math.round(x * 100)}%`;
   // which shut the stroad westward and keep the town over its traffic budget, so it starts few new trips at all)
   console.log(`  lots: ${r.lotsAt.join(', ')}`);
   check(`leaving cars back out of their stalls (${r.didBack} of the ${r.couldBack} trips that left a lot with a car their length in it; ${r.backedOut} backed out in all)`, r.didBack === r.couldBack && r.couldBack > 3);
+  check(`and each drives off in a body of its own model (${r.wrongBody} of ${r.bodies} in another model's; ${r.fromOther} of them left from a stall a different model was parked in)`, r.slots && r.bodies > 3 && r.wrongBody === 0, r.wrong);
   if (r.spill?.made) check(`a shop lot rebuilt as a drive-thru gets its lane (traffic.ts thruAt: ${r.spill.made.lane ? 'it does' : 'a "no drive-thru" kept from its old model hides the new lane'})`, r.spill.made.lane);
   if (r.spill) {
     if (r.spill.made) console.log(`  (the block has no drive-thru: ${r.spill.made.was} on ${r.spill.made.road} is rebuilt as ${r.spill.b} for the grand opening)`);

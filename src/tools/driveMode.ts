@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { clamp } from '../core/math';
 import { WATER } from '../config';
+import { DEBUG } from '../core/flags';
 import { registerInspector, registerSystem } from '../ext/registry';
 import type { Game, Selection } from '../game';
 import type { Car } from '../agents/traffic';
@@ -142,7 +143,7 @@ export class ThenAndNowViewer {
           <div style="display:flex;gap:8px">
             <button type="button" id="tn-postcard" style="background:#f4b432;color:#111;border:none;border-radius:8px;padding:8px 12px;font-weight:800;font-size:12px;cursor:pointer">📮 Save Postcard</button>
             <button type="button" id="tn-download" style="background:#c6f432;color:#111;border:none;border-radius:8px;padding:8px 12px;font-weight:800;font-size:12px;cursor:pointer">💾 Save Split PNG</button>
-            <button type="button" id="tn-close" style="background:#b3202a;color:#efe6cf;border:none;border-radius:8px;padding:8px 12px;font-weight:800;font-size:12px;cursor:pointer">✕ Close (Esc)</button>
+            <button type="button" id="tn-close" style="background:#b3202a;color:#efe6cf;border:none;border-radius:8px;padding:8px 12px;font-weight:800;font-size:12px;cursor:pointer">✕ Close<span class="kbd-hint"> (Esc)</span></button>
           </div>
         </div>
         <div id="tn-stage" style="position:relative;width:100%;aspect-ratio:16/9;max-height:68vh;background:#000;overflow:hidden;user-select:none;cursor:ew-resize">
@@ -323,8 +324,11 @@ export class DriveModeController {
         pitch: this.g.rts.pitch,
       };
       this.savedStation = this.g.audio.station;
+      // On a phone a card is a sheet over the lower half of the screen, where the driving panel goes: put the card away. And
+      // the camera's own "Following a car, tap to let go" pill is not shown while driving: the panel has its Exit.
+      if (window.innerWidth <= 760) this.g.select(null);
       this.hiddenEls = [];
-      for (const sel of ['.side-cards', '.next-bar']) {
+      for (const sel of ['.side-cards', '.next-bar', '.follow-pill']) {
         const el = document.querySelector(sel) as HTMLElement | null;
         if (el) {
           this.hiddenEls.push({ el, vis: el.style.visibility });
@@ -495,10 +499,10 @@ export class DriveModeController {
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <button type="button" id="drive-honk" style="background:#c6f432;color:#111;border:none;border-radius:8px;padding:7px 11px;font-weight:800;font-size:12px;cursor:pointer">📣 Honk (H)</button>
+          <button type="button" id="drive-honk" style="background:#c6f432;color:#111;border:none;border-radius:8px;padding:7px 11px;font-weight:800;font-size:12px;cursor:pointer">📣 Honk<span class="kbd-hint"> (H)</span></button>
           <button type="button" id="drive-radio" style="background:#27272a;color:#efe6cf;border:1px solid #52525b;border-radius:8px;padding:7px 11px;font-weight:700;font-size:12px;cursor:pointer">📻 ${meta.freq}</button>
           <button type="button" id="drive-next" style="background:#27272a;color:#efe6cf;border:1px solid #52525b;border-radius:8px;padding:7px 10px;font-weight:700;font-size:12px;cursor:pointer">🔄 Next Car</button>
-          <button type="button" id="drive-exit" style="background:#b3202a;color:#efe6cf;border:none;border-radius:8px;padding:7px 11px;font-weight:800;font-size:12px;cursor:pointer">✕ Exit (Esc)</button>
+          <button type="button" id="drive-exit" style="background:#b3202a;color:#efe6cf;border:none;border-radius:8px;padding:7px 11px;font-weight:800;font-size:12px;cursor:pointer">✕ Exit<span class="kbd-hint"> (Esc)</span></button>
         </div>
       </div>
       <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(239,230,207,0.16);display:flex;align-items:center;gap:10px">
@@ -524,9 +528,12 @@ registerSystem({
   init(g: Game) {
     thenNow = new ThenAndNowViewer(g);
     controller = new DriveModeController(g, thenNow);
-    const win = window as unknown as { __drive?: DriveModeController; __thenNow?: ThenAndNowViewer };
-    win.__drive = controller;
-    win.__thenNow = thenNow;
+    // (debug hooks, like the game's others: a player's build has none of them; src/core/flags.ts decides)
+    if (DEBUG) {
+      const win = window as unknown as { __drive?: DriveModeController; __thenNow?: ThenAndNowViewer };
+      win.__drive = controller;
+      win.__thenNow = thenNow;
+    }
   },
   frame(_g: Game, dt: number) {
     controller?.update(dt);
@@ -535,10 +542,10 @@ registerSystem({
 
 registerInspector((sel: NonNullable<Selection>) => {
   if (sel.kind === 'car') {
-    return `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="act" data-drive-car="${sel.c.id}" style="flex:1;background:#c6f432;color:#111111;font-weight:800;border-radius:8px;padding:8px 12px;cursor:pointer">🛻 Drive Vehicle (V)</button><button type="button" class="act" data-then-now="1" style="background:#27272a;color:#efe6cf;font-weight:700;border-radius:8px;padding:8px 10px;cursor:pointer">📷 Then &amp; Now (N)</button></div>`;
+    return `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="act" data-drive-car="${sel.c.id}" style="flex:1;background:#c6f432;color:#111111;font-weight:800;border-radius:8px;padding:8px 12px;cursor:pointer">🛻 Drive Vehicle<span class="kbd-hint"> (V)</span></button><button type="button" class="act" data-then-now="1" style="background:#27272a;color:#efe6cf;font-weight:700;border-radius:8px;padding:8px 10px;cursor:pointer">📷 Then &amp; Now<span class="kbd-hint"> (N)</span></button></div>`;
   }
   if (sel.kind === 'road' || sel.kind === 'building') {
-    return `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="act" data-drive-car="0" style="flex:1;background:#27272a;color:#c6f432;border:1px solid #c6f432;font-weight:800;border-radius:8px;padding:7px 10px;cursor:pointer">🛻 Drive Stroad (V)</button><button type="button" class="act" data-then-now="1" style="background:#27272a;color:#efe6cf;font-weight:700;border-radius:8px;padding:7px 10px;cursor:pointer">📷 Then &amp; Now (N)</button></div>`;
+    return `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="act" data-drive-car="0" style="flex:1;background:#27272a;color:#c6f432;border:1px solid #c6f432;font-weight:800;border-radius:8px;padding:7px 10px;cursor:pointer">🛻 Drive Stroad<span class="kbd-hint"> (V)</span></button><button type="button" class="act" data-then-now="1" style="background:#27272a;color:#efe6cf;font-weight:700;border-radius:8px;padding:7px 10px;cursor:pointer">📷 Then &amp; Now<span class="kbd-hint"> (N)</span></button></div>`;
   }
   return null;
 });

@@ -2452,6 +2452,22 @@ a {
 }
 
 
+/* ---- Drive Mode and Then and Now (tools/driveMode.ts builds its own panels, with their styles written on them): what a
+   finger needs. Its buttons were 32 to 40 px tall, and their labels carried key hints a touch screen has no keys for. ---- */
+@media (pointer: coarse) {
+  #slop-drive-hud button,
+  .inspector [data-drive-car],
+  .inspector [data-then-now],
+  #tn-postcard,
+  #tn-download,
+  #tn-close {
+    min-height: 44px;
+  }
+  .kbd-hint {
+    display: none;
+  }
+}
+
 /* ---- the pause menu (ui/pauseMenu.ts): Esc with nothing else open. It takes the screen, as the bug report does ---- */
 .pause {
   position: fixed;

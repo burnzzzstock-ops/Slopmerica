@@ -1460,6 +1460,7 @@ export class Game {
       // Low applies the same look in each material's canvas tone-map chunk.
       if (!this.post.active) applyLowGrade(this.env, this.post.look, this.renderer);
       else this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      if (dt > 0) this.shadows.prepareFrame(this.time);
       this.post.render(n, this.rts.distance);
       P.lap('render');
       if (this.blackChecks.length && performance.now() >= this.blackChecks[0] && !document.hidden) {

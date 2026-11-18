@@ -285,6 +285,9 @@ export class Hud implements UiSink {
     this.actions.querySelector('#ta-undo')!.addEventListener('click', () => game.undo());
     game.feed = this.feed;
     game.ui = this;
+    // The radio's ad is a jingle with no voice: its words are a caption, up when the jingle starts and for as long as they
+    // take to read. It stays out of a bug report's recent actions, which it would fill in a quarter of an hour.
+    game.audio.onRadioAd = (text) => this.toast(`📻 ${text}`, false, false);
     // playtest: when something throws, offer the report right there
     let lastCrash = -1e9;
     onCapturedError((e) => {
@@ -1841,7 +1844,7 @@ export class Hud implements UiSink {
   }
 
   // ------------------------------------------------------------------ transient UI
-  toast(msg: string, bad = false) {
+  toast(msg: string, bad = false, log = true) {
     // it stays as long as it takes to read (ui/copy.ts), then fades for 0.6 s
     const life = toastMs(msg);
     // the same message again while it's still showing: keep one, refreshed
@@ -1853,7 +1856,7 @@ export class Hud implements UiSink {
       t0.classList.remove('again'); void t0.offsetWidth; t0.classList.add('again');
       return;
     }
-    crumb(`${bad ? 'warning' : 'toast'}: ${msg}`);
+    if (log) crumb(`${bad ? 'warning' : 'toast'}: ${msg}`);
     const t = document.createElement('div') as HTMLDivElement & { _t?: number[] };
     t.className = 'toast' + (bad ? ' bad' : '');
     t.textContent = msg;
